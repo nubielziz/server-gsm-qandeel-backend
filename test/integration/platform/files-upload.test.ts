@@ -1,5 +1,6 @@
-// Integration tests of the merchants' file uploads (feature 7a, MISMATCHES B157): POST /client/files and GET /client/files/:id, the limits,
-// the owner rule, the name and media type clean-up, and a File service order that uses the upload.
+// Integration tests of the file uploads of accounts of a merchant rank (feature 7a, MISMATCHES B157): POST /client/files and GET /client/files/:id,
+// the limits, the owner rule (the owner is the account, decision 064), the name and media type clean-up, and a File service order that uses the
+// upload.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -76,10 +77,10 @@ describe('POST /client/files: the session is judged before the body is read (dec
     // The server never asked for the body: it answered at the request's headers.
     expect(none.produced()).toBeLessThan(5);
     // A random cookie of the right shape names no session: refused the same way, before the body.
-    const random = await chunked({ cookie: `${SESSION_COOKIE_NAMES.client}=${'a'.repeat(43)}` });
+    const random = await chunked({ cookie: `${SESSION_COOKIE_NAMES.account}=${'a'.repeat(43)}` });
     expect(random.res.statusCode).toBe(401);
     expect(random.produced()).toBeLessThan(5);
-    // The cookie of another audience (staff) is not a merchant session.
+    // The cookie of another audience (staff) is not an account session.
     const staff = await chunked({ cookie: `${SESSION_COOKIE_NAMES.staff}=${'a'.repeat(43)}` });
     expect(staff.res.statusCode).toBe(401);
   });
@@ -91,7 +92,7 @@ describe('POST /client/files: the session is judged before the body is read (dec
       expect(none.res.statusCode, JSON.stringify(contentType)).toBe(401);
       expect(body(none.res)).toMatchObject({ code: 'UNAUTHORIZED' });
       expect(none.produced(), JSON.stringify(contentType)).toBeLessThan(5);
-      const random = await chunked({ cookie: `${SESSION_COOKIE_NAMES.client}=${'a'.repeat(43)}` }, { contentType });
+      const random = await chunked({ cookie: `${SESSION_COOKIE_NAMES.account}=${'a'.repeat(43)}` }, { contentType });
       expect(random.res.statusCode).toBe(401);
       expect(random.produced()).toBeLessThan(5);
     }
@@ -115,15 +116,17 @@ describe('POST /client/files: the session is judged before the body is read (dec
     expect(res.statusCode).toBe(201);
   });
 
-  it('judges a live session of a merchant that is not approved yet like any other: the guard decides the rest', async () => {
+  it('judges a live session of a suspended account like any other: the guard refuses it and nothing is stored', async () => {
     const { db } = await testDb();
-    await db.update(s.clients).set({ status: 'pending' }).where(eq(s.clients.id, world.merchant.id));
+    await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, world.merchant.id));
     const portal = await portalFor(t, world.merchant.id);
     const form = new FormData();
     form.set('file', new File([bytes('%PDF-1.4')], 'document.pdf', { type: 'application/pdf' }));
     const res = await multipartRequest(t, '/client/files', form, portal.session.mutationHeaders);
-    // A merchant waiting for approval may upload (B153): the stage does not turn it away.
-    expect(res.statusCode).toBe(201);
+    // Decision 064: there is no waiting-for-approval status any more; a suspended account is refused by the access guard, not by the stage.
+    expect(res.statusCode).toBe(403);
+    expect(body(res)).toMatchObject({ code: 'ACCOUNT_SUSPENDED' });
+    expect(await db.select().from(s.files)).toHaveLength(0);
   });
 });
 
@@ -139,7 +142,7 @@ describe('POST /client/files', () => {
     return multipartRequest(t, '/client/files', form, headers);
   }
 
-  it('stores the file for the signed-in merchant: 201, the row, the object, the size and the SHA-256, and the merchant can open it', async () => {
+  it('stores the file for the signed-in account: 201, the row, the object, the size and the SHA-256, and the account can open it', async () => {
     const { db } = await testDb();
     const portal = await portalFor(t, world.merchant.id);
     const data = bytes('%PDF-1.4');
@@ -155,7 +158,8 @@ describe('POST /client/files', () => {
       createdAt: expect.any(String),
     });
     const [row] = await db.select().from(s.files).where(eq(s.files.id, stored.id));
-    expect(row).toMatchObject({ ownerType: 'client', ownerId: world.merchant.id, size: 8, sha256: sha256(data) });
+    // Decision 064: the owner is the account, whatever its rank.
+    expect(row).toMatchObject({ ownerType: 'account', ownerId: world.merchant.id, size: 8, sha256: sha256(data) });
     // The object key is built by the server, never from the name the client sent.
     expect(row!.key).toMatch(/^files\/\d{4}\/\d{2}\/[0-9a-f-]{36}$/);
     const object = await t.app.get(StorageService).get(row!.key);
@@ -245,9 +249,8 @@ describe('POST /client/files', () => {
     expect((await multipartRequest(t, '/client/files', form, {}, freshClientIp())).statusCode).toBe(401);
   });
 
-  it('lets a merchant waiting for approval upload its documents (B153), and is not blocked by order maintenance', async () => {
+  it('is not blocked by order maintenance', async () => {
     const { db } = await testDb();
-    await db.update(s.clients).set({ status: 'pending' }).where(eq(s.clients.id, world.merchant.id));
     const portal = await portalFor(t, world.merchant.id);
     expect((await upload(portal, { name: 'document.pdf', data: bytes('x') })).statusCode).toBe(201);
     await db.insert(s.settings).values({
@@ -268,7 +271,7 @@ describe('POST /client/files', () => {
 
 describe('GET /client/files/:id', () => {
   /** Stores a file row (no object) for an owner. */
-  async function insertFile(ownerType: string, ownerId: number, filename: string): Promise<number> {
+  async function insertFile(ownerType: 'account' | 'staff', ownerId: number, filename: string): Promise<number> {
     const [row] = await world.db
       .insert(s.files)
       .values({
@@ -314,10 +317,10 @@ describe('GET /client/files/:id', () => {
     expect((await other.get(`/client/files/${result}`)).statusCode).toBe(404);
   });
 
-  it('opens every file the merchant owns, whatever record uses it, and the files of its orders', async () => {
+  it('opens every file the account owns, whatever record uses it, and the files of its orders', async () => {
     const { db, merchant, auto } = world;
-    const upload = await insertFile('client', merchant.id, 'unused.bin');
-    const input = await insertFile('client', merchant.id, 'input.bin');
+    const upload = await insertFile('account', merchant.id, 'unused.bin');
+    const input = await insertFile('account', merchant.id, 'input.bin');
     const result = await insertFile('staff', 1, 'result.zip');
     await insertOrderRow(db, {
       clientId: merchant.id,
@@ -332,19 +335,19 @@ describe('GET /client/files/:id', () => {
       imei: '358240051111111',
     });
     // A document that a verification request stored earlier, a payment, a ticket or a dispute uses.
-    const identity = await insertFile('client', merchant.id, 'identity.jpg');
+    const identity = await insertFile('account', merchant.id, 'identity.jpg');
     await db.insert(s.kycSubmissions).values({ clientId: merchant.id, fileIds: [identity] });
-    const receipt = await insertFile('client', merchant.id, 'receipt.pdf');
+    const receipt = await insertFile('account', merchant.id, 'receipt.pdf');
     const invoice = await insertInvoiceRow(db, merchant.id);
     const payment = await insertPendingPayment(db, invoice, await insertGateway(t, db), { receiptFileId: receipt });
-    const attachment = await insertFile('client', merchant.id, 'screenshot.png');
+    const attachment = await insertFile('account', merchant.id, 'screenshot.png');
     const customer = await insertCustomer(db);
     const ticket = await insertSupportTicket(db, { requesterId: customer.id });
-    await insertSupportMessage(db, ticket.id, { authorType: 'customer', authorId: customer.id, fileIds: [attachment] });
-    const evidence = await insertFile('client', merchant.id, 'evidence.pdf');
+    await insertSupportMessage(db, ticket.id, { authorType: 'account', authorId: customer.id, fileIds: [attachment] });
+    const evidence = await insertFile('account', merchant.id, 'evidence.pdf');
     await db.insert(s.disputes).values({
       paymentId: payment.id,
-      customerId: customer.id,
+      accountId: customer.id,
       gatewayDisputeId: 'dp_scope',
       reasonCode: 'fraudulent',
       amount: '10.0000',

@@ -20,10 +20,12 @@ import {
   WebhookVerifiers,
 } from '@src/modules/identity';
 import { CheckoutModule, CustomersAccountsModule } from '@src/modules/customers';
+import { MerchantAuthModule } from '@src/modules/identity/merchant-auth.module';
 import { OrderTrackingModule } from '@src/modules/orders';
 import { MaintenanceService } from '@src/modules/platform';
 import { SupportStoreModule } from '@src/modules/support';
 import { type TestApp, createTestApp } from '../../support/app';
+import { makeAccount } from '../../support/accounts';
 import { insertMerchant } from '../../support/auth';
 import { HOUR, MINUTE, SECOND, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
@@ -43,7 +45,14 @@ import { freshClientIp } from '../../support/pipeline-routes';
 
 // The modules that register the real capability token resolvers (checkout, tracking: feature 14a; the customer link tokens and the
 // `customer` session subject: feature 14b; the support ticket token: feature 17); this test stands in for them with fixed tokens.
-const REAL_RESOLVER_MODULES = [CheckoutModule, OrderTrackingModule, CustomersAccountsModule, SupportStoreModule];
+const REAL_RESOLVER_MODULES = [
+  CheckoutModule,
+  OrderTrackingModule,
+  CustomersAccountsModule,
+  SupportStoreModule,
+  // The resolver of the account link tokens is registered by the sign-in module of the accounts now.
+  MerchantAuthModule,
+];
 
 const DHRU_FAILED = { ERROR: [{ MESSAGE: 'Authentication Failed' }], apiversion: '6.1' };
 
@@ -536,12 +545,43 @@ describe('Dhru credentials', () => {
     expect(message(account)).toBe('This merchant account is suspended.');
   });
 
-  it('tells a merchant that waits for approval so in the envelope (B153)', async () => {
-    const waiting = await insertMerchant(db, { username: 'waiting', status: 'pending' });
-    const { key } = await insertApiKey(t, db, waiting);
-    const res = await call({ action: 'accountinfo', username: 'waiting', apiaccesskey: key });
-    expect(res.statusCode).toBe(200);
-    expect(message(res)).toBe('This merchant account has not been approved yet.');
+  it('tells a blocked merchant that the account is suspended, and says nothing about an erased one', async () => {
+    const blocked = await insertMerchant(db, { username: 'blocked', status: 'blocked' });
+    const erased = await insertMerchant(db, { username: 'erased', status: 'anonymized', anonymizedAt: clock.now() });
+    const blockedKey = await insertApiKey(t, db, blocked);
+    const erasedKey = await insertApiKey(t, db, erased);
+    const refused = await call({ action: 'accountinfo', username: 'blocked', apiaccesskey: blockedKey.key });
+    expect(refused.statusCode).toBe(200);
+    expect(message(refused)).toBe('This merchant account is suspended.');
+    const gone = await call({ action: 'accountinfo', username: 'erased', apiaccesskey: erasedKey.key });
+    expect(gone.statusCode).toBe(200);
+    expect(gone.json()).toEqual(DHRU_FAILED);
+  });
+
+  it('refuses a live key of an account whose rank was moved to retail in SQL, without a revoke: the second wall', async () => {
+    const clientId = await insertMerchant(db, { username: 'moved' });
+    const { key } = await insertApiKey(t, db, clientId);
+    const body = { action: 'accountinfo', username: 'moved', apiaccesskey: key };
+    expect((await call(body)).json().SUCCESS).toBeDefined();
+    const retail = await makeAccount(t, { rank: 'retail' });
+    await db.update(s.clients).set({ groupId: retail.groupId }).where(eq(s.clients.id, clientId));
+    // The key row is still live: only the rank changed, and the cached view of the key is dropped as the rank change does.
+    const [row] = await db.select().from(s.apiKeys).where(eq(s.apiKeys.clientId, clientId));
+    expect(row?.revokedAt).toBeNull();
+    await t.app.get(ApiKeyDirectory).invalidateClient(clientId);
+    const refused = await call(body);
+    expect(refused.statusCode).toBe(200);
+    expect(refused.json()).toEqual(DHRU_FAILED);
+  });
+
+  it('refuses a key of a retail account that has no username, in the same envelope, whatever username is sent', async () => {
+    const retail = await makeAccount(t, { rank: 'retail' });
+    const { key } = await insertApiKey(t, db, retail.id);
+    for (const username of ['retail', '', 'null']) {
+      const res = await call({ action: 'accountinfo', username, apiaccesskey: key });
+      expect(res.statusCode, username).toBe(200);
+      expect(res.json(), username).toEqual(DHRU_FAILED);
+    }
   });
 
   it('answers the per-key limit in the envelope too', async () => {

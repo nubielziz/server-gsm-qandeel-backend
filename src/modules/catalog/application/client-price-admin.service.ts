@@ -1,6 +1,6 @@
 // ClientPriceAdminService: the use cases of the client price routes (map domain B, stage 4): a merchant's fixed price for a
 // service, which beats the group price, the pricing rules and every discount. Rules: above zero, never under the floor of the
-// merchant's group, one price per merchant and service.
+// merchant's group, one price per merchant and service, and only for an account of a merchant rank (decision 064).
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
@@ -75,6 +75,14 @@ const priceExists = () =>
 
 const notFound = () => new AppError('NOT_FOUND', { detail: 'No client price has this id.' });
 
+/** The refusal for an account of the retail rank: it pays the shop price, so it has no fixed price (422 on `clientId`, code `retail_rank`). */
+const retailRank = () =>
+  invalid(
+    'clientId',
+    'This account is on the retail rank: it pays the shop price, so it cannot have a fixed price.',
+    'retail_rank',
+  );
+
 /** The audit label of a client price: the merchant and the service, as the demo logs it (`Zain Mobile, IMEI-ATT-USA`). */
 const labelOf = (merchantName: string, service: Pick<Service, 'code'>): string => `${merchantName}, ${service.code}`;
 
@@ -86,9 +94,12 @@ const snapshot = (price: ServiceClientPrice) => ({ price: price.price, note: pri
  * Why: staff agree a price with one merchant for one service; from the next order it beats everything else (RESOLUTIONS
  * catalog-4, step 1). It can never be below the floor of the merchant's group (effective cost plus the minimum profit that counts
  * for that group, catalog-1), so a fixed price cannot sell below a supplier's raised cost. Each row also shows what the merchant
- * would pay without it (`groupPrice`, catalog-16): the resolver result for its group after rounding and the floor clamp.
+ * would pay without it (`groupPrice`, catalog-16): the resolver result for its group after rounding and the floor clamp. Only an
+ * account of a merchant rank has fixed prices: the shop always prices from the one retail rank (decision 064), so a create or a change
+ * for a retail account is refused. The rows of an account that was lowered to the retail rank stay (a delete is still allowed) and apply
+ * again after a raise.
  *
- * Side effects: writes `service_client_prices` and `audit_logs` (entity `merchant`, `set client price for` or `removed client
+ * Side effects: writes `service_client_prices` and `audit_logs` (entity `account`, `set client price for` or `removed client
  * price for`, like the demo); moves the catalog price version after the commit.
  *
  * @see docs/contract/endpoints/catalog.md (the `/admin/client-prices` sections)
@@ -123,7 +134,7 @@ export class ClientPriceAdminService {
    * @param staffId the staff member who sets it (`created_by`)
    * @returns the new price with its joins
    * @throws {AppError} `VALIDATION_FAILED` (422 on `serviceId` for an unknown, archived or turned-off service, on `clientId` for
-   *   an unknown merchant, on `price` under the merchant group's floor); `PRICE_EXISTS` (409)
+   *   an unknown account or one of the retail rank (`retail_rank`), on `price` under the merchant group's floor); `PRICE_EXISTS` (409)
    */
   async create(input: CreateClientPriceInput, staffId: number): Promise<ClientPriceView> {
     return this.db.runInTransaction(async (work) => {
@@ -133,6 +144,7 @@ export class ClientPriceAdminService {
       if (service.status !== 'active') throw invalid('serviceId', 'This service is turned off.', 'inactive');
       const merchant = await merchantOf(tx, input.clientId);
       if (!merchant) throw invalid('clientId', 'This merchant does not exist.', 'unknown');
+      if (merchant.rankKind !== 'merchant') throw retailRank();
       await this.assertAboveFloor(tx, service.id, merchant, input.price);
       if (await findClientPriceByPair(tx, merchant.id, service.id)) throw priceExists();
 
@@ -152,7 +164,7 @@ export class ClientPriceAdminService {
       this.priceVersion.bumpAfterCommit(work);
       await this.audit.record(tx, {
         action: 'set client price for',
-        entityType: 'merchant',
+        entityType: 'account',
         entityId: merchant.id,
         entityLabel: labelOf(merchant.name, service),
         before: null,
@@ -168,8 +180,8 @@ export class ClientPriceAdminService {
    * @param id the client price id
    * @param changes the keys to change
    * @returns the updated price with its joins
-   * @throws {AppError} `NOT_FOUND` (404: unknown, or its service is archived); `VALIDATION_FAILED` (422 on `price` under the
-   *   floor of the merchant's group)
+   * @throws {AppError} `NOT_FOUND` (404: unknown, or its service is archived); `VALIDATION_FAILED` (422 on `clientId` when
+   *   the account is of the retail rank now: `retail_rank`; on `price` under the floor of the merchant's group)
    */
   async update(id: number, changes: UpdateClientPriceInput): Promise<ClientPriceView> {
     return this.db.runInTransaction(async (work) => {
@@ -177,6 +189,8 @@ export class ClientPriceAdminService {
       const row = await lockClientPriceRow(tx, id);
       if (!row) throw notFound();
       const merchant = await merchantOf(tx, row.price.clientId);
+      // An account lowered to the retail rank keeps its rows, but they are not changed while it pays the shop price.
+      if (merchant && merchant.rankKind !== 'merchant') throw retailRank();
       if (changes.price !== undefined) {
         await this.assertAboveFloor(tx, row.service.id, merchant, changes.price);
       }
@@ -187,7 +201,7 @@ export class ClientPriceAdminService {
       if (changes.price !== undefined) this.priceVersion.bumpAfterCommit(work);
       await this.audit.record(tx, {
         action: 'set client price for',
-        entityType: 'merchant',
+        entityType: 'account',
         entityId: row.price.clientId,
         entityLabel: labelOf(merchant?.name ?? `Merchant ${row.price.clientId}`, row.service),
         before: snapshot(row.price),
@@ -213,7 +227,7 @@ export class ClientPriceAdminService {
       this.priceVersion.bumpAfterCommit(work);
       await this.audit.record(tx, {
         action: 'removed client price for',
-        entityType: 'merchant',
+        entityType: 'account',
         entityId: row.price.clientId,
         entityLabel: labelOf(merchant?.name ?? `Merchant ${row.price.clientId}`, row.service),
         before: snapshot(row.price),

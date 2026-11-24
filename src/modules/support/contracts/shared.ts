@@ -117,10 +117,14 @@ export const TicketMessageSchema = z.object({
   id: zId,
   ticketId: zId,
   authorType: z.enum(TICKET_AUTHOR_TYPES),
-  authorId: zId.nullable().describe('The customer, merchant or staff member; null for the system.'),
-  authorName: z.string().describe("Joined: 'System' for the system, 'Deleted customer' after an anonymize."),
+  authorId: zId.nullable().describe('The account (a merchant or a shop buyer) or staff member; null for the system.'),
+  authorName: z
+    .string()
+    .describe(
+      "Joined: 'System' for the system, 'Deleted customer' after an anonymize; the masked address when an account gave no name (decision 047).",
+    ),
   body: z.string(),
-  isInternal: z.boolean().describe('A note the customer never sees (and the system messages).'),
+  isInternal: z.boolean().describe('A note the requester never sees (and the system messages).'),
   fileIds: z.array(zId),
   attachments: z.array(AttachmentSchema).describe('The files of the message, oldest first; empty when it has none.'),
   createdAt: zIsoDateTime,
@@ -129,5 +133,11 @@ export const TicketMessageSchema = z.object({
 /** The channels of a ticket. */
 export const TicketChannelSchema = z.enum(TICKET_CHANNELS);
 
-/** Who wrote a ticket. */
+/** Who wrote a ticket: an account (the rank tells a merchant from a shop buyer, `TicketRowSchema.requester.rankKind`). */
 export const RequesterTypeSchema = z.enum(TICKET_REQUESTER_TYPES);
+
+/** The two kinds of rank a requester can hold, as the staff views and the `rankKind` filter say them. */
+export const REQUESTER_RANK_KINDS = ['retail', 'merchant'] as const;
+
+/** One value of {@link REQUESTER_RANK_KINDS}. */
+export const RequesterRankKindSchema = z.enum(REQUESTER_RANK_KINDS);

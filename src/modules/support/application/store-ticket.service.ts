@@ -7,6 +7,7 @@ import { CapabilityTokenVault, TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { RateLimitService } from '../../../infra/rate-limit';
 import { CustomerDirectory } from '../../customers';
+import { AccountDirectory } from '../../identity';
 import type { SupportTicket, TicketCategory } from '../db/schema';
 import { PROVEN_TICKET_NOTE, UNPROVEN_TICKET_NOTE, isRequesterProven } from '../domain/requester-proof';
 import { PRIORITY_TARGET_MS, defaultPriority } from '../domain/ticket-sla';
@@ -46,9 +47,9 @@ const refuse = (field: string, code: string, message: string) =>
 /**
  * Opens, reads and answers support tickets for a storefront visitor.
  *
- * Why: scenario b2c-ticket steps 1, 2 and 6. A visitor with no account opens a ticket from the tracking page
- * (the order's tracking token links it to the order and to the order's customer) or the contact page (an email, which makes a guest
- * customer the first time); it starts `new` with the priority of its category and a reply target, and the customer gets a receipt. The
+ * Why: scenario b2c-ticket steps 1, 2 and 6 and decision 064. A visitor with no session opens a ticket from the tracking page
+ * (the order's tracking token links it to the order and to the order's account) or the contact page (an email: the login account of the
+ * address when one exists, whatever its rank, else the guest row of the address, made the first time); it starts `new` with the priority of its category and a reply target, and the customer gets a receipt. The
  * ticket token (128 random bits, decision 010) is the only credential of the ticket page: it reaches the visitor in the receipt email, and in
  * the answer to the open call only when the order's tracking token speaks for the order's customer (an email anyone can type is not a
  * proof, so that path answers without it). A guest checkout can be opened with any address, an account's included, so the tracking token
@@ -72,8 +73,8 @@ const refuse = (field: string, code: string, message: string) =>
  * Feature 28: the customer's message is written by `TicketThreadService` (attachments, the `ticket-message` limit, the doorbell), the views
  * carry the attachments and the seen marks, and a new ticket rings `ticket updated` so the console sees it at once.
  *
- * Side effects: counts a point of the `ticket-email` limiter on the cache Redis (a hashed key, one hour); may insert a guest `customers`
- * row through the customers module; inserts `support_tickets` and `ticket_messages` rows (a system note for an unproven ticket), and for a new
+ * Side effects: counts a point of the `ticket-email` limiter on the cache Redis (a hashed key, one hour); may insert a guest `clients`
+ * row through the identity module's `AccountDirectory`; inserts `support_tickets` and `ticket_messages` rows (a system note for an unproven ticket), and for a new
  * ticket the `support.ticket_mail` outbox event of its receipt, in one transaction; the first use of the link sets
  * `support_tickets.requester_proven_at` and writes the second note; rings the ticket doorbells after the commit. Time comes from
  * the injected clock (decision 031).
@@ -86,6 +87,7 @@ export class StoreTicketService {
     private readonly vault: CapabilityTokenVault,
     private readonly mail: TicketMailOutbox,
     private readonly customers: CustomerDirectory,
+    private readonly accounts: AccountDirectory,
     private readonly limits: RateLimitService,
     private readonly thread: TicketThreadService,
     private readonly attachments: TicketAttachmentService,
@@ -97,8 +99,8 @@ export class StoreTicketService {
    * Opens a ticket.
    *
    * @param input the subject, the message and who writes
-   * @returns the new ticket as the customer reads it; the ticket token is in it only when the order's tracking token speaks for the
-   *   order's customer (the account opened the checkout signed in, or the customer has no account). The email path, and an order link of a
+   * @returns the new ticket as the requester reads it; the ticket token is in it only when the order's tracking token speaks for the
+   *   order's account (the account opened the checkout signed in, or the buyer row has no login). The email path, and an order link of a
    *   guest checkout filed under an account, get no token: they file the ticket under whoever owns the address, so the token would let a
    *   stranger read that customer's thread. The receipt email carries the link.
    * @throws {AppError} `VALIDATION_FAILED` (422 on `orderToken` for a token that names no storefront order or an order of an anonymized
@@ -115,8 +117,8 @@ export class StoreTicketService {
       const { tx } = work;
       const now = this.clock.now();
       let orderId: number | null = null;
-      let customerId: number;
-      // True when the caller holds an order's tracking token that speaks for the order's customer, the only proof this route can check.
+      let accountId: number;
+      // True when the caller holds an order's tracking token that speaks for the order's account, the only proof this route can check.
       let provedByOrder = false;
       if (input.orderToken !== undefined) {
         // Decision 054: the order is found by the keyed hash of its tracking token (an order placed before by its plain token).
@@ -129,11 +131,12 @@ export class StoreTicketService {
             : order.token !== null && this.tokens.equals(order.token, input.orderToken));
         if (!order || !valid) throw refuse('orderToken', 'unknown_order', 'This order link is not valid.');
         // A guest checkout can be opened with an account's address: its link proves nothing about the account holder. The link of an
-        // anonymized customer's order opens nothing, like an unknown link (refused before anything is counted or written).
-        const standing = await this.customers.orderLinkStanding(tx, { id: order.id, customerId: order.customerId });
+        // anonymized account's order opens nothing, like an unknown link (refused before anything is counted or written). The directory's
+        // parameter keeps its old name; the value is the account id.
+        const standing = await this.customers.orderLinkStanding(tx, { id: order.id, customerId: order.accountId });
         if (standing === 'erased') throw refuse('orderToken', 'unknown_order', 'This order link is not valid.');
-        // Decision 053: the receipt goes to the order's customer, so the per-address cap counts this path too.
-        const requester = await findRequester(tx, 'customer', order.customerId);
+        // Decision 053: the receipt goes to the order's account, so the per-address cap counts this path too.
+        const requester = await findRequester(tx, order.accountId);
         await this.limits.enforce(
           'ticket-email',
           requester?.email
@@ -141,10 +144,15 @@ export class StoreTicketService {
             : RateLimitService.compositeKey('order', String(order.id)),
         );
         orderId = order.id;
-        customerId = order.customerId;
+        accountId = order.accountId;
         provedByOrder = standing === 'speaks-for-customer';
       } else if (input.email !== undefined) {
-        customerId = (await this.customers.findOrCreateGuest(tx, { email: input.email, name: input.name ?? '' })).id;
+        // Decision 064: the login account of the typed address when one exists, whatever its rank (the ticket stays off its lists until
+        // the mailed link is used); else the guest row of the address, made when nobody wrote from it yet.
+        const login = await this.accounts.findLoginByEmail(tx, input.email);
+        accountId =
+          login?.id ??
+          (await this.accounts.findOrCreateGuest(tx, { email: input.email, name: input.name ?? '' })).account.id;
       } else {
         throw refuse('email', 'required', 'Enter your email address.');
       }
@@ -156,8 +164,8 @@ export class StoreTicketService {
       const ticket = await insertTicket(tx, {
         subject: input.subject,
         channel: 'web',
-        requesterType: 'customer',
-        requesterId: customerId,
+        requesterType: 'account',
+        requesterId: accountId,
         orderId,
         category,
         priority,
@@ -167,16 +175,16 @@ export class StoreTicketService {
         token: null,
         tokenHash: issued.hash,
         tokenEnc: issued.enc,
-        // Decision 053: only an order link that speaks for its customer proves who is writing; a typed address, or the link of a guest order
-        // filed under an account, is unproven until the link mailed to the customer's address is used.
+        // Decision 053: only an order link that speaks for its account proves who is writing; a typed address, or the link of a guest order
+        // filed under an account, is unproven until the link mailed to the account's address is used.
         requesterProvenAt: provedByOrder ? now : null,
         createdAt: now,
         updatedAt: now,
       });
       const message = await insertMessage(tx, {
         ticketId: ticket.id,
-        authorType: 'customer',
-        authorId: customerId,
+        authorType: 'account',
+        authorId: accountId,
         body: input.message,
         isInternal: false,
         createdAt: now,
@@ -194,7 +202,7 @@ export class StoreTicketService {
         });
         this.events.message(ticket.id, note.id);
       }
-      // The receipt is sent by the job, which re-reads the customer: one anonymized after the ticket was opened gets nothing.
+      // The receipt is sent by the job, which re-reads the account: one anonymized after the ticket was opened gets nothing.
       await this.mail.received(work, ticket);
       this.events.updated(ticket.id);
       const view = toStoreTicket(stored, [{ message, authorName: '' }], NO_FILES);

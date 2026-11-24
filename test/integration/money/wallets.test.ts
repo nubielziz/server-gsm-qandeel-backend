@@ -32,10 +32,34 @@ beforeEach(async () => {
 });
 
 const m = (amount: string) => Money.of(amount);
-const ZERO_WALLET = { balance: '0.0000', reserved: '0.0000', creditLimit: '0.0000', available: '0.0000' };
+/**
+ * The answer of the wallet routes for a merchant wallet (decision 064): the four figures, then what the console shows beside them. In
+ * these cases nothing is held, no top-up waits and no dispute is open; the approval limit is the default setting.
+ */
+const merchantWallet = (figures: Record<string, string>, creditAllowed = false) => ({
+  kind: 'merchant',
+  currency: 'USD',
+  ...figures,
+  creditAllowed,
+  frozen: null,
+  enabled: true,
+  pendingTopUps: { count: 0, amount: '0.0000' },
+  openDisputes: 0,
+  adjustApprovalLimit: '10000.0000',
+});
+const ZERO_WALLET = merchantWallet({
+  balance: '0.0000',
+  reserved: '0.0000',
+  creditLimit: '0.0000',
+  available: '0.0000',
+});
 
 type Staff = Awaited<ReturnType<typeof signInStaff>>;
 const get = (staff: Staff, url: string) => t.app.inject({ method: 'GET', url, headers: staff.session.headers });
+/**
+ * Sends a staff mutation. Every adjustment and credit-limit change needs an `Idempotency-Key` (decision 064), so a fresh key
+ * goes with each request unless the case names one.
+ */
 const send = (
   staff: Staff,
   method: 'POST' | 'PATCH',
@@ -43,7 +67,12 @@ const send = (
   payload: unknown,
   headers: Record<string, string> = {},
 ) =>
-  t.app.inject({ method, url, headers: { ...staff.session.mutationHeaders, ...headers }, payload: payload as never });
+  t.app.inject({
+    method,
+    url,
+    headers: { ...staff.session.mutationHeaders, 'idempotency-key': crypto.randomUUID(), ...headers },
+    payload: payload as never,
+  });
 
 const adjustBody = (overrides: Record<string, unknown> = {}) => ({
   amount: '10.0000',
@@ -74,12 +103,12 @@ describe('GET /admin/clients/:id/wallet', () => {
     const res = await get(staff, `/admin/clients/${merchant.id}/wallet`);
     expect(res.statusCode).toBe(200);
     // balance = wallet (the hold already left it), reserved = hold, available = balance + credit limit.
-    expect(res.json()).toEqual({
-      balance: '100.5000',
-      reserved: '20.0000',
-      creditLimit: '2000.0000',
-      available: '2100.5000',
-    });
+    expect(res.json()).toEqual(
+      merchantWallet(
+        { balance: '100.5000', reserved: '20.0000', creditLimit: '2000.0000', available: '2100.5000' },
+        true,
+      ),
+    );
   });
 
   it('shows credit in use as a negative balance', async () => {
@@ -92,12 +121,12 @@ describe('GET /admin/clients/:id/wallet', () => {
       `/admin/clients/${merchant.id}/wallet/adjust`,
       adjustBody({ amount: '200.0000', direction: 'debit' }),
     );
-    expect((await get(staff, `/admin/clients/${merchant.id}/wallet`)).json()).toEqual({
-      balance: '-200.0000',
-      reserved: '0.0000',
-      creditLimit: '500.0000',
-      available: '300.0000',
-    });
+    expect((await get(staff, `/admin/clients/${merchant.id}/wallet`)).json()).toEqual(
+      merchantWallet(
+        { balance: '-200.0000', reserved: '0.0000', creditLimit: '500.0000', available: '300.0000' },
+        true,
+      ),
+    );
   });
 
   it('answers zeros for a merchant that has no accounts yet, and reads fresh figures every time', async () => {
@@ -170,6 +199,8 @@ describe('GET /admin/clients/:id/statement', () => {
       'id',
       'kind',
       'memo',
+      // The staff statement names the order a line is about (null for a deposit or an adjustment).
+      'orderId',
       'transactionId',
     ]);
     expect(rows[2]).toMatchObject({ memo: 'deposit one', createdAt: '2026-11-01T10:01:00.000Z' });
@@ -223,13 +254,10 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
     const staff = await signInStaff(t, ['wallet:adjust']);
     const res = await send(staff, 'POST', `/admin/clients/${merchant.id}/wallet/adjust`, adjustBody());
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ transactionId: number; wallet: Record<string, string> }>();
-    expect(body.wallet).toEqual({
-      balance: '10.0000',
-      reserved: '0.0000',
-      creditLimit: '0.0000',
-      available: '10.0000',
-    });
+    const body = res.json<{ transactionId: number; wallet: Record<string, unknown> }>();
+    expect(body.wallet).toEqual(
+      merchantWallet({ balance: '10.0000', reserved: '0.0000', creditLimit: '0.0000', available: '10.0000' }),
+    );
 
     const [header] = await db
       .select()
@@ -238,7 +266,7 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
     expect(header).toMatchObject({
       kind: 'adjustment',
       memo: 'Manual credit: Goodwill credit for a failed order',
-      refType: 'client',
+      refType: 'account',
       refId: merchant.id,
       createdByType: 'staff',
       createdById: staff.staffId,
@@ -262,7 +290,7 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
       actorType: 'staff',
       actorId: staff.staffId,
       action: 'adjusted wallet of',
-      entityType: 'merchant',
+      entityType: 'account',
       entityId: merchant.id,
       entityLabel: 'Zain Mobile Hub',
       before: { balance: '0.0000' },
@@ -370,7 +398,7 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
       // A new session of the same staff member (the first one has timed out by now).
       const later = { ...a, session: await openSession(t, { type: 'staff', id: a.staffId }) };
       expect((await credit(later, x.id, '0.0001')).statusCode).toBe(200);
-      expect(await accountFigures(db, 'client_wallet', { type: 'client', id: x.id })).toMatchObject({
+      expect(await accountFigures(db, 'client_wallet', { type: 'account', id: x.id })).toMatchObject({
         balance: '11000.0001',
       });
     });
@@ -403,7 +431,7 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
       const a = await signInStaff(t, ['wallet:adjust']);
       const answers = await Promise.all([credit(a, x.id, '6000.0000', 'p-1'), credit(a, x.id, '6000.0000', 'p-2')]);
       expect(answers.map((res) => res.statusCode).sort()).toEqual([200, 409]);
-      expect(await accountFigures(db, 'client_wallet', { type: 'client', id: x.id })).toMatchObject({
+      expect(await accountFigures(db, 'client_wallet', { type: 'account', id: x.id })).toMatchObject({
         balance: '6000.0000',
       });
     });
@@ -433,7 +461,7 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
             refType: 'order',
             lines: [
               ...debitLine({ kind: 'revenue' }, m('5000')),
-              ...creditLine({ kind: 'client_wallet', ownerType: 'client', ownerId: x.id }, m('5000')),
+              ...creditLine({ kind: 'client_wallet', ownerType: 'account', ownerId: x.id }, m('5000')),
             ],
             refId: 78,
             idempotencyKey: 'reversal:78',
@@ -506,7 +534,7 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
     expect(await ledgerTotals(db)).toMatchObject({ transactions: 0 });
   });
 
-  it('works for a suspended or pending merchant', async () => {
+  it('works for a suspended account', async () => {
     const { db } = await testDb();
     const merchant = await insertWalletMerchant(db);
     await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, merchant.id));
@@ -523,10 +551,10 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
     const staff = await signInStaff(t, ['wallet:adjust']);
     const res = await send(staff, 'POST', `/admin/clients/${merchantId}/wallet/adjust`, adjustBody());
     expect(res.statusCode).toBe(200);
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchantId })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchantId })).toMatchObject({
       balance: '10.0000',
     });
-    expect(await accountFigures(db, 'client_hold', { type: 'client', id: merchantId })).toMatchObject({
+    expect(await accountFigures(db, 'client_hold', { type: 'account', id: merchantId })).toMatchObject({
       balance: '0.0000',
     });
   });
@@ -577,13 +605,21 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
     });
   });
 
-  it('posts every request when no key is sent', async () => {
+  it('posts every request that carries its own key, and refuses one without a key with 422 (decision 064)', async () => {
     const { db } = await testDb();
     const merchant = await insertWalletMerchant(db);
     const staff = await signInStaff(t, ['wallet:adjust']);
     const url = `/admin/clients/${merchant.id}/wallet/adjust`;
     await send(staff, 'POST', url, adjustBody());
     await send(staff, 'POST', url, adjustBody());
+    expect((await ledgerTotals(db)).transactions).toBe(2);
+    const keyless = await t.app.inject({
+      method: 'POST',
+      url,
+      headers: staff.session.mutationHeaders,
+      payload: adjustBody() as never,
+    });
+    expect(keyless.statusCode).toBe(422);
     expect((await ledgerTotals(db)).transactions).toBe(2);
   });
 
@@ -599,7 +635,7 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
     expect(
       results.filter((res) => res.statusCode === 409).every((res) => res.json().code === 'CREDIT_LIMIT_EXCEEDED'),
     ).toBe(true);
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '-90.0000',
     });
   });
@@ -612,20 +648,17 @@ describe('PATCH /admin/clients/:id/credit-limit (user rule 2)', () => {
     const staff = await signInStaff(t, ['wallet:credit_limit']);
     const res = await send(staff, 'PATCH', `/admin/clients/${merchant.id}/credit-limit`, { creditLimit: '2000.0000' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({
-      balance: '0.0000',
-      reserved: '0.0000',
-      creditLimit: '2000.0000',
-      available: '2000.0000',
-    });
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(res.json()).toEqual(
+      merchantWallet({ balance: '0.0000', reserved: '0.0000', creditLimit: '2000.0000', available: '2000.0000' }, true),
+    );
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       overdraftLimit: '2000.0000',
       version: 1,
     });
     const [audit] = await db.select().from(s.auditLogs);
     expect(audit).toMatchObject({
       action: 'changed credit limit of',
-      entityType: 'merchant',
+      entityType: 'account',
       entityId: merchant.id,
       entityLabel: 'Al-Noor',
       before: { creditLimit: '0.0000' },
@@ -644,7 +677,7 @@ describe('PATCH /admin/clients/:id/credit-limit (user rule 2)', () => {
       code: 'VALIDATION_FAILED',
       errors: [{ field: 'creditLimit', message: 'This group does not allow credit.' }],
     });
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       overdraftLimit: '0.0000',
     });
     expect(await db.select().from(s.auditLogs)).toHaveLength(0);
@@ -681,12 +714,12 @@ describe('PATCH /admin/clients/:id/credit-limit (user rule 2)', () => {
     });
     expect(lowered.statusCode).toBe(200);
     // 300 owed against a 100 limit: available is negative.
-    expect(lowered.json()).toEqual({
-      balance: '-300.0000',
-      reserved: '0.0000',
-      creditLimit: '100.0000',
-      available: '-200.0000',
-    });
+    expect(lowered.json()).toEqual(
+      merchantWallet(
+        { balance: '-300.0000', reserved: '0.0000', creditLimit: '100.0000', available: '-200.0000' },
+        true,
+      ),
+    );
 
     const refused = await send(
       staff,
@@ -722,7 +755,7 @@ describe('PATCH /admin/clients/:id/credit-limit (user rule 2)', () => {
     const staff = await signInStaff(t, ['wallet:credit_limit']);
     const res = await send(staff, 'PATCH', `/admin/clients/${merchantId}/credit-limit`, { creditLimit: '75.0000' });
     expect(res.json().creditLimit).toBe('75.0000');
-    expect(await accountFigures(db, 'client_hold', { type: 'client', id: merchantId })).toBeDefined();
+    expect(await accountFigures(db, 'client_hold', { type: 'account', id: merchantId })).toBeDefined();
   });
 
   it('needs an owner to raise a limit above the approval limit; lowering does not (decision 049)', async () => {
@@ -737,7 +770,7 @@ describe('PATCH /admin/clients/:id/credit-limit (user rule 2)', () => {
       code: 'FORBIDDEN',
       detail: 'Only an owner can set a credit limit above $10,000.',
     });
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       overdraftLimit: '0.0000',
     });
     expect((await send(staff, 'PATCH', url, { creditLimit: '10000.0000' })).statusCode).toBe(200);
@@ -745,7 +778,7 @@ describe('PATCH /admin/clients/:id/credit-limit (user rule 2)', () => {
     expect((await send(staff, 'PATCH', url, { creditLimit: '15000.0000' })).statusCode).toBe(200);
     expect((await send(staff, 'PATCH', url, { creditLimit: '15000.0000' })).statusCode).toBe(200);
     expect((await send(staff, 'PATCH', url, { creditLimit: '16000.0000' })).statusCode).toBe(403);
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       overdraftLimit: '15000.0000',
     });
   });

@@ -21,12 +21,13 @@ describe('OrderOutbox', () => {
     expect(routes.list()).toEqual([{ type: 'order.dispatch_requested', queue: 'supplier-dispatch' }]);
   });
 
-  it('writes ids and status words only', async () => {
+  it('writes ids, the door and status words only: the buyer is an account, whatever its rank', async () => {
     const { written, outbox } = recording();
     const orderOutbox = new OrderOutbox(outbox, new OutboxRouteRegistry());
     await orderOutbox.statusChanged({} as never, {
       orderId: 7,
-      clientId: null,
+      accountId: 41,
+      source: 'store',
       fromStatus: 'pending',
       toStatus: 'completed',
     });
@@ -36,7 +37,7 @@ describe('OrderOutbox', () => {
         type: ORDER_OUTBOX_EVENTS.statusChanged,
         aggregateType: 'orders',
         aggregateId: 7,
-        payload: { orderId: 7, clientId: null, fromStatus: 'pending', toStatus: 'completed' },
+        payload: { orderId: 7, accountId: 41, source: 'store', fromStatus: 'pending', toStatus: 'completed' },
       },
       { type: ORDER_OUTBOX_EVENTS.dispatchRequested, aggregateType: 'orders', aggregateId: 7, payload: { orderId: 7 } },
     ]);

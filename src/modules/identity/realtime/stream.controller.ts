@@ -60,9 +60,9 @@ export class StreamController {
   }
 
   /**
-   * The merchant's stream (also while the merchant waits for approval).
+   * The merchant's stream.
    *
-   * @param principal the signed-in merchant
+   * @param principal the signed-in account (a merchant rank)
    * @param query `cursor`
    * @param headers `last-event-id`
    * @param request the request
@@ -83,9 +83,9 @@ export class StreamController {
   }
 
   /**
-   * The customer's stream.
+   * The retail account's stream.
    *
-   * @param principal the signed-in customer
+   * @param principal the signed-in account (the retail rank)
    * @param query `cursor`
    * @param headers `last-event-id`
    * @param request the request

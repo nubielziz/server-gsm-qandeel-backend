@@ -60,7 +60,7 @@ describe('parseBulkLines', () => {
 
 describe('matchLine', () => {
   const line = (imei: string | null, code: string | null) => ({ line: 1, raw: '', imei, code });
-  const order = (id: number, open: boolean, owner = 'client 1 service 1', recentlyRejected = false) => ({
+  const order = (id: number, open: boolean, owner = 'account 1 service 1', recentlyRejected = false) => ({
     id,
     open,
     owner,
@@ -85,21 +85,21 @@ describe('matchLine', () => {
   });
 
   it('is ambiguous when an order of another buyer or service with the input was rejected lately', () => {
-    const open = order(6, true, 'client 1 service 1');
-    expect(matchLine(line('1', 'x'), [order(5, false, 'client 1 service 2', true), open])).toEqual({
+    const open = order(6, true, 'account 1 service 1');
+    expect(matchLine(line('1', 'x'), [order(5, false, 'account 1 service 2', true), open])).toEqual({
       status: 'ambiguous',
       orderId: null,
     });
-    expect(matchLine(line('1', 'x'), [order(5, false, 'customer 4 service 1', true), open])).toEqual({
+    expect(matchLine(line('1', 'x'), [order(5, false, 'account 4 service 1', true), open])).toEqual({
       status: 'ambiguous',
       orderId: null,
     });
     // The same buyer's earlier order of the same service, or an order of another buyer that was not rejected lately, does not count.
-    expect(matchLine(line('1', 'x'), [order(5, false, 'client 1 service 1', true), open])).toEqual({
+    expect(matchLine(line('1', 'x'), [order(5, false, 'account 1 service 1', true), open])).toEqual({
       status: 'matched',
       orderId: 6,
     });
-    expect(matchLine(line('1', 'x'), [order(5, false, 'client 2 service 1', false), open])).toEqual({
+    expect(matchLine(line('1', 'x'), [order(5, false, 'account 2 service 1', false), open])).toEqual({
       status: 'matched',
       orderId: 6,
     });
@@ -107,12 +107,15 @@ describe('matchLine', () => {
 });
 
 describe('ownerKey', () => {
-  it('is equal for the same buyer and service and differs for another merchant, customer or service', () => {
-    const key = ownerKey({ clientId: 1, customerId: null, serviceId: 3 });
-    expect(ownerKey({ clientId: 1, customerId: null, serviceId: 3 })).toBe(key);
-    expect(ownerKey({ clientId: 2, customerId: null, serviceId: 3 })).not.toBe(key);
-    expect(ownerKey({ clientId: 1, customerId: null, serviceId: 4 })).not.toBe(key);
-    expect(ownerKey({ clientId: null, customerId: 1, serviceId: 3 })).not.toBe(key);
+  it('is equal for the same buyer account and service and differs for another account or service', () => {
+    const key = ownerKey({ accountId: 1, serviceId: 3 });
+    expect(ownerKey({ accountId: 1, serviceId: 3 })).toBe(key);
+    expect(ownerKey({ accountId: 2, serviceId: 3 })).not.toBe(key);
+    expect(ownerKey({ accountId: 1, serviceId: 4 })).not.toBe(key);
+  });
+
+  it('names the account and the service: a merchant, a shop customer and a guest are all accounts', () => {
+    expect(ownerKey({ accountId: 7, serviceId: 3 })).toBe('account 7 service 3');
   });
 });
 

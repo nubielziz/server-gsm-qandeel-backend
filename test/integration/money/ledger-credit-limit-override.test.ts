@@ -48,7 +48,7 @@ describe('allowBelowCreditLimit', () => {
     });
     const posted = await post(clawback);
     expect(posted.replayed).toBe(false);
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '-0.4900',
       overdraftLimit: '0.0000',
     });
@@ -89,7 +89,7 @@ describe('allowBelowCreditLimit', () => {
     const again = await post(clawback);
     expect(again).toMatchObject({ id: first.id, replayed: true });
     expect((await ledgerTotals(db)).transactions).toBe(1);
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '-1.0000',
     });
 
@@ -98,7 +98,7 @@ describe('allowBelowCreditLimit', () => {
         input(
           {
             kind: 'adjustment',
-            refType: 'client',
+            refType: 'account',
             lines: adjust({ clientId: merchant.id, amount: m('1'), direction: 'debit' }).lines.slice(0, 1),
           },
           merchant.id,

@@ -50,13 +50,11 @@ const track = (token: string) =>
 const orderOf = async (id: number) => (await db.select().from(s.orders).where(eq(s.orders.id, id)))[0]!;
 
 /** A storefront order stored the way orders were before decision 054: the tracking token as issued. */
-async function oldOrder(customerId?: number) {
-  const id =
-    customerId ??
-    (await db.insert(s.customers).values({ email: 'old@mail.example', name: 'Old Buyer' }).returning())[0]!.id;
+async function oldOrder(accountId?: number) {
+  const id = accountId ?? (await makeCustomer(t, { guest: true, email: 'old@mail.example', name: 'Old Buyer' })).id;
   return insertOrderRow(db, {
     serviceId: world.icloud.serviceId,
-    customerId: id,
+    accountId: id,
     source: 'store',
     imei: APPLE_IMEI,
     publicToken: OLD_TOKEN,
@@ -91,7 +89,7 @@ describe('the tracking token at rest', () => {
     const sealed = sealedRow(t, 'tracking', token);
     await insertOrderRow(db, {
       serviceId: world.icloud.serviceId,
-      customerId: customer.id,
+      accountId: customer.id,
       source: 'store',
       publicToken: null,
       publicTokenHash: sealed.hash,

@@ -52,7 +52,7 @@ export interface WireCampaignDetail extends WireCampaign {
 export interface WireRecipient {
   readonly id: number;
   readonly channel: CampaignChannel;
-  readonly recipientType: 'staff' | 'client' | 'customer';
+  readonly recipientType: 'staff' | 'account';
   readonly recipientId: number;
   readonly recipient: string;
   readonly status: 'delivered' | 'read' | 'queued' | 'sent' | 'failed';

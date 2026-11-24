@@ -1,18 +1,24 @@
-// Integration tests of the API key routes (feature 7b, stage 7): the merchant's own keys under /client/api-keys (MISMATCHES B155) and
-// the staff's view and revocation (GET /admin/clients/:id/api-keys, DELETE /admin/api-keys/:id), on the real application with real
-// Postgres and Redis. A created key is used on the Dhru endpoint to prove that a change or a revocation applies at once.
+// Integration tests of the API key routes (feature 7b, stage 7; decision 064): the own keys of an account of a merchant rank under
+// /client/api-keys (MISMATCHES B155) and the staff's view, creation and revocation (GET and POST /admin/clients/:id/api-keys, DELETE
+// /admin/api-keys/:id), on the real application with real Postgres and Redis. A created key is used on the Dhru endpoint to prove that a
+// change or a revocation applies at once. A retail account holds no key: both creations refuse it from the locked account row, and a
+// rank change revokes every live key.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { desc, eq } from 'drizzle-orm';
 import { TokenService } from '@src/infra/crypto';
 import { type Database, schema as s } from '@src/infra/db';
 import { ApiKeyDirectory } from '@src/modules/identity';
+import { MerchantApiKeyService } from '@src/modules/identity/application/merchant-api-key.service';
+import type { AccountPrincipal } from '@src/modules/identity/ports/account-principal';
 import { type TestApp, createTestApp } from '../../support/app';
 import { adminWith } from '../../support/admin-api';
+import { makeAccount } from '../../support/accounts';
 import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertApiKey } from '../../support/machine-auth';
 import { type PortalClient, portalFor } from '../../support/portal-orders';
+import { rejectionOf } from '../../support/rejection';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
 let t: TestApp;
@@ -172,19 +178,69 @@ describe('POST /client/api-keys', () => {
     expect(await db.select().from(s.apiKeys)).toHaveLength(10);
   });
 
-  it('needs a session, a CSRF token and an approved merchant', async () => {
+  it('needs a session, a CSRF token and an active merchant', async () => {
     const m = await merchant();
     const payload = { name: 'A' };
     expect((await m.withoutCsrf('POST', '/client/api-keys', payload)).status).toBe(403);
     expect((await m.withoutCsrf('POST', '/client/api-keys', payload)).body.code).toBe('CSRF_FAILED');
     const anonymous = await t.app.inject({ method: 'POST', url: '/client/api-keys', payload });
     expect(anonymous.statusCode).toBe(401);
-    const pending = await merchant({ status: 'pending' });
-    const refused = await pending.call('POST', '/client/api-keys', payload);
-    expect(refused.status).toBe(403);
-    expect(refused.body.code).toBe('ACCOUNT_PENDING_APPROVAL');
+    for (const status of ['suspended', 'blocked'] as const) {
+      const refused = await (await merchant({ status })).call('POST', '/client/api-keys', payload);
+      expect(refused.status, status).toBe(403);
+      expect(refused.body.code, status).toBe('ACCOUNT_SUSPENDED');
+    }
     const staff = await adminWith(t, ['*']);
     expect((await staff.post('/client/api-keys', payload)).status).toBe(401);
+    expect(await db.select().from(s.apiKeys)).toEqual([]);
+  });
+
+  it('refuses a retail account with 403 RANK_NOT_ALLOWED on every own key route and stores nothing', async () => {
+    const retail = await portalFor(t, (await makeAccount(t, { rank: 'retail' })).id);
+    const merchantKey = await insertApiKey(t, db, (await makeAccount(t, { rank: 'merchant' })).id);
+    for (const [method, url, payload] of [
+      ['GET', '/client/api-keys', undefined],
+      ['POST', '/client/api-keys', { name: 'A' }],
+      ['PATCH', `/client/api-keys/${merchantKey.id}`, { name: 'x' }],
+      ['DELETE', `/client/api-keys/${merchantKey.id}`, undefined],
+    ] as const) {
+      const res = await retail.call(method, url, payload);
+      expect(res.status, `${method} ${url}`).toBe(403);
+      expect(res.body.code, `${method} ${url}`).toBe('RANK_NOT_ALLOWED');
+    }
+    expect(await db.select().from(s.apiKeys)).toHaveLength(1);
+  });
+
+  it('refuses a retail account from the locked account row even when the gate let the request through (a stale session view)', async () => {
+    const retail = await makeAccount(t, { rank: 'retail' });
+    const service = t.app.get(MerchantApiKeyService, { strict: false });
+    // A principal as the gate would have built it a minute ago, when the account still held a merchant rank.
+    const stale = {
+      kind: 'account',
+      accountId: retail.id,
+      clientId: retail.id,
+      rank: { id: retail.groupId, kind: 'merchant' },
+      stage: 'active',
+      ip: '127.0.0.1',
+      session: { tokenHash: 'unused' },
+    } as unknown as AccountPrincipal;
+    expect(await rejectionOf(service.create(stale, { name: 'A' }))).toMatchObject({
+      code: 'RANK_NOT_ALLOWED',
+      status: 403,
+    });
+    expect(await db.select().from(s.apiKeys)).toEqual([]);
+    // The erased and the missing account sign the caller out, never a rank answer.
+    await db
+      .update(s.clients)
+      .set({ status: 'anonymized', anonymizedAt: clock.now() })
+      .where(eq(s.clients.id, retail.id));
+    expect(await rejectionOf(service.create(stale, { name: 'A' }))).toMatchObject({
+      code: 'UNAUTHORIZED',
+      status: 401,
+    });
+    expect(await rejectionOf(service.create({ ...stale, accountId: 999_999 }, { name: 'A' }))).toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
   });
 });
 
@@ -364,7 +420,7 @@ describe('DELETE /admin/api-keys/:id', () => {
       actorId: staff.staffId,
       actorName: 'Rami K.',
       action: 'revoked API key of',
-      entityType: 'merchant',
+      entityType: 'account',
       entityId: id,
       entityLabel: 'Zain Mobile Hub',
     });
@@ -411,5 +467,127 @@ describe('a suspended merchant', () => {
     await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, id));
     await t.app.get(ApiKeyDirectory).invalidateClient(id);
     expect(refusal(await useKey(key.key))).toBe('This merchant account is suspended.');
+  });
+
+  it('is refused the same way when blocked', async () => {
+    const id = await insertMerchant(db);
+    const key = await insertApiKey(t, db, id);
+    expect(works(await useKey(key.key))).toBe(true);
+    await db.update(s.clients).set({ status: 'blocked' }).where(eq(s.clients.id, id));
+    await t.app.get(ApiKeyDirectory).invalidateClient(id);
+    expect(refusal(await useKey(key.key))).toBe('This merchant account is suspended.');
+  });
+});
+
+describe('POST /admin/clients/:id/api-keys, by rank and status (decision 064)', () => {
+  const body = { name: 'Production server', allowedIps: ['203.0.113.55'] };
+
+  it('creates a key for an active account of a merchant rank, audits it under the entity account and keeps the key out of the log', async () => {
+    const owner = await adminWith(t, ['*'], { name: 'Rami K.' });
+    const id = await insertMerchant(db, { name: 'Zain Mobile Hub' });
+    const res = await owner.post(`/admin/clients/${id}/api-keys`, body);
+    expect(res.status).toBe(201);
+    expect(res.body.key).toMatchObject({ clientId: id, createdByStaff: true });
+    // The key only works from the address it allows.
+    expect(works(await useKey(res.body.secret, '203.0.113.55'))).toBe(true);
+    const [audit] = await db.select().from(s.auditLogs);
+    expect(audit).toMatchObject({
+      actorType: 'staff',
+      action: 'created API key for',
+      entityType: 'account',
+      entityId: id,
+      entityLabel: 'Zain Mobile Hub',
+    });
+    expect(JSON.stringify(audit)).not.toContain(res.body.secret);
+  });
+
+  it('refuses a retail account and a guest with 409 CONFLICT, and writes no key, no audit entry and no notice', async () => {
+    const owner = await adminWith(t, ['*']);
+    const retail = await makeAccount(t, { rank: 'retail' });
+    const guest = await makeAccount(t, { rank: 'retail', guest: true });
+    for (const account of [retail, guest]) {
+      const res = await owner.post(`/admin/clients/${account.id}/api-keys`, body);
+      expect(res.status, String(account.id)).toBe(409);
+      expect(res.body.code, String(account.id)).toBe('CONFLICT');
+    }
+    expect(await db.select().from(s.apiKeys)).toEqual([]);
+    expect(await db.select().from(s.auditLogs)).toEqual([]);
+    expect(await db.select().from(s.notifications)).toEqual([]);
+  });
+
+  it('refuses a suspended, blocked or erased merchant with 409 NOT_ACTIVE and an unknown account with 404', async () => {
+    const owner = await adminWith(t, ['*']);
+    for (const columns of [
+      { status: 'suspended' },
+      { status: 'blocked' },
+      { status: 'anonymized', anonymizedAt: clock.now() },
+    ] as const) {
+      const id = await insertMerchant(db, columns);
+      const res = await owner.post(`/admin/clients/${id}/api-keys`, body);
+      expect(res.status, columns.status).toBe(409);
+      expect(res.body.code, columns.status).toBe('NOT_ACTIVE');
+    }
+    expect((await owner.post('/admin/clients/999999/api-keys', body)).status).toBe(404);
+    expect(await db.select().from(s.apiKeys)).toEqual([]);
+  });
+
+  it('still lists the keys of an account that left the merchant rank, all revoked', async () => {
+    const staff = await adminWith(t, ['api_keys:read']);
+    const id = await insertMerchant(db);
+    const key = await insertApiKey(t, db, id, { name: 'old', revokedAt: clock.now() });
+    const retail = await makeAccount(t, { rank: 'retail' });
+    await db.update(s.clients).set({ groupId: retail.groupId }).where(eq(s.clients.id, id));
+    const res = await staff.get(`/admin/clients/${id}/api-keys`);
+    expect(res.status).toBe(200);
+    expect(res.body.map((row: { id: number }) => row.id)).toEqual([key.id]);
+    expect((await staff.get(`/admin/clients/${retail.id}/api-keys`)).body).toEqual([]);
+  });
+});
+
+describe('ApiKeyDirectory.revokeLiveKeysOf', () => {
+  it('revokes every live key of the account and no other, leaves an earlier revocation time alone, and applies at once once the views are dropped', async () => {
+    const id = await insertMerchant(db);
+    const other = await insertMerchant(db);
+    const earlier = new Date(clock.nowMs() - DAY);
+    const first = await insertApiKey(t, db, id, { name: 'first' });
+    const second = await insertApiKey(t, db, id, { name: 'second', expiresAt: new Date(clock.nowMs() + DAY) });
+    const done = await insertApiKey(t, db, id, { name: 'done', revokedAt: earlier });
+    const theirs = await insertApiKey(t, db, other, { name: 'theirs' });
+    expect(works(await useKey(first.key))).toBe(true);
+
+    const directory = t.app.get(ApiKeyDirectory);
+    const count = await db.transaction((tx) => directory.revokeLiveKeysOf(tx, id));
+    expect(count).toBe(2);
+    // The views are cached for a minute: the transaction drops them, as the rank change does after its commit (revoked keys included).
+    await directory.invalidateClient(id);
+
+    const rows = await db.select().from(s.apiKeys).where(eq(s.apiKeys.clientId, id));
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    expect(byId.get(first.id)?.revokedAt?.toISOString()).toBe(clock.now().toISOString());
+    expect(byId.get(second.id)?.revokedAt?.toISOString()).toBe(clock.now().toISOString());
+    expect(byId.get(done.id)?.revokedAt?.toISOString()).toBe(earlier.toISOString());
+    expect(refusal(await useKey(first.key))).toBe('Authentication Failed');
+    expect(refusal(await useKey(second.key))).toBe('Authentication Failed');
+    expect(works(await useKey(theirs.key))).toBe(true);
+    // A second call finds nothing to revoke.
+    expect(await db.transaction((tx) => directory.revokeLiveKeysOf(tx, id))).toBe(0);
+  });
+
+  it('never brings a revoked key back when the account returns to a merchant rank', async () => {
+    const id = await insertMerchant(db);
+    const [before] = await db.select({ groupId: s.clients.groupId }).from(s.clients).where(eq(s.clients.id, id));
+    const merchantGroup = before!.groupId;
+    const key = await insertApiKey(t, db, id);
+    const directory = t.app.get(ApiKeyDirectory);
+    await db.transaction((tx) => directory.revokeLiveKeysOf(tx, id));
+    const retail = await makeAccount(t, { rank: 'retail' });
+    await db.update(s.clients).set({ groupId: retail.groupId }).where(eq(s.clients.id, id));
+    await directory.invalidateClient(id);
+    expect(refusal(await useKey(key.key))).toBe('Authentication Failed');
+    await db.update(s.clients).set({ groupId: merchantGroup }).where(eq(s.clients.id, id));
+    await directory.invalidateClient(id);
+    expect(refusal(await useKey(key.key))).toBe('Authentication Failed');
+    const [row] = await db.select().from(s.apiKeys).where(eq(s.apiKeys.id, key.id));
+    expect(row?.revokedAt).not.toBeNull();
   });
 });

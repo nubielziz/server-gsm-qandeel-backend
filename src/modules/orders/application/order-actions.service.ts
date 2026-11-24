@@ -4,11 +4,11 @@
 import { Injectable } from '@nestjs/common';
 import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
-import { type PermissionHolder, requirePermission } from '../../identity';
+import { AccountDirectory, type PermissionHolder, requirePermission } from '../../identity';
 import { B2cRefunds } from '../../money';
 import { AuditService } from '../../platform';
 import { SYSTEM_ACTOR } from '../domain/order-timeline';
-import { merchantOf } from '../infra/foreign-reads.repository';
+import { isPrepaidOrder } from '../domain/door';
 import { findOrder, insertEvents, setAdminNote } from '../infra/order.repository';
 import { OrderTransitions, type TransitionRequest } from './order-transitions';
 
@@ -58,6 +58,7 @@ export class OrderActionsService {
     private readonly transitions: OrderTransitions,
     private readonly refunds: B2cRefunds,
     private readonly audit: AuditService,
+    private readonly directory: AccountDirectory,
   ) {}
 
   /**
@@ -122,17 +123,21 @@ export class OrderActionsService {
   /**
    * Reopens a completed order: it goes back to `processing` and its revenue returns to the hold.
    *
+   * Why: the revenue of a hold-and-settle order goes back to the merchant hold, which an account that changed to a retail rank no longer
+   * uses: that reopen is refused and the order is refunded instead (decision 064).
+   *
    * @param staff the acting staff member
    * @param orderId the order
    * @param reason the optional reason
-   * @throws {AppError} `NOT_FOUND`, `ORDER_NOT_COMPLETED`, `ORDER_NOT_OPEN`
+   * @throws {AppError} `NOT_FOUND`, `ORDER_NOT_COMPLETED`, `ORDER_NOT_OPEN`, `RANK_CHANGED` (409: the order's account lives on a store
+   *   balance now; "Refund the order instead.")
    */
   async reopen(staff: StaffActor, orderId: number, reason?: string): Promise<void> {
     await this.run(staff, orderId, { kind: 'reopen' }, ORDER_AUDIT_ACTIONS.reopen, { reason });
   }
 
   /**
-   * Refunds a completed merchant order: the revenue goes back to the wallet, the cost stays.
+   * Refunds a completed order held from a wallet: the revenue goes back to the account's live wallet, the cost stays.
    *
    * @param staff the acting staff member
    * @param orderId the order
@@ -184,12 +189,13 @@ export class OrderActionsService {
       if (!order) throw new AppError('NOT_FOUND', { detail: 'No order with this id.' });
       await setAdminNote(tx, orderId, body);
       await insertEvents(tx, [{ orderId, type: 'note', actorType: 'staff', actorId: staff.staffId, data: { body } }]);
-      const merchant = order.clientId === null ? undefined : await merchantOf(tx, order.clientId);
+      // The label names the account for an order held from a wallet only, as before; a shop order's buyer stays out of the audit text.
+      const buyer = isPrepaidOrder(order) ? undefined : await this.directory.findById(tx, order.accountId);
       await this.audit.record(tx, {
         action: ORDER_AUDIT_ACTIONS.note,
         entityType: 'order',
         entityId: orderId,
-        entityLabel: merchant ? `ORD-${orderId} for ${merchant.name}` : `ORD-${orderId}`,
+        entityLabel: buyer ? `ORD-${orderId} for ${buyer.name}` : `ORD-${orderId}`,
         before: { adminNote: order.adminNote },
         after: { adminNote: body },
       });

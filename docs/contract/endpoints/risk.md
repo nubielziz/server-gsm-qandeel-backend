@@ -44,7 +44,7 @@ Frontend features covering this module: `customers`, `risk` (rules in `RULES.md`
 ## GET /admin/data-requests
 
 - **Map**: Data export and deletion requests and the deadline to fulfil them. (طلبات التصدير والحذف ومهلة تنفيذها) · staff-permission `customers:privacy` · stage 18 · tables data_requests
-- **Frontend**: `listDataRequests` (src/features/customers/api/dataRequests.ts:21) · params `query?: ListQuery` · returns `ListResult<DataRequest>` · success 200 · assumed contract
+- **Frontend**: `listDataRequests` (src/features/accounts/api/dataRequests.ts:23) · params `query?: ListQuery` · returns `ListResult<DataRequest>` · success 200 · assumed contract
 - **Query**: Paging 25 per page. Filters:
 - status: repeat = IN. Default open&in_progress; the menu sends a single status; 'All statuses' sends none.
 - kind: export|erasure.
@@ -58,7 +58,7 @@ _sort is one of requestedAt|dueAt|status; the tab defaults to dueAt asc (lib/fil
 ## GET /admin/data-requests/:id
 
 - **Map**: Data export and deletion requests and the deadline to fulfil them. (طلبات التصدير والحذف ومهلة تنفيذها) · staff-permission `customers:privacy` · stage 18 · tables data_requests
-- **Frontend**: `getDataRequest` (src/features/customers/api/dataRequests.ts:30) · params `id: number` · returns `DataRequest` · success 200 · assumed contract
+- **Frontend**: `getDataRequest` (src/features/accounts/api/dataRequests.ts:32) · params `id: number` · returns `DataRequest` · success 200 · assumed contract
 - **Request**: :id is the numeric request id (shown as DSR-<id>).
 - **Response**: Same shape as a list row.
 - **Errors**: 404 NOT_FOUND (no request with that id); 403 FORBIDDEN (caller lacks customers:privacy)
@@ -67,7 +67,7 @@ _sort is one of requestedAt|dueAt|status; the tab defaults to dueAt asc (lib/fil
 ## PATCH /admin/data-requests/:id
 
 - **Map**: Data export and deletion requests and the deadline to fulfil them. (طلبات التصدير والحذف ومهلة تنفيذها) · staff-permission `customers:privacy` · stage 18 · tables data_requests
-- **Frontend**: `updateDataRequest` (src/features/customers/api/dataRequests.ts:39) · params `id: number`, `body: UpdateDataRequestBody` · returns `DataRequest` · success 200 · assumed contract
+- **Frontend**: `updateDataRequest` (src/features/accounts/api/dataRequests.ts:41) · params `id: number`, `body: UpdateDataRequestBody` · returns `DataRequest` · success 200 · assumed contract
 - **Request**: Body {status: in_progress|completed|rejected, note?}.
 - Moves: open to in_progress, completed or rejected; in_progress to completed or rejected.
 - completed sets completed_at now. Every move sets handled_by = staff.

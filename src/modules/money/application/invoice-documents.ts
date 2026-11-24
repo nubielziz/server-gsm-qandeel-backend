@@ -1,4 +1,5 @@
-// InvoiceDocuments: renders the PDF of a merchant invoice when it is issued or paid and keeps it in `files` (decision 030).
+// InvoiceDocuments: renders the PDF of a merchant invoice when it is issued or paid and keeps it in `files` (decision 030), owned by the
+// account.
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { DbService } from '../../../infra/db';
@@ -14,7 +15,9 @@ const day = (date: Date | null): string => (date ? date.toISOString().slice(0, 1
  *
  * Why: decision 030: an invoice PDF is rendered when the invoice is issued or paid and stored in `files`
  * (`invoices.pdf_file_id`), so staff download it from `GET /admin/files/:id` and the merchant from `GET /client/files/:id`. The file
- * is owned by the merchant. It is written after the commit of the use case that issued or paid the invoice, and a failure
+ * is owned by the account the invoice is for (`('account', accountId)`, decision 064). Only an invoice of the merchant wallet gets a
+ * PDF: a store top-up (stored value is no taxable sale), a storefront receipt (the receipt job renders it) and a retired statement do not.
+ * It is written after the commit of the use case that issued or paid the invoice, and a failure
  * (storage down) is logged and leaves `pdf_file_id` as it was: the money and the status never depend on a document. The paid PDF
  * replaces the open one.
  *
@@ -34,19 +37,19 @@ export class InvoiceDocuments {
   /**
    * Renders the invoice as it is now and attaches it. Never throws.
    *
-   * @param invoiceId the invoice (a merchant's; a storefront receipt is not rendered here)
+   * @param invoiceId the invoice (one of the merchant wallet; a store top-up or a storefront receipt is not rendered here)
    */
   async render(invoiceId: number): Promise<void> {
     try {
       const invoice = await findInvoice(this.db.db, invoiceId);
-      if (!invoice || invoice.clientId === null) return;
-      const merchant = (await loadBillingMerchants(this.db.db, [invoice.clientId])).get(invoice.clientId);
+      if (!invoice || invoice.walletKind !== 'client_wallet') return;
+      const merchant = (await loadBillingMerchants(this.db.db, [invoice.accountId])).get(invoice.accountId);
       const bytes = await this.pdf.render(
-        this.documentOf(invoice, merchant?.name ?? `Merchant ${invoice.clientId}`, merchant?.country ?? ''),
+        this.documentOf(invoice, merchant?.name ?? `Merchant ${invoice.accountId}`, merchant?.country ?? ''),
       );
       const file = await this.files.store(this.db.db, {
-        ownerType: 'client',
-        ownerId: invoice.clientId,
+        ownerType: 'account',
+        ownerId: invoice.accountId,
         filename: `${invoice.number}.pdf`,
         mime: 'application/pdf',
         bytes,

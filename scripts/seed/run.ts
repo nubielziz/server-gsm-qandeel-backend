@@ -33,16 +33,17 @@ export interface Seeder {
 /**
  * The seeders, in the order they run: identity first (staff are referenced by almost everything), then platform, money, billing
  * (gateways, top-ups and invoices: after the money seed, whose deposit journals they link to) and catalog (which needs the
- * merchant groups), the customers (the currencies are money's), the suppliers with their links (they need the services), then
+ * merchant groups), the retail accounts of the demo customers and their rows of the legacy id map (the currencies are money's; the merchant
+ * accounts are identity's), the suppliers with their links (they need the services), then
  * the orders, which need the merchants, the services, the suppliers and the ledger the others seed, then the supplier call log,
  * whose rows point at orders, the health checks and job runs (a supplier's check needs the supplier), and last the storefront (retail prices, listings, TAC
  * catalogue, content pages, help articles, legal documents), which needs the services and the retail group, after it the
- * storefront money (orders, payments, refunds and disputes of the customers), which needs the services, the gateways, the ledger
- * and the legal documents, then the support tickets and reply templates (they refer to staff, merchants, customers and orders the
- * others seed; a customer or an order that is not seeded leaves the ticket's requester or order link empty, never an error),
- * the growth pages (the demo's left checkouts with the guest customers of their emails and their marketing consent), which need
- * the currencies and the services (the customers seeder goes first, so an email both know keeps its row), and last the risk
- * rules, blocklist and data requests (they need the customers, the TAC catalogue and the storefront orders).
+ * storefront money (orders, payments, refunds and disputes of the shoppers), which needs the services, the gateways, the ledger
+ * and the legal documents, then the support tickets and reply templates (they refer to staff, accounts and orders the
+ * others seed; an account or an order that is not seeded leaves the ticket's requester or order link empty, never an error),
+ * the growth pages (the demo's left checkouts with the guest accounts of their emails and their marketing consent), which need
+ * the currencies, the services and the retail rank (the retail seeder goes first, so an address both know keeps its guest row), and last the
+ * risk rules, blocklist and data requests (they need the retail accounts, the TAC catalogue and the storefront orders).
  */
 export const SEEDERS: readonly Seeder[] = [
   { module: 'identity', run: seedIdentity },

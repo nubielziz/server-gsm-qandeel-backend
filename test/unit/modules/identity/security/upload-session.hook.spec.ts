@@ -1,6 +1,7 @@
-// Unit tests of whose session cookie a multipart request must carry before its body is read (decision 053).
+// Unit tests of whose session cookie a multipart request must carry, and which rank its route serves, before its body is read
+// (decisions 053 and 064).
 import { describe, expect, it } from 'bun:test';
-import { uploadSessionSubject } from '@src/modules/identity/security/upload-session.hook';
+import { uploadSessionSubject, uploadSessionTarget } from '@src/modules/identity/security/upload-session.hook';
 // Importing a contracts file registers its routes in the process-wide registry the hook reads.
 import '@src/modules/platform/contracts/files.contracts';
 import '@src/modules/support/contracts/ticket-live.contracts';
@@ -12,8 +13,9 @@ const MULTIPART = 'multipart/form-data; boundary=x';
 
 describe('uploadSessionSubject', () => {
   it('names the audience of each session-cookie upload route', () => {
-    expect(uploadSessionSubject('/client/files', 'POST', MULTIPART)).toBe('client');
-    expect(uploadSessionSubject('/store/v1/files', 'POST', MULTIPART)).toBe('customer');
+    expect(uploadSessionSubject('/client/files', 'POST', MULTIPART)).toBe('account');
+    // Both account access kinds are the one subject: there is one session cookie (decision 064).
+    expect(uploadSessionSubject('/store/v1/files', 'POST', MULTIPART)).toBe('account');
     expect(uploadSessionSubject('/admin/service-listings/:id/image', 'POST', MULTIPART)).toBe('staff');
     expect(uploadSessionSubject('/admin/payment-gateways/:id/logo', 'POST', MULTIPART)).toBe('staff');
     expect(uploadSessionSubject('/admin/support-tickets/:id/files', 'POST', MULTIPART)).toBe('staff');
@@ -30,13 +32,13 @@ describe('uploadSessionSubject', () => {
     expect(uploadSessionSubject('/client/files', 'POST', undefined)).toBeUndefined();
     expect(uploadSessionSubject('/admin/staff', 'POST', MULTIPART)).toBeUndefined();
     expect(uploadSessionSubject(undefined, 'POST', MULTIPART)).toBeUndefined();
-    expect(uploadSessionSubject('/client/files', 'POST', 'Multipart/Form-Data; boundary=x')).toBe('client');
+    expect(uploadSessionSubject('/client/files', 'POST', 'Multipart/Form-Data; boundary=x')).toBe('account');
   });
 
   it('reads the media type the way the body parser does: leading whitespace does not skip the stage', () => {
     // Fastify drops leading whitespace before it picks the parser, so a type that starts with U+00A0 still reaches the multipart parser.
-    expect(uploadSessionSubject('/client/files', 'POST', '\u00a0multipart/form-data; boundary=x')).toBe('client');
-    expect(uploadSessionSubject('/store/v1/files', 'POST', '\u000bMultipart/Form-Data; boundary=x')).toBe('customer');
+    expect(uploadSessionSubject('/client/files', 'POST', '\u00a0multipart/form-data; boundary=x')).toBe('account');
+    expect(uploadSessionSubject('/store/v1/files', 'POST', '\u000bMultipart/Form-Data; boundary=x')).toBe('account');
     expect(uploadSessionSubject('/admin/support-tickets/:id/files', 'POST', '\u00a0\u00a0multipart/form-data')).toBe(
       'staff',
     );
@@ -47,5 +49,25 @@ describe('uploadSessionSubject', () => {
     // No GET contract exists on an upload route, so a HEAD request is not judged (and a POST is).
     expect(uploadSessionSubject('/client/files', 'HEAD', MULTIPART)).toBeUndefined();
     expect(uploadSessionSubject('/client/files', 'GET', MULTIPART)).toBeUndefined();
+  });
+});
+
+describe('uploadSessionTarget (the upload pre-check, decision 064)', () => {
+  it('hands the rank of the route with the audience: the merchant upload serves merchants, the shop upload the retail rank', () => {
+    expect(uploadSessionTarget('/client/files', 'POST', MULTIPART)).toEqual({ subject: 'account', rank: 'merchant' });
+    expect(uploadSessionTarget('/store/v1/files', 'POST', MULTIPART)).toEqual({ subject: 'account', rank: 'retail' });
+  });
+
+  it('has no rank for a staff upload', () => {
+    expect(uploadSessionTarget('/admin/support-tickets/:id/files', 'POST', MULTIPART)).toEqual({
+      subject: 'staff',
+      rank: null,
+    });
+  });
+
+  it('judges what uploadSessionSubject judges and nothing else', () => {
+    expect(uploadSessionTarget('/client/files', 'POST', 'application/json')).toBeUndefined();
+    expect(uploadSessionTarget('/api/index.php', 'POST', MULTIPART)).toBeUndefined();
+    expect(uploadSessionTarget(undefined, 'POST', MULTIPART)).toBeUndefined();
   });
 });

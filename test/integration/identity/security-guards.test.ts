@@ -1,20 +1,19 @@
-// Integration tests of the session guards and the dispatcher (decision 018) through real HTTP: staff, merchant and customer
-// sessions (accept and refuse cases, expiry, pending stages, suspension), permissions, CSRF and the Origin check, and the
-// machine kinds that no longer fall back to a placeholder. Real Postgres and Redis; sessions are made by the real SessionService.
+// Integration tests of the session guards and the dispatcher (decisions 018 and 064) through real HTTP: staff and account sessions (accept
+// and refuse cases, expiry, pending stages, suspension, the rank gate), permissions, CSRF and the Origin check, and the machine kinds
+// that no longer fall back to a placeholder. Real Postgres and Redis; sessions are made by the real SessionService.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { schema as s } from '@src/infra/db';
-import { CustomersAccountsModule } from '@src/modules/customers';
 import {
   AccessHandlers,
   RolePermissions,
   SessionAuthenticator,
   SessionService,
   SessionSubjects,
-  type SessionSubjectResolver,
 } from '@src/modules/identity';
 import { ACCESS_KINDS } from '@src/common/contract';
+import { makeAccount } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { DAY, MINUTE, SECOND, TestClock } from '../../support/clock';
 import {
@@ -35,22 +34,13 @@ const CONSOLE = 'https://console.example.com';
 /** The app's clock: sessions end and go idle when the test moves it, nothing is waited for (decision 031). */
 const clock = new TestClock();
 let t: TestApp;
-let customers: Map<number, 'ok' | 'suspended' | 'gone'>;
 
 beforeAll(async () => {
   t = await createTestApp({
     controllers: [SecurityTestController, TestController],
     env: { CORS_ORIGINS: CONSOLE },
     clock,
-    // The customers module registers the real customer resolver (feature 14b); this test stands in for it with a map of states.
-    withoutModules: [CustomersAccountsModule],
   });
-  customers = new Map();
-  const resolver: SessionSubjectResolver = {
-    subjectType: 'customer',
-    resolve: (id) => Promise.resolve({ state: customers.get(id) ?? 'gone' }),
-  };
-  t.app.get(SessionSubjects).register(resolver);
 });
 afterAll(async () => {
   await t.close();
@@ -60,7 +50,6 @@ beforeEach(async () => {
   clock.reset();
   await resetDb();
   await clearIdentityCaches(t);
-  customers.clear();
 });
 
 const get = (url: string, headers: Record<string, string> = {}) => t.app.inject({ method: 'GET', url, headers });
@@ -171,7 +160,7 @@ describe('staff session guard', () => {
       permissions: ['orders:read', 'staff:*'],
     });
     const { db } = await testDb();
-    const merchant = await openSession(t, { type: 'client', id: await insertMerchant(db) });
+    const merchant = await openSession(t, { type: 'account', id: await insertMerchant(db) });
     expect((await get('/client/t/sec/as-staff', merchant.headers)).statusCode).toBe(401);
   });
 
@@ -224,7 +213,7 @@ describe('staff session guard', () => {
   it('does not accept a merchant session token as a staff cookie', async () => {
     const { db } = await testDb();
     const merchantId = await insertMerchant(db);
-    const merchant = await openSession(t, { type: 'client', id: merchantId });
+    const merchant = await openSession(t, { type: 'account', id: merchantId });
     const asStaffCookie = sessionOf(t, 'staff', merchant.token);
     expect((await get('/admin/t/sec/session', asStaffCookie.headers)).statusCode).toBe(401);
   });
@@ -359,13 +348,13 @@ describe('CSRF guard', () => {
     expect((await post('/admin/t/sec/write', session.mutationHeaders)).json().code).toBe('FORBIDDEN');
   });
 
-  it('applies to merchants and customers too', async () => {
+  it('applies to accounts of both ranks too', async () => {
     const { db } = await testDb();
-    const merchant = await openSession(t, { type: 'client', id: await insertMerchant(db) });
+    const merchant = await openSession(t, { type: 'account', id: await insertMerchant(db) });
     expect((await post('/client/t/sec/write', merchant.headers)).json().code).toBe('CSRF_FAILED');
     expect((await post('/client/t/sec/write', merchant.mutationHeaders)).statusCode).toBe(200);
-    customers.set(5, 'ok');
-    const customer = await openSession(t, { type: 'customer', id: 5 });
+    const retail = await makeAccount(t, { rank: 'retail' });
+    const customer = await openSession(t, { type: 'account', id: retail.id });
     expect((await post('/store/v1/t/sec/write', customer.headers)).json().code).toBe('CSRF_FAILED');
     expect((await post('/store/v1/t/sec/write', customer.mutationHeaders)).statusCode).toBe(200);
   });
@@ -413,34 +402,56 @@ describe('Origin check of session-less mutations', () => {
 });
 
 describe('merchant session guard', () => {
-  it('accepts an active merchant, and refuses one that is still pending approval unless the route opts in (B153)', async () => {
+  it('accepts an active merchant and hands the handler the one account principal with the merchant rank kind', async () => {
     const { db } = await testDb();
     const active = await insertMerchant(db, { status: 'active' });
-    const res = await get('/client/t/sec/session', (await openSession(t, { type: 'client', id: active })).headers);
+    const res = await get('/client/t/sec/session', (await openSession(t, { type: 'account', id: active })).headers);
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true, kind: 'merchant', id: active, stage: 'active' });
+  });
 
-    // Default deny: 403 ACCOUNT_PENDING_APPROVAL, which never signs the merchant out.
-    const pending = await insertMerchant(db, { status: 'pending' });
-    const session = await openSession(t, { type: 'client', id: pending });
-    const refused = await get('/client/t/sec/session', session.headers);
-    expect(refused.statusCode).toBe(403);
-    expect(refused.json().code).toBe('ACCOUNT_PENDING_APPROVAL');
-    const write = await t.app.inject({ method: 'POST', url: '/client/t/sec/write', headers: session.mutationHeaders });
-    expect(write.json().code).toBe('ACCOUNT_PENDING_APPROVAL');
+  it('refuses a retail account on a merchant route with 403 RANK_NOT_ALLOWED, which never signs it out (the rank gate)', async () => {
+    const retail = await makeAccount(t, { rank: 'retail' });
+    const session = await openSession(t, { type: 'account', id: retail.id });
+    for (const res of [
+      await get('/client/t/sec/session', session.headers),
+      await post('/client/t/sec/write', session.mutationHeaders),
+    ]) {
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ code: 'RANK_NOT_ALLOWED', status: 403 });
+    }
+    const { db } = await testDb();
     const rows = await db.select().from(s.sessions).where(eq(s.sessions.id, session.sessionId));
     expect(rows[0]!.revokedAt).toBeNull();
+    // It is still signed in on its own routes.
+    expect((await get('/store/v1/t/sec/session', session.headers)).statusCode).toBe(200);
+  });
 
-    // Approval applies once the cached view of the session is dropped.
-    await db.update(s.clients).set({ status: 'active' }).where(eq(s.clients.id, pending));
-    await t.app.get(SessionService).invalidateSubject('client', pending);
+  it('judges the rank after the stage and the suspension: a pending step is 401 and a suspended account 403 ACCOUNT_SUSPENDED', async () => {
+    const retail = await makeAccount(t, { rank: 'retail' });
+    const pending = await openSession(t, { type: 'account', id: retail.id }, { stage: 'pending_totp' });
+    expect((await get('/client/t/sec/session', pending.headers)).statusCode).toBe(401);
+    const suspended = await makeAccount(t, { rank: 'retail', status: 'suspended' });
+    const session = await openSession(t, { type: 'account', id: suspended.id });
+    expect((await get('/client/t/sec/session', session.headers)).json().code).toBe('ACCOUNT_SUSPENDED');
+  });
+
+  it('sees a rank change on the next request once the cached view is dropped', async () => {
+    const { db } = await testDb();
+    const id = await insertMerchant(db);
+    const session = await openSession(t, { type: 'account', id });
     expect((await get('/client/t/sec/session', session.headers)).statusCode).toBe(200);
+    const retailRank = (await makeAccount(t, { rank: 'retail' })).groupId;
+    await db.update(s.clients).set({ groupId: retailRank }).where(eq(s.clients.id, id));
+    await t.app.get(SessionService).invalidateSubject('account', id);
+    expect((await get('/client/t/sec/session', session.headers)).json().code).toBe('RANK_NOT_ALLOWED');
+    expect((await get('/store/v1/t/sec/session', session.headers)).statusCode).toBe(200);
   });
 
   it('refuses a suspended merchant with 403 ACCOUNT_SUSPENDED and revokes their sessions', async () => {
     const { db } = await testDb();
     const id = await insertMerchant(db, { status: 'suspended' });
-    const session = await openSession(t, { type: 'client', id });
+    const session = await openSession(t, { type: 'account', id });
     const refused = await get('/client/t/sec/session', session.headers);
     expect(refused.statusCode).toBe(403);
     expect(refused.json().code).toBe('ACCOUNT_SUSPENDED');
@@ -450,7 +461,7 @@ describe('merchant session guard', () => {
 
   it('keeps a merchant out of the console and a staff member out of the portal', async () => {
     const { db } = await testDb();
-    const merchant = await openSession(t, { type: 'client', id: await insertMerchant(db) });
+    const merchant = await openSession(t, { type: 'account', id: await insertMerchant(db) });
     expect((await get('/admin/t/sec/session', merchant.headers)).statusCode).toBe(401);
     const { session } = await signInStaff(t, ['*']);
     expect((await get('/client/t/sec/session', session.headers)).statusCode).toBe(401);
@@ -459,8 +470,8 @@ describe('merchant session guard', () => {
   it('uses the merchant idle limit of seven days', async () => {
     const { db } = await testDb();
     const merchantId = await insertMerchant(db);
-    const atLimit = await openSession(t, { type: 'client', id: merchantId });
-    const past = await openSession(t, { type: 'client', id: merchantId });
+    const atLimit = await openSession(t, { type: 'account', id: merchantId });
+    const past = await openSession(t, { type: 'account', id: merchantId });
     clock.advance(7 * DAY);
     expect((await get('/client/t/sec/session', atLimit.headers)).statusCode).toBe(200);
     clock.advance(1);
@@ -468,42 +479,49 @@ describe('merchant session guard', () => {
   });
 });
 
-describe('customer session guard', () => {
-  it('accepts an active customer and refuses suspended and unknown ones', async () => {
-    customers.set(11, 'ok');
-    customers.set(12, 'suspended');
-    const ok = await openSession(t, { type: 'customer', id: 11 });
-    const res = await get('/store/v1/t/sec/session', ok.headers);
-    expect(res.json()).toEqual({ ok: true, kind: 'customer', id: 11, stage: 'active' });
+describe('retail account session guard', () => {
+  it('accepts an active retail account with the retail rank kind, and refuses suspended, blocked, anonymized, guest and unknown ones', async () => {
+    const ok = await makeAccount(t, { rank: 'retail' });
+    const res = await get('/store/v1/t/sec/session', (await openSession(t, { type: 'account', id: ok.id })).headers);
+    expect(res.json()).toEqual({ ok: true, kind: 'retail', id: ok.id, stage: 'active' });
 
-    const suspended = await openSession(t, { type: 'customer', id: 12 });
-    const refused = await get('/store/v1/t/sec/session', suspended.headers);
-    expect(refused.statusCode).toBe(403);
-    expect(refused.json().code).toBe('ACCOUNT_SUSPENDED');
+    for (const status of ['suspended', 'blocked'] as const) {
+      const frozen = await makeAccount(t, { rank: 'retail', status });
+      const refused = await get(
+        '/store/v1/t/sec/session',
+        (await openSession(t, { type: 'account', id: frozen.id })).headers,
+      );
+      expect(refused.statusCode, status).toBe(403);
+      expect(refused.json().code, status).toBe('ACCOUNT_SUSPENDED');
+    }
 
-    const gone = await openSession(t, { type: 'customer', id: 13 });
-    expect((await get('/store/v1/t/sec/session', gone.headers)).statusCode).toBe(401);
-  });
-
-  it('refuses every customer session while no resolver is registered (fail closed)', async () => {
-    const bare = await createTestApp({
-      controllers: [SecurityTestController],
-      withoutModules: [CustomersAccountsModule],
-    });
-    try {
-      expect(bare.app.get(SessionSubjects).has('customer')).toBe(false);
-      const session = await openSession(bare, { type: 'customer', id: 1 });
-      expect(
-        (await bare.app.inject({ method: 'GET', url: '/store/v1/t/sec/session', headers: session.headers })).statusCode,
-      ).toBe(401);
-    } finally {
-      await bare.close();
+    // Gone: erased, a guest row (it cannot sign in) and an id no row has.
+    const anonymized = await makeAccount(t, { rank: 'retail', status: 'anonymized', anonymizedAt: clock.now() });
+    const guest = await makeAccount(t, { rank: 'retail', guest: true });
+    for (const id of [anonymized.id, guest.id, 999_999]) {
+      const gone = await openSession(t, { type: 'account', id });
+      expect((await get('/store/v1/t/sec/session', gone.headers)).statusCode, String(id)).toBe(401);
     }
   });
 
-  it('refuses a second resolver for the same subject type', () => {
+  it('refuses a merchant account on a retail route with 403 RANK_NOT_ALLOWED', async () => {
+    const { db } = await testDb();
+    const session = await openSession(t, { type: 'account', id: await insertMerchant(db) });
+    const res = await get('/store/v1/t/sec/session', session.headers);
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ code: 'RANK_NOT_ALLOWED' });
+  });
+
+  it('knows no subject type but staff and account, and refuses a second resolver for either', () => {
+    const subjects = t.app.get(SessionSubjects);
+    expect(subjects.has('staff')).toBe(true);
+    expect(subjects.has('account')).toBe(true);
+    expect(subjects.has('customer' as never)).toBe(false);
+    expect(() => subjects.register({ subjectType: 'staff', resolve: () => Promise.resolve({ state: 'ok' }) })).toThrow(
+      /already registered/,
+    );
     expect(() =>
-      t.app.get(SessionSubjects).register({ subjectType: 'staff', resolve: () => Promise.resolve({ state: 'ok' }) }),
+      subjects.register({ subjectType: 'account', resolve: () => Promise.resolve({ state: 'ok' }) }),
     ).toThrow(/already registered/);
   });
 });

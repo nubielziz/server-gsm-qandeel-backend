@@ -29,9 +29,13 @@ export const AlertEventShape = z.object({
   status: z.enum(ALERT_STATUSES),
   severity: z.enum(ALERT_SEVERITIES).describe('Copied from the rule when the alert fired.'),
   value: z.number().describe('The measured value that fired the alert, in the metric unit.'),
-  subjectType: z.enum(ALERT_SUBJECT_TYPES).describe('Never null: `system` when the alert belongs to no record.'),
+  subjectType: z
+    .enum(ALERT_SUBJECT_TYPES)
+    .describe(
+      'Never null: `system` when the alert belongs to no record; `account` is an account of either rank (the id is the account id).',
+    ),
   subjectId: z.number().int().min(0).describe('`0` when the subject has no id (the platform, a queue); never null.'),
-  subjectLabel: z.string().nullable().describe('The supplier or queue name; `null` for a system alert.'),
+  subjectLabel: z.string().nullable().describe('The supplier, queue or account name; `null` for a system alert.'),
   startedAt: zIsoDateTime,
   acknowledgedAt: zIsoDateTime.nullable(),
   acknowledgedBy: zStaffRef.nullable(),

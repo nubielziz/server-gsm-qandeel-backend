@@ -1,5 +1,6 @@
 // PriceChangeScan: after a price change, finds the merchants who ordered a service in the last 30 days and would now pay a different
-// price, and writes one outbox event `service.price_changed` for each (user rule 9 (5), MISMATCHES B117; feature 7b).
+// price, and writes one outbox event `service.price_changed` for each (user rule 9 (5), MISMATCHES B117; feature 7b). It watches
+// accounts of a merchant rank and their merchant-door orders only (decision 064): a retail account pays the shop price.
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { DbService } from '../../../infra/db';
@@ -38,8 +39,10 @@ export interface PriceScanResult {
  * orders, it resolves the price a new order would pay now and compares it with the price of the merchant's latest order. A
  * difference is announced once: the outbox row is written only if no row for that change exists (`OutboxService.hasEvent`), and the
  * digest of the notifications is idempotent on the same event as well. The event carries ids and the two prices (public to the merchant).
+ * Only accounts of a merchant rank are read, and only their orders through a merchant door (never a shop order): a retail buyer with a
+ * recent shop order, or a merchant's old shop order from before it was raised, would otherwise be told about a price it never saw.
  *
- * Side effects: `schedule` adds a delayed job to the `maintenance` queue; `run` reads `orders`, `clients` and the pricing tables and
+ * Side effects: `schedule` adds a delayed job to the `maintenance` queue; `run` reads `orders`, `clients`, `client_groups` and the pricing tables and
  * inserts `outbox_events` rows (type `service.price_changed`, aggregate `services`).
  *
  * @see docs/queues.md (maintenance, service_price_scan)

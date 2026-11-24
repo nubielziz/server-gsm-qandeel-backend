@@ -1,7 +1,8 @@
 // Integration tests of the anti-bot check on the public merchant sign-in and forgot-password routes (feature 24A, decision 034
 // amendment) with TURNSTILE_MERCHANT_AUTH on: a missing or bad token is refused before anything else, the dummy token passes. With the
-// switch off (the default outside production) the routes answer as before: the existing merchant tests and
+// switch off (the default outside production) the sign-in answers as before: the existing merchant tests and
 // test/integration/customers/smart-sign-in.test.ts show it. In production the switch is on unless it is set to false (decision 052).
+// The forgot-password route checks the token whatever the switch says (decision 064).
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { PasswordHasher } from '@src/infra/crypto';
 import { type TestApp, createTestApp } from '../../support/app';
@@ -35,6 +36,8 @@ beforeEach(async () => {
 });
 
 const WITH_TOKEN = { headers: { 'x-turnstile-token': TURNSTILE_TEST_TOKEN } };
+/** No token at all: `forgot` of the portal helper sends one unless told not to. */
+const NO_TOKEN = { turnstile: false };
 const BAD_TOKEN = { headers: { 'x-turnstile-token': 'not-the-dummy-token' } };
 const code = (res: { json: () => unknown }) => (res.json() as { code: string }).code;
 
@@ -42,7 +45,7 @@ describe('TURNSTILE_MERCHANT_AUTH=true', () => {
   it('refuses login and forgot without a token or with a bad one: 403 TURNSTILE_FAILED, nothing set', async () => {
     const merchant = await makeMerchant(t);
     const p = new MerchantPortal(t, freshClientIp());
-    for (const options of [{}, BAD_TOKEN]) {
+    for (const options of [NO_TOKEN, BAD_TOKEN]) {
       const answers = [await p.login(merchant.email, undefined, options), await p.forgot(merchant.email, options)];
       for (const res of answers) {
         expect(res.statusCode).toBe(403);
@@ -104,7 +107,7 @@ describe('TURNSTILE_MERCHANT_AUTH in production (decision 052)', () => {
       verify.mockClear();
       hash.mockClear();
       const p = new MerchantPortal(production, freshClientIp());
-      for (const res of [await p.login(merchant.email), await p.forgot(merchant.email)]) {
+      for (const res of [await p.login(merchant.email), await p.forgot(merchant.email, NO_TOKEN)]) {
         expect(res.statusCode).toBe(403);
         expect(code(res)).toBe('TURNSTILE_FAILED');
         expect(res.cookies).toEqual([]);
@@ -118,12 +121,15 @@ describe('TURNSTILE_MERCHANT_AUTH in production (decision 052)', () => {
     }
   });
 
-  it('answers as before without a token when TURNSTILE_MERCHANT_AUTH is false', async () => {
+  it('lets the sign-in through without a token when TURNSTILE_MERCHANT_AUTH is false, and still checks forgot', async () => {
     const production = await productionApp({ TURNSTILE_MERCHANT_AUTH: 'false' });
     try {
       const merchant = await makeMerchant(production);
       const p = new MerchantPortal(production, freshClientIp());
-      expect((await p.forgot(merchant.email)).statusCode).toBe(204);
+      // The switch does not govern the forgot-password route: it always needs the token (decision 064).
+      const forgot = await p.forgot(merchant.email, NO_TOKEN);
+      expect(forgot.statusCode).toBe(403);
+      expect(code(forgot)).toBe('TURNSTILE_FAILED');
       const login = await p.login(merchant.email);
       expect(login.statusCode, login.body).toBe(200);
       expect(login.json()).toEqual({ next: 'done' });

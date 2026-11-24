@@ -709,43 +709,6 @@
       "firstReplySeconds": 5400,
       "heldForReview": 4
     },
-    "topCustomers": [
-      {
-        "id": 28,
-        "name": "Victor Silva",
-        "country": "US",
-        "orders": 5,
-        "spend": "81.9500"
-      },
-      {
-        "id": 24,
-        "name": "Ryan Cooper",
-        "country": "US",
-        "orders": 5,
-        "spend": "73.9500"
-      },
-      {
-        "id": 9,
-        "name": "Jessica Moore",
-        "country": "US",
-        "orders": 5,
-        "spend": "65.9500"
-      },
-      {
-        "id": 21,
-        "name": "Samira Khan",
-        "country": "GB",
-        "orders": 4,
-        "spend": "56.3600"
-      },
-      {
-        "id": 25,
-        "name": "Olivia Grant",
-        "country": "US",
-        "orders": 2,
-        "spend": "51.9800"
-      }
-    ],
     "navCounts": {
       "orders": {
         "open": 48,

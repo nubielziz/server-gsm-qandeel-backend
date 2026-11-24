@@ -47,7 +47,7 @@ export class OrderReceipts {
    * stored copy and does nothing.
    *
    * @param invoiceId the receipt invoice the capture issued
-   * @returns `stored` when this call made the copy, `exists` when one was there already, `skipped` for an invoice that is gone or has no customer
+   * @returns `stored` when this call made the copy, `exists` when one was there already, `skipped` for an invoice that is gone or is not a receipt
    * @throws {AppError} `UNAVAILABLE` when the file storage cannot be reached
    */
   async render(invoiceId: number): Promise<ReceiptRenderResult> {
@@ -78,17 +78,18 @@ export class OrderReceipts {
    * store one copy.
    *
    * @param invoiceId the receipt invoice
-   * @returns the id of the stored file (`undefined` for an invoice without a customer) and what this call did
+   * @returns the id of the stored file (`undefined` for an invoice that is gone or is not a receipt) and what this call did
    */
   private async ensureStored(invoiceId: number): Promise<{ fileId: number | undefined; result: ReceiptRenderResult }> {
     return this.db.runInTransaction(async ({ tx }) => {
       const invoice = await findInvoice(tx, invoiceId, true);
-      if (!invoice || invoice.customerId === null) return { fileId: undefined, result: 'skipped' };
+      // Only a receipt has a buyer's copy: a top-up invoice or a statement belongs to a wallet, and is drawn by its own feature.
+      if (!invoice || invoice.kind !== 'receipt') return { fileId: undefined, result: 'skipped' };
       if (invoice.pdfFileId !== null) return { fileId: invoice.pdfFileId, result: 'exists' };
       const bytes = await this.draw(tx, invoice);
       const file = await this.files.store(tx, {
-        ownerType: 'customer',
-        ownerId: invoice.customerId,
+        ownerType: 'account',
+        ownerId: invoice.accountId,
         filename: `${invoice.number}.pdf`,
         mime: 'application/pdf',
         bytes,
@@ -103,7 +104,7 @@ export class OrderReceipts {
   private async draw(db: DbExecutor, invoice: Invoice): Promise<Uint8Array> {
     const orderId = invoice.orderId ?? 0;
     const order = (await loadOrderFacts(db, [orderId])).get(orderId);
-    const customer = invoice.customerId === null ? undefined : await this.buyers.get().buyerOf(db, orderId);
+    const customer = await this.buyers.get().buyerOf(db, orderId);
     const payment = await findPaymentOfOrder(db, orderId);
     return this.pdf.render({
       title: 'Tax receipt',

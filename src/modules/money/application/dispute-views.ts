@@ -1,5 +1,5 @@
 // DisputeViews: turns stored disputes into the rows the console's Refunds page reads (feature 16) and builds the evidence pack of a dispute
-// from the payment, the order, the consents, the customer's history and their support contacts.
+// from the payment, the order, the consents, the buyer's history and their support contacts.
 import { Injectable } from '@nestjs/common';
 import type { ResultOf } from '../../../common/contract';
 import { type CustomerContact, customerEmailIn, customerNameForStaff } from '../../../common/customer-contact';
@@ -10,7 +10,7 @@ import { toUsd, wireUsd } from '../domain/b2c-money';
 import { type EvidencePack, buildEvidencePack, disputeNote } from '../domain/dispute-rules';
 import { wholeCents } from '../domain/refund-rules';
 import { loadEvidenceFacts, loadOrderFacts, loadSessionMoney } from '../infra/b2c-reads.repository';
-import { loadBillingCustomers } from '../infra/foreign-directory.repository';
+import { loadBillingMerchants } from '../infra/foreign-directory.repository';
 import { loadOrderPayments } from '../infra/order-payment.repository';
 import type { getDispute } from '../contracts/disputes.contracts';
 
@@ -41,15 +41,15 @@ export class DisputeViews {
     const orderId = dispute.orderId ?? payment?.orderId ?? null;
     const order = orderId === null ? undefined : (await loadOrderFacts(db, [orderId])).get(orderId);
     const session = orderId === null ? undefined : (await loadSessionMoney(db, [orderId])).get(orderId);
-    const facts =
-      order && dispute.customerId !== null
-        ? await loadEvidenceFacts(db, {
-            id: order.id,
-            customerId: dispute.customerId,
-            sessionId: order.checkoutSessionId,
-            placedAt: order.placedAt,
-          })
-        : { consents: [], priorPaidOrders: 0, tickets: [] };
+    // The buyer is the dispute's account, of any rank (decision 064; `disputes.account_id` is never empty): the history is its own.
+    const facts = order
+      ? await loadEvidenceFacts(db, {
+          id: order.id,
+          accountId: dispute.accountId,
+          sessionId: order.checkoutSessionId,
+          placedAt: order.placedAt,
+        })
+      : { consents: [], priorPaidOrders: 0, tickets: [] };
     return buildEvidencePack({
       payment: {
         brand: payment?.brand ?? '',
@@ -87,9 +87,9 @@ export class DisputeViews {
     const orderIds = disputes.flatMap((dispute) => (dispute.orderId === null ? [] : [dispute.orderId]));
     // One after the other: `db` can be an open transaction, which runs one statement at a time.
     const sessions = await loadSessionMoney(db, orderIds);
-    const customers = await loadBillingCustomers(
+    const buyers = await loadBillingMerchants(
       db,
-      disputes.flatMap((dispute) => (dispute.customerId === null ? [] : [dispute.customerId])),
+      disputes.map((dispute) => dispute.accountId),
     );
     const payments = await loadOrderPayments(
       db,
@@ -101,7 +101,7 @@ export class DisputeViews {
       const payment = payments.get(dispute.paymentId);
       const fx = session?.fxRate ?? '1';
       const whole = payment && session ? { amount: payment.amount, grossUsd: session.grossAmount } : undefined;
-      const customer = dispute.customerId === null ? undefined : customers.get(dispute.customerId);
+      const buyer = buyers.get(dispute.accountId);
       // The pack staff read shows the address masked (rule B); the pack sent to the gateway keeps it in full (`submitEvidence`).
       const pack = withPack ? await this.pack(db, dispute, 'masked') : undefined;
       rows.push({
@@ -114,8 +114,9 @@ export class DisputeViews {
         status: dispute.status,
         currency: dispute.currency,
         fx,
-        // Decision 047, rule B: a customer without a name is labelled by the masked address, for every caller.
-        customer: customer ? { id: customer.id, name: customerNameForStaff(customer.name, customer.email) } : null,
+        // Decision 047, rule B: an account without a name is labelled by the masked address, for every caller. The wire calls the buyer
+        // `customer`; its id is the account id.
+        customer: buyer ? { id: buyer.id, name: customerNameForStaff(buyer.name, buyer.email) } : null,
         evidenceDueAt: dispute.evidenceDueAt.toISOString(),
         submittedAt: dispute.submittedAt?.toISOString() ?? null,
         resolvedAt: dispute.resolvedAt?.toISOString() ?? null,

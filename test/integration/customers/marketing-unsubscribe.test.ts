@@ -39,9 +39,9 @@ const consents = (customerId: number) =>
   db.select().from(s.consentRecords).where(eq(s.consentRecords.subjectId, customerId)).orderBy(s.consentRecords.id);
 /** Records a consent at the test clock's time, as the account page does (the record's time comes from the injected clock). */
 async function setMarketingConsent(database: Database, customerId: number, granted: boolean): Promise<void> {
-  await database.update(s.customers).set({ marketingOptIn: granted }).where(eq(s.customers.id, customerId));
+  await database.update(s.clients).set({ marketingOptIn: granted }).where(eq(s.clients.id, customerId));
   await database.insert(s.consentRecords).values({
-    subjectType: 'customer',
+    subjectType: 'account',
     subjectId: customerId,
     purpose: 'marketing',
     granted,
@@ -49,7 +49,7 @@ async function setMarketingConsent(database: Database, customerId: number, grant
     createdAt: clock.now(),
   });
 }
-const customerRow = async (id: number) => (await db.select().from(s.customers).where(eq(s.customers.id, id)))[0]!;
+const customerRow = async (id: number) => (await db.select().from(s.clients).where(eq(s.clients.id, id)))[0]!;
 
 /** What a mailbox provider or the site's page sends: no session, no CSRF token, no anti-bot token. */
 function unsubscribe(token: string, options: { form?: boolean; headers?: Record<string, string> } = {}) {
@@ -101,7 +101,7 @@ describe('POST /store/v1/marketing/unsubscribe/:token', () => {
     const records = await consents(id);
     expect(records).toHaveLength(2);
     expect(records[1]).toMatchObject({
-      subjectType: 'customer',
+      subjectType: 'account',
       purpose: 'marketing',
       granted: false,
       ip: '203.0.113.9',
@@ -130,7 +130,8 @@ describe('POST /store/v1/marketing/unsubscribe/:token', () => {
 
   it('answers 204 and changes nothing for an unknown or anonymized customer, and 410 TOKEN_INVALID for a token that does not verify', async () => {
     expect((await unsubscribe(tokenOf(987654))).statusCode).toBe(204);
-    const gone = await insertCustomer(db, { status: 'anonymized', marketingOptIn: true });
+    // An anonymized account has the time it was erased (`clients_anonymized_check`).
+    const gone = await insertCustomer(db, { status: 'anonymized', anonymizedAt: clock.now(), marketingOptIn: true });
     expect((await unsubscribe(tokenOf(gone))).statusCode).toBe(204);
     expect(await customerRow(gone)).toMatchObject({ marketingOptIn: true });
     expect(await consents(gone)).toHaveLength(0);

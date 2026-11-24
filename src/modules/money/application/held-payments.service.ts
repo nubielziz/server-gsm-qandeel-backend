@@ -87,7 +87,8 @@ export class HeldPaymentsService {
         const refund = await insertRefund(tx, {
           paymentId: id,
           orderId: null,
-          customerId: null,
+          // a refund that names a payment names its payment's account too, an orderless return included
+          accountId: payment.accountId,
           amount,
           currency,
           reason: MANUAL_RETURN_REASON,

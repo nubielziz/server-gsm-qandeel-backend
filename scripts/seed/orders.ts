@@ -11,6 +11,7 @@ import type { AppConfig } from '../../src/config';
 import { hashToken } from '../../src/infra/crypto';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
 import { MANUAL_REASON, VERIFICATION_REASON } from '../../src/modules/orders/domain/order-timeline';
+import { accountIdOfDemo } from './account-ids';
 import { type DemoSeed, demoNumericId, demoRows, toDate, toMoney } from './demo-state';
 import { type SeedReport, syncIdentity } from './helpers';
 
@@ -158,7 +159,7 @@ export async function seedOrders(db: DbExecutor, demo: DemoSeed, config?: AppCon
   );
   const merchants = new Map(demoRows<{ id: string; name: string }>(demo, 'merchants').map((m) => [m.id, m]));
   const known = await db.select({ id: s.clients.id }).from(s.clients);
-  const clientIds = new Set(known.map((row) => row.id));
+  const accountIds = new Set(known.map((row) => row.id));
   const supplierRows = await db.select({ id: s.suppliers.id, name: s.suppliers.name }).from(s.suppliers);
   const suppliers = new Map(supplierRows.map((row) => [row.name, row.id]));
   const supplierIds = new Set(supplierRows.map((row) => row.id));
@@ -170,9 +171,10 @@ export async function seedOrders(db: DbExecutor, demo: DemoSeed, config?: AppCon
   const eventsOf = new Map<number, EventInsert[]>();
   let skipped = 0;
   for (const demoOrder of demoOrders) {
-    const clientId = demoNumericId(demoOrder.mid!);
+    // A merchant keeps its number as its account number (decision 064): the buyer of a merchant order.
+    const accountId = accountIdOfDemo(demoOrder.mid!);
     const service = services.get(demoOrder.sid);
-    if (!clientIds.has(clientId) || !service) {
+    if (!accountIds.has(accountId) || !service) {
       skipped += 1;
       continue;
     }
@@ -186,12 +188,12 @@ export async function seedOrders(db: DbExecutor, demo: DemoSeed, config?: AppCon
     const serviceId = demoNumericId(service.id);
     const squashed = demoOrder.input.replace(/\s+/g, '').toLowerCase();
 
-    // The actor of a demo timeline line by its name: staff by name, the merchant (or its API) as the client, a supplier by name when
+    // The actor of a demo timeline line by its name: staff by name, the merchant (or its API) as the account, a supplier by name when
     // the suppliers are seeded, otherwise the system.
     const actorOf = (by: string): Pick<EventInsert, 'actorType' | 'actorId'> => {
       const staffId = staff.get(by);
       if (staffId !== undefined) return { actorType: 'staff', actorId: staffId };
-      if (by === 'Merchant API' || by === merchant?.name) return { actorType: 'client', actorId: clientId };
+      if (by === 'Merchant API' || by === merchant?.name) return { actorType: 'account', actorId: accountId };
       const supplierId = suppliers.get(by);
       if (supplierId !== undefined) return { actorType: 'supplier', actorId: supplierId };
       // The system, and any other name the demo has no account for (a customer or a supplier that is not seeded yet).
@@ -228,8 +230,8 @@ export async function seedOrders(db: DbExecutor, demo: DemoSeed, config?: AppCon
       lines.push({
         orderId: id,
         type: 'verification',
-        actorType: 'client',
-        actorId: clientId,
+        actorType: 'account',
+        actorId: accountId,
         data: { message: 'Verification requested by the merchant', reason: VERIFICATION_REASON },
         createdAt: toDate(Math.round((demoOrder.doneAt ?? demoOrder.created) + 30 * 60_000))!,
       });
@@ -248,7 +250,9 @@ export async function seedOrders(db: DbExecutor, demo: DemoSeed, config?: AppCon
           : null;
     orderRows.push({
       id,
-      clientId,
+      accountId,
+      // A hold-and-settle order repeats its buyer in the old column for the readers of the previous release (`orders_hold_buyer_check`).
+      legacyClientId: accountId,
       serviceId,
       type: service.type.toLowerCase() as OrderInsert['type'],
       source: SOURCES[demoOrder.chan] ?? 'portal',
@@ -268,7 +272,7 @@ export async function seedOrders(db: DbExecutor, demo: DemoSeed, config?: AppCon
       verificationStatus: verification ? 'requested' : null,
       fingerprint:
         config && squashed !== ''
-          ? hashToken(config.security.lookupHashKey, `order-duplicate:${clientId}:${serviceId}:${squashed}`)
+          ? hashToken(config.security.lookupHashKey, `order-duplicate:${accountId}:${serviceId}:${squashed}`)
           : null,
       // Both timestamps are the demo's placement time, as a placement writes them (placed_at equals created_at).
       placedAt: createdAt,

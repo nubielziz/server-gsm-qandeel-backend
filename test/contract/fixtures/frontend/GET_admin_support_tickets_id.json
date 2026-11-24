@@ -8,11 +8,12 @@
     "number": "T-4202",
     "subject": "Phone still locked after unlock (SF-20471)",
     "channel": "web",
-    "requesterType": "customer",
-    "requesterId": 28,
+    "requesterType": "account",
+    "requesterId": 128,
     "requester": {
       "name": "Victor Silva",
-      "email": "victor.silva@webmail.example"
+      "email": "victor.silva@webmail.example",
+      "rankKind": "retail"
     },
     "orderId": 20471,
     "category": "failed_unlock",
@@ -39,8 +40,8 @@
       {
         "id": 1,
         "ticketId": 4202,
-        "authorType": "customer",
-        "authorId": 28,
+        "authorType": "account",
+        "authorId": 128,
         "authorName": "Victor",
         "body": "I got the email saying completed but my phone still says SIM not supported.",
         "isInternal": false,
@@ -63,8 +64,8 @@
       {
         "id": 3,
         "ticketId": 4202,
-        "authorType": "customer",
-        "authorId": 28,
+        "authorType": "account",
+        "authorId": 128,
         "authorName": "Victor",
         "body": "Here is the photo. Same message after restart.",
         "isInternal": false,

@@ -1,4 +1,4 @@
-// CustomerTopUps: a storefront customer tops up the store balance (feature 21, plan § 5.6.4): the methods, a new top-up with its limits and
+// CustomerTopUps: a retail account tops up the store balance (feature 21, plan § 5.6.4): the methods, a new top-up with its limits and
 // idempotency, the list and one top-up, the transfer receipt and the cancel. Crediting is the billing pipeline's (PaymentCrediting).
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { z } from 'zod';
@@ -10,6 +10,7 @@ import { APP_CONFIG, type AppConfig } from '../../../config';
 import { type DbExecutor, DbService, isUniqueViolation } from '../../../infra/db';
 import { OutboundHttp } from '../../../infra/http';
 import { RateLimitService } from '../../../infra/rate-limit';
+import { type AccountRecord, AccountDirectory, sessionStateOf } from '../../identity';
 import { PROOF_MIME_TYPES, PublicImages, SettingsReader, StoredFiles, UPLOAD_AREA } from '../../platform';
 import type { TopUpDetailSchema } from '../contracts/customer-topups.contracts';
 import { type Invoice, type Payment, type PaymentGateway, RECEIPT_LIVE_INDEX } from '../db/schema';
@@ -23,26 +24,26 @@ import {
   dueAtOf,
   invoiceNumber,
   parseAmount,
+  topUpFingerprint,
   topupInvoiceTotals,
 } from '../domain/invoice-rules';
 import { bankReferenceProblem, normalizeBankReference } from '../domain/payment-rules';
 import {
   findCustomerTopUp,
-  findTopUpByKey,
+  judgeTopUpKey,
   latestPaymentsOf,
   listCustomerTopUps,
   listTopUpGateways,
-  lockCustomerTopUps,
   storeTopUpCheckoutUrl,
   voidUnpaidTopUp,
 } from '../infra/customer-topup.repository';
 import { readCustomerWallet, readTopUpFigures } from '../infra/customer-wallet.repository';
-import { findWalletCustomer } from '../infra/foreign-directory.repository';
 import { GATEWAY_HTTP_POLICY, type GatewayHttpPolicy } from '../infra/gateway-drivers/driver';
 import { driverFor } from '../infra/gateway-drivers/drivers';
 import { findGateway, findGatewaysByIds } from '../infra/gateway.repository';
 import { insertInvoice, reserveInvoiceId, updateInvoice } from '../infra/invoice.repository';
 import { findLiveBankReference, insertPayment, pendingPaymentsOfInvoice } from '../infra/payment.repository';
+import { lockAccountTopUps } from '../infra/topup-lock.repository';
 import { type WirePaymentMethod, paymentMethodToWire } from './billing-wire';
 import { CustomerWallets } from './customer-wallets';
 import { GatewayCredentialsVault } from './gateway-credentials';
@@ -58,17 +59,29 @@ export interface CreatedTopUp {
   readonly replayed: boolean;
 }
 
-/** How long an automatic top-up may wait for its hosted page before a retry with its key takes over (the `/pay` rule). */
-const OPENING_GRACE_MS = 60_000;
 const MAX_REFERENCE = 64;
 
 const fieldError = (field: string, code: string, message: string) =>
   new AppError('VALIDATION_FAILED', { errors: [{ field, code, message } satisfies FieldError] });
 const notFound = () => new AppError('NOT_FOUND', { detail: 'No top-up with this id.' });
 
-/** The fingerprint of a create request: the same key with another gateway or amount is refused. */
-function fingerprintOf(gatewayId: number, amount: Money): string {
-  return JSON.stringify([gatewayId, amount.toWire()]);
+/**
+ * Checks the locked account of a store top-up create and hands it on.
+ *
+ * Why: the session gate has already checked the rank and the status, but the account row is read again under its lock, so a rank change
+ * or a suspension that committed between the gate and the lock refuses the create instead of filling the wrong wallet (decision 064). A
+ * guest row has no sign-in and holds no balance (O5).
+ *
+ * @param account the account read with `FOR KEY SHARE`
+ * @returns the same account, known to be an active retail account with a sign-in
+ * @throws {AppError} `UNAUTHORIZED` (gone, or a guest), `ACCOUNT_SUSPENDED`, `RANK_NOT_ALLOWED`
+ */
+function assertRetail(account: AccountRecord | undefined): AccountRecord {
+  const state = account ? sessionStateOf(account.status) : 'gone';
+  if (!account || !account.hasAccount || state === 'gone') throw new AppError('UNAUTHORIZED');
+  if (state === 'suspended') throw new AppError('ACCOUNT_SUSPENDED');
+  if (account.rankKind !== 'retail') throw new AppError('RANK_NOT_ALLOWED');
+  return account;
 }
 
 /** Whether a customer may top up through a gateway under the policy: manual ones always, automatic ones with a driver while card top-ups are on. */
@@ -124,11 +137,12 @@ function topUpToWire(invoice: Invoice, gateway: PaymentGateway | undefined, paym
  * Lets a signed-in customer top up the store balance.
  *
  * Why: the owner's customer wallet (ROADMAP 2W, lead rule L5): top-ups through the shop's payment gateways, manual (bank, CliQ) first and
- * cards behind a second switch, within the owner's limits. A top-up is a `topup` invoice of the customer; the customer's receipt or the
- * gateway's confirmation creates the payment that staff (or the automatic credit) turn into a credit, exactly like a merchant's deposit.
- * Every customer id comes from the session (plan § 5.1 invariant 5). The limits are checked under a per-customer advisory lock; the Redis
- * limiter is only a hint. Decision 049: one receipt, or a copy of its bytes, backs one pending or approved payment, whoever uploaded it,
- * and a card page asks for 3-D Secure under the shop's `require3ds` policy.
+ * cards behind a second switch, within the owner's limits. A top-up is a `topup` invoice of the account with the wallet kind
+ * `customer_wallet`; the customer's receipt or the gateway's confirmation creates the payment that staff (or the automatic credit) turn
+ * into a credit, exactly like a merchant's deposit. Every account id comes from the session (plan § 5.1 invariant 5). Decision 064: a
+ * create takes the account row `FOR KEY SHARE`, then the account's top-up lock `topup:<accountId>` (both receipt uploads take it too), and
+ * checks the limits under them; the Redis limiter (`a:<accountId>`) is only a hint. Decision 049: one receipt, or a copy of its bytes,
+ * backs one pending or approved payment, whoever uploaded it, and a card page asks for 3-D Secure under the shop's `require3ds` policy.
  *
  * Side effects: `create` inserts an `invoices` row (and may call a gateway's API, then store its page); `attachReceipt` inserts a
  * `payments` row; `cancel` voids an invoice.
@@ -137,6 +151,7 @@ function topUpToWire(invoice: Invoice, gateway: PaymentGateway | undefined, paym
 export class CustomerTopUps {
   constructor(
     private readonly db: DbService,
+    private readonly accounts: AccountDirectory,
     private readonly wallets: CustomerWallets,
     private readonly settings: SettingsReader,
     private readonly vault: GatewayCredentialsVault,
@@ -180,29 +195,32 @@ export class CustomerTopUps {
   /**
    * Starts a top-up.
    *
-   * Why: plan 21 § 5.6.4: one transaction under the customer's advisory lock checks the key, the customer, the gateway and the limits and
+   * Why: plan 21 § 5.6.4: one transaction takes the account row `FOR KEY SHARE` and then the account's top-up lock (decision 064, so a rank
+   * change either lands first and this create is refused, or waits for it), checks the key, the account, the gateway and the limits and
    * inserts the invoice; an automatic gateway is asked for its page after the commit (no network call under a lock), and a gateway that
    * fails voids the invoice and frees its key.
    *
-   * Side effects: inserts one `invoices` row; an automatic gateway's API is called and the page stored; consumes the `wallet-topup` limiter.
+   * Side effects: inserts one `invoices` row; an automatic gateway's API is called and the page stored; consumes the `wallet-topup` limiter
+   * (key `a:<accountId>`).
    *
-   * @param customerId the authenticated customer
+   * @param accountId the authenticated retail account
    * @param input the amount and the gateway
    * @param key the `Idempotency-Key`
    * @returns the top-up with its instructions or page, and whether it was a replay
    * @throws {AppError} `WALLET_DISABLED`, `RATE_LIMITED`, `VALIDATION_FAILED` (`amount`: `format`, `range`, `min`, `max`, `fee`,
    *   `daily_count`, `daily_amount`, `max_balance`, `not_chargeable` (an automatic method that cannot charge the amount exactly);
    *   `gatewayId`: `unavailable`), `CONFLICT` (three unpaid top-ups), `WALLET_FROZEN`,
-   *   `IDEMPOTENCY_KEY_REUSED`, `IDEMPOTENCY_IN_PROGRESS`, `UNAUTHORIZED` (no active account), `GATEWAY_ERROR`
+   *   `IDEMPOTENCY_KEY_REUSED`, `IDEMPOTENCY_IN_PROGRESS`, `UNAUTHORIZED` (no active account), `ACCOUNT_SUSPENDED`, `RANK_NOT_ALLOWED`
+   *   (the account has a merchant rank), `GATEWAY_ERROR`
    */
-  async create(customerId: number, input: { amount: string; gatewayId: number }, key: string): Promise<CreatedTopUp> {
+  async create(accountId: number, input: { amount: string; gatewayId: number }, key: string): Promise<CreatedTopUp> {
     const policy = await this.wallets.policy();
     if (!policy.enabled) throw new AppError('WALLET_DISABLED');
-    await this.limits.enforce('wallet-topup', String(customerId));
+    await this.limits.enforce('wallet-topup', `a:${accountId}`);
     const parsed = parseAmount(input.amount);
     if ('problem' in parsed) throw new AppError('VALIDATION_FAILED', { errors: [parsed.problem] });
     const amount = parsed.amount;
-    const fingerprint = fingerprintOf(input.gatewayId, amount);
+    const fingerprint = topUpFingerprint(input.gatewayId, amount);
     const dueDays = await this.settings.integer(
       INVOICE_DUE_DAYS_KEY,
       DEFAULT_INVOICE_DUE_DAYS,
@@ -210,31 +228,30 @@ export class CustomerTopUps {
     );
 
     const outcome = await this.db.runInTransaction(async ({ tx }) => {
-      await lockCustomerTopUps(tx, customerId);
+      // Lock order (decision 064): the account row, then the account's top-up lock; the rank is read only after both.
+      const account = assertRetail(await this.accounts.lockForKeyShare(tx, accountId));
+      await lockAccountTopUps(tx, accountId);
       const now = this.clock.now();
-      const prior = await findTopUpByKey(tx, customerId, key);
-      if (prior) {
-        if (prior.requestFingerprint !== fingerprint) {
+      const found = await judgeTopUpKey(tx, accountId, key, { fingerprint, walletKind: 'customer_wallet' }, now);
+      if (found) {
+        if (found.verdict === 'reused') {
           throw new AppError('IDEMPOTENCY_KEY_REUSED', {
             detail: 'This Idempotency-Key was already used for another top-up.',
           });
         }
-        const opening = prior.status === 'open' && prior.checkoutUrl === null && !(await this.isManual(tx, prior));
-        if (!opening) return { kind: 'replay' as const, invoice: prior };
-        if (now.getTime() - prior.createdAt.getTime() < OPENING_GRACE_MS) throw new AppError('IDEMPOTENCY_IN_PROGRESS');
+        if (found.verdict === 'in_progress') throw new AppError('IDEMPOTENCY_IN_PROGRESS');
+        if (found.verdict === 'replay') return { kind: 'replay' as const, invoice: found.prior };
         // The attempt that opened it never stored its page: void it and start again with the same key.
-        await voidUnpaidTopUp(tx, prior.id, now);
+        await voidUnpaidTopUp(tx, found.prior.id, now);
       }
-      const customer = await findWalletCustomer(tx, customerId);
-      if (!customer || customer.status !== 'active' || !customer.hasAccount) throw new AppError('UNAUTHORIZED');
       const gateway = await findGateway(tx, input.gatewayId);
       if (!gateway || !offered(gateway, policy)) {
         throw fieldError('gatewayId', 'unavailable', 'Choose one of the top-up methods.');
       }
-      const wallet = await readCustomerWallet(tx, customerId);
+      const wallet = await readCustomerWallet(tx, account.id);
       if (!gateway.isManual && wallet?.frozenAt) throw new AppError('WALLET_FROZEN');
       const fee = depositFee(amount, gateway.feePercent, gateway.feeFixed);
-      const figures = await readTopUpFigures(tx, customerId, now);
+      const figures = await readTopUpFigures(tx, account.id, now);
       const refusal = checkTopUp(
         {
           amount,
@@ -264,7 +281,8 @@ export class CustomerTopUps {
       const invoice = await insertInvoice(tx, {
         id,
         number: invoiceNumber(now.getUTCFullYear(), id),
-        customerId,
+        accountId: account.id,
+        walletKind: 'customer_wallet',
         kind: 'topup',
         amount: totals.amount.toWire(),
         fee: totals.fee.toWire(),
@@ -292,15 +310,15 @@ export class CustomerTopUps {
   }
 
   /**
-   * The customer's top-ups.
+   * The account's store top-ups.
    *
-   * @param customerId the authenticated customer
+   * @param accountId the authenticated retail account
    * @param query the parsed list request
    * @returns the page and the total
    */
-  async list(customerId: number, query: ParsedListQuery<'createdAt'>): Promise<{ rows: TopUpDetail[]; total: number }> {
+  async list(accountId: number, query: ParsedListQuery<'createdAt'>): Promise<{ rows: TopUpDetail[]; total: number }> {
     const db = this.db.db;
-    const page = await listCustomerTopUps(db, customerId, query);
+    const page = await listCustomerTopUps(db, accountId, query);
     const gateways = await findGatewaysByIds(
       db,
       page.rows.map((row) => row.gatewayId),
@@ -323,15 +341,15 @@ export class CustomerTopUps {
   }
 
   /**
-   * One of the customer's top-ups.
+   * One of the account's store top-ups.
    *
-   * @param customerId the authenticated customer
+   * @param accountId the authenticated retail account
    * @param id the top-up
    * @returns the top-up with how to pay it
-   * @throws {AppError} `NOT_FOUND` (unknown, or another customer's)
+   * @throws {AppError} `NOT_FOUND` (unknown, or another account's)
    */
-  async get(customerId: number, id: number): Promise<TopUpDetail> {
-    const invoice = await findCustomerTopUp(this.db.db, customerId, id);
+  async get(accountId: number, id: number): Promise<TopUpDetail> {
+    const invoice = await findCustomerTopUp(this.db.db, accountId, id);
     if (!invoice) throw notFound();
     return this.wireOf(this.db.db, invoice);
   }
@@ -347,9 +365,11 @@ export class CustomerTopUps {
    * receipt again is a retry and answers the top-up. Manual top-ups always wait for staff; a risk hit only
    * writes its reason as a hint. Allowed while the balance is switched off (the money may already be on its way, P6).
    *
-   * Side effects: inserts one `payments` row (`pending`); takes the receipt content's lock until the commit.
+   * Side effects: inserts one `payments` row (`pending`); takes the account row (`FOR KEY SHARE`), the account's top-up lock
+   * (`topup:<accountId>`, which the rank change takes too), the top-up's invoice row and the receipt content's lock until the commit (the
+   * lock order of decision 064).
    *
-   * @param customerId the authenticated customer
+   * @param accountId the authenticated retail account
    * @param id the top-up
    * @param input the receipt file and the optional bank reference
    * @returns the top-up, now in review
@@ -358,7 +378,7 @@ export class CustomerTopUps {
    *   character other than printable ASCII, `bankReferenceProblem`; `taken`)
    */
   async attachReceipt(
-    customerId: number,
+    accountId: number,
     id: number,
     input: { fileId: number; reference?: string | undefined },
   ): Promise<TopUpDetail> {
@@ -371,7 +391,12 @@ export class CustomerTopUps {
     if (referenceProblem) throw fieldError('reference', 'invalid', referenceProblem);
     try {
       return await this.db.runInTransaction(async ({ tx }) => {
-        const invoice = await findCustomerTopUp(tx, customerId, id, true);
+        // Decision 064 lock order, the one of both top-up creates: the account row, the account's top-up lock, the invoice row, then the
+        // receipt content's lock. The payment's foreign key needs the account row too; taking it first means an upload never holds the
+        // top-up lock or the invoice row while it waits for a rank change or an erasure that holds the row and waits for those.
+        const account = await this.accounts.lockForKeyShare(tx, accountId);
+        await lockAccountTopUps(tx, accountId);
+        const invoice = await findCustomerTopUp(tx, accountId, id, true);
         if (!invoice) throw notFound();
         if (invoice.status !== 'open') {
           throw new AppError('CONFLICT', {
@@ -386,7 +411,7 @@ export class CustomerTopUps {
         if (pending.some((payment) => payment.receiptFileId === input.fileId)) return this.wireOf(tx, invoice);
         if (pending.length > 0)
           throw new AppError('CONFLICT', { detail: 'A receipt for this top-up is waiting for review.' });
-        const file = await this.files.findOwned(tx, input.fileId, { type: 'customer', id: customerId });
+        const file = await this.files.findOwned(tx, input.fileId, { type: 'account', id: accountId });
         // Only the customer's own upload: a document the platform stored for the customer (a tax receipt) is no transfer receipt.
         if (!file || file.area !== UPLOAD_AREA || !PROOF_MIME_TYPES.includes(file.mime)) {
           throw fieldError('fileId', 'invalid', 'Upload the receipt as a PDF, JPEG or PNG file first.');
@@ -395,13 +420,12 @@ export class CustomerTopUps {
           throw fieldError('reference', 'taken', 'This reference was already used for this payment method.');
         }
         await assertReceiptUnused(tx, this.files, file.id);
-        const customer = await findWalletCustomer(tx, customerId);
-        const verdict = await this.screening.screen(tx, { email: customer?.email ?? null, cardFingerprint: null });
+        const verdict = await this.screening.screen(tx, { email: account?.email ?? null, cardFingerprint: null });
         const now = this.clock.now();
         await insertPayment(tx, {
           purpose: 'topup',
           invoiceId: invoice.id,
-          customerId,
+          accountId,
           gatewayId: gateway.id,
           gatewayTxnId: bankReference === '' ? null : bankReference,
           amount: invoice.amount,
@@ -434,14 +458,14 @@ export class CustomerTopUps {
    *
    * Side effects: sets the invoice `void` (its key stays, so a retry of the create answers the cancelled top-up).
    *
-   * @param customerId the authenticated customer
+   * @param accountId the authenticated retail account
    * @param id the top-up
    * @returns the cancelled top-up
    * @throws {AppError} `NOT_FOUND`; `CONFLICT`
    */
-  async cancel(customerId: number, id: number): Promise<TopUpDetail> {
+  async cancel(accountId: number, id: number): Promise<TopUpDetail> {
     return this.db.runInTransaction(async ({ tx }) => {
-      const invoice = await findCustomerTopUp(tx, customerId, id, true);
+      const invoice = await findCustomerTopUp(tx, accountId, id, true);
       if (!invoice) throw notFound();
       if (invoice.status === 'void') return this.wireOf(tx, invoice);
       if (invoice.status === 'paid') throw new AppError('CONFLICT', { detail: 'This top-up is already credited.' });

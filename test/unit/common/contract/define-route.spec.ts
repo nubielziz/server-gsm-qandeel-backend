@@ -4,10 +4,13 @@ import { z } from 'zod';
 import {
   ACCESS_KINDS,
   DEFAULT_SESSION_STAGES,
+  RANK_GATED_ACCESS_KINDS,
   SESSION_ACCESS_KINDS,
   contractRegistry,
   declaredStatuses,
   defineRoute,
+  defaultRankOf,
+  isRankGatedAccess,
   isSessionAccess,
   parseRouteKey,
   type RouteKey,
@@ -201,6 +204,130 @@ describe('defineRoute', () => {
       expect(() => define({ key: 'GET /client/spec/pm6', ...portal, pendingMerchant: 'maybe' })).toThrow(
         /must be "allow" or "deny"/,
       );
+    });
+  });
+
+  describe('rank (decision 064: the default-deny rank gate)', () => {
+    const merchantRoute = { surface: 'client', access: 'merchant-session' };
+    const retailRoute = { surface: 'store', access: 'customer-session' };
+
+    it('defaults to merchant on a merchant-session route and to retail on a customer-session route', () => {
+      expect(define({ key: 'GET /client/spec/rk1', ...merchantRoute }).rank).toBe('merchant');
+      expect(define({ key: 'GET /store/v1/spec/rk2', ...retailRoute }).rank).toBe('retail');
+    });
+
+    it('keeps rank: any on both session kinds, so one route can serve every account', () => {
+      expect(
+        define({ key: 'POST /client/spec/rk3', ...merchantRoute, rank: 'any', success: { status: 204 } }).rank,
+      ).toBe('any');
+      expect(
+        define({ key: 'POST /store/v1/spec/rk4', ...retailRoute, rank: 'any', success: { status: 204 } }).rank,
+      ).toBe('any');
+    });
+
+    it('is on the registered contract too, and the contract stays frozen', () => {
+      const contract = define({ key: 'GET /client/spec/rk5', ...merchantRoute });
+      expect(contractRegistry.get(contract.key)?.rank).toBe('merchant');
+      expect(Object.isFrozen(contract)).toBe(true);
+    });
+
+    it('is null on a route that is not behind the rank gate', () => {
+      for (const access of ACCESS_KINDS.filter((kind) => !isRankGatedAccess(kind))) {
+        const spec = access === 'staff-permission' ? { permission: 'staff:read' } : {};
+        expect(
+          define({ key: `GET /admin/spec/rk-null-${access}`, surface: 'admin', access, ...spec }).rank,
+          access,
+        ).toBeNull();
+      }
+    });
+
+    it('refuses rank: any on every access kind that has no rank gate', () => {
+      for (const access of ACCESS_KINDS.filter((kind) => !isRankGatedAccess(kind))) {
+        const spec = access === 'staff-permission' ? { permission: 'staff:read' } : {};
+        expect(
+          () =>
+            define({
+              key: `POST /admin/spec/rk-any-${access}`,
+              surface: 'admin',
+              access,
+              rank: 'any',
+              success: { status: 204 },
+              ...spec,
+            }),
+          access,
+        ).toThrow(/rank only applies to merchant-session and customer-session routes/);
+      }
+    });
+
+    it('takes no other value than any: the default follows the access kind', () => {
+      for (const rank of ['merchant', 'retail', 'all', '', null]) {
+        expect(() => define({ key: 'GET /client/spec/rk6', ...merchantRoute, rank }), String(rank)).toThrow(
+          /rank must be "any"/,
+        );
+        expect(() => define({ key: 'GET /store/v1/spec/rk7', ...retailRoute, rank }), String(rank)).toThrow(
+          /rank must be "any"/,
+        );
+      }
+      expect(contractRegistry.has('GET /client/spec/rk6')).toBe(false);
+    });
+
+    it('names the two gated access kinds, both of them session kinds', () => {
+      expect([...RANK_GATED_ACCESS_KINDS]).toEqual(['merchant-session', 'customer-session']);
+      for (const access of RANK_GATED_ACCESS_KINDS) expect(isSessionAccess(access)).toBe(true);
+      expect(ACCESS_KINDS.filter(isRankGatedAccess)).toEqual([...RANK_GATED_ACCESS_KINDS]);
+      expect(defaultRankOf('merchant-session')).toBe('merchant');
+      expect(defaultRankOf('customer-session')).toBe('retail');
+      for (const access of ACCESS_KINDS.filter((kind) => !isRankGatedAccess(kind)))
+        expect(defaultRankOf(access), access).toBeNull();
+    });
+
+    it('adds RANK_NOT_ALLOWED to the errors of a gated route, after the declared ones and once', () => {
+      const merchant = define({ key: 'GET /client/spec/rk8', ...merchantRoute, errors: ['UNAUTHORIZED', 'NOT_FOUND'] });
+      expect(merchant.errors).toEqual(['UNAUTHORIZED', 'NOT_FOUND', 'RANK_NOT_ALLOWED']);
+      const retail = define({ key: 'GET /store/v1/spec/rk9', ...retailRoute, errors: ['UNAUTHORIZED'] });
+      expect(retail.errors).toEqual(['UNAUTHORIZED', 'RANK_NOT_ALLOWED']);
+      const declared = define({
+        key: 'GET /client/spec/rk10',
+        ...merchantRoute,
+        errors: ['RANK_NOT_ALLOWED', 'UNAUTHORIZED'],
+      });
+      expect(declared.errors).toEqual(['RANK_NOT_ALLOWED', 'UNAUTHORIZED']);
+      expect(declaredStatuses(merchant)).toContain(403);
+    });
+
+    it('lists RANK_NOT_ALLOWED before TURNSTILE_FAILED on a gated route behind the anti-bot check', () => {
+      const contract = define({
+        key: 'POST /store/v1/spec/rk11',
+        ...retailRoute,
+        turnstile: true,
+        body: z.object({}),
+        success: { status: 204 },
+        errors: ['VALIDATION_FAILED'],
+      });
+      expect(contract.errors).toEqual(['VALIDATION_FAILED', 'RANK_NOT_ALLOWED', 'TURNSTILE_FAILED']);
+    });
+
+    it('does not list RANK_NOT_ALLOWED on a route open to every rank, nor on a route without the gate', () => {
+      expect(
+        define({
+          key: 'POST /client/spec/rk12',
+          ...merchantRoute,
+          rank: 'any',
+          success: { status: 204 },
+          errors: ['UNAUTHORIZED'],
+        }).errors,
+      ).toEqual(['UNAUTHORIZED']);
+      expect(define({ key: 'GET /spec/rk13', errors: ['NOT_FOUND'] }).errors).toEqual(['NOT_FOUND']);
+      expect(
+        define({ key: 'GET /admin/spec/rk14', surface: 'admin', access: 'staff-session', errors: ['UNAUTHORIZED'] })
+          .errors,
+      ).toEqual(['UNAUTHORIZED']);
+    });
+
+    it('is independent of pendingMerchant, which is still accepted', () => {
+      const contract = define({ key: 'GET /client/spec/rk15', ...merchantRoute, pendingMerchant: 'allow' });
+      expect(contract.pendingMerchant).toBe('allow');
+      expect(contract.rank).toBe('merchant');
     });
   });
 

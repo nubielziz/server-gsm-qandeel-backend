@@ -13,13 +13,18 @@ option lists, and the code inventory; feature 4b (catalog-pricing, 16 routes): g
 bulk price change, the price resolver and the merchant catalog (below); feature 14b (4 routes): the TAC catalog (below). Supplier links and import are
 feature 6.
 
-- **Merchant groups** (`application/client-group-admin.service.ts`, `infra/group.repository.ts`): list with `merchantCount`
-  (not for the retail group), show, create (`b2b`, last in the order), change, delete. One default group at all times: making a
+- **Ranks, the merchant groups and the retail rank** (`application/client-group-admin.service.ts`, `infra/group.repository.ts`; decision 064): every
+  rank answers its kind, `rankKind` (`merchant` for the stored kind `b2b`, `retail` for any other), and `accountCount`, the number of accounts in it
+  (guests included, and the retail rank too; `merchantCount` is gone), through identity's `MerchantGroupMembers.countByGroup`. List, show, create
+  (`b2b`, last in the order), change, delete. One default group at all times: making a
   group the default moves the mark in the same transaction (an advisory lock keeps two such changes apart), the default group
   cannot be deleted (`GROUP_IN_USE`) or unmarked (`DEFAULT_GROUP_REQUIRED`), the storefront retail group (`b2c_retail`) cannot be
-  deleted or be the default. A group stops allowing overdraft (`overdraftAllowed: false`) only while no merchant of the group has
+  deleted or be the default. **The retail rank never allows credit:** `client_groups_retail_no_credit_check` refuses it on the table and
+  `PATCH /admin/client-groups/:id` answers `422` on `overdraftAllowed` (code `retail_no_credit`). A group stops allowing overdraft (`overdraftAllowed: false`) only while no merchant of the group has
   a credit limit above zero (user rule 2; credit holders from money's `MerchantWallets.idsWithCreditLimit`, members from identity's
-  `MerchantGroupMembers`). Deleting a free group also deletes its group prices and pricing rules and removes its id from
+  `MerchantGroupMembers`). **A rank is deleted only while no account is in it**; the rank history of money (`account_rank_changes`) keeps the ids and names of
+  both ranks of every change without a foreign key to this table, so it never blocks a delete and the console shows the stored name of a deleted rank.
+  Deleting a free group also deletes its group prices and pricing rules and removes its id from
   `service_categories.allowed_group_ids` (TODO feature 8: `payment_gateways.allowed_group_ids` through money). The group row is
   locked `FOR UPDATE` while it changes; the code that moves a merchant into a group (`ClientAdminService`) or sets a credit limit
   (`WalletService`) takes `FOR SHARE` on it, so these never interleave.
@@ -96,9 +101,12 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   prices.N.groupId` "Listed twice". A form that saves every group also sends `retailPriceSeen`, the retail price it loaded (`null`:
   none): a retail row left at that figure is not written and not held to the floor, so the price stored now stays and keeps following,
   also when a follow pass moved it or a publish set one after the form opened (feature 31).
-- **Client prices** (`client-price-admin.service.ts`): one per merchant and service (`409 PRICE_EXISTS`), above zero and at or above
-  the floor of the merchant's group; `groupPrice` on each row is the resolver result for the merchant's group without the client
-  price (catalog-16). Audit like the demo: `set client price for` and `removed client price for` on the `merchant`.
+- **Client prices** (`client-price-admin.service.ts`): one per account of a merchant rank and service (`409 PRICE_EXISTS`), above zero and at or above
+  the floor of the account's group; `groupPrice` on each row is the resolver result for the account's group without the client
+  price (catalog-16). **Fixed client prices exist for merchant ranks only** (decision 064): a create or a change for an account of the retail rank
+  (a guest included) is `422` on `clientId` (code `retail_rank`), and so is `GET /admin/pricing/resolve`; the rows of an account that was lowered to the
+  retail rank stay, can be deleted (`DELETE` is still allowed), and apply again after a raise. The shop always prices from the one retail rank.
+  Audit like the demo: `set client price for` and `removed client price for` on the `account`.
 - **Pricing rules** (`pricing-rule-admin.service.ts`, `domain/pricing-rule-input.ts`): CRUD with the target and group checked under
   share locks, amounts never negative, one of percent and fixed above zero, a discount or promo at most 100 %, a margin at most
   1000 %, a window that runs forwards; a rule being turned off is never refused for its target. Audit entity `pricing_rule`
@@ -263,9 +271,9 @@ to `infra/service-attention.sql.ts` knows.
 ## Public API (`index.ts`)
 
 Exports `CatalogModule` (global) and `CatalogAdminModule` (the routes; a database-less test app leaves it out), the read-only
-`ClientGroupDirectory` (`find(db, id, { lock: 'share' }?)`, `findDefault`, `findRetail` (the storefront's `b2c_retail` group, feature 14a), `refsOf`; a `ClientGroupRef` has id,
-name, kind, discountPercent, isDefault, overdraftAllowed, depositLimit; identity uses it for the group a new
-merchant joins and the group inside a merchant row), `recomputeEffectiveCost(tx, serviceIds)` (feature 6
+`ClientGroupDirectory` (`find(db, id, { lock: 'share' }?)` (the target rank row `FOR SHARE` while a rank change reads it), `findDefault`, `findRetail` (the storefront's `b2c_retail` group, feature 14a), `refsOf`; a `ClientGroupRef` has id,
+name, kind, discountPercent, isDefault, overdraftAllowed, depositLimit (use `rankKindOf(ref.kind)` for the rank kind); identity uses it for the group a new
+account joins and the group inside an account row), `recomputeEffectiveCost(tx, serviceIds)` (feature 6
 calls it from sync, import and link changes), the figure rules (`defaultMinProfit`, `effectiveMinProfit`, `floorPrice`,
 `marginPercent`, `isBelowFloor`, `deliveryTimeText`), the closed vocabularies `SERVICE_PRICE_MODES`, `SERVICE_DUPLICATE_RULES` and
 `SERVICE_TYPES`, the inventory helpers the seed uses, and the storefront's read-only views (feature 14a): `StorefrontServices`
@@ -302,13 +310,23 @@ Feature 41 (decision 051) adds the one-time review of the stored field patterns:
 `FIELD_PATTERNS_REVIEW_EVENT`, `FIELD_PATTERNS_REVIEW_JOB` and `FIELD_PATTERN_CLEARED_AUDIT_ACTION`. The pattern checker itself is shared
 code (`src/common/field-pattern.ts`), not a catalog export.
 
+### Ranks as a seam (decision 064)
+
+The abstract class `RankGroupReads` (`ports/rank-group-reads.ts`, the first line of the barrel) is how other modules ask what a rank is, without
+reading `client_groups`: `kindOf(db, groupId)` (the stored kind, `b2b` or `b2c_retail`, or undefined), `retailGroupId(db)` (the one retail rank; a plain error when
+none exists), `nameOf(db, groupId)` (the name the rank history snapshots) and `rankOrder(db)` (every rank id ordered by `sort`, then `id`).
+`ClientGroupDirectory` implements it and the wiring binds the port to it (`useExisting`). Identity's `AccountDirectory`, the rank gate's `RankKinds` and
+the account lists read ranks only through it. `rankKindOf(kind)` (identity) turns a stored kind into the wire word: `b2b` is `merchant`, anything else
+`retail`. The portal catalog routes (`GET /client/services`, `GET /client/services/:id`, `GET /client/prices/export`) serve merchant ranks only (403
+`RANK_NOT_ALLOWED` for any other rank, by the rank gate and again in `merchantFor`) and no longer list `ACCOUNT_PENDING_APPROVAL`.
+
 ## Owned tables
 
 Only this module reads and writes these 10 tables, `listed_prices`, `retail_price_rules`, `retail_price_follows` and `retail_price_changes` (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts`.
 
 | Table | What it holds |
 |---|---|
-| `client_groups` | Merchant groups with their discount percentages and promotion limits; kind = b2c_retail marks the single retail group used by the storefront. |
+| `client_groups` | The ranks (merchant groups and the one retail rank) with their discount percentages and promotion limits; kind `b2b` is a merchant rank, kind `b2c_retail` marks the single retail rank used by the storefront and every guest (the kinds are closed, decision 064). |
 | `service_categories` | Service categories; equal to GROUPNAME in Dhru. |
 | `services` | Services; id equals SERVICEID. |
 | `service_fields` | Custom fields of a service; equal to Requires.Custom. |
@@ -404,7 +422,7 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 
 ## Permissions
 
-Staff permissions the map requires on this module's admin routes: `catalog:*`, `catalog:update`, `groups:*`, `inventory:read`, `inventory:write`, `pricing:*`, `pricing:read`, `pricing:update`. A `*` row means the action of the method: `groups:read|create|update|delete` (client groups), `catalog:read|create|update|delete` (categories, services), `pricing:read|create|update|delete` (client prices, pricing rules); fields and options need `catalog:update`; group prices and the bulk price change `pricing:update`; the resolver `pricing:read`; the inventory routes `inventory:read` and `inventory:write`. Audit entity types written: `client_group`, `category`, `service` (also the group prices and the bulk change), `merchant` (client prices), `pricing_rule`, `retail_price_rule` (feature 31) and `inventory_code` (a void; the import is audited on the `service`). The retail price
+Staff permissions the map requires on this module's admin routes: `catalog:*`, `catalog:update`, `groups:*`, `inventory:read`, `inventory:write`, `pricing:*`, `pricing:read`, `pricing:update`. A `*` row means the action of the method: `groups:read|create|update|delete` (client groups), `catalog:read|create|update|delete` (categories, services), `pricing:read|create|update|delete` (client prices, pricing rules); fields and options need `catalog:update`; group prices and the bulk price change `pricing:update`; the resolver `pricing:read`; the inventory routes `inventory:read` and `inventory:write`. Audit entity types written: `client_group`, `category`, `service` (also the group prices and the bulk change), `account` (client prices; the entity word of every account since decision 064), `pricing_rule`, `retail_price_rule` (feature 31) and `inventory_code` (a void; the import is audited on the `service`). The retail price
 rules (feature 31, routes beyond the map) use `pricing:read` (list, preview), `pricing:create`, `pricing:update` and `pricing:delete`. A `basePrice` or `minProfit` change on `PATCH /admin/services/:id` also needs `pricing:update` (decision 046). `GET /admin/services/price-grid` (decision 063) needs `catalog:read` and also `pricing:read`; `POST /admin/services/order` needs `catalog:update` and writes the audit entry `changed the order of` (entity `service`).
 
 Keep this list in step with the contracts (`permission` of each `defineRoute`).
@@ -428,7 +446,7 @@ registered by the storefront's search module. `StorefrontServices` gained `price
 
 `service_price_scan` (queue `maintenance`, processor `jobs/price-change-scan.processor.ts`, module `PriceChangeScanModule` in the worker; feature 7b): every move of the
 catalog price version tells its listeners (`PriceVersionListeners`), and `PriceChangeScan` adds a delayed job (60 s, job id `price-scan-<minute>`, so at most one a minute).
-The scan compares, for every active merchant and service of the last 30 days of orders (read through the foreign reads of `infra/foreign-reads.repository.ts`), the price a
+The scan compares, for every active account of a merchant rank and service of the last 30 days of orders (read through the foreign reads of `infra/foreign-reads.repository.ts`, which read `orders.account_id` and **the merchant doors only, never a shop order**), the price a
 new order would pay now (`PriceResolver`, floor included) with the unit price of the merchant's latest order, and writes `service.price_changed` for each difference
 that has no event with the same ids yet (`OutboxService.hasEvent`; the digest is idempotent on the same event as well). Event-driven, so no `job_runs` row.
 A merchant who has not ordered the service in 30 days is not told; a price that goes back to the last order's price is not announced.
@@ -460,6 +478,10 @@ database had none, so `POST /admin/clients` answered 500). It marks the first me
 default when groups exist without one, inserts `Standard` (default, no discount, threshold 0, no deposit limit, no overdraft) when
 there is no merchant group, and inserts `Storefront retail` when there is no `b2c_retail` group. The seed's demo groups reuse or
 replace these rows (`scripts/seed/identity.ts`).
+
+`drizzle/0066_accounts_expand.sql` (decision 064) runs the retail half of `0005` again before it copies the customers (it inserts `Storefront retail` when no
+`b2c_retail` rank exists: every copied customer and every guest takes the retail rank), refuses a kind outside `b2b` and `b2c_retail` (a preflight stop, and the
+new `client_groups_kind_check`) and a retail rank that allows overdraft (`client_groups_retail_no_credit_check`).
 
 `drizzle/0063_service_sort.sql` adds `services.sort` (decision 063): integer, default 0, `CHECK` from 0 to 1000000. Every service starts at 0, which keeps the
 name order the merchant lists had; nothing is backfilled.

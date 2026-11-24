@@ -117,7 +117,7 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 
 | Route | Permission | What it does |
 |---|---|---|
-| `GET /admin/service-listings` | `storefront:read` | Listings with the service join, retail price (and, feature 31, `retailPriceSource`, `retailPriceRule`, `retailPriceWaiting`), storefront floor, margin, 30-day storefront sales, the lock and the content fields (no Markdown bodies); filters `isListed`, `locked`, `isFeatured`; sorts include `listedAt`, `sort`. |
+| `GET /admin/service-listings` | `storefront:read` | Listings with the service join, retail price (and, feature 31, `retailPriceSource`, `retailPriceRule`, `retailPriceWaiting`), storefront floor, margin, 30-day storefront sales (`orders30d`, `revenue30d`: the non-rejected orders of the shop's door, `orders.source = 'store'`, whatever rank the buyer holds now, decision 064), the lock and the content fields (no Markdown bodies); filters `isListed`, `locked`, `isFeatured`; sorts include `listedAt`, `sort`. |
 | `GET /admin/service-listings/:id` | `storefront:read` | One listing with `descriptionMd` and `requirementsMd`. |
 | `POST /admin/service-listings` | `storefront:create` | A service on the storefront, not on the site yet, with optional content (`LISTING_EXISTS`: the service already has a listing, or the slug is taken; `LISTING_LOCKED`). |
 | `PATCH /admin/service-listings/:id` | `storefront:update` | The "On the site" switch, the retail price (floor 422, `SERVICE_DISABLED`, `LISTING_LOCKED`; feature 31: `retailPricing: 'rule'` prices by the retail price rule and follows it, 422 on `retailPricing` `conflict`, `no_rule`, `no_cost`; a typed price stops following) and the content: title, slug (`LISTING_EXISTS` on `slug`), summary, description, requirements, delivery note, SEO, brand, carrier, country, featured, position. Switching on also needs `storefront:publish`; `retailPrice` and `retailPricing` also need `pricing:update` (decision 046). |
@@ -359,5 +359,5 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 
 - `catalog-3` · DELETE /admin/services/:id (an archived or disabled service is never listed or sold)
 - `b2c-7` · GET /admin/service-listings, PATCH /admin/service-listings/:id
-- `b2c-14` · GET /admin/customers/:id, GET /admin/legal-documents
+- `b2c-14` · GET /admin/customers/:id (answers `410` since decision 064; the account detail is `GET /admin/clients/:id`), GET /admin/legal-documents
 - `b2c-15` · POST /admin/content-pages/generate

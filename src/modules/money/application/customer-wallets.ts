@@ -1,5 +1,6 @@
-// CustomerWallets: the read side, staff adjustments and the freeze of a storefront customer's store balance (feature 21, plan § 5.6.1 to
-// § 5.6.3 and § 5.6.10). Public service of the money module: the customers module calls it for the anonymize guard and the data export.
+// CustomerWallets: the read side, the freeze and the erasure check of an account's store balance (feature 21, plan § 5.6.1 to § 5.6.3 and
+// § 5.6.10, decision 064). Public service of the money module: the customers module calls it for the anonymize guard and the data export, the
+// disputes call it to hold a wallet, the checkout asks it for the figures of a balance payment.
 import { Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
 import { CLOCK, type Clock } from '../../../common/clock';
@@ -7,27 +8,24 @@ import type { ParsedFilter, ParsedListQuery } from '../../../common/contract';
 import { type CustomerContact, customerEmailIn } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
-import { DbService, type DbExecutor, escapeLike } from '../../../infra/db';
-import { type StaffPrincipal, isOwner } from '../../identity';
+import { DbService, type DbExecutor, type Transaction, escapeLike } from '../../../infra/db';
 import { AuditService, SettingsReader } from '../../platform';
 import type {
-  AdminWalletSchema,
   StoreStatementRowSchema,
   StoreWalletSchema,
   WalletRowSchema,
 } from '../contracts/customer-wallet.contracts';
-import type { StatementRowSchema } from '../contracts/wallet.contracts';
 import { BASE_CURRENCY } from '../domain/accounts';
-import { customerAdjust } from '../domain/customer-wallet-events';
 import {
   type CustomerWalletPolicy,
   availableOf,
   customerMemo,
   customerWalletPolicy,
+  erasureRefusal,
   roomOf,
 } from '../domain/customer-wallet-policy';
-import { ADJUST_WINDOW_MS, adjustmentNeedsOwner, adjustmentRefusalDetail } from '../domain/wallet-rules';
-import { lockStaffAdjustments, staffCreditsSince } from '../infra/adjustment.repository';
+import type { AccountWalletView } from '../ports/account-wallets';
+import type { WalletErasure } from '../ports/wallet-erasure';
 import {
   type CustomerWalletRow,
   balancePaidOrderIds,
@@ -36,43 +34,25 @@ import {
   hasPendingTopUpPayment,
   listCustomerWallets,
   listWalletEntries,
+  lockWalletsOf,
   openBalanceRefundId,
   readCustomerWallet,
   readTopUpFigures,
   voidUnpaidTopUps,
   writeWalletFreeze,
 } from '../infra/customer-wallet.repository';
-import {
-  type WalletCustomer,
-  findCustomerIdsByNameOrEmail,
-  findWalletCustomer,
-  loadWalletCustomers,
-} from '../infra/foreign-directory.repository';
-import { findJournal } from '../infra/ledger-read.repository';
-import { findHeaderByKey } from '../infra/ledger-writer.repository';
+import { type WalletCustomer, findWalletCustomer } from '../infra/foreign-directory.repository';
 import { CustomerWalletMails } from './customer-wallet-mails';
-import { LedgerPoster, type PostedTransaction } from './post-transaction';
 import { StorefrontOrderPorts } from './storefront-ports';
 
-/** The customer's wallet on the store wire. */
+/** The store balance of an account on the store wire. */
 export type StoreWallet = z.output<typeof StoreWalletSchema>;
-/** A customer's wallet on the staff wire. */
-export type AdminWallet = z.output<typeof AdminWalletSchema>;
-/** A line of the customer's own statement. */
+/** The store wallet of an account as staff read it: the one wallet view of every account, for the store kind. */
+export type AdminWallet = AccountWalletView;
+/** A line of the account's own statement. */
 export type StoreStatementLine = z.output<typeof StoreStatementRowSchema>;
-/** A line of the staff statement (the merchant statement's shape). */
-export type AdminStatementLine = z.output<typeof StatementRowSchema>;
 /** A wallet of the staff list. */
 export type WalletListRow = z.output<typeof WalletRowSchema>;
-
-/** What a staff adjustment asks for. */
-export interface CustomerAdjustInput {
-  readonly amount: string;
-  readonly direction: 'credit' | 'debit';
-  readonly reason: string;
-  /** The required `Idempotency-Key` (O15). */
-  readonly idempotencyKey: string;
-}
 
 /** What a balance payment checks before it posts (a friendly pre-check; the posting's own guard decides). */
 export interface WalletPeek {
@@ -80,7 +60,7 @@ export interface WalletPeek {
   readonly frozen: boolean;
 }
 
-/** The wallet part of a customer data export. */
+/** The wallet part of an account's data export. */
 export interface WalletExport {
   readonly currency: string;
   readonly balance: string;
@@ -89,28 +69,6 @@ export interface WalletExport {
 
 /** The most statement lines a data export holds. */
 const EXPORT_LINES = 10_000;
-
-const notFound = () => new AppError('NOT_FOUND', { detail: 'No customer with this id.' });
-
-/** How an audit row names a customer: the name, else the email; an anonymized one by number (its old name is personal data). */
-function labelOf(customer: WalletCustomer): string {
-  if (customer.status === 'anonymized') return `customer ${customer.id}`;
-  return customer.name.trim() || customer.email;
-}
-
-function parsePositiveAmount(text: string): Money {
-  const bad = new AppError('VALIDATION_FAILED', {
-    errors: [{ field: 'amount', code: 'min', message: 'Enter an amount greater than zero.' }],
-  });
-  try {
-    const amount = Money.fromWire(text);
-    if (!amount.isPositive()) throw bad;
-    return amount;
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw bad;
-  }
-}
 
 /** The posting-time window of a statement request (`createdAt_gte`, `createdAt_lte`). */
 function windowOf(filters: readonly ParsedFilter[]): { from?: Date; to?: Date } {
@@ -126,22 +84,28 @@ function windowOf(filters: readonly ParsedFilter[]): { from?: Date; to?: Date } 
 const frozenOf = (wallet: CustomerWalletRow | undefined) =>
   wallet?.frozenAt ? { at: wallet.frozenAt.toISOString(), reason: wallet.frozenReason } : null;
 
+/** How an audit row names an account: the name, else the email; an anonymized one by number (its old name is personal data). */
+function labelOf(account: WalletCustomer): string {
+  if (account.status === 'anonymized') return `account ${account.id}`;
+  return account.name.trim() || account.email;
+}
+
 /**
- * Reads and changes customers' store balances.
+ * Reads and holds the store balances of accounts, and checks their erasure.
  *
- * Why: the owner's customer wallet (ROADMAP 2W, lead rule L5): the customer reads the balance, its limits and a statement; staff read the
- * same, adjust it with a reason, freeze and unfreeze it, and list every wallet. Balances, freezes and limits are read from Postgres on every
- * call and never cached (decision 022, plan § 5.1 invariant 7). Every posting goes through `LedgerPoster`; the freeze use cases lock only
- * the wallet row and post nothing afterwards (plan § 5.7).
+ * Why: the owner's store balance (ROADMAP 2W, lead rule L5, decision 064): an account of the retail rank reads its balance, its limits and a
+ * statement; staff list every live store wallet, and the unified wallet routes of `/admin/clients/:id` hold and release it through the
+ * in-transaction methods here. Balances, freezes and limits are read from Postgres on every call and never cached (decision 022, plan § 5.1
+ * invariant 7). The freeze use cases lock only the wallet row and post nothing afterwards (plan § 5.7). The wallet is the `customer_wallet`
+ * ledger account owned by `('account', id)`; every id here is an account id. The class is the implementation of `WalletErasure` (`closeForErasure`).
  *
- * Side effects: `adjust` posts one ledger transaction, writes an audit row and a `wallet.adjusted` mail; `freeze`/`unfreeze` update the
- * wallet row, write an audit row (and a `wallet.frozen` mail); `closeForErasure` voids unpaid top-ups.
+ * Side effects: `freezeInTx` and `freezeAfterPosting` update the wallet row, write an audit row (entity `account`) and a `wallet.frozen` mail;
+ * `unfreezeInTx` updates the row and writes an audit row; `closeForErasure` locks the account's wallet rows and voids unpaid top-ups.
  */
 @Injectable()
-export class CustomerWallets {
+export class CustomerWallets implements WalletErasure {
   constructor(
     private readonly db: DbService,
-    private readonly poster: LedgerPoster,
     private readonly audit: AuditService,
     private readonly settings: SettingsReader,
     private readonly mails: CustomerWalletMails,
@@ -150,7 +114,7 @@ export class CustomerWallets {
   ) {}
 
   /**
-   * The customer wallet policy of the current settings.
+   * The store wallet policy of the current settings.
    *
    * @returns the eight settings with their safe defaults
    */
@@ -159,17 +123,17 @@ export class CustomerWallets {
   }
 
   /**
-   * The signed-in customer's own wallet.
+   * The signed-in account's own store balance.
    *
-   * @param customerId the authenticated customer
+   * @param accountId the authenticated account (the route allows the retail rank only)
    * @returns the store view (zeros while no wallet exists)
    */
-  async viewForCustomer(customerId: number): Promise<StoreWallet> {
+  async viewForCustomer(accountId: number): Promise<StoreWallet> {
     const policy = await this.policy();
     const now = this.clock.now();
     const [wallet, figures] = await Promise.all([
-      readCustomerWallet(this.db.db, customerId),
-      readTopUpFigures(this.db.db, customerId, now),
+      readCustomerWallet(this.db.db, accountId),
+      readTopUpFigures(this.db.db, accountId, now),
     ]);
     const balance = Money.of(wallet?.balance ?? '0');
     const pendingNet = Money.of(figures.pendingNet);
@@ -196,29 +160,23 @@ export class CustomerWallets {
   }
 
   /**
-   * A customer's wallet, for staff.
+   * A page of the account's own statement, the staff reason of an adjustment hidden.
    *
-   * @param customerId the customer
-   * @returns the staff view (zeros while no wallet exists)
-   * @throws {AppError} `NOT_FOUND` when there is no customer with this id
-   */
-  async viewForStaff(customerId: number): Promise<AdminWallet> {
-    if (!(await findWalletCustomer(this.db.db, customerId))) throw notFound();
-    return this.adminView(this.db.db, customerId, await this.policy());
-  }
-
-  /**
-   * A page of the customer's own statement, the staff reason of an adjustment hidden.
-   *
-   * @param customerId the authenticated customer
+   * @param accountId the authenticated account
    * @param query the parsed list request (`createdAt` sort and window)
    * @returns the lines and their total
    */
   async statementForCustomer(
-    customerId: number,
+    accountId: number,
     query: ParsedListQuery<'createdAt'>,
   ): Promise<{ rows: StoreStatementLine[]; total: number }> {
-    const page = await this.entriesOf(customerId, query);
+    const wallet = await readCustomerWallet(this.db.db, accountId);
+    if (!wallet) return { rows: [], total: 0 };
+    const page = await listWalletEntries(this.db.db, wallet.id, {
+      order: query.sort[0]?.order ?? 'desc',
+      range: query.range,
+      ...windowOf(query.filters),
+    });
     return {
       total: page.total,
       rows: page.rows.map((row) => ({
@@ -235,201 +193,57 @@ export class CustomerWallets {
   }
 
   /**
-   * A page of a customer's statement, for staff (full memos).
+   * Lists the live store wallets of accounts for staff.
    *
-   * @param customerId the customer
-   * @param query the parsed list request (`createdAt` sort and window)
-   * @returns the lines and their total
-   * @throws {AppError} `NOT_FOUND` when there is no customer with this id
-   */
-  async statementForStaff(
-    customerId: number,
-    query: ParsedListQuery<'createdAt'>,
-  ): Promise<{ rows: AdminStatementLine[]; total: number }> {
-    if (!(await findWalletCustomer(this.db.db, customerId))) throw notFound();
-    const page = await this.entriesOf(customerId, query);
-    return {
-      total: page.total,
-      rows: page.rows.map((row) => ({
-        id: row.id,
-        transactionId: row.transactionId,
-        kind: row.kind,
-        memo: row.memo,
-        amount: Money.of(row.amount).neg().toWire(),
-        balanceAfter: row.balanceAfter,
-        createdAt: row.createdAt.toISOString(),
-      })),
-    };
-  }
-
-  /**
-   * Lists customer wallets for staff.
+   * Why: decision 064: a wallet is listed while its owner's rank is a retail rank; `customer.id` is the account id.
    *
-   * @param query the parsed list request (`state`, sorts, `q` on the customer's name and, for a caller who may read customers, email)
-   * @param contact what the caller may see of a customer's address (decision 047, rule A and the search)
+   * @param query the parsed list request (`state`, sorts, `q` on the owner's name and, for a caller who may read accounts, address)
+   * @param contact what the caller may see of an address (decision 047, rule A and the search)
    * @returns the page and the total
    */
   async list(
     query: ParsedListQuery<'balance' | 'updatedAt'>,
     contact: CustomerContact,
   ): Promise<{ rows: WalletListRow[]; total: number }> {
-    const db = this.db.db;
-    const ids = query.search
-      ? await findCustomerIdsByNameOrEmail(db, `%${escapeLike(query.search.text)}%`, contact === 'full')
-      : undefined;
-    const page = await listCustomerWallets(db, query, ids);
-    const customers = await loadWalletCustomers(
-      db,
-      page.rows.map((row) => row.ownerId),
+    const page = await listCustomerWallets(
+      this.db.db,
+      query,
+      query.search ? { pattern: `%${escapeLike(query.search.text)}%`, matchEmail: contact === 'full' } : undefined,
     );
     return {
       total: page.total,
-      rows: page.rows.map((row) => {
-        const customer = customers.get(row.ownerId);
-        return {
-          customer: {
-            id: row.ownerId,
-            name: customer?.name ?? '',
-            email: customerEmailIn(contact, customer?.email ?? ''),
-            status: customer?.status ?? 'anonymized',
-          },
-          balance: row.balance,
-          frozen: frozenOf(row),
-          updatedAt: row.updatedAt.toISOString(),
-        };
-      }),
+      rows: page.rows.map((row) => ({
+        customer: {
+          id: row.ownerId,
+          name: row.name,
+          email: customerEmailIn(contact, row.email),
+          status: row.status,
+        },
+        balance: row.balance,
+        frozen: frozenOf(row),
+        updatedAt: row.updatedAt.toISOString(),
+      })),
     };
   }
 
   /**
-   * Adds to or deducts from a customer's balance by hand.
+   * Puts an account's store balance on hold inside the caller's transaction (staff, or a top-up dispute as the system).
    *
-   * Why: plan 21 § 5.6.2 (the merchant adjust for a customer): a credit needs a customer with an account who is not anonymized; a debit
-   * may never take the balance below zero (`INSUFFICIENT_FUNDS`: customers have no credit). The key is
-   * `adjust:customer:<id>:<Idempotency-Key>`, so a retry posts once and can never collide with a merchant's `adjust:<id>:...`. Above the
-   * approval limit (setting `wallet.customer.adjust_approval_limit`) the server refuses: a staff member's credits to customer balances
-   * count together over a rolling 24 hours and a debit counts alone; an Owner is not limited, and a retry of an accepted adjustment is
-   * not judged again (decision 049). Allowed while the switch is off or the wallet is frozen (P1, P6).
-   *
-   * Side effects: one ledger transaction (kind `adjustment`, ref type `customer`), the wallet balance, one audit row, one `wallet.adjusted`
-   * mail (not on a replay); opens the wallet on its first credit. Takes the staff member's adjustment lock until the commit.
-   *
-   * @param caller the staff member who adjusts
-   * @param customerId the customer
-   * @param input amount, direction, reason and the idempotency key
-   * @returns the journal id and the wallet after posting
-   * @throws {AppError} `VALIDATION_FAILED` on `amount`, `NOT_FOUND`, `ANONYMIZED` or `NO_ACCOUNT` (a credit), `APPROVAL_REQUIRED`
-   *   (409: above the limit, decision 049), `INSUFFICIENT_FUNDS`, `IDEMPOTENCY_KEY_REUSED`
-   */
-  async adjust(
-    caller: StaffPrincipal,
-    customerId: number,
-    input: CustomerAdjustInput,
-  ): Promise<{ transactionId: number; wallet: AdminWallet }> {
-    const amount = parsePositiveAmount(input.amount);
-    const policy = await this.policy();
-    return this.db.runInTransaction(async ({ tx }) => {
-      // Lock order: this staff member's adjustment lock first, then (inside the posting) the wallet row.
-      await lockStaffAdjustments(tx, caller.staffId);
-      const customer = await findWalletCustomer(tx, customerId);
-      if (!customer) throw notFound();
-      if (input.direction === 'credit') {
-        if (customer.status === 'anonymized') throw new AppError('ANONYMIZED');
-        if (!customer.hasAccount) {
-          throw new AppError('NO_ACCOUNT', { detail: 'Only a customer with an account can hold a store balance.' });
-        }
-      }
-      const key = `adjust:customer:${customerId}:${input.idempotencyKey}`;
-      // A retry of an accepted adjustment replays it: it is already part of the sum it would be judged against (decision 049).
-      if (!isOwner(caller) && !(await findHeaderByKey(tx, key))) {
-        const creditedInWindow =
-          input.direction === 'credit'
-            ? await staffCreditsSince(tx, caller.staffId, 'customer', new Date(this.clock.nowMs() - ADJUST_WINDOW_MS))
-            : Money.zero();
-        const facts = { direction: input.direction, amount, creditedInWindow, limit: policy.adjustApprovalLimit };
-        if (adjustmentNeedsOwner({ ...facts, owner: false })) {
-          throw new AppError('APPROVAL_REQUIRED', { detail: adjustmentRefusalDetail(facts) });
-        }
-      }
-      const memo = `Manual ${input.direction}: ${input.reason}`;
-      const posted = await this.poster.post(tx, {
-        ...customerAdjust({ customerId, amount, direction: input.direction }),
-        refId: customerId,
-        idempotencyKey: key,
-        currency: BASE_CURRENCY,
-        memo,
-        createdBy: { type: 'staff', id: caller.staffId },
-      });
-      if (posted.replayed) await this.assertSameAdjustment(tx, posted, memo, input.direction, amount);
-      // The wallet row is locked by the posting until commit, so these figures are the posting's own.
-      const wallet = await this.adminView(tx, customerId, policy);
-      const touched = posted.touched.find((account) => account.kind === 'customer_wallet');
-      await this.audit.record(tx, {
-        action: posted.replayed ? 'repeated wallet adjustment of' : 'adjusted wallet of',
-        entityType: 'customer',
-        entityId: customerId,
-        entityLabel: labelOf(customer),
-        before: { balance: touched?.before ?? wallet.balance },
-        after: {
-          balance: wallet.balance,
-          transactionId: posted.id,
-          amount: amount.toWire(),
-          direction: input.direction,
-          reason: input.reason,
-        },
-      });
-      if (!posted.replayed) {
-        await this.mails.adjusted(tx, {
-          customerId,
-          transactionId: posted.id,
-          amount: amount.toWire(),
-          direction: input.direction,
-          balance: wallet.balance,
-        });
-      }
-      return { transactionId: posted.id, wallet };
-    });
-  }
-
-  /**
-   * Puts a customer's balance on hold (staff).
-   *
-   * Why: plan 21 § 5.6.3 and P1: a hold stops paying from the balance and card top-ups. Freezing a frozen wallet changes nothing and
-   * answers the same view (still audited, `alreadyFrozen`).
+   * Why: the freeze locks only the wallet row and the caller posts nothing afterwards (plan § 5.7). The audit row's actor comes from the
+   * request context: staff, or `system` for a webhook or a job. Freezing a frozen wallet changes nothing and is still audited
+   * (`alreadyFrozen`). The caller holds the account row lock and has read that the account's live wallet is the store wallet (decision 064).
    *
    * Side effects: may open the wallet; sets `frozen_at` and `frozen_reason` on the locked wallet row; one audit row; one `wallet.frozen`
    * mail when it changed.
    *
-   * @param customerId the customer
-   * @param reason the staff note
-   * @returns the wallet after the change
-   * @throws {AppError} `NOT_FOUND`
-   */
-  async freeze(customerId: number, reason: string): Promise<AdminWallet> {
-    const policy = await this.policy();
-    return this.db.runInTransaction(async ({ tx }) => {
-      if (!(await findWalletCustomer(tx, customerId))) throw notFound();
-      await this.freezeInTx(tx, customerId, reason);
-      return this.adminView(tx, customerId, policy);
-    });
-  }
-
-  /**
-   * Puts a customer's balance on hold inside the caller's transaction (staff, or a top-up dispute as the system).
-   *
-   * Why: the freeze locks only the wallet row and the caller posts nothing afterwards (plan § 5.7). The audit row's actor comes from the
-   * request context: staff, or `system` for a webhook or a job.
-   *
-   * Side effects: may open the wallet; updates the locked wallet row; one audit row; one `wallet.frozen` mail when it changed.
-   *
    * @param tx the caller's transaction
-   * @param customerId the customer (checked by the caller)
+   * @param accountId the account (checked by the caller)
    * @param reason why
    * @returns whether the wallet was frozen by this call
    */
-  async freezeInTx(tx: DbExecutor, customerId: number, reason: string): Promise<{ changed: boolean }> {
-    const wallet = await ensureLockedCustomerWallet(tx, customerId);
-    return this.applyFreeze(tx, customerId, wallet, reason);
+  async freezeInTx(tx: DbExecutor, accountId: number, reason: string): Promise<{ changed: boolean }> {
+    const wallet = await ensureLockedCustomerWallet(tx, accountId);
+    return this.applyFreeze(tx, accountId, wallet, reason);
   }
 
   /**
@@ -441,64 +255,62 @@ export class CustomerWallets {
    * Side effects: updates the wallet row; one audit row; one `wallet.frozen` mail when it changed.
    *
    * @param tx the transaction that posted
-   * @param customerId the customer
+   * @param accountId the account
    * @param reason why
    * @returns whether the wallet was frozen by this call
    */
-  async freezeAfterPosting(tx: DbExecutor, customerId: number, reason: string): Promise<{ changed: boolean }> {
-    const wallet = await readCustomerWallet(tx, customerId, true);
-    if (!wallet) throw new Error(`Customer ${customerId} has no wallet after a posting.`);
-    return this.applyFreeze(tx, customerId, wallet, reason);
+  async freezeAfterPosting(tx: DbExecutor, accountId: number, reason: string): Promise<{ changed: boolean }> {
+    const wallet = await readCustomerWallet(tx, accountId, true);
+    if (!wallet) throw new Error(`Account ${accountId} has no store wallet after a posting.`);
+    return this.applyFreeze(tx, accountId, wallet, reason);
   }
 
   /**
-   * Lifts the hold on a customer's balance (staff).
+   * Lifts the hold on an account's store balance inside the caller's transaction (staff).
    *
    * Why: plan 21 § 5.6.3 and P2: a person decides; a wallet below zero stays frozen until the balance is brought back (the database also
-   * refuses it at commit), and so does one with an open top-up dispute. Unfreezing a wallet that is not frozen changes nothing.
+   * refuses it at commit), and so does one with an open top-up dispute. Unfreezing a wallet that is not frozen changes nothing and is
+   * still audited (`alreadyUnfrozen`). The caller holds the account row lock (decision 064).
    *
    * Side effects: clears `frozen_at` and `frozen_reason` on the locked wallet row; one audit row.
    *
-   * @param customerId the customer
+   * @param tx the caller's transaction
+   * @param accountId the account (checked by the caller)
    * @param reason the staff note
-   * @returns the wallet after the change
-   * @throws {AppError} `NOT_FOUND`, `CONFLICT` (balance below zero), `OPEN_DISPUTE`
+   * @returns whether the wallet was unfrozen by this call
+   * @throws {AppError} `CONFLICT` (balance below zero), `OPEN_DISPUTE`
    */
-  async unfreeze(customerId: number, reason: string): Promise<AdminWallet> {
-    const policy = await this.policy();
-    return this.db.runInTransaction(async ({ tx }) => {
-      const customer = await findWalletCustomer(tx, customerId);
-      if (!customer) throw notFound();
-      const wallet = await readCustomerWallet(tx, customerId, true);
-      const frozen = wallet?.frozenAt != null;
-      if (wallet && frozen) {
-        if (Money.of(wallet.balance).isNegative()) {
-          throw new AppError('CONFLICT', { detail: 'Bring the balance to zero or above first.' });
-        }
-        if ((await countOpenTopUpDisputes(tx, customerId)) > 0) throw new AppError('OPEN_DISPUTE');
-        await writeWalletFreeze(tx, wallet.id, null, this.clock.now());
+  async unfreezeInTx(tx: DbExecutor, accountId: number, reason: string): Promise<{ changed: boolean }> {
+    const wallet = await readCustomerWallet(tx, accountId, true);
+    const frozenAt = wallet?.frozenAt ?? null;
+    if (wallet && frozenAt) {
+      if (Money.of(wallet.balance).isNegative()) {
+        throw new AppError('CONFLICT', { detail: 'Bring the balance to zero or above first.' });
       }
-      await this.audit.record(tx, {
-        action: 'unfroze wallet of',
-        entityType: 'customer',
-        entityId: customerId,
-        entityLabel: labelOf(customer),
-        before: { frozen: frozen ? { at: wallet.frozenAt.toISOString(), reason: wallet.frozenReason } : null },
-        after: { frozen: null, reason, ...(frozen ? {} : { alreadyUnfrozen: true }) },
-      });
-      return this.adminView(tx, customerId, policy);
+      if ((await countOpenTopUpDisputes(tx, accountId)) > 0) throw new AppError('OPEN_DISPUTE');
+      await writeWalletFreeze(tx, wallet.id, null, this.clock.now());
+    }
+    const account = await findWalletCustomer(tx, accountId);
+    await this.audit.record(tx, {
+      action: 'unfroze wallet of',
+      entityType: 'account',
+      entityId: accountId,
+      entityLabel: account ? labelOf(account) : `account ${accountId}`,
+      before: { frozen: frozenAt ? { at: frozenAt.toISOString(), reason: wallet?.frozenReason ?? '' } : null },
+      after: { frozen: null, reason, ...(frozenAt ? {} : { alreadyUnfrozen: true }) },
     });
+    return { changed: frozenAt !== null };
   }
 
   /**
    * A cheap look at the balance and the hold, for a friendly refusal before a balance payment posts.
    *
    * @param tx the caller's transaction
-   * @param customerId the customer
+   * @param accountId the account
    * @returns the balance (zero without a wallet) and whether it is frozen
    */
-  async peek(tx: DbExecutor, customerId: number): Promise<WalletPeek> {
-    const wallet = await readCustomerWallet(tx, customerId);
+  async peek(tx: DbExecutor, accountId: number): Promise<WalletPeek> {
+    const wallet = await readCustomerWallet(tx, accountId);
     return { balance: Money.of(wallet?.balance ?? '0'), frozen: wallet?.frozenAt != null };
   }
 
@@ -506,77 +318,66 @@ export class CustomerWallets {
    * The balance and what can be spent of it now, as a balance payment answers them.
    *
    * @param db the database or the caller's transaction
-   * @param customerId the customer
+   * @param accountId the account
    * @param policy the wallet policy read before the transaction
    * @returns the balance and the available amount (zero while frozen, switched off or not positive)
    */
   async figuresOf(
     db: DbExecutor,
-    customerId: number,
+    accountId: number,
     policy: CustomerWalletPolicy,
   ): Promise<{ balance: string; available: string }> {
-    const { balance, frozen } = await this.peek(db, customerId);
+    const { balance, frozen } = await this.peek(db, accountId);
     return { balance: balance.toWire(), available: availableOf({ balance, frozen, enabled: policy.enabled }).toWire() };
   }
 
   /**
-   * Refuses to anonymize a customer while money is on or on its way to the balance, and voids the top-ups nobody can pay any more.
+   * Refuses to erase an account while money is on, or on its way to, any of its wallets, and voids the top-ups nobody can pay any more.
    *
-   * Why: O12 and risk K11: a balance is never stranded on an anonymized customer. It runs as the last step of the anonymize transaction
-   * (it locks the wallet row, which must come after every other row: plan § 5.7). Money is on its way to the balance while a top-up waits,
-   * while an order paid from the balance is still open (its rejection refunds to the balance, plan § 5.6.7) and while a refund of a
-   * balance payment waits for staff; the orders module tells which orders are open (`StorefrontOrderPort.openAmong`).
+   * Why: decision 064, O12 and risk K11: a balance is never stranded on an anonymized account. It runs as the last step of the anonymize
+   * transaction, under the account row lock the caller holds: it locks every wallet-kind ledger account of the account in id order (which
+   * must come after every other row: plan § 5.7) and refuses while a wallet or the hold is not zero or a wallet is on hold, a top-up
+   * waits for review, a top-up dispute is open, an order paid from the balance is still open (its rejection refunds to the balance, plan
+   * § 5.6.7; the orders module tells which orders are open: `StorefrontOrderPort.openAmong`) or a refund to the balance waits for staff.
+   * The refusal text is `erasureRefusal`'s. An open order paid by card does not hold the erasure.
    *
-   * Side effects: locks the wallet row; voids the customer's open top-ups that have no payment.
+   * Side effects: locks the account's wallet rows; voids the account's open top-ups that have no payment.
    *
    * @param tx the anonymize transaction
-   * @param customerId the customer
-   * @throws {AppError} `CONFLICT` while the balance is not zero, a top-up payment is pending, a top-up dispute is open, an order paid
-   *   from the balance is open or a refund to the balance is `requested` or `processing`
+   * @param accountId the account (the retail account, or the guest row erased with it)
+   * @throws {AppError} `CONFLICT` (409) naming what is left
    */
-  async closeForErasure(tx: DbExecutor, customerId: number): Promise<void> {
-    const wallet = await readCustomerWallet(tx, customerId, true);
-    if (wallet && !Money.of(wallet.balance).isZero()) {
-      throw new AppError('CONFLICT', {
-        detail: `The customer has a store balance of ${wallet.balance} USD. Bring it to zero with an adjustment first.`,
-      });
-    }
-    if (await hasPendingTopUpPayment(tx, customerId)) {
-      throw new AppError('CONFLICT', {
-        detail: 'A top-up of this customer waits for review. Approve or reject it first.',
-      });
-    }
-    if ((await countOpenTopUpDisputes(tx, customerId)) > 0) {
-      throw new AppError('CONFLICT', { detail: 'A dispute of this customer’s top-up is still open.' });
-    }
-    const paidFromBalance = await balancePaidOrderIds(tx, customerId);
-    // Only a customer with a balance-paid order asks the orders module, so a process without it never reaches the port.
+  async closeForErasure(tx: Transaction, accountId: number): Promise<void> {
+    const wallets = await lockWalletsOf(tx, accountId);
+    const paidFromBalance = await balancePaidOrderIds(tx, accountId);
+    // Only an account with a balance-paid order asks the orders module, so a process without it never reaches the port.
     const [openOrderId] = paidFromBalance.length === 0 ? [] : await this.orders.get().openAmong(tx, paidFromBalance);
-    if (openOrderId !== undefined) {
-      throw new AppError('CONFLICT', {
-        detail: `Order ORD-${openOrderId} of this customer was paid from the store balance and is still open. Complete or reject it first.`,
-      });
-    }
-    const openRefundId = await openBalanceRefundId(tx, customerId);
-    if (openRefundId !== undefined) {
-      throw new AppError('CONFLICT', {
-        detail: `Refund RF-${openRefundId} to this customer’s store balance is still open. Approve or decline it first.`,
-      });
-    }
-    await voidUnpaidTopUps(tx, customerId, this.clock.now());
+    const refusal = erasureRefusal({
+      wallets: wallets.map((wallet) => ({
+        kind: wallet.kind,
+        balance: Money.of(wallet.balance),
+        frozen: wallet.frozenAt !== null,
+      })),
+      pendingTopUpPayment: await hasPendingTopUpPayment(tx, accountId),
+      openTopUpDisputes: await countOpenTopUpDisputes(tx, accountId),
+      openBalanceOrderId: openOrderId,
+      openBalanceRefundId: await openBalanceRefundId(tx, accountId),
+    });
+    if (refusal !== undefined) throw new AppError('CONFLICT', { detail: refusal });
+    await voidUnpaidTopUps(tx, accountId, this.clock.now());
   }
 
   /**
-   * The wallet part of a customer's data export.
+   * The wallet part of an account's data export.
    *
-   * Why: plan 21 § 5.6.10: the access right covers the balance and its history; the memos are the customer's (staff reasons hidden).
+   * Why: plan 21 § 5.6.10: the access right covers the balance and its history; the memos are the account's (staff reasons hidden).
    *
    * @param tx the export transaction
-   * @param customerId the customer
+   * @param accountId the account
    * @returns the currency, the balance and up to 10,000 lines, oldest first
    */
-  async exportOf(tx: DbExecutor, customerId: number): Promise<WalletExport> {
-    const wallet = await readCustomerWallet(tx, customerId);
+  async exportOf(tx: DbExecutor, accountId: number): Promise<WalletExport> {
+    const wallet = await readCustomerWallet(tx, accountId);
     if (!wallet) return { currency: BASE_CURRENCY, balance: Money.zero().toWire(), entries: [] };
     const { rows } = await listWalletEntries(tx, wallet.id, { order: 'asc', range: { start: 0, limit: EXPORT_LINES } });
     return {
@@ -593,26 +394,31 @@ export class CustomerWallets {
   }
 
   /**
-   * The staff view of a wallet, read with the given executor.
+   * The staff view of an account's store wallet, read with the given executor.
+   *
+   * Why: the one wallet view of every account (decision 064) for the store kind; the unified wallet routes answer it. A store wallet has no
+   * reserved amount, no credit and never allows credit.
    *
    * @param db the database or the use case's transaction
-   * @param customerId the customer (already checked)
+   * @param accountId the account (already checked)
    * @param policy the wallet policy
-   * @returns the staff view
+   * @returns the view, `kind: 'store'` (zeros while no wallet exists)
    */
-  async adminView(db: DbExecutor, customerId: number, policy: CustomerWalletPolicy): Promise<AdminWallet> {
+  async adminView(db: DbExecutor, accountId: number, policy: CustomerWalletPolicy): Promise<AdminWallet> {
     // One after the other: `db` may be a transaction, whose single connection runs one query at a time.
-    const wallet = await readCustomerWallet(db, customerId);
-    const figures = await readTopUpFigures(db, customerId, this.clock.now());
-    const openDisputes = await countOpenTopUpDisputes(db, customerId);
+    const wallet = await readCustomerWallet(db, accountId);
+    const figures = await readTopUpFigures(db, accountId, this.clock.now());
+    const openDisputes = await countOpenTopUpDisputes(db, accountId);
     const balance = Money.of(wallet?.balance ?? '0');
     return {
+      kind: 'store',
       enabled: policy.enabled,
       currency: BASE_CURRENCY,
       balance: balance.toWire(),
       reserved: Money.zero().toWire(),
       creditLimit: Money.zero().toWire(),
       available: availableOf({ balance, frozen: wallet?.frozenAt != null, enabled: policy.enabled }).toWire(),
+      creditAllowed: false,
       frozen: frozenOf(wallet),
       pendingTopUps: { count: figures.pendingCount, amount: figures.pendingNet },
       openDisputes,
@@ -620,56 +426,27 @@ export class CustomerWallets {
     };
   }
 
-  private async entriesOf(customerId: number, query: ParsedListQuery<'createdAt'>) {
-    const wallet = await readCustomerWallet(this.db.db, customerId);
-    if (!wallet) return { rows: [], total: 0 };
-    return listWalletEntries(this.db.db, wallet.id, {
-      order: query.sort[0]?.order ?? 'desc',
-      range: query.range,
-      ...windowOf(query.filters),
-    });
-  }
-
   private async applyFreeze(
     tx: DbExecutor,
-    customerId: number,
+    accountId: number,
     wallet: CustomerWalletRow,
     reason: string,
   ): Promise<{ changed: boolean }> {
-    const customer = await findWalletCustomer(tx, customerId);
+    const account = await findWalletCustomer(tx, accountId);
     const already = wallet.frozenAt !== null;
     const at = this.clock.now();
     if (!already) await writeWalletFreeze(tx, wallet.id, { at, reason }, at);
     await this.audit.record(tx, {
       action: 'froze wallet of',
-      entityType: 'customer',
-      entityId: customerId,
-      entityLabel: customer ? labelOf(customer) : `customer ${customerId}`,
-      before: { frozen: already ? { at: wallet.frozenAt.toISOString(), reason: wallet.frozenReason } : null },
-      after: already
+      entityType: 'account',
+      entityId: accountId,
+      entityLabel: account ? labelOf(account) : `account ${accountId}`,
+      before: { frozen: wallet.frozenAt ? { at: wallet.frozenAt.toISOString(), reason: wallet.frozenReason } : null },
+      after: wallet.frozenAt
         ? { frozen: { at: wallet.frozenAt.toISOString(), reason: wallet.frozenReason }, alreadyFrozen: true, reason }
         : { frozen: { at: at.toISOString(), reason } },
     });
-    if (!already) await this.mails.frozen(tx, { customerId, frozenAt: at });
+    if (!already) await this.mails.frozen(tx, { customerId: accountId, frozenAt: at });
     return { changed: !already };
-  }
-
-  /** A key reused for a different adjustment is a client bug: refuse it instead of answering the first one. */
-  private async assertSameAdjustment(
-    tx: DbExecutor,
-    posted: PostedTransaction,
-    memo: string,
-    direction: 'credit' | 'debit',
-    amount: Money,
-  ): Promise<void> {
-    const first = await findJournal(tx, posted.id);
-    const walletLine = first?.entries.find((entry) => entry.account.kind === 'customer_wallet');
-    // The wallet line is signed debit positive: a credit to the wallet is negative.
-    const expected = direction === 'credit' ? amount.neg() : amount;
-    if (first?.memo !== memo || !walletLine || !Money.of(walletLine.amount).eq(expected)) {
-      throw new AppError('IDEMPOTENCY_KEY_REUSED', {
-        detail: 'This Idempotency-Key was already used for a different adjustment.',
-      });
-    }
   }
 }

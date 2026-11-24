@@ -1,8 +1,9 @@
-// SessionAuthenticator: turns a session cookie into a principal (decision 018). The same mechanics serve staff, merchants and
-// customers: cookie, lookup, expiry, account state, stage, permissions of the role, and the once-a-minute last-seen write.
+// SessionAuthenticator: turns a session cookie into a principal (decision 018). The same mechanics serve staff and accounts of every
+// rank: cookie, lookup, expiry, account state, stage, permissions of the role, and the once-a-minute last-seen write.
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { CLOCK, type Clock } from '../../../common/clock';
+import type { RouteRank } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { ipRateLimitKey, parseIpAddress } from '../../../common/ip-address';
 import { RateLimitService, rateLimitedError } from '../../../infra/rate-limit';
@@ -26,13 +27,31 @@ export interface AuthenticatedSession {
 }
 
 /**
+ * Refuses a session whose rank is not the one the route serves.
+ *
+ * Why: decision 064, the default-deny rank gate. A `merchant` route serves merchant ranks, a `retail` route the retail rank, `any` every
+ * rank. A view without a rank is refused on every route that names one (fail closed). The refusal is `403 RANK_NOT_ALLOWED`, a code
+ * that never signs the caller out: the shops keep the session and show the account's own pages.
+ *
+ * @param view the live session of an account
+ * @param required the rank of the route (`contract.rank`); `null` (a route outside the gate) and `any` let every rank through
+ * @throws {AppError} `RANK_NOT_ALLOWED` (403) when the rank kind of the session is not `required`
+ */
+export function assertRankAllowed(view: Pick<SessionView, 'subject'>, required: RouteRank | null): void {
+  if (required === null || required === 'any' || view.subject.rank?.kind === required) return;
+  throw new AppError('RANK_NOT_ALLOWED', {
+    detail: required === 'merchant' ? 'This is available to merchant accounts.' : 'This is available to shop accounts.',
+  });
+}
+
+/**
  * The key of the failed-lookup budget of a client address and audience, on the `ip` limiter.
  *
  * Why: decision 053. A session cookie that names no live session costs a cache read and, on a miss, a database read; the budget bounds
  * those lookups per address (the IPv4 address or the IPv6 /64) and per audience, so a stale cookie of one audience never uses up
  * the budget of another, and one address never uses up the budget of another.
  *
- * @param subject the audience of the cookie (staff, client, customer)
+ * @param subject the audience of the cookie (staff or account: one budget for both URL families of the accounts)
  * @param ip the client address (`request.ip`)
  * @returns `session-failures:<subject>:<address key>`
  */
@@ -74,12 +93,12 @@ export class SessionAuthenticator {
   /**
    * Authenticates a request, or refuses it.
    *
-   * @param subject which subject's cookie to read (staff, client, customer)
+   * @param subject which subject's cookie to read (staff or account)
    * @param request the Fastify request
    * @param options the stages the route accepts
    * @returns the session and the principal
-   * @throws {AppError} `UNAUTHORIZED` (401) for no, unknown, revoked, ended or wrong-stage sessions; `ACCOUNT_SUSPENDED`
-   *   (403) for a suspended account; `RATE_LIMITED` (429 with `Retry-After`) when the address used up its failed-lookup budget and the
+   * @throws {AppError} `UNAUTHORIZED` (401) for no, unknown, revoked, ended or wrong-stage sessions, and for an account session without
+   *   a readable rank; `ACCOUNT_SUSPENDED` (403) for a suspended or blocked account; `RATE_LIMITED` (429 with `Retry-After`) when the address used up its failed-lookup budget and the
    *   cache holds no live view of the session
    */
   async authenticate(
@@ -94,22 +113,28 @@ export class SessionAuthenticator {
    * Refuses a request that does not carry a live session of the audience, and does nothing else.
    *
    * Why: decision 053. A multipart body of a session-cookie route is parsed before the access guard runs, so the `upload-session` stage asks
-   * here before the body is read. It judges only that the cookie names a live session of this audience (stricter than a well-formed
-   * cookie: a random string of the right shape fails); suspension, stage, approval, CSRF and permission stay with the guard. A cookie
-   * that fails costs one point of the failed-lookup budget of the address and audience.
+   * here before the body is read. It judges that the cookie names a live session of this audience (stricter than a well-formed
+   * cookie: a random string of the right shape fails) and, for an account's route, the rank gate (decision 064, the upload pre-check):
+   * a retail session posting to a merchant route is refused before the body is buffered. Suspension, stage, CSRF and permission stay
+   * with the guard (a suspended account is not judged here: the guard answers it `ACCOUNT_SUSPENDED`). A cookie that fails costs one
+   * point of the failed-lookup budget of the address and audience.
    *
    * Side effects: reads the session cache and, on a miss, the database; one point of the failed-lookup budget on a failure. No touch,
    * no principal.
    *
    * @param subject which subject's cookie to read
    * @param request the Fastify request
-   * @throws {AppError} `UNAUTHORIZED` (401) for no cookie or a cookie that names no live session of the audience; `RATE_LIMITED` (429
-   *   with `Retry-After`) when the address used up its failed-lookup budget and the cache holds no live view of the session
+   * @param rank the rank of the route (`contract.rank`); left out or `null` for a route outside the rank gate
+   * @throws {AppError} `UNAUTHORIZED` (401) for no cookie or a cookie that names no live session of the audience; `RANK_NOT_ALLOWED`
+   *   (403) for a session of another rank; `RATE_LIMITED` (429 with `Retry-After`) when the address used up its failed-lookup budget and
+   *   the cache holds no live view of the session
    */
-  async precheck(subject: SubjectType, request: FastifyRequest): Promise<void> {
+  async precheck(subject: SubjectType, request: FastifyRequest, rank: RouteRank | null = null): Promise<void> {
     const token = this.cookies.readToken(request, subject);
     if (token === undefined) throw new AppError('UNAUTHORIZED');
-    if ((await this.liveView(subject, request, token, true)) === undefined) throw new AppError('UNAUTHORIZED');
+    const view = await this.liveView(subject, request, token, true);
+    if (view === undefined) throw new AppError('UNAUTHORIZED');
+    if (subject === 'account' && view.subject.state === 'ok') assertRankAllowed(view, rank);
   }
 
   /**
@@ -214,10 +239,20 @@ export class SessionAuthenticator {
         const permissions = view.stage === 'active' ? await this.roles.permissionsOf(roleId) : [];
         return { kind: 'staff', staffId: view.subjectId, roleId, permissions, stage: view.stage, ip, session: view };
       }
-      case 'client':
-        return { kind: 'merchant', clientId: view.subjectId, stage: view.stage, ip, session: view };
-      case 'customer':
-        return { kind: 'customer', customerId: view.subjectId, stage: view.stage, ip, session: view };
+      case 'account': {
+        // A view without a rank cannot have been built by the account resolver; refuse it instead of guessing a kind (fail closed).
+        const rank = view.subject.rank;
+        if (rank === undefined) throw new AppError('UNAUTHORIZED');
+        return {
+          kind: 'account',
+          accountId: view.subjectId,
+          clientId: view.subjectId,
+          rank: { id: rank.id, kind: rank.kind },
+          stage: view.stage,
+          ip,
+          session: view,
+        };
+      }
     }
   }
 }

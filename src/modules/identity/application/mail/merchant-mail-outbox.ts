@@ -1,50 +1,42 @@
-// MerchantMailOutbox: writes the outbox events of the merchant mails (ids only) and registers their queue routes.
-import { Injectable, type OnModuleInit } from '@nestjs/common';
+// MerchantMailOutbox: the old entry of the merchant mails, kept until the contract release (decision 064). The seam is `AccountMailOutbox`
+// (`account-mail-outbox.ts`), which picks the family by the rank kind and registers the queue routes of all seven mails.
+import { Injectable } from '@nestjs/common';
 import type { TransactionContext } from '../../../../infra/db';
-import { OutboxRouteRegistry, OutboxService } from '../../../platform';
+import { OutboxService } from '../../../platform';
+import { ACCOUNT_MAIL_EVENTS } from '../../domain/account-mail';
 
-/** The three mails of the merchant portal. */
-export type MerchantMailKind = 'email_verification' | 'password_reset' | 'invited';
+/** The three mails of a merchant rank. */
+export type MerchantMailKind = keyof typeof ACCOUNT_MAIL_EVENTS.merchant;
 
 /**
  * The outbox event types of the merchant mails.
  *
- * Why: RESOLUTIONS identity-platform-2 and brief 2b: one event per mail; feature 2a writes `merchant.invited` for
- * `POST /admin/clients`, feature 2b the other two. The queue is `notifications` (docs/queues.md).
+ * Why: RESOLUTIONS identity-platform-2 and brief 2b: one event per mail. The queue is `notifications` (docs/queues.md). The names are the
+ * merchant family of {@link ACCOUNT_MAIL_EVENTS}; the stored templates keep them (decision 064).
  */
-export const MERCHANT_MAIL_EVENTS = {
-  email_verification: 'merchant.email_verification',
-  password_reset: 'merchant.password_reset',
-  invited: 'merchant.invited',
-} as const satisfies Record<MerchantMailKind, string>;
+export const MERCHANT_MAIL_EVENTS = ACCOUNT_MAIL_EVENTS.merchant;
 
 /**
- * Writes the outbox row of a merchant mail.
+ * Writes the outbox row of a merchant mail, for the callers that have not moved to `AccountMailOutbox` yet.
  *
- * Why: decision 020: an email is async work, so the use case writes `outbox_events` in its own transaction and the worker's
- * relay turns it into a `notifications` job. The row carries the merchant id and the `auth_tokens` id, never the token: the job
- * that sends the mail issues the clear token itself (feature 12a, `MerchantMailJobs`), so no clear token is ever stored or logged.
+ * Why: the same row as `AccountMailOutbox.enqueue` writes for a merchant rank (the account id as the aggregate and in the payload, with
+ * the link row); it takes no lock and does not choose a family, so only a flow that already knows the account is a merchant may use it.
+ * The routes are registered by the account mail outbox, which both processes load.
  *
- * Side effects: registers the three event types with the `notifications` queue at boot (the API and the worker both load this
- * class); `enqueue` inserts one `outbox_events` row.
+ * Side effects: `enqueue` inserts one `outbox_events` row.
+ *
+ * Kept until the contract release; new code uses `AccountMailOutbox`.
  */
 @Injectable()
-export class MerchantMailOutbox implements OnModuleInit {
-  constructor(
-    private readonly outbox: OutboxService,
-    private readonly routes: OutboxRouteRegistry,
-  ) {}
-
-  /** Registers the three event types with their queue. */
-  onModuleInit(): void {
-    for (const type of Object.values(MERCHANT_MAIL_EVENTS)) this.routes.register({ type, queue: 'notifications' });
-  }
+export class MerchantMailOutbox {
+  constructor(private readonly outbox: OutboxService) {}
 
   /**
    * Writes the event of one mail in the caller's transaction.
    *
    * @param work the caller's transaction
-   * @param mail the kind, the merchant and the `auth_tokens` row of the link (the placeholder the mail job rotates)
+   * @param mail the kind, the merchant (an account id) and the `auth_tokens` row of the link (the placeholder the mail job rotates)
+   * @returns once the event is written
    */
   async enqueue(
     work: Pick<TransactionContext, 'tx'>,
@@ -54,7 +46,7 @@ export class MerchantMailOutbox implements OnModuleInit {
       type: MERCHANT_MAIL_EVENTS[mail.kind],
       aggregateType: 'clients',
       aggregateId: mail.clientId,
-      payload: { tokenId: mail.tokenId },
+      payload: { accountId: mail.clientId, tokenId: mail.tokenId },
     });
   }
 }

@@ -5,13 +5,12 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { type BodyOf, ContractHeaders, type HeadersOf, type ResultOf, Route } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { APP_CONFIG, type AppConfig } from '../../../config';
-import { CurrentPrincipal, type CapabilityGrant, type Principal } from '../../identity';
+import { CurrentPrincipal, OptionalAccountSession, type CapabilityGrant, type Principal } from '../../identity';
 import { countryFromHeader } from '../../risk';
 import { CheckoutSessionService } from '../application/checkout-session.service';
 import { CheckoutBalancePayService } from '../application/checkout-balance-pay.service';
 import { CheckoutPayService } from '../application/checkout-pay.service';
 import { ConsentService } from '../application/consent.service';
-import { OptionalCustomerSession } from '../application/optional-customer-session';
 import { payCheckoutFromBalance, payCheckoutSession } from '../contracts/checkout-pay.contracts';
 import { openCheckoutSession, recordCheckoutConsents, showCheckoutSession } from '../contracts/checkout.contracts';
 
@@ -34,7 +33,9 @@ function userAgentOf(request: FastifyRequest): string {
  * The storefront checkout routes.
  *
  * Why: the shop opens a session to lock the price, tax and exchange rate, shows it back, and records consent before payment
- * (scenario b2c-paid steps 2 and 3). The anti-bot check, the per-IP limit and the token lookup limit run before these.
+ * (scenario b2c-paid steps 2 and 3). The anti-bot check, the per-IP limit and the token lookup limit run before these. The routes
+ * serve guests and signed-in retail accounts on one path; `OptionalAccountSession` reads the cookie (CSRF first, then the rank: a merchant
+ * rank is `403 RANK_NOT_ALLOWED`, never treated as a guest; decision 064).
  *
  * @route POST /store/v1/checkout-sessions
  * @route GET /store/v1/checkout-sessions/:token
@@ -47,7 +48,7 @@ export class CheckoutController {
   constructor(
     private readonly sessions: CheckoutSessionService,
     private readonly consents: ConsentService,
-    private readonly signedIn: OptionalCustomerSession,
+    private readonly signedIn: OptionalAccountSession,
     private readonly pay: CheckoutPayService,
     private readonly balancePay: CheckoutBalancePayService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -65,14 +66,15 @@ export class CheckoutController {
   }
 
   /**
-   * Opens a checkout, as the signed-in customer when the request carries a customer session.
+   * Opens a checkout, as the signed-in retail account when the request carries an account session.
    *
    * @param body the service, the buyer's email and country, and the order input
    * @param request the request, for the session cookie, the visitor's address and user agent, and the visitor's country header when
    *   `GEOIP_COUNTRY_HEADER` is set
    * @param reply the reply, for the cache header
    * @returns the new session
-   * @throws {AppError} `CSRF_FAILED` when a customer session comes without its CSRF header (nothing is written)
+   * @throws {AppError} `CSRF_FAILED` when an account session comes without its CSRF header, `RANK_NOT_ALLOWED` (403) when that session
+   *   belongs to a merchant rank (nothing is written either way)
    * @route POST /store/v1/checkout-sessions
    */
   @Route(openCheckoutSession)
@@ -82,10 +84,10 @@ export class CheckoutController {
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof openCheckoutSession>> {
     reply.header('cache-control', NO_STORE);
-    const customerId = await this.signedIn.customerId(request);
+    const accountId = await this.signedIn.retailAccountId(request);
     return this.sessions.open({
       ...body,
-      customerId,
+      accountId,
       ip: request.ip,
       userAgent: userAgentOf(request),
       ipCountry: this.visitorCountry(request),
@@ -117,7 +119,8 @@ export class CheckoutController {
    * @param request the request, for the session cookie, the visitor's address and user agent
    * @param reply the reply, for the cache header
    * @returns the records and where the session's consent stands
-   * @throws {AppError} `CSRF_FAILED` when a customer session comes without its CSRF header (nothing is written)
+   * @throws {AppError} `CSRF_FAILED` when an account session comes without its CSRF header, `RANK_NOT_ALLOWED` (403) when that session
+   *   belongs to a merchant rank (nothing is written either way)
    * @route POST /store/v1/checkout-sessions/:token/consents
    */
   @Route(recordCheckoutConsents)
@@ -128,23 +131,29 @@ export class CheckoutController {
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof recordCheckoutConsents>> {
     reply.header('cache-control', NO_STORE);
-    const customerId = await this.signedIn.customerId(request);
+    const accountId = await this.signedIn.retailAccountId(request);
     return this.consents.record(
       sessionIdOf(principal),
       body,
       { ip: request.ip, userAgent: userAgentOf(request) },
-      customerId,
+      accountId,
     );
   }
 
   /**
    * Starts paying a checkout.
    *
+   * Why: the token is the credential, so a guest pays without a session; a merchant rank never buys at the retail door, so a request that
+   * carries its session is refused here as on the consents step before it (decision 064), never treated as a guest.
+   *
    * @param principal the holder of the checkout token
    * @param body the chosen method and the return address
    * @param headers the required `Idempotency-Key`
+   * @param request the request, for the account session cookie and its CSRF header
    * @param reply the reply, for the cache header and the replay marker
    * @returns the payment and the gateway's hosted page (`201`)
+   * @throws {AppError} `CSRF_FAILED` when an account session comes without its CSRF header, `RANK_NOT_ALLOWED` (403) when that session
+   *   belongs to a merchant rank (nothing is written either way); the use case's refusals
    * @route POST /store/v1/checkout-sessions/:token/pay
    */
   @Route(payCheckoutSession)
@@ -152,23 +161,28 @@ export class CheckoutController {
     @CurrentPrincipal() principal: Principal | undefined,
     @Body() body: BodyOf<typeof payCheckoutSession>,
     @ContractHeaders() headers: HeadersOf<typeof payCheckoutSession>,
+    @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof payCheckoutSession>> {
     reply.header('cache-control', NO_STORE);
-    const started = await this.pay.pay(sessionIdOf(principal), body, headers['idempotency-key']);
+    const sessionId = sessionIdOf(principal);
+    // Only the refusal matters: the payment belongs to the checkout, not to the session that asks.
+    await this.signedIn.retailAccountId(request);
+    const started = await this.pay.pay(sessionId, body, headers['idempotency-key']);
     if (started.replayed) reply.header('idempotency-replayed', 'true');
     return started.view;
   }
 
   /**
-   * Pays a checkout from the signed-in customer's store balance (feature 21).
+   * Pays a checkout from the signed-in retail account's store balance (feature 21).
    *
    * @param principal the holder of the checkout token
    * @param headers the required `Idempotency-Key`
-   * @param request the request, for the customer session cookie and its CSRF header
+   * @param request the request, for the account session cookie and its CSRF header
    * @param reply the reply, for the cache header and the replay marker
    * @returns the payment, the new order and the wallet after it (`201`)
-   * @throws {AppError} `CSRF_FAILED` when a customer session comes without its CSRF header; the use case's refusals
+   * @throws {AppError} `CSRF_FAILED` when an account session comes without its CSRF header, `RANK_NOT_ALLOWED` (403) for a merchant rank;
+   *   the use case's refusals
    * @route POST /store/v1/checkout-sessions/:token/balance-payment
    */
   @Route(payCheckoutFromBalance)
@@ -180,9 +194,9 @@ export class CheckoutController {
   ): Promise<ResultOf<typeof payCheckoutFromBalance>> {
     reply.header('cache-control', NO_STORE);
     const sessionId = sessionIdOf(principal);
-    // The customer comes from the cookie session (CSRF checked here), never from the checkout row (plan 21 § 5.6.6, K2).
-    const customerId = await this.signedIn.customerId(request);
-    const paid = await this.balancePay.pay(sessionId, customerId, headers['idempotency-key']);
+    // The account comes from the cookie session (CSRF checked here, the rank read there), never from the checkout row (plan 21 § 5.6.6, K2).
+    const accountId = await this.signedIn.retailAccountId(request);
+    const paid = await this.balancePay.pay(sessionId, accountId, headers['idempotency-key']);
     if (paid.replayed) reply.header('idempotency-replayed', 'true');
     return paid.view;
   }

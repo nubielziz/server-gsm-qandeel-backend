@@ -3,14 +3,15 @@
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney, zSignedMoney } from '../../../common/contract';
 import { DISPUTE_STATUSES, PAYMENT_PURPOSES, TOPUP_METHODS, TOPUP_PAYMENT_STATUSES } from '../db/schema';
+import { TOP_UP_OWNER_WORDS } from '../domain/payment-rules';
 
-/** A top-up (a merchant's deposit) as the console's Deposits tab shows it. */
+/** A top-up (a merchant's deposit or a store balance top-up) as the console's Deposits tab shows it. */
 export const PaymentSchema = z.object({
   id: zId,
   purpose: z.enum(PAYMENT_PURPOSES).describe('Always `topup` here.'),
   status: z.enum(TOPUP_PAYMENT_STATUSES),
   methodType: z.enum(TOPUP_METHODS),
-  amount: zMoney.describe('What the merchant paid.'),
+  amount: zMoney.describe('What the account paid.'),
   feeAmount: zMoney,
   netAmount: zSignedMoney.describe('Amount minus fee: what the wallet is credited.'),
   currency: z.string().describe('ISO code.'),
@@ -21,29 +22,34 @@ export const PaymentSchema = z.object({
   receiptFileId: zId.nullable().describe('The uploaded proof of payment; download it with `GET /admin/files/:id`.'),
   client: z
     .object({
-      id: zId,
+      id: zId.describe('The account id.'),
       name: z.string(),
-      group: z.string().nullable().describe('The merchant group name.'),
+      group: z.string().nullable().describe('The rank (group) name.'),
       walletBalance: zSignedMoney
         .nullable()
-        .describe('The merchant wallet balance now (it includes this deposit once approved).'),
+        .describe(
+          'The merchant wallet balance now (it includes this deposit once approved); null when the account no longer has a merchant wallet.',
+        ),
     })
-    .nullable(),
+    .nullable()
+    .describe('The account of a deposit into a merchant wallet; null for a store balance top-up.'),
   customer: z
     .object({
-      id: zId,
+      id: zId.describe('The account id.'),
       name: z.string(),
       email: z
         .string()
         .describe(
-          "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
+          "The account's address; masked (`ja•••@example.com`) unless the caller holds `clients:read` (decision 047).",
         ),
       walletBalance: zSignedMoney
         .nullable()
-        .describe('The customer store balance now; null while the customer has no wallet.'),
+        .describe(
+          'The store balance now (0.0000 before its first credit); null when the live wallet of the account is a merchant one.',
+        ),
     })
     .nullable()
-    .describe('The storefront customer of a store balance top-up (feature 21); null for a merchant deposit.'),
+    .describe('The account of a store balance top-up (feature 21); null for a deposit into a merchant wallet.'),
   dispute: z
     .object({
       id: zId,
@@ -59,9 +65,9 @@ export const PaymentSchema = z.object({
     })
     .nullable()
     .describe(
-      'The newest chargeback of this top-up (feature 21; customers and merchants), or null. A top-up dispute is shown here, never in ' +
-        '`/admin/disputes`: `created` freezes a customer’s store balance, `lost` takes the credit back (the balance may go below zero), ' +
-        '`won` changes nothing (staff lift the hold).',
+      'The newest chargeback of this top-up (feature 21; accounts of either rank), or null. A top-up dispute is shown here, never in ' +
+        '`/admin/disputes`: `created` freezes the account’s live wallet, whatever its kind, `lost` takes the credit back (the balance may ' +
+        'go below zero), `won` changes nothing (staff lift the hold).',
     ),
   gateway: z.object({ id: zId, name: z.string() }).nullable(),
   reviewedBy: z
@@ -113,8 +119,9 @@ export const listPayments = defineRoute({
   summary: 'Payments and the manual review queue',
   description:
     'The wallet top-ups only: the list always filters `purpose=topup`, so `purpose=order` answers an empty list. Newest first. ' +
-    '`q` searches the gateway reference, the merchant name and the storefront customer’s name and email (the email only for callers who hold `customers:read`, decision 047). `owner` keeps merchant ' +
-    'deposits or customer store balance top-ups (feature 21); `customerId` one customer’s.',
+    '`q` searches the gateway reference and the account’s name and email (the email only for callers who hold `clients:read`, decision 047). `owner` keeps ' +
+    'deposits into merchant wallets (`merchant`) or store balance top-ups (`customer`, feature 21), told by the wallet kind of the invoice; `accountId` ' +
+    'keeps one account’s top-ups of either kind (`clientId` is its alias); `customerId` is retired and answers `422`.',
   tags: ['finance'],
   surface: 'admin',
   access: 'staff-permission',
@@ -125,9 +132,9 @@ export const listPayments = defineRoute({
     filters: {
       purpose: { type: 'enum', values: PAYMENT_PURPOSES, ops: ['eq'] },
       status: { type: 'enum', values: TOPUP_PAYMENT_STATUSES },
+      accountId: { type: 'id', ops: ['eq'] },
       clientId: { type: 'id', ops: ['eq'] },
-      customerId: { type: 'id', ops: ['eq'] },
-      owner: { type: 'enum', values: ['merchant', 'customer'], ops: ['eq'] },
+      owner: { type: 'enum', values: TOP_UP_OWNER_WORDS, ops: ['eq'] },
     },
     search: ['gatewayTxnId', 'client.name', 'customer.name', 'customer.email'],
   }),

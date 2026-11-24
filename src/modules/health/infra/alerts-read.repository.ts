@@ -1,7 +1,8 @@
 // Read queries on `alert_events` and `incidents` (health module) for the System health overview: the open alerts and incidents and
 // how many alerts were open at each moment of the last 24 hours. Alert rules, the evaluator and the routes that change alerts
 // are feature 12b's (`alert-events.repository.ts`); this file only reads for the overview. The subject's name is the one stored when
-// the alert fired; a plain join to suppliers and gateways names the subject of an alert that has none.
+// the alert fired; a plain join to suppliers, gateways and accounts (subject `account`, decision 064: a low-balance alert is about an
+// account of either rank) names the subject of an alert that has none.
 import { desc, eq, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import { alertEvents, incidents } from '../db/schema';
@@ -36,10 +37,12 @@ export async function openAlerts(db: DbExecutor): Promise<OpenAlert[]> {
       startedAt: a.startedAt,
       supplierName: s.suppliers.name,
       gatewayName: s.paymentGateways.name,
+      accountName: s.clients.name,
     })
     .from(a)
     .leftJoin(s.suppliers, sql`${a.subjectType} = 'supplier' and ${s.suppliers.id} = ${a.subjectId}`)
     .leftJoin(s.paymentGateways, sql`${a.subjectType} = 'gateway' and ${s.paymentGateways.id} = ${a.subjectId}`)
+    .leftJoin(s.clients, sql`${a.subjectType} = 'account' and ${s.clients.id} = ${a.subjectId}`)
     .where(sql`${a.status} in ('firing', 'acknowledged')`)
     .orderBy(sql`(case when ${a.severity} = 'critical' then 0 else 1 end)`, desc(a.startedAt), desc(a.id));
   return rows.map((row) => ({
@@ -51,6 +54,7 @@ export async function openAlerts(db: DbExecutor): Promise<OpenAlert[]> {
       row.subjectLabel ??
       row.supplierName ??
       row.gatewayName ??
+      row.accountName ??
       (row.subjectType === 'system' || row.subjectId === null ? null : `${row.subjectType} #${row.subjectId}`),
     startedAt: row.startedAt,
   }));

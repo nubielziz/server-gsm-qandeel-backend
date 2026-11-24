@@ -39,8 +39,8 @@ export const zStaffTicketRead = z.object({
 });
 
 /**
- * The ticket a requester event is about: the id for a merchant (the portal addresses tickets by id), `null` for a customer (the page is
- * the token's; a token is never put in an event), and the number the page matches.
+ * The ticket a requester event is about: the id for a ticket opened in the portal (it has no link token and the portal addresses tickets by
+ * id), `null` for a ticket that has a link token (the page is the token's; a token is never put in an event), and the number the page matches.
  */
 const requesterTicket = {
   ticketId: zId.nullable(),

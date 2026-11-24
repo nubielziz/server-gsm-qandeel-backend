@@ -13,6 +13,7 @@ import { RetailPrices } from './application/retail-prices';
 import { RetailPricing } from './application/retail-pricing';
 import { StorefrontServices } from './application/storefront-services';
 import { ServiceImporter } from './application/service-importer';
+import { RankGroupReads } from './ports/rank-group-reads';
 
 /**
  * Nest module for Catalog & pricing (map domain B).
@@ -21,9 +22,14 @@ import { ServiceImporter } from './application/service-importer';
  * (decision 016). It is global so identity (merchant creation, group moves) can inject the directory, and
  * orders, the Dhru list and the storefront can inject the resolver, the listed prices, the merchant catalog and the
  * code stock, without importing the module. Everything here needs only the clock and the encryption service (both global
- * infrastructure) and a database handle passed by the caller, so
- * the module imports nothing that leads back into identity (the admin routes are `CatalogAdminModule`, which the root module
- * imports next to this one), and identity can import `CatalogModule` while it is still loading (decision 032).
+ * infrastructure) and a database handle passed by the caller; the admin routes are `CatalogAdminModule`, which the root module imports
+ * next to this one. No module of identity names `CatalogModule` in its decorator: the catalog's index leads back into identity (the rank
+ * kind rule the service importer's reads use, and money's services behind the group admin), so such a decorator could read the class
+ * before it is initialised (decision 032); being global, its exports reach identity anyway.
+ *
+ * Port binding (decision 064): `RankGroupReads` is `ClientGroupDirectory`. The account directory, the rank writer, the session core's
+ * rank kinds, the API key directory, the staff account routes, the rank change and the support inbox read a rank's kind, name and order
+ * through it, in both processes (the worker loads this module through the catalog's job modules).
  */
 @Global()
 @Module({
@@ -38,6 +44,7 @@ import { ServiceImporter } from './application/service-importer';
     ServiceImporter,
     InventoryStock,
     StorefrontServices,
+    { provide: RankGroupReads, useExisting: ClientGroupDirectory },
   ],
   exports: [
     CatalogSignals,
@@ -50,6 +57,7 @@ import { ServiceImporter } from './application/service-importer';
     ServiceImporter,
     InventoryStock,
     StorefrontServices,
+    RankGroupReads,
   ],
 })
 export class CatalogModule {}

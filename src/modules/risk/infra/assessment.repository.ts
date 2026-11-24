@@ -1,5 +1,5 @@
 // Drizzle queries on `risk_assessments` (risk module): the new assessment of a payment and the staff decision on a held order.
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type NewRiskAssessment, type RiskAssessment, type RiskOutcome, riskAssessments } from '../db/schema';
 
@@ -79,6 +79,56 @@ export async function markDecided(
       updatedAt: decision.reviewedAt,
     })
     .where(and(eq(riskAssessments.id, assessmentId), isNull(riskAssessments.reviewedAt)))
+    .returning({ id: riskAssessments.id });
+  return rows.length;
+}
+
+/**
+ * Locks the assessments of one account row without waiting.
+ *
+ * Why: the guest-order claim (decision 064) never waits: an assessment a decision (a staff approve or refund) or a payment
+ * holds makes the lock fail at once with SQLSTATE 55P03, the claim catches it and answers `busy`, and the sign-in still succeeds.
+ *
+ * Side effects: row locks until the claim's transaction ends.
+ *
+ * @param db the claim's transaction
+ * @param accountId the guest row
+ * @returns the ids of the locked assessments, oldest first
+ * @throws the lock error (SQLSTATE 55P03) when another transaction holds one of the rows
+ */
+export async function lockAssessmentsOfAccountNoWait(db: DbExecutor, accountId: number): Promise<number[]> {
+  const rows = await db
+    .select({ id: riskAssessments.id })
+    .from(riskAssessments)
+    .where(eq(riskAssessments.accountId, accountId))
+    .orderBy(riskAssessments.id)
+    .for('update', { noWait: true });
+  return rows.map((row) => row.id);
+}
+
+/**
+ * Moves locked assessments to another account row.
+ *
+ * Why: the guest-order claim re-points the assessments of the guest row's checkouts and orders at the account that proved the mailbox, so
+ * the account's risk panel and the queue's history include them. Only the pointer changes: score, signals, decision and outcome stay.
+ *
+ * @param db the claim's transaction (the rows are locked by {@link lockAssessmentsOfAccountNoWait})
+ * @param ids the locked assessments
+ * @param accountId the account that claims them
+ * @param now the clock's time
+ * @returns how many rows moved
+ */
+export async function moveAssessmentsToAccount(
+  db: DbExecutor,
+  ids: readonly number[],
+  accountId: number,
+  now: Date,
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const rows = await db
+    .update(riskAssessments)
+    .set({ accountId, updatedAt: now })
+    .where(inArray(riskAssessments.id, [...ids]))
     .returning({ id: riskAssessments.id });
   return rows.length;
 }

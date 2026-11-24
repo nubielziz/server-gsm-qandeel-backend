@@ -3,7 +3,7 @@
 The API design map (`reference/gsm-map/data/*.mjs`) lives in the console repository and is read-only. A backend feature
 that needs a route the map does not have adds a **row** here instead (decision 035,
 `docs/decisions/035-routes-beyond-the-map.md`). One file per feature: `scripts/map-additions/<feature id>.mjs`
-(`20.mjs`, `21.mjs`; the name matches `^[a-z0-9][a-z0-9-]*\.mjs$`). This README is the only other file allowed here.
+(`20.mjs`, `21.mjs`, `48-accounts.mjs`; the name matches `^[a-z0-9][a-z0-9-]*\.mjs$`). This README is the only other file allowed here.
 
 Every tool that reads the map loads these files too: `routes:build`, `routes:check`, the module slices, route parity,
 Turnstile parity, access and permission parity, the console-tag check, `pending.ts`, `COVERAGE.md`, the contract documents
@@ -41,7 +41,7 @@ stay as they are.
 | `f`             | the sentence in Arabic (the map's language) | optional (decision 039): leave it out (`undefined` or `null`) in a new row; when given, non-empty and one line. A row without it carries `en` in its place (`descriptionAr` of the manifest), and `docs/contract/endpoints/<module>.md` prints the bracket after the English sentence only when the two differ |
 | `a`             | auth text in the map's vocabulary        | see the next section; unknown text is an error                                                                                                                                                                                                                                                                      |
 | `st`            | stage                                    | whole number >= 0. **Use your feature number** (20, 21, ...): it becomes a row of COVERAGE "By map stage". 99 belongs to the tooling test (`test/tooling/fixtures/map-additions/sample.mjs`)                                                                                                                            |
-| `t`             | tables touched                           | names of map tables or of any module's `additionalTables` in `scripts/module-map.mjs`; none twice; may be empty                                                                                                                                                                                                     |
+| `t`             | tables touched                           | names of map tables or of any module's `additionalTables` in `scripts/module-map.mjs`, never a table of a module's `retiredTables` (a table the contract release drops); none twice; may be empty                                                                                                    |
 | `en`            | the English sentence                     | non-empty, one line (what `scripts/route-descriptions.en.mjs` holds for map rows)                                                                                                                                                                                                                                   |
 | `module`        | owning module                            | an id of `scripts/module-map.mjs`. It decides alone: the matchers of that file are not consulted for an addition                                                                                                                                                                                                    |
 | `spec`          | spec decision                            | `B<n>`, or `B-TBD <slug>` (`^B-TBD [a-z0-9]+(-[a-z0-9]+)*$`) until the lead numbers it at merge                                                                                                                                                                                                                     |
@@ -119,6 +119,22 @@ path, check the map route's parameter type; prefer a path with another segment c
 
 The manifest script adds: the console calls an addition (an `@route` tag) but the row has no `successStatus`.
 The contract tests add: a contract must carry the access and permission of its row (`test/contract/lib/manifest-parity.ts`).
+
+## Retired tables
+
+`retiredTables` in `scripts/module-map.mjs` lists, per module, the map tables the contract release drops (decision 064; empty until
+then). The module still owns such a table, because the map names it, and its slice carries `retired: true`; the loader refuses a list
+that is not an array, names a table the module does not own, repeats a table, or names an `additionalTables` entry or a table another
+module retires (`retired tables problems:`), and a row that touches a retired table is refused like a row that touches an unknown one.
+The database and Drizzle schema tests expect the live tables only (`liveTablesOf` in `scripts/lib/map.mjs`).
+
+## The accounts file
+
+`48-accounts.mjs` holds the routes the one account type adds (decision 064): the admin counts, the legacy lookup, the rank change,
+make an account, block, the privacy read, export, anonymize, freeze and unfreeze (each with its `successStatus`, the console calls
+them), and the three two-step routes of a retail account in the shop. The routes that change but already have a row (the one
+sign-in, the list and the detail, the wallet routes, the old customer routes that answer 410 until the contract release) keep their
+row, and none is added a second time here.
 
 ## What to run
 

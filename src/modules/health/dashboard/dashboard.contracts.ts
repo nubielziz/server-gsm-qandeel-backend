@@ -165,9 +165,6 @@ const Dashboard = z.object({
       heldForReview: z.number().int(),
     })
     .nullable(),
-  topCustomers: z
-    .array(z.object({ id: zId, name: z.string(), country: z.string(), orders: z.number().int(), spend: zMoney }))
-    .nullable(),
   navCounts: z.object({
     orders: z.object({ open: z.number().int(), pastSla: z.number().int() }),
     finance: z.object({ pendingDeposits: z.number().int() }),
@@ -182,11 +179,11 @@ export const getDashboard = defineRoute({
   key: 'GET /admin/dashboard',
   summary: 'Dashboard',
   description:
-    'One object, every section from one snapshot, cached about 15 seconds per (`scope`, `days`) (the sidebar reads it every minute for its counts). `scope` is `all`, `b2b` (merchants) or `b2c` (the storefront); `days` is 1, 7 or 14. ' +
+    "One object, every section from one snapshot, cached about 15 seconds per (`scope`, `days`) (the sidebar reads it every minute for its counts). `scope` is `all`, `b2b` (the orders of the merchant doors) or `b2c` (the orders of the shop's door, `source` `store`); `days` is 1, 7 or 14. " +
     '`stats` covers orders created in the rolling window; `previous` is the window of the same length before it, or `null` when it had no order. `attention` is every item ranked critical, high, medium, low (stable): ' +
-    '`supplier_down` and `supplier_degraded` come only from a real down or degraded check, never from an unknown or missing one, and supplier items only for active suppliers. Each kind has its own fixed severity (RULES dashboard 3): `disputes_due` counts every dispute that needs a response and is critical when the first is due within 3 days; `orders_review` counts merchant orders only (a held storefront order is `orders_held`); `fx_stale` uses the currencies page rule (older than 24 hours). `queues` has one row per service type; `pastSla` is the one age-only rule shared with `GET /admin/orders?pastSla=true`. ' +
+    '`supplier_down` and `supplier_degraded` come only from a real down or degraded check, never from an unknown or missing one, and supplier items only for active suppliers. Each kind has its own fixed severity (RULES dashboard 3): `disputes_due` counts every dispute that needs a response and is critical when the first is due within 3 days; `orders_review` counts merchant-door orders only (a held storefront order is `orders_held`); `wallets_negative` lists accounts (the key stays `clients`) with a negative wallet of either kind: the merchant wallets for `b2b`, the store balances for `b2c`, both for `all`; `fx_stale` uses the currencies page rule (older than 24 hours). `queues` has one row per service type; `pastSla` is the one age-only rule shared with `GET /admin/orders?pastSla=true`. ' +
     '`suppliers` maps the latest check to `up`, `degraded`, `down`; a supplier with no check or no recent calls (an `unknown` check) is idle, neither healthy nor failing, and reads `unknown` (B180; the console shows "No recent calls"). `services_below_floor` is judged on the effective cost (user rule 9). Money is USD as a 4-decimal string; ' +
-    "payments, refunds and disputes convert per row at the checkout's locked rate or the current currency rate and the sum is rounded once. `storefront` and `topCustomers` are `null` for `b2b`, `revenueByChannel` is `null` unless `scope=all`; " +
+    "payments, refunds and disputes convert per row at the checkout's locked rate or the current currency rate and the sum is rounded once. `storefront` is `null` for `b2b`, `revenueByChannel` is `null` unless `scope=all`; the best buyers are not part of this answer (`GET /admin/reports/top-clients` ranks every account); " +
     "`storefront` always covers the last 30 days and its funnel is the customers module's `storefrontFunnel(30)`.",
   tags: ['dashboard'],
   surface: 'admin',

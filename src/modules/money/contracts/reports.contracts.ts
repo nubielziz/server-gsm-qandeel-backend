@@ -3,13 +3,14 @@
 // RULES money, MISMATCHES B88).
 import { z } from 'zod';
 import { defineRoute, zDateOnly, zId, zIdParam, zMoney, zSignedMoney } from '../../../common/contract';
-import { PROFIT_GROUPS } from '../domain/report-figures';
+import { RANK_KINDS } from '../db/schema';
+import { PROFIT_GROUPS, TOP_SCOPES } from '../domain/report-figures';
 
 const ProfitRow = z.object({
   key: z
     .string()
     .describe(
-      'The date for a day split, otherwise the record id as text (`0` for "No supplier" and "Storefront customers").',
+      'The date for a day split, otherwise the record id as text (`0` for "No supplier" and "Storefront customers"; a merchant row is the account id).',
     ),
   label: z.string(),
   orders: z.number().int().min(0),
@@ -37,7 +38,8 @@ export const getProfitReport = defineRoute({
     'Completed orders counted by the day they completed (UTC days). `revenue` is the selling price without VAT (for a storefront ' +
     'order, less what its refund and chargeback journals took back, never below zero), `cost` the supplier cost, `profit` their ' +
     'difference. `groupBy` is `day` (default; oldest day first, days without orders left out), `service`, ' +
-    '`supplier` (key `0` is "No supplier") or `client` (key `0` is "Storefront customers"); the other splits rank by profit, highest ' +
+    '`supplier` (key `0` is "No supplier") or `client` (the buyer\'s account of every order that came through a merchant door, by account id; ' +
+    'key `0` is "Storefront customers", every order of the shop door together); the other splits rank by profit, highest ' +
     'first. `from` and `to` are days, both included; the default is the 30 days ending on `to` (today). The dates used are echoed ' +
     'back. `422` names `from` when it is after `to`.',
   tags: ['reports'],
@@ -67,11 +69,14 @@ export const getProfitReport = defineRoute({
 /** `GET /admin/reports/wallet-exposure`. */
 export const getWalletExposure = defineRoute({
   key: 'GET /admin/reports/wallet-exposure',
-  summary: 'Merchant wallet balances, credit in use and reserved amounts',
+  summary: 'Merchant wallet balances, credit in use, reserved amounts and store balances',
   description:
-    "`balance` is the merchant's wallet (negative while credit is used), `reserved` what is held for open orders, `overdraftLimit` its " +
-    'credit limit and `overdraftUsed` the credit in use (`max(0, -balance)`, not capped at the limit). `rows` lists the 50 largest ' +
-    'wallets by balance; `totals` cover every merchant that has a wallet (`inOverdraft` counts those with a negative balance).',
+    '`balance` is the wallet of an account with a merchant rank (negative while credit is used), `reserved` what is held for open orders, ' +
+    '`overdraftLimit` its credit limit and `overdraftUsed` the credit in use (`max(0, -balance)`, not capped at the limit). `rows` lists ' +
+    'the 50 largest merchant wallets by balance (`clientId` is the account id); `totals` cover every merchant-rank wallet (`inOverdraft` ' +
+    'counts those with a negative balance). `storeBalances` is a sibling of `totals` and covers the store balances, the wallets of ' +
+    'accounts with a retail rank: how many there are, what they hold, how many are below zero (only a chargeback can take one there) and ' +
+    'how many are on hold. A wallet of the inactive kind (it holds zero after a rank change) is in neither.',
   tags: ['reports'],
   surface: 'admin',
   access: 'staff-permission',
@@ -87,6 +92,12 @@ export const getWalletExposure = defineRoute({
         overdraftLimit: zMoney,
         overdraftUsed: zMoney,
         inOverdraft: z.number().int().min(0),
+      }),
+      storeBalances: z.object({
+        accounts: z.number().int().min(0),
+        balance: zSignedMoney,
+        negative: z.number().int().min(0),
+        frozen: z.number().int().min(0),
       }),
       rows: z.array(
         z.object({
@@ -112,6 +123,7 @@ export const getWalletExposure = defineRoute({
         overdraftUsed: '120.0000',
         inOverdraft: 1,
       },
+      storeBalances: { accounts: 31, balance: '412.6000', negative: 0, frozen: 1 },
       rows: [
         {
           clientId: 1,
@@ -200,12 +212,15 @@ const Limit = z
 /** `GET /admin/reports/top-clients`. */
 export const getTopClients = defineRoute({
   key: 'GET /admin/reports/top-clients',
-  summary: 'Top merchants by spend and profit',
+  summary: 'Top accounts by spend and profit',
   description:
-    'A bare array of up to `limit` merchants (default 6, at most 50) ranked by `spend`, highest first, over the last `days` x 24 hours ' +
-    '(`days` is 1, 7 or 14; default 7). `orders` counts the orders created in the window, `spend` the price of the non-rejected ones, ' +
-    "`profit` price minus cost of the completed ones, `walletBalance` the merchant's wallet (may be negative). Merchants waiting for " +
-    'approval and merchants with no order in the window are left out.',
+    'A bare array of up to `limit` accounts (default 6, at most 50) ranked by `spend`, highest first, over the last `days` x 24 hours ' +
+    '(`days` is 1, 7 or 14; default 7), whatever the rank: merchants and shop buyers are in one list, a guest (an account row made by a ' +
+    'checkout without a login, `hasAccount` false) is in and an anonymized account is out. `scope` is the door the orders came through: ' +
+    '`all` (default), `b2b` (every merchant door) or `b2c` (the shop); an account that used both doors counts the orders of the doors ' +
+    'the scope names. `orders` counts those orders created in the window, `spend` the price (before VAT) of the non-rejected ones, ' +
+    "`profit` price minus cost of the completed ones, `rank` the account's rank now (`kind` is `merchant` or `retail`) and " +
+    '`walletBalance` the balance of its live wallet (may be negative; zero for a guest). Accounts with no order in the window are left out.',
   tags: ['reports'],
   surface: 'admin',
   access: 'staff-permission',
@@ -213,14 +228,17 @@ export const getTopClients = defineRoute({
   query: z.object({
     days: z.enum(['1', '7', '14']).transform(Number).optional(),
     limit: Limit.optional(),
+    scope: z.enum(TOP_SCOPES).optional(),
   }),
   success: {
     status: 200,
     schema: z.array(
       z.object({
-        id: zId,
+        id: zId.describe('The account id.'),
         name: z.string(),
         country: z.string(),
+        rank: z.object({ id: zId, name: z.string(), kind: z.enum(RANK_KINDS) }),
+        hasAccount: z.boolean().describe('False for a guest row.'),
         orders: z.number().int().min(0),
         spend: zMoney,
         profit: zSignedMoney,
@@ -235,6 +253,8 @@ export const getTopClients = defineRoute({
         id: 9,
         name: 'Lagos Gadget Fix',
         country: 'NG',
+        rank: { id: 2, name: 'Gold', kind: 'merchant' },
+        hasAccount: true,
         orders: 15,
         spend: '347.5700',
         profit: '31.2700',
@@ -247,12 +267,14 @@ export const getTopClients = defineRoute({
 /** `GET /admin/reports/client-statement/:clientId`. */
 export const getClientStatement = defineRoute({
   key: 'GET /admin/reports/client-statement/:clientId',
-  summary: 'The official account statement of a merchant (PDF)',
+  summary: 'The official account statement of an account (PDF)',
   description:
     'A PDF (`application/pdf`, `Content-Disposition: attachment; filename="statement-<clientId>-<from>-<to>.pdf"` with the UTF-8 form, ' +
-    '`Cache-Control: no-store`) made on the spot from the ledger, not stored. It shows the merchant (name, company, country), the ' +
+    '`Cache-Control: no-store`) made on the spot from the ledger, not stored. It is the statement of the live wallet (decision 064): ' +
+    'the merchant wallet of a merchant rank, the store balance of the retail rank. It shows the account (name, company, country), the ' +
     'period, the opening balance, the wallet lines oldest first (date, `JRN-<id>`, kind, memo, debit, credit, balance after), the ' +
-    'totals, the closing balance, the credit limit and the invoices issued in the period. Amounts are USD with 4 decimals. `from` ' +
+    'totals, the closing balance, the credit limit (merchant wallet only) and the invoices of that wallet issued in the period (the ' +
+    'top-ups of a store balance). Amounts are USD with 4 decimals. `from` ' +
     'and `to` are UTC days, both included; the default is the whole history (from the day of the first wallet line to today). ' +
     'Lines are ordered by ledger entry id, so the closing balance is the wallet balance. Without `from`, a history of more than ' +
     '10,000 lines is cut to the most recent 10,000 and the period starts on the day of the first of them (the opening balance is the ' +

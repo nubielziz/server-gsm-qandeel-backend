@@ -386,7 +386,7 @@ describe('request timeouts (decision 053)', () => {
     let viewer: Awaited<ReturnType<typeof openStream>> | undefined;
     try {
       const customer = await makeCustomer(issuer);
-      const session = await openSession(issuer, { type: 'customer', id: customer.id });
+      const session = await openSession(issuer, { type: 'account', id: customer.id });
       viewer = await openStream(`http://127.0.0.1:${port}/store/v1/me/stream`, { ...SAME_ORIGIN, ...session.headers });
       expect(viewer.status).toBe(200);
       expect((await viewer.next('ready')).event).toBe('ready');

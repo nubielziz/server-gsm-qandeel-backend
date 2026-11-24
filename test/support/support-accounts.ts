@@ -1,5 +1,5 @@
-// Helpers for the tests of the account surfaces of the support chat (feature 28, slice B2): a signed-in customer's calls, the counters of the
-// `ticket-open` limiter, and stored files inserted straight into the table.
+// Helpers for the tests of the account surfaces of the support chat (feature 28, slice B2): a signed-in retail account's calls, the counters of
+// the `ticket-open` limiter, and stored files inserted straight into the table.
 import { type LightMyRequestResponse } from 'fastify';
 import { CacheKeys } from '@src/infra/cache';
 import { type Database, schema as s } from '@src/infra/db';
@@ -16,8 +16,10 @@ export interface StoreAnswer {
   readonly res: LightMyRequestResponse;
 }
 
-/** A signed-in customer's calls to the storefront's session routes. */
+/** A signed-in retail account's calls to the storefront's session routes. */
 export interface CustomerSession {
+  readonly accountId: number;
+  /** The same number as `accountId`, under the name the old helper used. */
   readonly customerId: number;
   call(method: 'GET' | 'POST', url: string, payload?: unknown): Promise<StoreAnswer>;
   /** Sends a mutation with the cookie but no CSRF token. */
@@ -25,15 +27,15 @@ export interface CustomerSession {
 }
 
 /**
- * Opens a customer session and returns a client for the storefront's session routes.
+ * Opens a session of a retail account and returns a client for the storefront's session routes.
  *
  * @param t the running test app
- * @param customerId the customer
+ * @param accountId the retail account
  * @param ip the address the requests come from
  * @returns the client
  */
-export async function customerSession(t: TestApp, customerId: number, ip = '127.0.0.1'): Promise<CustomerSession> {
-  const session = await openSession(t, { type: 'customer', id: customerId });
+export async function customerSession(t: TestApp, accountId: number, ip = '127.0.0.1'): Promise<CustomerSession> {
+  const session = await openSession(t, { type: 'account', id: accountId });
   const send = async (
     method: 'GET' | 'POST',
     url: string,
@@ -50,7 +52,8 @@ export async function customerSession(t: TestApp, customerId: number, ip = '127.
     return { body: res.body === '' ? undefined : JSON.parse(res.body), status: res.statusCode, res };
   };
   return {
-    customerId,
+    accountId,
+    customerId: accountId,
     call: (method, url, payload) =>
       send(method, url, method === 'GET' ? session.headers : session.mutationHeaders, payload),
     withoutCsrf: (method, url, payload) => send(method, url, session.headers, payload),
@@ -74,14 +77,14 @@ export async function clearTicketOpenLimits(t: TestApp): Promise<void> {
  * Inserts a file row straight into the table (an upload the platform made, of any type and size).
  *
  * @param db the test database
- * @param ownerType whose upload it is
+ * @param ownerType whose upload it is: staff, or an account of any rank
  * @param ownerId the owner
  * @param values columns to override
  * @returns the stored row
  */
 export async function insertFileRow(
   db: Database,
-  ownerType: 'client' | 'staff' | 'customer',
+  ownerType: 'account' | 'staff',
   ownerId: number,
   values: Partial<typeof s.files.$inferInsert> = {},
 ) {

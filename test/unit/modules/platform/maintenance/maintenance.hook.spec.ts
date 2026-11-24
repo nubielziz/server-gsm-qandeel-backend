@@ -75,6 +75,19 @@ describe('MaintenanceHook', () => {
     await run('preValidation', req('POST', '/client/orders', { action: 'placeimeiorder' }));
   });
 
+  it('never refuses the sign-in routes every account shares, whatever the scope: the portal stays up (decision 064)', async () => {
+    const { run } = hookWith(ON_ALL);
+    for (const template of [
+      '/client/auth/sign-in',
+      '/client/auth/2fa',
+      '/client/auth/password/reset',
+      '/client/auth/verify-email',
+    ]) {
+      await run('onRequest', req('POST', template, undefined, template));
+      await run('preValidation', req('POST', template, { action: 'placeimeiorder' }, template));
+    }
+  });
+
   it('lets requests through when the state cannot be read', async () => {
     const { run } = hookWith(new Error('settings unreachable'));
     await run('onRequest', req('GET', '/store/v1/services'));

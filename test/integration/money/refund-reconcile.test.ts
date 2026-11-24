@@ -75,20 +75,20 @@ const requestsOf = (refundId: number) =>
 /** A customer's refund request on a paid order, approved by staff: `processing`, its `refund.process` event written. */
 async function approvedRefund(): Promise<{ refundId: number; paid: PaidOrder }> {
   const order = await paidOrder(t, clock, world);
-  const customerId = (await orderRow(db, order.orderId)).customerId!;
+  const accountId = (await orderRow(db, order.orderId)).accountId;
   const [row] = await db
     .insert(s.refunds)
     .values({
       paymentId: order.paymentId,
       orderId: order.orderId,
-      customerId,
+      accountId,
       amount: order.charged,
       currency: 'GBP',
       reason: 'The code did not work',
       method: 'original',
       status: 'requested',
-      requestedByType: 'customer',
-      requestedById: customerId,
+      requestedByType: 'account',
+      requestedById: accountId,
       createdAt: clock.now(),
       updatedAt: clock.now(),
     })

@@ -13,7 +13,7 @@ const LogRow = z.object({
     .int()
     .min(0)
     .describe(
-      'The recipient row id; `0` with `recipientType` `staff` names the ops address or chat that alert messages go to (feature 12b).',
+      'The recipient row id (the account id for `account`); `0` with `recipientType` `staff` names the ops address or chat that alert messages go to (feature 12b).',
     ),
   channel: z.enum(NOTIFICATION_CHANNELS),
   event: z.string().describe('The event key, such as `wallet.low_balance`.'),
@@ -39,7 +39,7 @@ const LogRow = z.object({
 
 const ROW_EXAMPLE = {
   id: 311,
-  recipientType: 'client',
+  recipientType: 'account',
   recipientId: 1,
   channel: 'email',
   event: 'wallet.low_balance',
@@ -59,9 +59,9 @@ export const listNotificationLog = defineRoute({
   summary: 'Notification log',
   description:
     'Every message the system sent or tried to send, newest first. `recipient` is masked by the server. `status` is `queued`, `sent` or `failed`; ' +
-    '`error` says why a message failed. `recipientType` is `staff`, `client` (a merchant) or `customer`. The list leaves out `payload`. `q` is a ' +
+    '`error` says why a message failed. `recipientType` is `staff` or `account` (a merchant or a shopper: both are accounts, told apart by their rank). The list leaves out `payload`. `q` is a ' +
     'case-insensitive contains over the event; it matches the recipient’s address only when it equals the whole address (any letter case)' +
-    '; a customer’s address only for callers who hold `customers:read` (decision 047). ' +
+    '; an account’s address only for callers who hold `clients:read` (decision 047). ' +
     '`campaignId` shows the messages of one notification campaign. A security notice about an email change shows the address it went to (the one before the change).',
   tags: ['notifications'],
   surface: 'admin',

@@ -4,21 +4,26 @@
 // engine (a rejection), the refund routes and the gateway's answers.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
+import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
+import { AccountDirectory } from '../../identity';
 import type { OrderMethod, Payment, PaymentGateway, Refund, RefundStatus } from '../db/schema';
 import { refundSplit, statusAfterRefunds, storedOrderMethod, toUsd } from '../domain/b2c-money';
-import { b2cWalletRefund } from '../domain/customer-wallet-events';
 import { type AccountRef, reversalLines } from '../domain/ledger-lines';
-import { b2cRefund } from '../domain/money-events';
+import { type MoneyEventPosting, b2cRefund } from '../domain/money-events';
 import {
   AUTO_REFUND_REASON,
   AUTO_RETURN_REASON,
   CHARGEBACK_NOT_SENT_NOTE,
+  ERASED_BUYER_REFUND_DETAIL,
+  type WalletRefundPosting,
+  b2cWalletRefundPosting,
   closesAtChargeback,
   refundRoute,
   settlesAtOnce,
 } from '../domain/refund-rules';
+import { type WalletLedgerKind, walletKindOfRank } from '../domain/wallet-kinds';
 import { type LedgerParts, ledgerPartsOf, loadSessionMoney, orderForRefund } from '../infra/b2c-reads.repository';
 import { findReversibleJournal } from '../infra/ledger-read.repository';
 import { findCurrencyByCode } from '../infra/storefront-money.repository';
@@ -45,10 +50,22 @@ import { LedgerPoster } from './post-transaction';
 import { RefundOutbox } from './refund-outbox';
 import type { RefundedOrder } from './storefront-ports';
 
-/** Who causes a refund posting. */
+/** Who causes a refund posting (an account is one word, whatever its rank: decision 064). */
 export interface RefundActor {
-  readonly type: 'staff' | 'client' | 'customer' | 'system';
+  readonly type: 'staff' | 'account' | 'system';
   readonly id: number | null;
+}
+
+/** What posting one refund's journal did: the journal, what went back (USD) and the wallet that took it (`null` for a refund through the gateway). */
+export interface PostedRefund {
+  /** The ledger transaction. */
+  readonly id: number;
+  /** What went back, gross, USD. */
+  readonly gross: string;
+  readonly net: string;
+  readonly vat: string;
+  /** The wallet the refund credited: the account's live wallet for a balance payment, `null` for a card, wallet or crypto payment. */
+  readonly wallet: WalletLedgerKind | null;
 }
 
 /** What {@link B2cRefunds.onOrderRefund} did, in the shape the order ledger reports a move. */
@@ -100,8 +117,15 @@ const sumMoney = (values: Iterable<string>): Money => Money.sum([...values].map(
  * at retry (B83); the gateway call is a job. A refund that takes everything left on a payment takes exactly the USD and the VAT that
  * are left, so rounding never leaves dust in customer funds or VAT payable. A payment's status follows its completed refunds.
  *
+ * A refund of a payment made from the balance goes back to the wallet the account holds now (decision 064): the store balance
+ * for a retail rank, the merchant wallet after a rank change to a merchant rank. The kind is read from the account's rank only after the
+ * account row is held `FOR KEY SHARE` (decision 064), so a rank change that races the refund either lands first (the refund credits the new
+ * wallet) or waits for it; a refund is never refused for a rank change, and its keys do not change. Every refund row that names a payment also
+ * names the payment's account (`refunds_account_refs_check`), an orderless return of a held payment included.
+ *
  * Side effects (on the caller's transaction): inserts and updates `refunds`, updates `payments`, writes ledger rows through
- * `LedgerPoster` and one `refund.process` outbox row for a refund the gateway must send.
+ * `LedgerPoster`, takes the account row `FOR KEY SHARE` for a balance payment and writes one `refund.process` outbox row for a refund the
+ * gateway must send.
  *
  * @see docs/contract/RESOLUTIONS.md (money-4, money-5, money-11, money-12)
  */
@@ -110,6 +134,7 @@ export class B2cRefunds {
   constructor(
     private readonly poster: LedgerPoster,
     private readonly outbox: RefundOutbox,
+    private readonly accounts: AccountDirectory,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -219,9 +244,9 @@ export class B2cRefunds {
    * Sends a held storefront payment back in full through its gateway: a refund without an order.
    *
    * Why: decision 048: a confirmation that cannot pay its checkout (another amount or currency, no stated amount, no checkout) is money
-   * that arrived without an order; when the gateway can refund it, it goes back at once. The row names the payment only (`order_id` and
-   * `customer_id` stay empty, so the Refunds page and the reports leave it out); the refund job sends and settles it. No journal is posted:
-   * the money never entered the books.
+   * that arrived without an order; when the gateway can refund it, it goes back at once. The row names the payment and its account (every
+   * refund with a payment carries its payment's account) but no order (`order_id` stays empty, so the Refunds page and the reports
+   * leave it out); the refund job sends and settles it. No journal is posted: the money never entered the books.
    *
    * Side effects: inserts one `refunds` row (`processing`, requested by the system) and one `refund.process` outbox row.
    *
@@ -242,7 +267,7 @@ export class B2cRefunds {
     const refund = await insertRefund(tx, {
       paymentId: payment.id,
       orderId: null,
-      customerId: null,
+      accountId: payment.accountId,
       amount: input.amount.toWire(),
       currency: input.currency,
       reason: AUTO_RETURN_REASON,
@@ -426,12 +451,12 @@ export class B2cRefunds {
    *
    * @param tx the approval's transaction
    * @param input the order, the payment, the approved refund and who approved
-   * @returns the journal's id and what went back (gross, USD)
+   * @returns the journal's id, what went back (gross, USD) and the wallet it credited
    */
   async postDelivered(
     tx: DbExecutor,
     input: { order: RefundedOrder; payment: Payment; refund: Refund; actor: RefundActor },
-  ): Promise<{ id: number; gross: string; net: string; vat: string }> {
+  ): Promise<PostedRefund> {
     return this.postLedger(tx, { ...input, from: 'revenue', key: `refund:${input.refund.id}` });
   }
 
@@ -443,12 +468,12 @@ export class B2cRefunds {
    *
    * @param tx the approval's transaction
    * @param input the order, the payment, the approved refund and who approved
-   * @returns the journal's id and what went back (gross, USD)
+   * @returns the journal's id, what went back (gross, USD) and the wallet it credited
    */
   async postRejected(
     tx: DbExecutor,
     input: { order: RefundedOrder; payment: Payment; refund: Refund; actor: RefundActor },
-  ): Promise<{ id: number; gross: string; net: string; vat: string }> {
+  ): Promise<PostedRefund> {
     return this.postLedger(tx, { ...input, from: 'customer_funds', key: `refund:${input.refund.id}` });
   }
 
@@ -606,7 +631,7 @@ export class B2cRefunds {
     return insertRefund(tx, {
       paymentId: payment.id,
       orderId: order.id,
-      customerId: order.customerId,
+      accountId: payment.accountId,
       amount: left.original.toWire(),
       currency: payment.currency,
       reason: AUTO_REFUND_REASON,
@@ -653,7 +678,7 @@ export class B2cRefunds {
     const refund = await insertRefund(tx, {
       paymentId: payment.id,
       orderId: order.id,
-      customerId: order.customerId,
+      accountId: payment.accountId,
       amount: left.original.toWire(),
       currency: payment.currency,
       reason: AUTO_REFUND_REASON,
@@ -697,13 +722,38 @@ export class B2cRefunds {
   }
 
   /**
-   * The journal lines of one refund: back through the gateway (`b2c_refund`), or back to the store balance the payment came from
-   * (`b2c_wallet_refund`, plan 21 § 5.6.7); the split, the closing rule and the keys are the same.
+   * The journal lines of one refund: back through the gateway (`b2c_refund`), or back to the wallet the account holds now
+   * (`b2c_wallet_refund`, plan 21 § 5.6.7 and decision 064); the split, the closing rule and the keys are the same.
+   *
+   * Why: a balance payment was made from the store balance, but the account may hold the merchant rank by now (a rank change moves the
+   * balance and is refused only while an order is live, so a delivered order can still be refunded afterwards): the refund credits the live
+   * wallet, never the inactive one, which must stay at zero. The account row is taken `FOR KEY SHARE` before its rank kind is read (a staff
+   * approval took it already, before the order; an automatic refund holds the payment and the refund and takes it after them, decision 064).
+   * An erased account takes no money: nobody can sign in to it any more, so a balance there would be stranded (decision 064: any write on an
+   * anonymized account is `409 ANONYMIZED`). The erasure itself waits until no balance-paid order is open and no balance refund waits, so
+   * only a refund started after it meets this refusal; staff pay it back another way and decline the request.
+   *
+   * @throws {AppError} `ANONYMIZED` (409) for a balance payment of an erased account
+   * @throws {Error} when the payment's account does not exist (a corrupt row, never a client error)
    */
-  private refundPosting(payment: Payment, split: { net: Money; vat: Money }, from: 'customer_funds' | 'revenue') {
-    if (payment.methodType !== 'balance') return b2cRefund({ net: split.net, vat: split.vat, from });
-    if (payment.customerId === null) throw new Error(`Balance payment ${payment.id} has no customer.`);
-    return b2cWalletRefund({ customerId: payment.customerId, net: split.net, vat: split.vat, from });
+  private async refundPosting(
+    tx: DbExecutor,
+    payment: Payment,
+    split: { net: Money; vat: Money },
+    from: 'customer_funds' | 'revenue',
+  ): Promise<{ posting: MoneyEventPosting | WalletRefundPosting; wallet: WalletLedgerKind | null }> {
+    if (payment.methodType !== 'balance') {
+      return { posting: b2cRefund({ net: split.net, vat: split.vat, from }), wallet: null };
+    }
+    const account = await this.accounts.lockForKeyShare(tx, payment.accountId);
+    if (!account)
+      throw new Error(`Balance payment ${payment.id} names account ${payment.accountId}, which does not exist.`);
+    if (account.status === 'anonymized') throw new AppError('ANONYMIZED', { detail: ERASED_BUYER_REFUND_DETAIL });
+    const wallet = walletKindOfRank(account.rankKind);
+    return {
+      posting: b2cWalletRefundPosting({ wallet, accountId: payment.accountId, net: split.net, vat: split.vat, from }),
+      wallet,
+    };
   }
 
   /** Posts the journal of one refund and links it to the refund row. */
@@ -717,7 +767,7 @@ export class B2cRefunds {
       key: string;
       actor: RefundActor;
     },
-  ): Promise<{ id: number; gross: string; net: string; vat: string }> {
+  ): Promise<PostedRefund> {
     const { order, payment, refund } = input;
     const left = await this.leftOn(tx, order, payment, refund.id);
     const amount = Money.of(refund.amount);
@@ -731,7 +781,7 @@ export class B2cRefunds {
           return { net: usd.sub(safeVat), vat: safeVat, total: usd };
         })()
       : refundSplit(left.paidUsd, left.taxUsd, usd);
-    const posting = this.refundPosting(payment, split, input.from);
+    const { posting, wallet } = await this.refundPosting(tx, payment, split, input.from);
     const posted = await this.poster.post(tx, {
       kind: posting.kind,
       refType: posting.refType,
@@ -743,7 +793,7 @@ export class B2cRefunds {
       createdBy: { type: input.actor.type, id: input.actor.id },
     });
     await updateRefund(tx, refund.id, { ledgerTxId: posted.id, updatedAt: this.clock.now() });
-    return { id: posted.id, gross: split.total.toWire(), net: split.net.toWire(), vat: split.vat.toWire() };
+    return { id: posted.id, gross: split.total.toWire(), net: split.net.toWire(), vat: split.vat.toWire(), wallet };
   }
 }
 

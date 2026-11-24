@@ -9,13 +9,19 @@ import { TokenService } from '@src/infra/crypto';
 import { DbService, schema as s } from '@src/infra/db';
 import { UnrecoverableError } from '@src/infra/queues';
 import { buildProcessorTable, findQueueProcessors } from '@src/infra/queues/queue-processor';
-import { MerchantMailOutbox } from '@src/modules/identity/application/mail/merchant-mail-outbox';
+import { ACCOUNT_MAIL_EVENT_TYPES } from '@src/modules/identity/domain/account-mail';
 import {
   EmailVerificationMailProcessor,
   MerchantInvitedMailProcessor,
   PasswordResetMailProcessor,
 } from '@src/modules/identity/jobs/merchant-mail.processors';
-import { MERCHANT_MAIL_EVENTS, MerchantAuthTokens, STAFF_MAIL_EVENTS, SessionService } from '@src/modules/identity';
+import {
+  AccountAuthTokens,
+  AccountMailOutbox,
+  MERCHANT_MAIL_EVENTS,
+  STAFF_MAIL_EVENTS,
+  SessionService,
+} from '@src/modules/identity';
 import { DeliveryError, OutboxRouteRegistry, type OutboxJobData } from '@src/modules/platform';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -165,7 +171,12 @@ describe('POST /client/auth/verify-email/resend (feature 20)', () => {
     expect(open).toHaveLength(1);
     const events = await db.select().from(s.outboxEvents).where(eq(s.outboxEvents.type, 'merchant.email_verification'));
     expect(events).toHaveLength(2);
-    expect(Object.keys(events[1]!.payload).filter((key) => key !== 'meta')).toEqual(['tokenId']);
+    // Sorted: a jsonb column keeps its keys in its own order, not in the order they were written.
+    expect(
+      Object.keys(events[1]!.payload)
+        .filter((key) => key !== 'meta')
+        .sort(),
+    ).toEqual(['accountId', 'tokenId']);
 
     expect((await portal().verifyEmail(firstToken)).statusCode).toBe(410);
     await runMerchantMailJob(t, 'email_verification');
@@ -211,7 +222,7 @@ describe('POST /client/auth/verify-email/resend (feature 20)', () => {
     await p.login(merchant.email);
     const { db } = await testDb();
     await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, merchant.id));
-    await t.app.get(SessionService).invalidateSubject('client', merchant.id);
+    await t.app.get(SessionService).invalidateSubject('account', merchant.id);
     const res = await p.resendVerification();
     expect(res.statusCode).toBe(403);
     expect(problem(res).code).toBe('ACCOUNT_SUSPENDED');
@@ -221,19 +232,18 @@ describe('POST /client/auth/verify-email/resend (feature 20)', () => {
 describe('the merchant mail events', () => {
   it('are registered with the notifications queue, and each has one named processor in the worker table', () => {
     const routes = t.app.get(OutboxRouteRegistry);
-    for (const type of Object.values(MERCHANT_MAIL_EVENTS)) {
+    // The seven link mails of both rank kinds are registered by the one account mail outbox (decision 064).
+    for (const type of ACCOUNT_MAIL_EVENT_TYPES) {
       expect(routes.get(type), type).toMatchObject({ type, queue: 'notifications' });
     }
     const table = buildProcessorTable(findQueueProcessors(new DiscoveryService(t.app.get(ModulesContainer))));
-    // The queue is shared: the customer mails (feature 14b) have named processors of their own on it.
-    const named = [...(table.get('notifications')?.byName.keys() ?? [])]
-      .filter((name) => !name.startsWith('customer.'))
-      .sort();
-    // The notifications queue has named processors only: the three merchant mails, the two jobs of feature 12a, the ticket mail of
-    // feature 17, the two staff link mails of feature 20 and the campaign fan-out of feature 23.
+    const named = [...(table.get('notifications')?.byName.keys() ?? [])].sort();
+    // The notifications queue has named processors only: the seven account link mails (three merchant events and four retail events,
+    // one processor each), the two jobs of feature 12a, the ticket mail of feature 17, the two staff link mails of feature 20 and the
+    // campaign fan-out of feature 23.
     expect(named).toEqual(
       [
-        ...Object.values(MERCHANT_MAIL_EVENTS),
+        ...ACCOUNT_MAIL_EVENT_TYPES,
         ...Object.values(STAFF_MAIL_EVENTS),
         'notification.campaign_fanout',
         'notification.plan',
@@ -282,7 +292,8 @@ describe('the merchant mail events', () => {
     const [mail] = mailbox(t).sent;
     expect(mailbox(t).sent).toHaveLength(1);
     expect(mail).toMatchObject({ to: 'ali.hassan@example.com', subject: 'Confirm your email address' });
-    expect(mail!.text).toContain(`${t.config.http.portalBaseUrl}/verify-email?token=`);
+    // Every account's link points at the shop (decision 064); the old merchant page only redirects to it.
+    expect(mail!.text).toContain(`${t.config.http.storeBaseUrl}/verify-email?token=`);
     const delivered = tokenIn(mail!.text);
     expect(delivered).not.toBe(placeholder!.token);
 
@@ -295,7 +306,7 @@ describe('the merchant mail events', () => {
     // The notifications row logs the mail and holds no token and no link anywhere.
     const [row] = await db.select().from(s.notifications);
     expect(row).toMatchObject({
-      recipientType: 'client',
+      recipientType: 'account',
       recipientId: placeholder!.clientId,
       channel: 'email',
       event: 'merchant.email_verification',
@@ -337,9 +348,9 @@ describe('the merchant mail events', () => {
     // A suspended merchant gets no mail; a merchant that is gone gets none either.
     const { db } = await testDb();
     await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, link!.clientId));
-    expect(await processJob(processor, job)).toEqual({ sent: false, skipped: 'merchant_suspended' });
+    expect(await processJob(processor, job)).toEqual({ sent: false, skipped: 'account_not_active' });
     await db.delete(s.clients).where(eq(s.clients.id, link!.clientId));
-    expect(await processJob(processor, job)).toEqual({ sent: false, skipped: 'merchant_gone' });
+    expect(await processJob(processor, job)).toEqual({ sent: false, skipped: 'account_gone' });
     expect(mailbox(t).sent).toEqual([]);
 
     const broken = { data: { ...job.data, payload: {} } };
@@ -414,15 +425,15 @@ describe('the merchant mail events', () => {
 
   it('retry when the mail server fails, mark the row failed on the last attempt, and send a reset and an invitation through their own processors', async () => {
     const merchant = await makeMerchant(t, { noPassword: true });
-    const outbox = t.app.get(MerchantMailOutbox);
-    const issue = t.app.get(MerchantAuthTokens);
+    const outbox = t.app.get(AccountMailOutbox);
+    const issue = t.app.get(AccountAuthTokens);
     for (const [kind, purpose] of [
       ['password_reset', 'reset'],
       ['invited', 'invite'],
     ] as const) {
       await t.app.get(DbService).runInTransaction(async (work) => {
-        const issued = await issue.issue(work, { clientId: merchant.id, purpose });
-        await outbox.enqueue(work, { kind, clientId: merchant.id, tokenId: issued.id });
+        const issued = await issue.issue(work, { accountId: merchant.id, purpose });
+        await outbox.enqueue(work, { kind, accountId: merchant.id, tokenId: issued.tokenId });
       });
     }
     // The invitation is the newest link of the family, so the reset link was replaced: only the invitation is sent.

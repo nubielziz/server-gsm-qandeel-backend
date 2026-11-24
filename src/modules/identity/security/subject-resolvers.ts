@@ -1,18 +1,18 @@
-// The accounts behind sessions (identity module): what state is a staff member, a merchant or a customer in? A session is only
-// as good as its account, so the guards ask this directory when they load a session. Customers belong to the customers
-// module; it registers its resolver here when its feature is built, until then customer sessions are refused.
+// The accounts behind sessions (identity module): what state is a staff member or an account in? A session is only as good as its
+// account, so the guards ask this directory when they load a session.
 import { Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DbService } from '../../../infra/db';
+import { sessionStateOf } from '../accounts/account-status';
 import { type SubjectType, clients, staffUsers } from '../db/schema';
+import { RankKinds } from './rank-kinds';
 import type { SubjectSnapshot } from './session.types';
 
 /**
  * Reads the state of the accounts of one subject type.
  *
- * Why: the identity module owns staff and merchants but not storefront customers (module ownership,
- * `scripts/module-map.mjs`), so each subject type brings its own reader and maps its own statuses onto `ok`, `suspended` and
- * `gone` (decision 018: "the same mechanics with their tables and statuses").
+ * Why: each subject type brings its own reader and maps its own statuses onto `ok`, `suspended` and `gone` (decision 018: "the same
+ * mechanics with their tables and statuses").
  */
 export interface SessionSubjectResolver {
   readonly subjectType: SubjectType;
@@ -44,42 +44,47 @@ class StaffSubjectResolver implements SessionSubjectResolver {
 }
 
 /**
- * Merchants: `suspended` stops everything; `pending` merchants may sign in and manage their own account, and the access
- * handler refuses every other merchant route for them with `403 ACCOUNT_PENDING_APPROVAL` (B153).
+ * Accounts (decision 064): no row, a guest row (an email that ordered without signing up) or an anonymized account is `gone` (401);
+ * a suspended or blocked account is `suspended` (403, and the authenticator revokes its sessions); an active account is `ok` with its
+ * rank. A rank whose kind cannot be read (no lookup installed, or no such rank) is `gone`: the session fails closed.
  */
-class ClientSubjectResolver implements SessionSubjectResolver {
-  readonly subjectType = 'client';
+class AccountSubjectResolver implements SessionSubjectResolver {
+  readonly subjectType = 'account';
 
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly ranks: RankKinds,
+  ) {}
 
   async resolve(subjectId: number): Promise<SubjectSnapshot> {
     const [row] = await this.db.db
-      .select({ status: clients.status, name: clients.name })
+      .select({ status: clients.status, name: clients.name, groupId: clients.groupId, hasAccount: clients.hasAccount })
       .from(clients)
       .where(eq(clients.id, subjectId))
       .limit(1);
-    if (!row) return { state: 'gone' };
-    return {
-      state: row.status === 'suspended' ? 'suspended' : 'ok',
-      name: row.name,
-      approved: row.status === 'active',
-    };
+    if (!row || !row.hasAccount) return { state: 'gone' };
+    const state = sessionStateOf(row.status);
+    if (state === 'gone') return { state };
+    if (state === 'suspended') return { state, name: row.name };
+    const kind = await this.ranks.kindOf(row.groupId);
+    if (kind === undefined) return { state: 'gone' };
+    return { state, name: row.name, rank: { id: row.groupId, kind } };
   }
 }
 
 /**
  * The directory of subject resolvers.
  *
- * Why: see {@link SessionSubjectResolver}. Staff and merchants are built in; the customers module registers its resolver in
- * `onModuleInit` (feature 14b). A subject type without a resolver has no valid sessions, which fails closed.
+ * Why: see {@link SessionSubjectResolver}. Staff and accounts are built in. A subject type without a resolver has no valid sessions,
+ * which fails closed.
  */
 @Injectable()
 export class SessionSubjects {
   private readonly resolvers = new Map<SubjectType, SessionSubjectResolver>();
 
-  constructor(db: DbService) {
+  constructor(db: DbService, ranks: RankKinds) {
     this.register(new StaffSubjectResolver(db));
-    this.register(new ClientSubjectResolver(db));
+    this.register(new AccountSubjectResolver(db, ranks));
   }
 
   /**
@@ -98,7 +103,7 @@ export class SessionSubjects {
   /**
    * Reads an account's state.
    *
-   * @param subjectType staff, client or customer
+   * @param subjectType staff or account
    * @param subjectId the account id
    * @returns the snapshot; `gone` when the subject type has no resolver
    */
@@ -110,7 +115,7 @@ export class SessionSubjects {
   /**
    * Tells whether a subject type can have valid sessions.
    *
-   * @param subjectType staff, client or customer
+   * @param subjectType staff or account
    * @returns true when a resolver is registered
    */
   has(subjectType: SubjectType): boolean {

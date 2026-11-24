@@ -18,21 +18,21 @@ const stream = (id: number, session: number | null, keys: string[], ip?: string)
 describe('ConnectionRegistry', () => {
   it('finds streams by audience key (each once) and by session', () => {
     const registry = new ConnectionRegistry(15);
-    const a = stream(1, 91, ['u:customer:42']);
-    const b = stream(2, 91, ['u:customer:42', 'support:staff']);
+    const a = stream(1, 91, ['u:account:42']);
+    const b = stream(2, 91, ['u:account:42', 'support:staff']);
     const c = stream(3, 92, ['u:client:42']);
     for (const s of [a, b, c]) registry.add(s);
     expect(registry.size).toBe(3);
-    expect(registry.has('u:customer:42')).toBe(true);
+    expect(registry.has('u:account:42')).toBe(true);
     expect(registry.has('u:staff:42')).toBe(false);
-    expect([...registry.withKeys(['u:customer:42', 'support:staff'])]).toEqual([a, b]);
+    expect([...registry.withKeys(['u:account:42', 'support:staff'])]).toEqual([a, b]);
     expect(registry.ofSession(91)).toEqual([a, b]);
     expect(registry.ofSession(7)).toEqual([]);
   });
 
   it('refuses the newest stream over a cap and frees the place when one closes', () => {
     const registry = new ConnectionRegistry(15);
-    const open = [1, 2, 3].map((id) => stream(id, 91, ['u:customer:42']));
+    const open = [1, 2, 3].map((id) => stream(id, 91, ['u:account:42']));
     for (const s of open) registry.add(s);
     expect(registry.capCount('session:91')).toBe(3);
     expect(registry.fullCap(caps(91))).toEqual({ key: 'session:91', max: 3 });
@@ -45,8 +45,8 @@ describe('ConnectionRegistry', () => {
 
   it('counts the per-address cap across sessions', () => {
     const registry = new ConnectionRegistry(15);
-    for (const id of [1, 2, 3]) registry.add(stream(id, 91, ['u:customer:1']));
-    registry.add(stream(4, 92, ['u:customer:2']));
+    for (const id of [1, 2, 3]) registry.add(stream(id, 91, ['u:account:1']));
+    registry.add(stream(4, 92, ['u:account:2']));
     expect(registry.capCount('ip:203.0.113.9')).toBe(4);
     expect(registry.fullCap(caps(93))).toEqual({ key: 'ip:203.0.113.9', max: 4 });
     expect(registry.fullCap(caps(93, '198.51.100.1'))).toBeUndefined();

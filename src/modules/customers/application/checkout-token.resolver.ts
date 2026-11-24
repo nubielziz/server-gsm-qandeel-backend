@@ -3,9 +3,14 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { DbService } from '../../../infra/db';
 import { CapabilityTokenVault, TokenService } from '../../../infra/crypto';
-import { CapabilityTokenResolvers, type CapabilityGrant, type CapabilityTokenResolver } from '../../identity';
+import {
+  AccountDirectory,
+  CapabilityTokenResolvers,
+  type CapabilityGrant,
+  type CapabilityTokenResolver,
+  sessionStateOf,
+} from '../../identity';
 import { findSessionByToken } from '../infra/checkout.repository';
-import { findCustomerById } from '../infra/customer.repository';
 
 /**
  * Opens a checkout session with its token.
@@ -16,7 +21,8 @@ import { findCustomerById } from '../infra/customer.repository';
  * ran) and then compares the stored form with the presented one in constant time, so the answer for a wrong token does not depend on
  * how much of it matched.
  * It does not judge expiry or payment: an expired or paid session can still be read; the use cases decide what may still change. The
- * session of an anonymized customer opens nothing: after the erasure its link is an unknown link.
+ * session of an anonymized account (or guest row) opens nothing: after the erasure its link is an unknown link (`sessionStateOf` says
+ * `gone`).
  *
  * Side effects: none (reads only).
  */
@@ -29,6 +35,7 @@ export class CheckoutTokenResolver implements CapabilityTokenResolver, OnModuleI
     private readonly tokens: TokenService,
     private readonly vault: CapabilityTokenVault,
     private readonly resolvers: CapabilityTokenResolvers,
+    private readonly accounts: AccountDirectory,
   ) {}
 
   /** Registers the resolver with the guard of the `checkout-token` access kind. */
@@ -40,7 +47,7 @@ export class CheckoutTokenResolver implements CapabilityTokenResolver, OnModuleI
    * Looks the token up.
    *
    * @param token a token of the right shape
-   * @returns the session it opens, or `null` for a token that names none or a session whose customer was anonymized
+   * @returns the session it opens, or `null` for a token that names none or a session whose account was anonymized
    */
   async resolve(token: string): Promise<CapabilityGrant | null> {
     const hash = this.vault.hashOf('checkout', token);
@@ -51,9 +58,9 @@ export class CheckoutTokenResolver implements CapabilityTokenResolver, OnModuleI
         ? this.tokens.equals(row.tokenHash, hash)
         : row.token !== null && this.tokens.equals(row.token, token);
     if (!granted) return null;
-    if (row.customerId !== null) {
-      const customer = await findCustomerById(this.db.db, row.customerId);
-      if (!customer || customer.status === 'anonymized') return null;
+    if (row.accountId !== null) {
+      const account = await this.accounts.findById(this.db.db, row.accountId);
+      if (!account || sessionStateOf(account.status) === 'gone') return null;
     }
     return { id: row.id };
   }

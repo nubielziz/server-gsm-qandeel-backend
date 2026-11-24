@@ -88,22 +88,25 @@ describe('migration 0005, default client groups', () => {
 
   it('lets a merchant be invited on a fresh database (it answered 500 before)', async () => {
     await migrate();
-    const admin = await adminWith(t, ['clients:*', 'wallet:*', 'groups:*'], { name: 'Rami K.' });
+    // Giving an account a merchant rank is an Owner's decision (decision 064).
+    const admin = await adminWith(t, ['*'], { name: 'Rami K.' });
     const { db } = await testDb();
     await db
       .insert(s.currencies)
       .values({ code: 'USD', name: 'US dollar', rateToBase: '1', decimals: 2 })
       .onConflictDoNothing();
+    const standard = (await groups()).find((g) => g.isDefault)!;
+    // An omitted rank is the retail one, so the merchant rank the migration made is named; the default password mode mails the invitation.
     const res = await admin.post('/admin/clients', {
       name: 'First Merchant',
       email: 'first@example.com',
       country: 'JO',
-      invite: true,
+      groupId: standard.id,
     });
     expect(res.status).toBe(201);
-    expect(res.body.group).toMatchObject({ name: 'Standard' });
+    expect(res.body.rank).toMatchObject({ name: 'Standard', kind: 'merchant' });
+    expect(res.body.invitationPending).toBe(true);
     // The default group is protected by the group routes.
-    const standard = (await groups()).find((g) => g.isDefault)!;
     expect((await admin.delete(`/admin/client-groups/${standard.id}`)).body.code).toBe('GROUP_IN_USE');
     expect((await admin.patch(`/admin/client-groups/${standard.id}`, { isDefault: false })).body.code).toBe(
       'DEFAULT_GROUP_REQUIRED',

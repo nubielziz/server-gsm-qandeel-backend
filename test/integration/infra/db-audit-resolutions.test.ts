@@ -2,6 +2,7 @@
 // vocabularies, required columns, defaults, and the new unique and composite keys. Each test shows a value the database
 // must accept next to one it must refuse, by SQLSTATE and constraint name.
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
+import { makeAccount } from '../../support/accounts';
 import { insertOrder, insertOrderParents, insertUsd } from '../../support/fixtures';
 import { closeTestDb, pgErrorOf, resetDb, testDb } from '../../support/db';
 
@@ -37,7 +38,7 @@ describe('identity and platform vocabularies', () => {
   const token = (purpose: string, hash: string) =>
     run(
       `insert into auth_tokens (purpose, subject_type, subject_id, token_hash, expires_at)
-       values ($1, 'client', 1, $2, now() + interval '1 hour')`,
+       values ($1, 'account', 1, $2, now() + interval '1 hour')`,
       [purpose, hash],
     );
 
@@ -45,13 +46,13 @@ describe('identity and platform vocabularies', () => {
     for (const purpose of ['invite', 'reset', 'verify_email', 'magic_link']) await token(purpose, `hash-${purpose}`);
     await refuses(
       `insert into auth_tokens (purpose, subject_type, subject_id, token_hash, expires_at)
-       values ('magic-link', 'client', 1, 'h', now())`,
+       values ('magic-link', 'account', 1, 'h', now())`,
       [],
       'auth_tokens_purpose_check',
     );
   });
 
-  it('limit audit actors to staff, client, customer and system, and default the actor name to empty', async () => {
+  it('limit audit actors to the known words, and default the actor name to empty', async () => {
     const [row] = await run<{ actor_name: string }>(
       `insert into audit_logs (actor_type, action, entity_type, entity_id)
        values ('system', 'ran a job', 'job', 1) returning actor_name`,
@@ -64,13 +65,13 @@ describe('identity and platform vocabularies', () => {
     );
   });
 
-  it('log notifications to staff, client or customer (a merchant is a client)', async () => {
+  it('log notifications to staff or an account (a merchant and a shopper are both accounts)', async () => {
     const insert = (recipient: string) =>
       run(
         `insert into notifications (recipient_type, recipient_id, channel, event) values ($1, 1, 'email', 'order.completed')`,
         [recipient],
       );
-    for (const recipient of ['staff', 'client', 'customer']) await insert(recipient);
+    for (const recipient of ['staff', 'account']) await insert(recipient);
     await refuses(
       `insert into notifications (recipient_type, recipient_id, channel, event) values ('merchant', 1, 'email', 'e')`,
       [],
@@ -120,17 +121,20 @@ describe('money', () => {
   });
 
   describe('payments', () => {
+    let accountId = 0;
     async function gateway(): Promise<number> {
-      await insertUsd((await testDb()).db);
+      const { db } = await testDb();
+      await insertUsd(db);
+      accountId = (await makeAccount({ rank: 'retail', db })).id;
       return idOf(
         await run(`insert into payment_gateways (code, driver, name) values ('g', 'manual', 'G') returning id`),
       );
     }
     const pay = (gatewayId: number, purpose: string, status: string, method: string) =>
       run(
-        `insert into payments (purpose, gateway_id, amount, currency, status, method_type)
-         values ($1, $2, 10, 'USD', $3, $4) returning brand, review_required, auto_credit_at, card_fingerprint`,
-        [purpose, gatewayId, status, method],
+        `insert into payments (account_id, purpose, gateway_id, amount, currency, status, method_type)
+         values ($5, $1, $2, 10, 'USD', $3, $4) returning brand, review_required, auto_credit_at, card_fingerprint`,
+        [purpose, gatewayId, status, method, accountId],
       );
 
     it('give a top-up and an order payment their own statuses and methods', async () => {
@@ -143,28 +147,28 @@ describe('money', () => {
       expect(topup).toEqual({ brand: '', review_required: false, auto_credit_at: null, card_fingerprint: null });
 
       await refuses(
-        `insert into payments (purpose, gateway_id, amount, currency, status, method_type) values ('topup', ${gatewayId}, 10, 'USD', 'captured', 'bank')`,
+        `insert into payments (account_id, purpose, gateway_id, amount, currency, status, method_type) values (${accountId}, 'topup', ${gatewayId}, 10, 'USD', 'captured', 'bank')`,
         [],
         'payments_status_check',
       );
       await refuses(
-        `insert into payments (purpose, gateway_id, amount, currency, status, method_type) values ('order', ${gatewayId}, 10, 'USD', 'approved', 'card')`,
+        `insert into payments (account_id, purpose, gateway_id, amount, currency, status, method_type) values (${accountId}, 'order', ${gatewayId}, 10, 'USD', 'approved', 'card')`,
         [],
         'payments_status_check',
       );
       await refuses(
-        `insert into payments (purpose, gateway_id, amount, currency, status, method_type) values ('topup', ${gatewayId}, 10, 'USD', 'pending', 'wallet')`,
+        `insert into payments (account_id, purpose, gateway_id, amount, currency, status, method_type) values (${accountId}, 'topup', ${gatewayId}, 10, 'USD', 'pending', 'wallet')`,
         [],
         'payments_method_type_check',
       );
       await refuses(
-        `insert into payments (purpose, gateway_id, amount, currency, status, method_type) values ('order', ${gatewayId}, 10, 'USD', 'pending', 'bank')`,
+        `insert into payments (account_id, purpose, gateway_id, amount, currency, status, method_type) values (${accountId}, 'order', ${gatewayId}, 10, 'USD', 'pending', 'bank')`,
         [],
         'payments_method_type_check',
       );
       // the union of both lists is the six values of RESOLUTIONS b2c-6
       await refuses(
-        `insert into payments (purpose, gateway_id, amount, currency, status, method_type) values ('order', ${gatewayId}, 10, 'USD', 'pending', 'cash')`,
+        `insert into payments (account_id, purpose, gateway_id, amount, currency, status, method_type) values (${accountId}, 'order', ${gatewayId}, 10, 'USD', 'pending', 'cash')`,
         [],
         'payments_method_type_check',
       );
@@ -172,20 +176,24 @@ describe('money', () => {
   });
 
   it('require the invoice net amount and default the tax columns to zero or empty', async () => {
-    await insertUsd((await testDb()).db);
+    const { db } = await testDb();
+    await insertUsd(db);
+    const account = await makeAccount({ rank: 'retail', db });
     const [row] = await run(
-      `insert into invoices (number, kind, amount, total, currency, net_amount) values ('INV-1', 'topup', 100, 100, 'USD', 97.5)
+      `insert into invoices (number, account_id, kind, amount, total, currency, net_amount)
+       values ('INV-1', $1, 'receipt', 100, 100, 'USD', 97.5)
        returning tax_amount, tax_rate, tax_country, customer_vat_id`,
+      [account.id],
     );
     expect(row).toEqual({ tax_amount: '0.0000', tax_rate: '0.0000', tax_country: '', customer_vat_id: '' });
     await requires(
-      `insert into invoices (number, kind, amount, total, currency) values ('INV-2', 'topup', 100, 100, 'USD')`,
-      [],
+      `insert into invoices (number, account_id, kind, amount, total, currency) values ('INV-2', $1, 'receipt', 100, 100, 'USD')`,
+      [account.id],
       'net_amount',
     );
   });
 
-  it('limit refund methods to original and manual, and give a storefront refund its payment and order', async () => {
+  it('limit refund methods to original and manual, and give a refund an account exactly when it has a payment', async () => {
     const { db } = await testDb();
     await insertUsd(db);
     const insert = (method: string) =>
@@ -199,13 +207,13 @@ describe('money', () => {
       [],
       'refunds_method_check',
     );
-    const [customer] = await run<{ id: number }>(`insert into customers (email) values ('c@example.com') returning id`);
-    // a refund with a customer but without payment and order is refused
+    const account = await makeAccount({ rank: 'retail', db });
+    // a refund with an account but without a payment is refused (a refund with a payment carries the payment's account)
     await refuses(
-      `insert into refunds (amount, currency, method, requested_by_type, customer_id)
+      `insert into refunds (amount, currency, method, requested_by_type, account_id)
        values (5, 'USD', 'original', 'system', $1)`,
-      [customer!.id],
-      'refunds_storefront_refs_check',
+      [account.id],
+      'refunds_account_refs_check',
     );
   });
 
@@ -668,11 +676,15 @@ describe('customers, storefront, support and risk', () => {
         purpose,
       ]);
     for (const purpose of ['terms', 'privacy', 'refund_policy', 'withdrawal_waiver', 'marketing']) {
-      await insert('customer', purpose);
+      await insert('account', purpose);
     }
-    await insert('client', 'terms');
     await refuses(
-      `insert into consent_records (subject_type, subject_id, purpose, ip) values ('customer', 1, 'cookies', '')`,
+      `insert into consent_records (subject_type, subject_id, purpose, ip) values ('customer', 1, 'terms', '')`,
+      [],
+      'consent_records_subject_type_check',
+    );
+    await refuses(
+      `insert into consent_records (subject_type, subject_id, purpose, ip) values ('account', 1, 'cookies', '')`,
       [],
       'consent_records_purpose_check',
     );
@@ -682,7 +694,7 @@ describe('customers, storefront, support and risk', () => {
       'consent_records_subject_type_check',
     );
     await requires(
-      `insert into consent_records (subject_type, subject_id, purpose) values ('customer', 1, 'terms')`,
+      `insert into consent_records (subject_type, subject_id, purpose) values ('account', 1, 'terms')`,
       [],
       'ip',
     );
@@ -702,26 +714,26 @@ describe('customers, storefront, support and risk', () => {
   it('end a ticket at resolved: there is no closed status', async () => {
     const insert = (number: string, status: string) =>
       run(
-        `insert into support_tickets (number, subject, requester_type, requester_id, status) values ($1, 's', 'client', 1, $2)`,
+        `insert into support_tickets (number, subject, requester_type, requester_id, status) values ($1, 's', 'account', 1, $2)`,
         [number, status],
       );
     for (const [index, status] of ['new', 'open', 'pending_customer', 'resolved'].entries())
       await insert(`T-${index}`, status);
     await refuses(
-      `insert into support_tickets (number, subject, requester_type, requester_id, status) values ('T-9', 's', 'client', 1, 'closed')`,
+      `insert into support_tickets (number, subject, requester_type, requester_id, status) values ('T-9', 's', 'account', 1, 'closed')`,
       [],
       'support_tickets_status_check',
     );
   });
 
-  it('remember which customer a block came from, and forget it when the customer is deleted', async () => {
-    const [customer] = await run<{ id: number }>(`insert into customers (email) values ('x@example.com') returning id`);
+  it('remember which account a block came from, and forget it when the account is deleted', async () => {
+    const account = await makeAccount({ rank: 'retail', db: (await testDb()).db });
     await run(
-      `insert into blocklist_entries (kind, value_hash, display, customer_id) values ('email', 'h', 'x***', $1)`,
-      [customer!.id],
+      `insert into blocklist_entries (kind, value_hash, display, account_id) values ('email', 'h', 'x***', $1)`,
+      [account.id],
     );
-    await run(`delete from customers where id = $1`, [customer!.id]);
-    const [entry] = await run(`select customer_id from blocklist_entries`);
-    expect(entry).toEqual({ customer_id: null });
+    await run(`delete from clients where id = $1`, [account.id]);
+    const [entry] = await run(`select account_id from blocklist_entries`);
+    expect(entry).toEqual({ account_id: null });
   });
 });

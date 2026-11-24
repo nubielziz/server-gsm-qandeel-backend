@@ -1,7 +1,8 @@
-// Integration tests of the inbox on the live streams (feature 27, decision 037, plan § 8): an event item reaches its owner at once
-// in the owner's language, nothing rings for a rolled-back change, nothing reaches another person with the same id, reads reach the
-// owner's other streams, a campaign chunk reaches every connected recipient once, a cancel recounts, a reconnect replays (or
-// resyncs), and the subscriber resyncs after a Redis outage. A listening test app on real Postgres and Redis.
+// Integration tests of the inbox on the live streams (feature 27, decision 037, plan § 8; decision 064): an event item reaches its owner at once
+// in English, nothing rings for a rolled-back change, nothing reaches another person with the same id (a staff member, or the account that an
+// old customer number became), reads reach the owner's other streams, a campaign chunk reaches every connected recipient once, a
+// cancel recounts, a reconnect replays (or resyncs), and the subscriber resyncs after a Redis outage. An account of either rank is one kind
+// of viewer. A listening test app on real Postgres and Redis.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { Redis } from 'ioredis';
 import { parseEnv } from '@src/config';
@@ -14,6 +15,7 @@ import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, insertMerchant, insertRole, insertStaff, openSession } from '../../support/auth';
 import { createDraft, fanOutAll, fanOutWith, insertCustomer, sendNow } from '../../support/campaigns';
+import { mapLegacyCustomer } from '../../support/legacy-accounts';
 import { TestClock } from '../../support/clock';
 import { TEST_DATABASE_URL, closeTestDb, resetDb, testDb } from '../../support/db';
 import { testInstanceEnv } from '../../support/env';
@@ -54,7 +56,7 @@ async function started(s: TestStream, unread = 0): Promise<TestStream> {
 
 /** The headers of a same-origin EventSource request of a new session of an account. */
 async function sessionHeaders(
-  subject: { type: 'staff' | 'client' | 'customer'; id: number },
+  subject: { type: 'staff' | 'account'; id: number },
   app: TestApp = t,
 ): Promise<{ headers: Record<string, string>; mutation: Record<string, string> }> {
   const session = await openSession(app, subject);
@@ -64,10 +66,10 @@ async function sessionHeaders(
 const enqueue = (input: NotificationInput) =>
   t.app.get(DbService).runInTransaction(({ tx }) => t.app.get(NotificationService).enqueue({ tx }, input));
 
-/** An order mail for a customer, which also makes the in-app item `order.completed`. */
+/** An order mail for a retail account, which also makes the in-app item `order.completed`. */
 const orderMail = (customerId: number, orderId: string): NotificationInput => ({
   event: 'order.completed',
-  recipient: { type: 'customer', id: customerId },
+  recipient: { type: 'account', id: customerId },
   channel: 'email',
   variables: { customerName: 'Dana', orderId, service: 'Vodafone UK iPhone Unlock', device: 'iPhone 15' },
   dedupeKey: `order-${orderId}-completed:email`,
@@ -78,7 +80,7 @@ async function addItems(customerId: number, count: number, from = 1): Promise<vo
   await t.app.get(DbService).runInTransaction(async ({ tx }) => {
     for (let n = from; n < from + count; n++) {
       await t.app.get(NotificationInbox).add(tx, {
-        recipient: { type: 'customer', id: customerId },
+        recipient: { type: 'account', id: customerId },
         event: 'order.completed',
         variables: { orderId: String(n), service: 'Unlock' },
         occurrence: `replay-${n}`,
@@ -88,8 +90,7 @@ async function addItems(customerId: number, count: number, from = 1): Promise<vo
 }
 
 /** Rings `recount` for every type: a barrier frame (`unread.changed`) behind anything already written to the streams. */
-const barrier = () =>
-  t.app.get(RealtimePublisher).publish('inbox', 'recount', { types: ['staff', 'client', 'customer'] });
+const barrier = () => t.app.get(RealtimePublisher).publish('inbox', 'recount', { types: ['staff', 'account'] });
 
 beforeAll(async () => {
   await testDb();
@@ -124,7 +125,7 @@ describe('an event item', () => {
   it("reaches each of the owner's streams in under a second, in English, with the count", async () => {
     const { db } = await testDb();
     const customerId = await insertCustomer(db, { name: 'Dana' });
-    const { headers } = await sessionHeaders({ type: 'customer', id: customerId });
+    const { headers } = await sessionHeaders({ type: 'account', id: customerId });
     const first = await started(await stream('/store/v1/me/stream', headers));
     const second = await started(await stream('/store/v1/me/stream', headers));
     const startedAt = performance.now();
@@ -156,7 +157,7 @@ describe('an event item', () => {
       v: 1,
       topic: 'inbox',
       op: 'created',
-      type: 'customer',
+      type: 'account',
       ids: [customerId],
     });
     expect(rung).not.toMatch(/Order|Dana|Vodafone|@/);
@@ -165,7 +166,7 @@ describe('an event item', () => {
   it('rings nothing for a rolled-back transaction', async () => {
     const { db } = await testDb();
     const customerId = await insertCustomer(db);
-    const { headers } = await sessionHeaders({ type: 'customer', id: customerId });
+    const { headers } = await sessionHeaders({ type: 'account', id: customerId });
     const s = await started(await stream('/store/v1/me/stream', headers));
     await t.app
       .get(DbService)
@@ -199,21 +200,24 @@ describe('an event item', () => {
     }
   });
 
-  it('never reaches another customer, a merchant or a staff member with the same id', async () => {
+  it('never reaches another account, a merchant rank or a staff member with the same number', async () => {
     const { db } = await testDb();
     const ownerId = await insertCustomer(db);
     const otherCustomer = await insertCustomer(db);
     const merchantId = await insertMerchant(db);
     const staffId = await insertStaff(db, await insertRole(db, ['orders:read']));
-    expect([ownerId, merchantId, staffId]).toEqual([1, 1, 1]);
+    // An account and a staff member can share a number: the audience key says which one a stream is for.
+    expect([ownerId, staffId]).toEqual([1, 1]);
     const owner = await started(
-      await stream('/store/v1/me/stream', (await sessionHeaders({ type: 'customer', id: ownerId })).headers),
+      await stream('/store/v1/me/stream', (await sessionHeaders({ type: 'account', id: ownerId })).headers),
     );
     const others = [
       await started(
-        await stream('/store/v1/me/stream', (await sessionHeaders({ type: 'customer', id: otherCustomer })).headers),
+        await stream('/store/v1/me/stream', (await sessionHeaders({ type: 'account', id: otherCustomer })).headers),
       ),
-      await started(await stream('/client/stream', (await sessionHeaders({ type: 'client', id: merchantId })).headers)),
+      await started(
+        await stream('/client/stream', (await sessionHeaders({ type: 'account', id: merchantId })).headers),
+      ),
       await started(await stream('/admin/stream', (await sessionHeaders({ type: 'staff', id: staffId })).headers)),
     ];
     await enqueue(orderMail(ownerId, '77'));
@@ -225,14 +229,49 @@ describe('an event item', () => {
     }
     expect(await owner.next()).toMatchObject({ event: 'unread.changed', data: { unread: 1 } });
   });
+
+  it('a stream of account 1 gets no frame of the inbox of the account the old customer 1 became, and the other way round', async () => {
+    const { db } = await testDb();
+    // Merchant 1 kept its number; the old customer number 1 became the next account. The two numbers are different people.
+    const merchantId = await insertMerchant(db, { name: 'Zain Mobile Hub' });
+    const customerId = await insertCustomer(db, { name: 'Dana' });
+    await mapLegacyCustomer(db, merchantId, customerId);
+    expect(customerId).not.toBe(merchantId);
+    const merchantStream = await started(
+      await stream('/client/stream', (await sessionHeaders({ type: 'account', id: merchantId })).headers),
+    );
+    const customerStream = await started(
+      await stream('/store/v1/me/stream', (await sessionHeaders({ type: 'account', id: customerId })).headers),
+    );
+    // An item of the converted account reaches its own stream only.
+    await enqueue(orderMail(customerId, '5'));
+    expect((await customerStream.next('notification.created')).data.item.title).toBe('Order 5 completed');
+    // An item of the merchant (a low balance) reaches the merchant's stream only.
+    await enqueue({
+      event: 'wallet.low_balance',
+      recipient: { type: 'account', id: merchantId },
+      channel: 'email',
+      variables: { merchantName: 'Zain Mobile Hub', currency: 'USD', available: '10.00', threshold: '50.00' },
+      dedupeKey: 'low-1:email',
+    });
+    expect((await merchantStream.next('notification.created')).data.item.title).toBe('Low wallet balance');
+    await barrier();
+    // Each stream's next frame is the barrier's count of its own inbox: one item each, none of the other's.
+    expect(await merchantStream.next()).toMatchObject({ event: 'unread.changed', data: { unread: 1 } });
+    expect(await customerStream.next()).toMatchObject({ event: 'unread.changed', data: { unread: 1 } });
+    expect(doorbells.filter((text) => text.includes('"op":"created"'))).toHaveLength(2);
+    for (const text of doorbells.filter((bell) => bell.includes('"op":"created"'))) {
+      expect(JSON.parse(text)).toMatchObject({ type: 'account' });
+    }
+  });
 });
 
 describe('reads', () => {
   it("reach the owner's other streams with the fresh count, one item and then all", async () => {
     const { db } = await testDb();
     const customerId = await insertCustomer(db);
-    const phone = await sessionHeaders({ type: 'customer', id: customerId });
-    const laptop = await sessionHeaders({ type: 'customer', id: customerId });
+    const phone = await sessionHeaders({ type: 'account', id: customerId });
+    const laptop = await sessionHeaders({ type: 'account', id: customerId });
     const a = await started(await stream('/store/v1/me/stream', phone.headers));
     const b = await started(await stream('/store/v1/me/stream', laptop.headers));
     await enqueue(orderMail(customerId, '1'));
@@ -290,7 +329,7 @@ describe('campaigns', () => {
     const streams = [];
     for (const id of ids) {
       streams.push(
-        await started(await stream('/store/v1/me/stream', (await sessionHeaders({ type: 'customer', id })).headers)),
+        await started(await stream('/store/v1/me/stream', (await sessionHeaders({ type: 'account', id })).headers)),
       );
     }
     const id = await campaign();
@@ -321,7 +360,7 @@ describe('campaigns', () => {
     const first = await insertCustomer(db);
     await insertCustomer(db);
     const s = await started(
-      await stream('/store/v1/me/stream', (await sessionHeaders({ type: 'customer', id: first })).headers),
+      await stream('/store/v1/me/stream', (await sessionHeaders({ type: 'account', id: first })).headers),
     );
     const id = await campaign();
     // One chunk, then the time budget is over: the campaign is still sending.
@@ -337,7 +376,7 @@ describe('a reconnect', () => {
   it('replays exactly the missed items with live false, by Last-Event-ID and by ?cursor=, then the count', async () => {
     const { db } = await testDb();
     const customerId = await insertCustomer(db);
-    const { headers } = await sessionHeaders({ type: 'customer', id: customerId });
+    const { headers } = await sessionHeaders({ type: 'account', id: customerId });
     const s = await started(await stream('/store/v1/me/stream', headers));
     await enqueue(orderMail(customerId, '1'));
     const seen = await s.next('notification.created');
@@ -371,7 +410,7 @@ describe('a reconnect', () => {
   it('sends resync instead of 51 missed items, and goes on from the newest id', async () => {
     const { db } = await testDb();
     const customerId = await insertCustomer(db);
-    const { headers } = await sessionHeaders({ type: 'customer', id: customerId });
+    const { headers } = await sessionHeaders({ type: 'account', id: customerId });
     await addItems(customerId, 1);
     const firstId = (await db.execute<{ id: number }>(sql`select max(id)::int as id from notification_inbox`)).rows[0]!
       .id;
@@ -390,7 +429,7 @@ describe('a reconnect', () => {
     const { db } = await testDb();
     const customerId = await insertCustomer(db);
     await addItems(customerId, 2);
-    const { headers } = await sessionHeaders({ type: 'customer', id: customerId });
+    const { headers } = await sessionHeaders({ type: 'account', id: customerId });
     const s = await stream('/store/v1/me/stream?cursor=garbage-x9', { ...headers, 'last-event-id': 'not-a-cursor' });
     expect(await s.next()).toMatchObject({ event: 'ready', data: { resumed: false } });
     expect(await s.next()).toMatchObject({ event: 'unread.changed', data: { unread: 2 } });
@@ -416,7 +455,7 @@ describe('a Redis outage of the subscriber', () => {
       const s = await started(
         await stream(
           '/store/v1/me/stream',
-          (await sessionHeaders({ type: 'customer', id: customerId }, flaky)).headers,
+          (await sessionHeaders({ type: 'account', id: customerId }, flaky)).headers,
           flakyBase,
         ),
       );

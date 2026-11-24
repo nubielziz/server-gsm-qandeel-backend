@@ -149,7 +149,7 @@ describe('scenario b2c-paid: a storefront order is paid and delivered', () => {
     expect(await payments()).toHaveLength(1);
   });
 
-  it('step 7: in one transaction the payment is captured and the session paid, the order has a customer and a public token, and the capture is booked', async () => {
+  it('step 7: in one transaction the payment is captured and the session paid, the order has its buyer account and a public token, and the capture is booked', async () => {
     const [payment] = await payments();
     const [session] = await world.db.select().from(s.checkoutSessions);
     const [order] = await world.db.select().from(s.orders);
@@ -164,9 +164,10 @@ describe('scenario b2c-paid: a storefront order is paid and delivered', () => {
     });
     expect(payment!.capturedAt?.toISOString()).toBe('2026-11-07T12:00:00.000Z');
     expect(session).toMatchObject({ status: 'paid', orderId });
+    // The buyer is the account of the checkout (a guest row here); a storefront order leaves the merchant column empty.
     expect(order).toMatchObject({
-      customerId: session!.customerId,
-      clientId: null,
+      accountId: session!.accountId,
+      legacyClientId: null,
       source: 'store',
       status: 'pending',
       dispatchState: 'pending',

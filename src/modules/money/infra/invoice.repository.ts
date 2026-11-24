@@ -1,11 +1,19 @@
-// Drizzle queries on invoices (map routes /admin/invoices, /client/invoices, stage 8): lists for staff and for one merchant with
-// sort, search and exact count, find, id allocation, insert and update. Only the money module touches this table.
+// Drizzle queries on invoices (map routes /admin/invoices, /client/invoices, stage 8): lists for staff and for one account with
+// sort, search and exact count, find, id allocation, insert and update. Only the money module touches this table. An invoice belongs to
+// an account (`account_id`, decision 064) and a top-up or manual one names the wallet kind it fills.
 import { type SQL, and, asc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import type { DbExecutor } from '../../../infra/db';
 import { escapeLike, listOrderBy, listWhere } from '../../../infra/db/list-sql';
-import { type Invoice, type InvoiceKind, type NewInvoice, invoices, payments } from '../db/schema';
-import { findCustomerIdsByName, findMerchantIdsByName } from './foreign-directory.repository';
+import {
+  type Invoice,
+  type InvoiceKind,
+  type InvoiceWalletKind,
+  type NewInvoice,
+  invoices,
+  payments,
+} from '../db/schema';
+import { findMerchantIdsByName } from './foreign-directory.repository';
 
 /** The sort fields of the invoice lists (staff: createdAt, total, status; merchant: also number and dueAt). */
 export type InvoiceSortField = 'createdAt' | 'total' | 'status' | 'number' | 'dueAt';
@@ -17,16 +25,20 @@ const COLUMNS = {
   number: invoices.number,
   dueAt: invoices.dueAt,
   kind: invoices.kind,
-  clientId: invoices.clientId,
+  accountId: invoices.accountId,
+  // The old filter name of the staff list: a merchant id is an account id, so `clientId` reads the same column (decision 064).
+  clientId: invoices.accountId,
 };
 
 /** What narrows an invoice list before the request's own filters. */
 export interface InvoiceScope {
-  /** Only this merchant's invoices (the portal). */
-  readonly clientId?: number;
+  /** Only this account's invoices (the portal). */
+  readonly accountId?: number;
   /** Only these kinds (the portal never shows receipts). */
   readonly kinds?: readonly InvoiceKind[];
-  /** Let `q` also match merchant and customer names (the staff list). */
+  /** Leave out the invoices of this wallet kind (the portal never shows the top-ups of a store balance the account once had). */
+  readonly excludeWalletKind?: InvoiceWalletKind;
+  /** Let `q` also match the names of the accounts (the staff list). */
   readonly searchNames?: boolean;
 }
 
@@ -34,8 +46,9 @@ export interface InvoiceScope {
  * Lists invoices.
  *
  * @param db the database or a transaction
- * @param query the parsed list request (`q` searches the number, and for staff the merchant and customer names)
- * @param scope the merchant and kinds the list is limited to
+ * @param query the parsed list request (`q` searches the number, and for staff the names of the accounts; the filters `accountId` and
+ *   `clientId` are one column)
+ * @param scope the account and kinds the list is limited to
  * @returns the page of rows and the number matching the filters
  */
 export async function listInvoiceRows(
@@ -49,19 +62,18 @@ export async function listInvoiceRows(
     const pattern = `%${escapeLike(search.text)}%`;
     alternatives.push(sql`${invoices.number} ilike ${pattern}`);
     if (scope.searchNames) {
-      const [clientIds, customerIds] = await Promise.all([
-        findMerchantIdsByName(db, pattern),
-        findCustomerIdsByName(db, pattern),
-      ]);
-      if (clientIds.length > 0) alternatives.push(inArray(invoices.clientId, clientIds));
-      if (customerIds.length > 0) alternatives.push(inArray(invoices.customerId, customerIds));
+      const accountIds = await findMerchantIdsByName(db, pattern);
+      if (accountIds.length > 0) alternatives.push(inArray(invoices.accountId, accountIds));
     }
   }
   const where = listWhere(
     { filters: query.filters, search: undefined },
     COLUMNS,
-    scope.clientId === undefined ? undefined : eq(invoices.clientId, scope.clientId),
+    scope.accountId === undefined ? undefined : eq(invoices.accountId, scope.accountId),
     scope.kinds === undefined ? undefined : inArray(invoices.kind, [...scope.kinds]),
+    scope.excludeWalletKind === undefined
+      ? undefined
+      : sql`${invoices.walletKind} is distinct from ${scope.excludeWalletKind}`,
     search ? or(...alternatives) : undefined,
   );
   const [rows, [counted]] = await Promise.all([
@@ -95,24 +107,24 @@ export async function findInvoice(db: DbExecutor, id: number, lock = false): Pro
 }
 
 /**
- * Finds an invoice of one merchant (never a neighbour's).
+ * Finds an invoice of one account (never a neighbour's).
  *
  * @param db the database or a transaction
  * @param id the invoice id
- * @param clientId the merchant
+ * @param accountId the account
  * @param lock lock the row `FOR UPDATE` until the transaction ends
  * @returns the row, or `undefined` when it does not exist or belongs to someone else
  */
-export async function findInvoiceOfClient(
+export async function findInvoiceOfAccount(
   db: DbExecutor,
   id: number,
-  clientId: number,
+  accountId: number,
   lock = false,
 ): Promise<Invoice | undefined> {
   const query = db
     .select()
     .from(invoices)
-    .where(and(eq(invoices.id, id), eq(invoices.clientId, clientId)))
+    .where(and(eq(invoices.id, id), eq(invoices.accountId, accountId)))
     .limit(1);
   const [row] = await (lock ? query.for('update') : query);
   return row;
@@ -200,37 +212,26 @@ export async function findReceiptOfOrder(db: DbExecutor, orderId: number): Promi
 }
 
 /**
- * Serialises the top-up invoices of one merchant until the transaction ends.
+ * Counts an account's live unpaid merchant top-up invoices: open, of the merchant wallet, and created after `since` or with a payment
+ * waiting for review.
  *
- * Why: decision 049: the count of live unpaid top-ups and the insert that extends it run one request at a time per merchant.
- *
- * Side effects: takes `pg_advisory_xact_lock(hashtextextended('merchant-topup:<clientId>', 0))`, released at commit or rollback.
- *
- * @param tx the transaction that inserts the invoice or the receipt
- * @param clientId the merchant
- */
-export async function lockMerchantTopUps(tx: DbExecutor, clientId: number): Promise<void> {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`merchant-topup:${clientId}`}, 0))`);
-}
-
-/**
- * Counts a merchant's live unpaid top-up invoices: open, and created after `since` or with a payment waiting for review.
- *
- * Why: decision 049 (at most five; `MERCHANT_OPEN_TOPUPS`). The window takes the clock's time (decision 031).
+ * Why: decision 049 (at most five; `MERCHANT_OPEN_TOPUPS`). The window takes the clock's time (decision 031). The caller holds the
+ * account's top-up lock (`lockAccountTopUps`), so the count and the insert that extends it run one request at a time per account.
  *
  * @param db the database or a transaction
- * @param clientId the merchant
+ * @param accountId the account
  * @param since the start of the window (the clock's time minus 24 hours)
  * @returns the count
  */
-export async function countLiveMerchantTopUps(db: DbExecutor, clientId: number, since: Date): Promise<number> {
+export async function countLiveMerchantTopUps(db: DbExecutor, accountId: number, since: Date): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(invoices)
     .where(
       and(
-        eq(invoices.clientId, clientId),
+        eq(invoices.accountId, accountId),
         eq(invoices.kind, 'topup'),
+        eq(invoices.walletKind, 'client_wallet'),
         eq(invoices.status, 'open'),
         or(
           gt(invoices.createdAt, since),

@@ -7,7 +7,7 @@
   "body": [
     {
       "customer": {
-        "id": 1,
+        "id": 101,
         "name": "Daniel Whitmore",
         "email": "daniel.whitmore@mail.example",
         "status": "active"

@@ -90,7 +90,9 @@ describe('a payment the rules allow', () => {
     expect(await assessmentOf(db, paid.orderId)).toMatchObject({
       decision: 'allow',
       checkoutSessionId: session!.id,
-      customerId: (await orderRow(db, paid.orderId)).customerId,
+      // The assessment names the buyer account (the guest row of the checkout's email here), as the order does.
+      accountId: (await orderRow(db, paid.orderId)).accountId,
+      retiredCustomerId: null,
       reviewedAt: null,
       outcome: null,
     });
@@ -130,7 +132,7 @@ describe('a payment the rules hold', () => {
       capturedAmount: '4.7900',
       currency: 'GBP',
       paymentMethod: 'card',
-      // Decision 047: the risk role of this test does not hold customers:read, so the address comes masked.
+      // Decisions 047 and 064: the risk role of this test does not hold clients:read, so the address comes masked.
       customer: { email: 'sa•••@mail.example' },
     });
   });
@@ -324,8 +326,8 @@ describe('a payment the rules block', () => {
     const mails = await notificationRows(db);
     expect(mails.map((row) => row.event)).toEqual(['order.failed']);
     expect(mails[0]).toMatchObject({
-      recipientType: 'customer',
-      recipientId: (await orderRow(db, paid.orderId)).customerId,
+      recipientType: 'account',
+      recipientId: (await orderRow(db, paid.orderId)).accountId,
     });
   });
 });

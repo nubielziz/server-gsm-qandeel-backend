@@ -1,12 +1,27 @@
 # Orders module (`orders`)
 
-Map domain D. One order engine for B2B merchants and B2C storefront customers: placement and balance hold, the status state machine (decision 025), order events and the admin and merchant order actions.
+Map domain D. One order engine for both doors, the merchant doors (balance hold and settle) and the shop's door (pay first), with one account as the buyer of every order (decision 064): placement and balance hold, the status state machine (decision 025), order events and the admin and merchant order actions.
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 024 ledger, 025 order state machine, 026 Dhru compatibility, 051 field patterns and the bulk reply's lines (feature 41). Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 024 ledger, 025 order state machine, 026 Dhru compatibility, 051 field patterns and the bulk reply's lines (feature 41), 064 one account type. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
+
+## The buyer account and the door (decision 064)
+
+This section holds the rules of the one account type; where an older bullet below says "merchant" for the buyer of a hold-and-settle order or "customer" for the buyer of a storefront order, read it with this section.
+
+- **The buyer and the door.** The buyer of every order is an account (`orders.account_id`, NOT NULL), whatever its rank. **The door** is `orders.source` (`store` is the shop's door; `portal`, `dhru`, `v1` and `admin` are the merchant doors (only the first two place orders today; `v1` and `admin` are in rows written before)), and the door decides the money path of an existing order, never the rank the buyer has today: `isPrepaidOrder(order)` and `prepaidOrderSql(sourceColumn)` (`domain/door.ts`, exported) say whether an order is paid first (the shop's door), `orderStateOf(order)` reads `source`, and a tooling test fails on a buyer inferred from a null `client_id` or `customer_id`. `client_id` is still written for hold-and-settle orders (`orders_hold_buyer_check`: it is null or equals `account_id`; `orders_door_check`: `(source = 'store') = (client_id IS NULL)`) and never read; `customer_id` is `retiredCustomerId`, unwritten. The order input keys `clientId` and `onlyClientId` keep their names; the value is an account id.
+- **Placement from a wallet** (`OrderPlacement.place({accountId, ...})`, `application/order-placement.ts`; pure rules in `domain/buyer-rules.ts`, reads in `infra/buyer.repository.ts`): the transaction takes the buyer's account row first (`FOR KEY SHARE`, and the rank is read after the lock) and refuses, before it writes anything, a retail rank (403 `RANK_NOT_ALLOWED`), an account that may not act (403 `ACCOUNT_SUSPENDED`) and a frozen merchant wallet (409 `WALLET_FROZEN`, money's `AccountWallets.assertNotFrozen`, called after the row lock and before the hold). `CustomerOrderPlacement.place(tx, {accountId, ...})` places the shop's order after payment. The pricing snapshot gains `rankId`. Every transition that moves money (settle, release, refund, reopen) takes the same account row lock first, then the order, then the advisory and ledger locks.
+- **A refund after a change of rank.** A refund of a completed hold-path order credits the wallet that is **live now** (money's `refund` builder with `wallet`); a store-balance refund of a completed merchant-door order is `refundToStoreBalance` in `order-ledger.ts`. A **reopen** after the account left the merchant rank is refused with `409 RANK_CHANGED` ("Refund the order instead.") because it is a new debit; reject and cancel cannot meet a crossing, because the rank change is blocked while any order of the account is in flight: this module registers the blocker `live_order` (`LiveOrdersGuard`: status `pending` or `processing`, or `completed` with verification requested, any door) with money's `RankChangeGuards`.
+- **The buyer account on the wire (staff).** A staff order row names it as `account {id, name, email, rank {id, name, kind}, guest}` (the address masked without `clients:read`; `guest` for an address that ordered without a login); the keys `client` and `customer` are gone. Filters `accountId`, `clientId` (an alias: a merchant's number is its account number) and `rankId`; `customerId` is `422`, because an old customer number is not an account number; the search reads names, never addresses; `channel` is told by the door the order came through (`source`), never by the rank the buyer has today. The staff export ends with the buyer's `rank`. Each line of `GET /admin/orders/:id/events` adds `account {id}` or null: an event written before the accounts merged keeps its old actor word (`client`, `customer`) and the answer resolves it through the legacy id map (`actorFactsOf`), and a number the map does not know names nobody; `TimelineActor.type` is `CurrentOrderEventActorType` (staff, account, supplier, system). The bulk reply's matched line carries `account` in place of `client` and `customer` (owner key `account <id> service <id>`).
+- **Scopes: staff, merchant doors, shop door.** The portal (`GET /client/orders*`, the dashboard, the export, cancel and verify) and the Dhru status read the account's orders of the **merchant doors only** (`merchantDoorSql(accountId)`); the account's own shop order is 404 there and is listed by `GET /store/v1/me/orders` through the seam `ShopOrders.listShopOrders(db, accountId, query)` (`ports/shop-orders.ts`, implemented by `ShopOrderReads`; `shopDoorSql(accountId)`). The seam's rows are `ShopOrderRow`, which carry the stored tracking token (`publicTokenEnc`, or the plain `publicToken` of an order placed before decision 054) for the customers module to reveal. The error lists of `POST /client/orders` and the Dhru placement gain `RANK_NOT_ALLOWED`, `ACCOUNT_SUSPENDED` and `WALLET_FROZEN`.
+- **Order figures of the account list.** The count, the date and the total of the orders of an account reach identity's account list as SQL fragments this module registers with `AccountListSql.registerOrderFigure` (`orderFigureSql(figure, accountIdColumn)` for `ordersCount`, `lastOrderAt` and `totalSpent`, both doors, any status); `OrderClientStats` also registers with identity's `ClientStatsDirectory` (`lifetimeOf(db, accountIds)`).
+- **The orders participant of the guest claim** (`OrdersGuestClaimParticipant`, `ORDERS_PARTICIPANT` = `orders`): the shop orders of a guest row move to the account that proves the mailbox, taking the rows `FOR UPDATE NOWAIT`; its count is `claimedOrders`.
+- **Outbox payload.** `order.status_changed` carries `{ orderId, accountId, source, fromStatus, toStatus }` in place of `clientId` (older rows still in the queue carry `clientId` and no `source`); the merchant notice goes only for orders held from a wallet (a `store` order is skipped, `no_merchant`). The idempotency of the portal is per account (the column `client_id` of `idempotency_keys` holds the account id).
+
+The rest of this section is the history of the module's features.
 
 Built (feature 5, orders-engine): 20 routes of this module (13 admin, 7 merchant portal) plus the two file downloads of the platform
 module, the lead's state machine, and the demo seed. Dispatch, fetch and change-supplier (and the supplier jobs) are built by feature 6 in
@@ -211,7 +226,7 @@ hours, 0 = no window) through `POST|PATCH /admin/services` (feature 7a, catalog 
 
 ### Staff reads and the export (decision 047)
 
-`GET /admin/orders` and `GET /admin/orders/:id` show a storefront customer's address masked (`ja•••@example.com`) unless the caller holds `customers:read`
+`GET /admin/orders` and `GET /admin/orders/:id` show an account's address masked (`ja•••@example.com`) unless the caller holds `clients:read`
 (`toStaffOrder(row, extras, contact)`; identity's `customerContactOf` decides it and the controller passes it down). `GET /admin/orders/export` also needs `reports:read`
 (`ORDER_EXPORT_PERMISSION`, checked first in `OrderExportService.forStaff(caller, query)`: a refused export counts nothing and writes no audit row): the file holds buyers,
 inputs and costs of up to 100,000 orders, and the reports permission already shows costs and profit.
@@ -220,7 +235,7 @@ inputs and costs of up to 100,000 orders, and the reports permission already sho
 
 Exports `OrdersModule` (with `OrdersOutboxModule`, which the worker loads, and `OrdersAdminModule`, the routes and use cases), the pure
 rules (`decideOrderAction`, `deriveQueue`, `isOpen`, `placementDispatchState`, `orderStateOf`, `wireDispatchState`, `WIRE_DISPATCH_STATES`, `mainInputOf`), the SQL fragments (`pastSlaPredicate`,
-`queueSql`, `channelSql`), the services other features call (`OrderPlacement` for Dhru (7a) and the storefront; `OrderTransitions`
+`queueSql`, `channelSql`), the door helpers `isPrepaidOrder` and `prepaidOrderSql`, the seam `ShopOrders` with the types `ShopOrderPage` and `ShopOrderRow`, the services other features call (`OrderPlacement` for Dhru (7a) and the storefront; `OrderTransitions`
 for the risk actions, with `refusalError`, `SEND_IN_PROGRESS_DETAIL` and `CHANGED_FIRST_DETAIL`; `OrderSupplierMoves`, the door of the supplier flows (its claim, its guarded moves, `recordLateAcceptance`, `paymentStop` with `PAYMENT_STOP_REASONS` and the type `PaymentStop`, and the readers of the dispatch sweep, with the types `UnansweredClaim`, `UnclaimedOrder` and `LateAcceptance`), and `OrdersEngineModule`, which provides both without routes for
 the worker; `OrderReadService`), the outbox event names (`ORDER_OUTBOX_EVENTS`, `OrderOutbox`) and the
 vocabularies and row types of the two tables. Other modules import only `src/modules/orders/index.ts` (lint rule
@@ -232,7 +247,7 @@ Only this module reads and writes these 2 tables (`scripts/module-map.mjs`); oth
 
 | Table | What it holds |
 |---|---|
-| `orders` | Orders; id equals REFERENCEID. client_id accepts null for storefront (B2C) orders, which fill customer_id instead; exactly one of the two is set. |
+| `orders` | Orders; id equals REFERENCEID. `account_id` names the buyer of every order (decision 064); `source` is the door (`store` for the shop). `client_id` is still written for hold-and-settle orders and is null for the shop's door; `customer_id` is retired and unwritten. |
 | `order_events` | The order timeline; append only. |
 
 ## Routes
@@ -243,11 +258,11 @@ Only this module reads and writes these 2 tables (`scripts/module-map.mjs`); oth
 
 | Route | Access | What it does | Stage |
 |---|---|---|---|
-| `GET /admin/orders` | staff-permission · `orders:read` | Orders and their queues (pending, manual, needs_attention, verification, review); filter by channel=b2b\|b2c. | 5 |
+| `GET /admin/orders` | staff-permission · `orders:read` | Orders and their queues (pending, manual, needs_attention, verification, review); filter by channel=b2b\|b2c (told by the door) and by `accountId` or `rankId`. | 5 |
 | `GET /admin/orders/:id` | staff-permission · `orders:read` | Orders and their queues (pending, manual, needs_attention, verification, review); filter by channel=b2b\|b2c. | 5 |
 | `GET /admin/orders/:id/events` | staff-permission · `orders:read` | The full order timeline. | 5 |
 | `GET /admin/orders/export` | staff-permission · `orders:read` | Export a CSV file according to the filters. | 5 |
-| `GET /admin/reports/top-clients` | staff-permission · `reports:read` | Top merchants by volume and by profit. | 11 |
+| `GET /admin/reports/top-clients` | staff-permission · `reports:read` | Top accounts by volume and by profit, every rank, by door (the money module's report). | 11 |
 | `POST /admin/orders/:id/accept` | staff-permission · `orders:update` | Accept a manual order and move it to processing. | 5 |
 | `POST /admin/orders/:id/change-supplier` | staff-permission · `orders:update` | Change the supplier or reset the reference. | 6 (built in the suppliers module) |
 | `POST /admin/orders/:id/dispatch` | staff-permission · `orders:update` | Manually send the order to the supplier (force send). | 6 (built in the suppliers module) |
@@ -318,7 +333,7 @@ Outbox events produced (ids and status words only, written in the transition's o
 
 | Type | Queue | Payload | Written when | Consumer |
 |---|---|---|---|---|
-| `order.status_changed` | `notifications` | `{ orderId, clientId (null for a storefront order), fromStatus, toStatus }` | the status of an order changed (accept, reply, reject, cancel, reopen, refund, a verification refund) | the order result notifications of feature 12a (`EventNotifier`; the platform registers the route) |
+| `order.status_changed` | `notifications` | `{ orderId, accountId, source, fromStatus, toStatus }` (decision 064; older queued rows carry `clientId`) | the status of an order changed (accept, reply, reject, cancel, reopen, refund, a verification refund) | the order result notifications of feature 12a (`EventNotifier`; the platform registers the route) |
 | `order.dispatch_requested` | `supplier-dispatch` | `{ orderId }` | placement of an automatic order with an active supplier link; a staff `dispatch` and a `change-supplier` with `dispatch: true` (feature 6) | the dispatch job of feature 6 (`SupplierDispatchProcessor`) |
 
 Feature 5 registers the route of `order.dispatch_requested` (`OrderOutbox.onModuleInit`, loaded by the API and the worker) and adds no processor

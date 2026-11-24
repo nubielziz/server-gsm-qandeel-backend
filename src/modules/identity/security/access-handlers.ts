@@ -5,12 +5,12 @@
 import { Injectable } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
-import { ACCESS_KINDS, type AccessKind, type AnyRouteContract } from '../../../common/contract';
+import { ACCESS_KINDS, type AccessKind, type AnyRouteContract, defaultRankOf } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { MetricsAccessGuard } from '../../../infra/metrics';
 import type { SubjectType } from '../db/schema';
 import type { AccessState } from './access-state';
-import { SessionAuthenticator } from './session-authenticator';
+import { SessionAuthenticator, assertRankAllowed } from './session-authenticator';
 
 /**
  * Authenticates the requests of one access kind.
@@ -26,7 +26,7 @@ export interface AccessHandler {
    * @param contract the contract of the route being called
    * @param context the Nest execution context (for guards that already exist, such as the metrics guard)
    * @returns the principal and the session, when the kind has them; an empty object lets the request through unauthenticated
-   * @throws {AppError} the refusal: `UNAUTHORIZED` (401), `ACCOUNT_SUSPENDED` or `IP_NOT_ALLOWED` (403), `RATE_LIMITED` (429)
+   * @throws {AppError} the refusal: `UNAUTHORIZED` (401), `ACCOUNT_SUSPENDED`, `RANK_NOT_ALLOWED` or `IP_NOT_ALLOWED` (403), `RATE_LIMITED` (429)
    */
   authenticate(
     request: FastifyRequest,
@@ -64,7 +64,15 @@ const FAIL_CLOSED_HANDLER: AccessHandler = {
   },
 };
 
-/** Authenticates with the session cookie of one subject type, accepting the stages of the contract. */
+/**
+ * Authenticates with the session cookie of one subject type, accepting the stages of the contract.
+ *
+ * Why: decision 064. One handler serves both account access kinds (`merchant-session` and `customer-session`): the session is the same, and
+ * the rank gate then decides which rank the route serves (default deny; `rank: 'any'` opens a route to every rank). The order is part
+ * of the contract with the shops: 401 no or dead session; 403 `ACCOUNT_SUSPENDED`; 401 wrong stage (all three in the authenticator);
+ * 403 `RANK_NOT_ALLOWED`; then CSRF, permission and Turnstile (in the guard dispatcher). `pendingMerchant` is accepted by the contract
+ * and ignored here: there is no pending account any more.
+ */
 class SessionAccessHandler implements AccessHandler {
   constructor(
     private readonly authenticator: SessionAuthenticator,
@@ -75,13 +83,8 @@ class SessionAccessHandler implements AccessHandler {
     const { view, principal } = await this.authenticator.authenticate(this.subjectType, request, {
       stages: contract.sessionStages,
     });
-    // B153: a merchant that staff have not approved yet reaches only the routes that opt in. It is not a session-ending
-    // code (`403 ACCOUNT_PENDING_APPROVAL` never signs the caller out), and it follows the suspension and stage checks.
-    if (view.subjectType === 'client' && view.subject.approved !== true && contract.pendingMerchant !== 'allow') {
-      throw new AppError('ACCOUNT_PENDING_APPROVAL', {
-        detail: 'Your account is waiting for approval. This is available once our team has approved it.',
-      });
-    }
+    // The staff handler has no rank (null). A contract that lacks the field falls back to the default of its access kind, never to open.
+    if (this.subjectType === 'account') assertRankAllowed(view, contract.rank ?? defaultRankOf(contract.access));
     return { principal, session: view };
   }
 }
@@ -99,6 +102,7 @@ export class AccessHandlers {
 
   constructor(authenticator: SessionAuthenticator, metricsAccess: MetricsAccessGuard) {
     const sessionStaff = new SessionAccessHandler(authenticator, 'staff');
+    const sessionAccount = new SessionAccessHandler(authenticator, 'account');
     for (const kind of ACCESS_KINDS) {
       switch (kind) {
         case 'public':
@@ -109,10 +113,8 @@ export class AccessHandlers {
           this.handlers.set(kind, sessionStaff);
           break;
         case 'merchant-session':
-          this.handlers.set(kind, new SessionAccessHandler(authenticator, 'client'));
-          break;
         case 'customer-session':
-          this.handlers.set(kind, new SessionAccessHandler(authenticator, 'customer'));
+          this.handlers.set(kind, sessionAccount);
           break;
         case 'internal-or-token':
           // /metrics: the network-or-token rule of the existing guard (decision 015).

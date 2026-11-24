@@ -74,8 +74,9 @@ export function toClientServiceView(entry: CatalogEntry): ClientServiceView {
  * Serves the merchant's catalog.
  *
  * Why: the merchant portal lists what the merchant may buy at its own prices, draws the order form from a service's field schema
- * and exports the price list (map stage 4). The merchant must be approved: the guard refuses a pending one before any of this
- * runs (B153). A service the merchant may not see is `404`, like an unknown one. Prices come from the one resolver and are
+ * and exports the price list (map stage 4). Only an account of a merchant rank is served: the rank gate refuses any other before
+ * any of this runs, and the service reads the rank once more (decision 064). A service the merchant may not see is `404`, like an
+ * unknown one. Prices come from the one resolver and are
  * remembered as the listed prices, so the order path can refuse an order that costs much more than what was shown.
  *
  * Side effects: writes `listed_prices` (only when a price changed).
@@ -94,10 +95,10 @@ export class ClientCatalogService {
   /**
    * Lists a page of the merchant's catalog.
    *
-   * @param clientId the signed-in merchant
+   * @param clientId the signed-in merchant (an account id)
    * @param query the parsed list request
    * @returns the page of services at the merchant's prices and the exact total
-   * @throws {AppError} `UNAUTHORIZED` (401) when the merchant no longer exists
+   * @throws {AppError} `UNAUTHORIZED` (401) when the account no longer exists; `RANK_NOT_ALLOWED` (403) for a retail rank
    */
   async list(
     clientId: number,
@@ -115,7 +116,8 @@ export class ClientCatalogService {
    * @param clientId the signed-in merchant
    * @param serviceId the service id
    * @returns the service at the merchant's price with its fields and options
-   * @throws {AppError} `NOT_FOUND` (404: unknown, archived, off, or hidden from the merchant's group)
+   * @throws {AppError} `NOT_FOUND` (404: unknown, archived, off, or hidden from the merchant's group); `UNAUTHORIZED` (401) and
+   *   `RANK_NOT_ALLOWED` (403) as {@link ClientCatalogService.list}
    */
   async show(clientId: number, serviceId: number): Promise<ClientServiceDetailView> {
     const merchant = await this.merchantFor(clientId);
@@ -147,7 +149,7 @@ export class ClientCatalogService {
    * @param clientId the signed-in merchant
    * @param filter optional `type` and `categoryId` filters
    * @returns the CSV text
-   * @throws {AppError} `UNAUTHORIZED` (401) when the merchant no longer exists
+   * @throws {AppError} `UNAUTHORIZED` (401) when the account no longer exists; `RANK_NOT_ALLOWED` (403) for a retail rank
    */
   async exportCsv(
     clientId: number,
@@ -172,6 +174,8 @@ export class ClientCatalogService {
   private async merchantFor(clientId: number): Promise<CatalogMerchant> {
     const merchant = await merchantOf(this.db.db, clientId);
     if (!merchant) throw new AppError('UNAUTHORIZED');
+    // The route's gate has refused a retail rank already; a session that outlived a rank change must not read a merchant's catalog.
+    if (merchant.rankKind !== 'merchant') throw new AppError('RANK_NOT_ALLOWED');
     return { clientId, groupId: merchant.groupId };
   }
 

@@ -96,7 +96,7 @@ describe('parseEnv in development and test', () => {
 
   it('gives each audience its own origins: the development defaults, none under test, the base URLs in production (decision 045)', () => {
     const portalOrigin = new URL(DEV_DEFAULTS.portalBaseUrl).origin;
-    expect(portalOrigin).toBe('http://localhost:5174');
+    expect(portalOrigin).toBe('http://localhost:5175');
     const development = parseEnv({}).http;
     expect(development.shopOrigins).toContain(portalOrigin);
     expect(development.consoleOrigins).not.toContain(portalOrigin);
@@ -111,7 +111,7 @@ describe('parseEnv in development and test', () => {
     expect(prod.consoleOrigins).toEqual(['https://admin.gsm.example']);
     expect(prod.shopOrigins).toEqual(['https://shop.gsm.example', 'https://portal.gsm.example']);
     // A portal served under the shop's host is one origin, not two.
-    const shared = parseEnv({ ...production(), PORTAL_BASE_URL: 'https://shop.gsm.example/merchant' }).http;
+    const shared = parseEnv({ ...production(), PORTAL_BASE_URL: 'https://shop.gsm.example/account' }).http;
     expect(shared.shopOrigins).toEqual(['https://shop.gsm.example']);
   });
 
@@ -204,6 +204,11 @@ describe('parseEnv in development and test', () => {
     expect(parseEnv({ PORTAL_BASE_URL: 'https://portal.example.com//' }).http.portalBaseUrl).toBe(
       'https://portal.example.com',
     );
+    // The base of the account area of the shop (decision 064): its path stays, only the trailing slashes go.
+    expect(parseEnv({ PORTAL_BASE_URL: 'https://shop.example.com/account/' }).http.portalBaseUrl).toBe(
+      'https://shop.example.com/account',
+    );
+    expect(DEV_DEFAULTS.portalBaseUrl).toBe('http://localhost:5175/account');
     expect(issuesOf({ PORTAL_BASE_URL: 'portal.example.com' }).map((i) => i.variable)).toEqual(['PORTAL_BASE_URL']);
   });
 
@@ -365,7 +370,7 @@ describe('parseEnv in production', () => {
       // A portal served under the shop's host is one origin: it is named once, with both variables.
       const sharedHost = parseEnv({
         ...production(),
-        PORTAL_BASE_URL: 'https://shop.gsm.example/merchant',
+        PORTAL_BASE_URL: 'https://shop.gsm.example/account',
         SHOP_ORIGINS: 'https://elsewhere.gsm.example',
       });
       expect(sharedHost.warnings).toEqual([

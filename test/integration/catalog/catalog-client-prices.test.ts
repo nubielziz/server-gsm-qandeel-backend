@@ -168,7 +168,7 @@ describe('POST /admin/client-prices', () => {
     const [audit] = await auditRows();
     expect(audit).toMatchObject({
       action: 'set client price for',
-      entityType: 'merchant',
+      entityType: 'account',
       entityId: erbil,
       entityLabel: 'Erbil, IMEI-ATT-USA',
     });
@@ -329,7 +329,7 @@ describe('DELETE /admin/client-prices/:id', () => {
     const [audit] = await auditRows();
     expect(audit).toMatchObject({
       action: 'removed client price for',
-      entityType: 'merchant',
+      entityType: 'account',
       entityId: erbil,
       entityLabel: 'Erbil, IMEI-ATT-USA',
     });

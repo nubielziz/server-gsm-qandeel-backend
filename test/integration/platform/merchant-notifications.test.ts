@@ -109,10 +109,11 @@ describe('GET /client/notification-preferences', () => {
     expect(res.body).not.toHaveProperty('telegram');
   });
 
-  it('needs a session and an approved merchant', async () => {
+  it('needs a session and an active account', async () => {
     expect((await t.app.inject({ method: 'GET', url: '/client/notification-preferences' })).statusCode).toBe(401);
-    const pending = await signedIn({ status: 'pending' });
-    expect((await pending.call('GET', '/client/notification-preferences')).body.code).toBe('ACCOUNT_PENDING_APPROVAL');
+    // Decision 064: there is no waiting-for-approval status any more; a suspended account is refused.
+    const suspended = await signedIn({ status: 'suspended' });
+    expect((await suspended.call('GET', '/client/notification-preferences')).body.code).toBe('ACCOUNT_SUSPENDED');
   });
 });
 
@@ -229,14 +230,14 @@ describe('PUT /client/notification-preferences', () => {
     ).toBe(422);
   });
 
-  it('needs a CSRF token and an approved merchant', async () => {
+  it('needs a CSRF token and an active account', async () => {
     const m = await signedIn();
     expect((await m.withoutCsrf('PUT', '/client/notification-preferences', { events: [] })).body.code).toBe(
       'CSRF_FAILED',
     );
-    const pending = await signedIn({ status: 'pending' });
-    expect((await pending.call('PUT', '/client/notification-preferences', { events: [] })).body.code).toBe(
-      'ACCOUNT_PENDING_APPROVAL',
+    const suspended = await signedIn({ status: 'suspended' });
+    expect((await suspended.call('PUT', '/client/notification-preferences', { events: [] })).body.code).toBe(
+      'ACCOUNT_SUSPENDED',
     );
   });
 
@@ -301,8 +302,8 @@ describe('a merchant that older data still shows as linked to a chat', () => {
     const [row] = await db
       .insert(s.notifications)
       .values({
-        recipientType: 'client',
-        recipientId: m.clientId,
+        recipientType: 'account',
+        recipientId: m.accountId,
         channel: 'telegram',
         event: 'wallet.low_balance',
         payload: { chatId: '7001', variables: { merchantName: 'Zain Mobile Hub' } },

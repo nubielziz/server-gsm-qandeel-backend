@@ -1,11 +1,13 @@
-// Integration tests of the payment screening (feature 18, RiskScreening, RESOLUTIONS orders-suppliers-11 and money-3): the signals read
-// from the database (earlier orders, the blocklist), the rules that decide, the assessment row, the link to the
-// order and the top-up question billing asks.
+// Integration tests of the payment screening (feature 18, RiskScreening, RESOLUTIONS orders-suppliers-11 and money-3, decision 064): the
+// signals read from the database (earlier orders, the blocklist), the rules that decide, the assessment row, the link to the
+// order and the top-up question billing asks. The buyer of a payment is an account row: the login account of a signed-in checkout, or
+// the guest row of a guest checkout. The shop-orders-only rule of the velocity signals is in risk-accounts.test.ts.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { placementDispatchState } from '@src/modules/orders';
 import { Blocklist, RiskRules, RiskScreening, type ScreeningInput } from '@src/modules/risk';
+import { makeAccount } from '../../support/accounts';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -41,7 +43,7 @@ afterAll(async () => {
 
 /** A payment that trips nothing: a guest with a small amount and matching countries (a guest checkout, decision 050). */
 const CALM: ScreeningInput = {
-  customerId: null,
+  accountId: null,
   email: 'calm@example.com',
   amountUsd: '15.0000',
   paymentMethod: 'card',
@@ -53,7 +55,10 @@ const CALM: ScreeningInput = {
 const assess = (input: Partial<ScreeningInput>) =>
   world.db.transaction((tx) => screening.assess(tx, { ...CALM, ...input }));
 
-/** Gives an email `count` paid orders at `at` (one customer, one checkout session per order; `session` changes the sessions). */
+/**
+ * Gives an email `count` paid orders at `at` (one buyer row, one checkout session per order; `session` changes the sessions). The buyer is
+ * a login account when the sessions were opened signed in, else the guest row of the email (decision 064).
+ */
 async function earlierOrders(
   email: string,
   count: number,
@@ -62,13 +67,13 @@ async function earlierOrders(
   session: Partial<typeof s.checkoutSessions.$inferInsert> = {},
 ) {
   const { db } = world;
-  const [customer] = await db.insert(s.customers).values({ email, name: 'Repeat Buyer', country: 'GB' }).returning();
+  const buyer = await buyerRow(email, session.openedSignedIn === true);
   for (let i = 0; i < count; i += 1) {
     const [made] = await db
       .insert(s.checkoutSessions)
       .values({
         token: crypto.randomUUID(),
-        customerId: customer!.id,
+        accountId: buyer.id,
         email,
         serviceId: world.auto.serviceId,
         currency: 'USD',
@@ -80,7 +85,7 @@ async function earlierOrders(
       })
       .returning();
     await insertOrderRow(db, {
-      customerId: customer!.id,
+      accountId: buyer.id,
       serviceId: world.auto.serviceId,
       source: 'store',
       status: 'completed',
@@ -90,7 +95,29 @@ async function earlierOrders(
       ...values,
     });
   }
-  return customer!;
+  return buyer;
+}
+
+/** The guest row of an email: found, or made (a guest row is unique per email). */
+async function guestRowOf(email: string) {
+  const { db } = world;
+  const [found] = await db
+    .select({ id: s.clients.id })
+    .from(s.clients)
+    .where(sql`lower(${s.clients.email}) = ${email} and not ${s.clients.hasAccount}`);
+  return found ?? (await buyerRow(email, false));
+}
+
+/** The row that holds an email: a login account (no password: it signs in by link) or the guest row of a guest checkout. */
+function buyerRow(email: string, login: boolean) {
+  return makeAccount({
+    rank: 'retail',
+    db: world.db,
+    email,
+    name: 'Repeat Buyer',
+    country: 'GB',
+    ...(login ? { password: null } : { guest: true }),
+  });
 }
 
 describe('RiskScreening.assess', () => {
@@ -133,13 +160,13 @@ describe('RiskScreening.assess', () => {
     expect(row!.signals).toEqual(result.signals as unknown[]);
   });
 
-  it('flags the first order of a new customer above the rule’s amount, but not a repeat customer or a rejected-only history', async () => {
+  it('flags the first order of a new buyer above the rule’s amount, but not a repeat buyer or a rejected-only history', async () => {
     const amount = '40.5000';
     const first = await assess({ email: 'new@example.com', amountUsd: amount });
     expect(first.signals).toEqual(['New customer, first order above $40']);
     expect(first.score).toBe(18);
-    // The earlier order of a signed-in customer counts for that customer's own signed-in payment (decision 050).
-    const customer = await earlierOrders(
+    // The earlier order of a signed-in account counts for that account's own signed-in payment (decision 050).
+    const account = await earlierOrders(
       'repeat@example.com',
       1,
       new Date(clock.nowMs() - 3 * DAY),
@@ -147,7 +174,7 @@ describe('RiskScreening.assess', () => {
       { openedSignedIn: true },
     );
     expect(
-      (await assess({ email: 'repeat@example.com', customerId: customer.id, openedSignedIn: true, amountUsd: amount }))
+      (await assess({ email: 'repeat@example.com', accountId: account.id, openedSignedIn: true, amountUsd: amount }))
         .signals,
     ).toEqual([]);
     const refused = await earlierOrders(
@@ -158,7 +185,7 @@ describe('RiskScreening.assess', () => {
       { openedSignedIn: true },
     );
     expect(
-      (await assess({ email: 'refused@example.com', customerId: refused.id, openedSignedIn: true, amountUsd: amount }))
+      (await assess({ email: 'refused@example.com', accountId: refused.id, openedSignedIn: true, amountUsd: amount }))
         .signals,
     ).toEqual(['New customer, first order above $40']);
     // The amount limit is the rule's number.
@@ -187,10 +214,13 @@ describe('RiskScreening.assess', () => {
   });
 
   it('does not count the order being screened as an earlier order', async () => {
-    const held = await insertHeldOrder(world, { customer: { email: 'self@example.com' }, openedSignedIn: true });
+    const held = await insertHeldOrder(world, {
+      customer: { email: 'self@example.com', hasAccount: true },
+      openedSignedIn: true,
+    });
     const withOrder = await assess({
       email: 'self@example.com',
-      customerId: held.customerId,
+      accountId: held.accountId,
       openedSignedIn: true,
       orderId: held.orderId,
       amountUsd: '90.0000',
@@ -198,7 +228,7 @@ describe('RiskScreening.assess', () => {
     expect(withOrder.signals).toEqual(['New customer, first order above $40']);
     const without = await assess({
       email: 'self@example.com',
-      customerId: held.customerId,
+      accountId: held.accountId,
       openedSignedIn: true,
       amountUsd: '90.0000',
     });
@@ -278,17 +308,19 @@ async function pendingCheckout(
   options: {
     reviewRequired?: boolean;
     at?: Date;
-    customerId?: number | null;
+    accountId?: number | null;
     openedSignedIn?: boolean;
     ip?: string;
   } = {},
 ): Promise<number> {
   const { db } = world;
+  // A checkout belongs to its buyer row: the account that opened it, else the guest row of the typed email.
+  const accountId = options.accountId ?? (await guestRowOf(email)).id;
   const [session] = await db
     .insert(s.checkoutSessions)
     .values({
       token: crypto.randomUUID(),
-      customerId: options.customerId ?? null,
+      accountId,
       email,
       serviceId: world.auto.serviceId,
       currency: 'USD',
@@ -304,7 +336,7 @@ async function pendingCheckout(
     .values({ code: `stripe-${crypto.randomUUID().slice(0, 6)}`, driver: 'stripe', name: 'Card' })
     .returning({ id: s.paymentGateways.id });
   await db.insert(s.payments).values({
-    customerId: options.customerId ?? null,
+    accountId,
     purpose: 'order',
     gatewayId: gateway!.id,
     amount: '10.0000',
@@ -318,14 +350,15 @@ async function pendingCheckout(
   return session!.id;
 }
 
-/** Inserts a guest checkout of an email that is attached to an existing customer row, with its order, at `at`. */
-async function guestOrderOf(customerId: number, email: string, at: Date, ip = '198.51.100.77'): Promise<void> {
+/** Inserts a guest checkout of an email, with its order, at `at`: the guest row of the email is the buyer, never the login account of that email. */
+async function guestOrderOf(email: string, at: Date, ip = '198.51.100.77'): Promise<void> {
   const { db } = world;
+  const guestId = (await guestRowOf(email)).id;
   const [session] = await db
     .insert(s.checkoutSessions)
     .values({
       token: crypto.randomUUID(),
-      customerId,
+      accountId: guestId,
       email,
       serviceId: world.auto.serviceId,
       currency: 'USD',
@@ -337,7 +370,7 @@ async function guestOrderOf(customerId: number, email: string, at: Date, ip = '1
     })
     .returning();
   await insertOrderRow(db, {
-    customerId,
+    accountId: guestId,
     serviceId: world.auto.serviceId,
     source: 'store',
     status: 'completed',
@@ -358,9 +391,10 @@ describe('RiskScreening.assess: guest payments and signed-in payments', () => {
       {},
       { openedSignedIn: true },
     );
+    // The guest checkout is the guest row of the email, never the login account that holds it (decision 064).
     const guest = await assess({
       email: 'known@example.com',
-      customerId: account.id,
+      accountId: (await guestRowOf('known@example.com')).id,
       openedSignedIn: false,
       amountUsd: '40.5000',
     });
@@ -368,7 +402,7 @@ describe('RiskScreening.assess: guest payments and signed-in payments', () => {
     expect(guest.score).toBe(18);
     const signedIn = await assess({
       email: 'known@example.com',
-      customerId: account.id,
+      accountId: account.id,
       openedSignedIn: true,
       amountUsd: '40.5000',
     });
@@ -384,11 +418,12 @@ describe('RiskScreening.assess: guest payments and signed-in payments', () => {
       { openedSignedIn: true },
     );
     for (let i = 0; i < 3; i += 1) {
-      await guestOrderOf(account.id, 'owner@example.com', new Date(clock.nowMs() - 30 * 60_000));
+      await guestOrderOf('owner@example.com', new Date(clock.nowMs() - 30 * 60_000));
     }
-    const signedIn = await assess({ email: 'owner@example.com', customerId: account.id, openedSignedIn: true });
+    const signedIn = await assess({ email: 'owner@example.com', accountId: account.id, openedSignedIn: true });
     expect(signedIn.signals).toEqual([]);
-    const guest = await assess({ email: 'owner@example.com', customerId: account.id, openedSignedIn: false });
+    const guestId = (await guestRowOf('owner@example.com')).id;
+    const guest = await assess({ email: 'owner@example.com', accountId: guestId, openedSignedIn: false });
     expect(guest.signals).toContain(TOO_MANY);
   });
 
@@ -426,7 +461,7 @@ describe('RiskScreening.assess: guest payments and signed-in payments', () => {
     const [session] = await world.db
       .select()
       .from(s.checkoutSessions)
-      .where(eq(s.checkoutSessions.customerId, buyer.id))
+      .where(eq(s.checkoutSessions.accountId, buyer.id))
       .limit(1);
     const [order] = await world.db.select().from(s.orders).where(eq(s.orders.checkoutSessionId, session!.id));
     await world.db.update(s.checkoutSessions).set({ orderId: order!.id }).where(eq(s.checkoutSessions.id, session!.id));
@@ -435,6 +470,7 @@ describe('RiskScreening.assess: guest payments and signed-in payments', () => {
       .values({ code: `stripe-${crypto.randomUUID().slice(0, 6)}`, driver: 'stripe', name: 'Card' })
       .returning({ id: s.paymentGateways.id });
     await world.db.insert(s.payments).values({
+      accountId: buyer.id,
       purpose: 'order',
       gatewayId: gateway!.id,
       amount: '10.0000',
@@ -454,10 +490,11 @@ describe('RiskScreening.assess: guest payments and signed-in payments', () => {
       {},
       { openedSignedIn: true },
     );
-    for (let i = 0; i < 3; i += 1) await pendingCheckout('shared@example.com', { customerId: account.id });
-    const signedIn = await assess({ email: 'shared@example.com', customerId: account.id, openedSignedIn: true });
+    for (let i = 0; i < 3; i += 1) await pendingCheckout('shared@example.com');
+    const signedIn = await assess({ email: 'shared@example.com', accountId: account.id, openedSignedIn: true });
     expect(signedIn.signals).toEqual([]);
-    const guest = await assess({ email: 'shared@example.com', customerId: account.id, openedSignedIn: false });
+    const guestId = (await guestRowOf('shared@example.com')).id;
+    const guest = await assess({ email: 'shared@example.com', accountId: guestId, openedSignedIn: false });
     expect(guest.signals).toContain(TOO_MANY);
   });
 
@@ -469,7 +506,7 @@ describe('RiskScreening.assess: guest payments and signed-in payments', () => {
         .insert(s.checkoutSessions)
         .values({
           token: crypto.randomUUID(),
-          customerId: buyer.id,
+          accountId: buyer.id,
           email,
           serviceId: world.auto.serviceId,
           currency: 'USD',
@@ -500,7 +537,7 @@ describe('RiskScreening.assess: guest payments and signed-in payments', () => {
         totalPrice: '10.0000',
         currency: 'USD',
         serviceId: world.auto.serviceId,
-        customerId: buyer.id,
+        accountId: buyer.id,
         checkoutSessionId: firstSession,
         createdAt: new Date(clock.nowMs()),
       });
@@ -553,7 +590,7 @@ describe('RiskScreening.assess: countries and the blocklist scopes', () => {
       {},
       { openedSignedIn: true },
     );
-    const signedIn = await assess({ email: 'shared@example.com', customerId: account.id, openedSignedIn: true });
+    const signedIn = await assess({ email: 'shared@example.com', accountId: account.id, openedSignedIn: true });
     expect(signedIn.block).toBe(false);
     const blocklist = t.app.get(Blocklist);
     expect(await blocklist.isEmailBlocked(db, 'shared@example.com')).toBe(false);
@@ -622,10 +659,10 @@ describe('RiskScreening and the placement rule', () => {
   it('a payment that is held is placed held, waits in the queue, and is released by a reviewer', async () => {
     const { db } = world;
     await earlierOrders('calm@example.com', 1, new Date(clock.nowMs() - 5 * DAY));
-    const customer = await earlierOrders('buyer@mailinator.com', 0, new Date());
+    const buyer = await earlierOrders('buyer@mailinator.com', 0, new Date());
     const verdict = await assess({
       email: 'buyer@mailinator.com',
-      customerId: customer.id,
+      accountId: buyer.id,
       prepaidCard: true,
       ipCountry: 'US',
     });
@@ -639,7 +676,7 @@ describe('RiskScreening and the placement rule', () => {
     });
     expect(start).toEqual({ status: 'pending', dispatchState: 'held', enqueueDispatch: false });
     const order = await insertOrderRow(db, {
-      customerId: customer.id,
+      accountId: buyer.id,
       serviceId: world.auto.serviceId,
       source: 'store',
       ...start,
@@ -658,11 +695,11 @@ describe('RiskScreening and the placement rule', () => {
   it('a payment that is allowed is not in the queue', async () => {
     const { db } = world;
     await earlierOrders('calm@example.com', 1, new Date(clock.nowMs() - 5 * DAY));
-    const customer = await earlierOrders('fine@example.com', 1, new Date(clock.nowMs() - 5 * DAY));
-    const verdict = await assess({ email: 'fine@example.com', customerId: customer.id });
+    const buyer = await earlierOrders('fine@example.com', 1, new Date(clock.nowMs() - 5 * DAY));
+    const verdict = await assess({ email: 'fine@example.com', accountId: buyer.id });
     expect(verdict.decision).toBe('allow');
     const order = await insertOrderRow(db, {
-      customerId: customer.id,
+      accountId: buyer.id,
       serviceId: world.auto.serviceId,
       source: 'store',
     });

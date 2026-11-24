@@ -1,5 +1,18 @@
 // Public API of the money module: the module and the services other modules call (decision 016): opening a merchant's
 // accounts, the ledger writer with the 13 money event builders, and the wallet figures.
+// Order matters (decision 032): the seams and the pure helpers other modules code against come first (no dependencies), ahead of the module
+// and of the services whose providers lead into identity: the wallet kind of a rank, the account top-up lock, the registry of the rank
+// change checks, the account wallet reads and the erasure of an account's wallets (decision 064).
+export { walletKindOfRank } from './domain/wallet-kinds';
+export type { WalletLedgerKind } from './domain/wallet-kinds';
+export { lockAccountTopUps } from './infra/topup-lock.repository';
+export { RankChangeGuards } from './ports/rank-change-guards';
+export type { RankBlockerCode, RankChangeCheck } from './ports/rank-change-guards';
+export { AccountWallets } from './ports/account-wallets';
+export type { AccountWalletKind, AccountWalletView } from './ports/account-wallets';
+export { WalletErasure } from './ports/wallet-erasure';
+export { ShopCurrencyReads } from './ports/shop-currency-reads';
+export type { ShopCurrencyFact, TaxWindowFact } from './ports/shop-currency-reads';
 export { MoneyModule } from './money.module';
 export { MerchantAccounts } from './application/merchant-accounts';
 export type { OpenMerchantAccountsInput, OpenedWallet } from './application/merchant-accounts';
@@ -35,12 +48,12 @@ export {
   paymentFacts,
   storefrontMismatch,
 } from './domain/b2c-money';
-export { paymentRef } from './domain/invoice-rules';
+export { invoiceWireSide, paymentRef } from './domain/invoice-rules';
 export { aftermathNote } from './domain/payment-rules';
 export type { PaymentAftermath } from './domain/payment-rules';
 export type { PaymentCheck } from './infra/gateway-drivers/driver';
 export { B2cRefunds } from './application/b2c-refunds';
-export type { RefundActor, RefundLeft, RefundPosting } from './application/b2c-refunds';
+export type { PostedRefund, RefundActor, RefundLeft, RefundPosting } from './application/b2c-refunds';
 export { ReceiptBuyerPorts, StorefrontCaptures, StorefrontOrderPorts } from './application/storefront-ports';
 export type {
   CaptureOutcome,
@@ -55,15 +68,20 @@ export type {
 } from './application/storefront-ports';
 export { REFUND_PROCESS_EVENT, RefundOutbox } from './application/refund-outbox';
 export {
+  ACCOUNT_OWNER_TYPE,
   BASE_CURRENCY,
   CREDIT_NORMAL_KINDS,
   DEBIT_NORMAL_KINDS,
   balanceDelta,
+  holdAccountOf,
+  liveWalletFigures,
   normalSideOf,
+  storeWalletAccountOf,
   toDebitPositive,
+  walletAccountOf,
   walletViewOf,
 } from './domain/accounts';
-export type { NormalSide, WalletView } from './domain/accounts';
+export type { LiveWalletFacts, NormalSide, WalletView } from './domain/accounts';
 export {
   BASE_CURRENCY_DEFINITION,
   PER_OWNER_ACCOUNT_KINDS,
@@ -123,7 +141,8 @@ export { RefundProcessModule } from './jobs/refund-process.module';
 export { RefundSender } from './jobs/refund-sender';
 // Decision 055: the lost-work pass of storefront refunds.
 export { REFUND_SEND_LOST_NOTE, RefundReconcilePass } from './jobs/refund-reconcile';
-export { REFUND_RESEND_WINDOW_MS } from './domain/refund-rules';
+export { REFUND_RESEND_WINDOW_MS, b2cWalletRefundPosting } from './domain/refund-rules';
+export type { WalletRefundPosting } from './domain/refund-rules';
 export type { RefundSendResult } from './jobs/refund-sender';
 export { GATEWAY_HTTP_POLICY } from './infra/gateway-drivers/driver';
 export type { GatewayHttpPolicy } from './infra/gateway-drivers/driver';
@@ -153,13 +172,7 @@ export {
   customerWalletTemplatesSql,
 } from './application/customer-wallet-notifications';
 export { CustomerWallets } from './application/customer-wallets';
-export type {
-  AdminWallet,
-  CustomerAdjustInput,
-  StoreWallet,
-  WalletExport,
-  WalletPeek,
-} from './application/customer-wallets';
+export type { AdminWallet, StoreWallet, WalletExport, WalletPeek } from './application/customer-wallets';
 export { CustomerWalletMails } from './application/customer-wallet-mails';
 export { BALANCE_BRAND, CustomerWalletPayments } from './application/customer-wallet-payments';
 export type {
@@ -169,3 +182,5 @@ export type {
 } from './application/customer-wallet-payments';
 export { customerWalletPolicy } from './domain/customer-wallet-policy';
 export type { CustomerWalletPolicy } from './domain/customer-wallet-policy';
+// The money participant of the guest claim (decision 064): the wiring registers it with the identity registry.
+export { GUEST_CLAIM_MONEY_NAME, moveGuestClaimMoney } from './application/guest-claim.participant';

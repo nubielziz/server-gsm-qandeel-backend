@@ -1,0 +1,17 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "all": 51,
+    "retail": 31,
+    "merchant": 20,
+    "guests": 21,
+    "active": 47,
+    "suspended": 3,
+    "blocked": 1,
+    "anonymized": 0,
+    "invitationPending": 1
+  }
+}

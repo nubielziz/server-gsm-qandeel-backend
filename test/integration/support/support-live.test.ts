@@ -89,11 +89,14 @@ async function ticketStream(token: string, extra: Record<string, string> = {}): 
   return opened;
 }
 
+/** Whose stream: a staff member, or an account of a rank (the rank picks the URL family: `/client` or `/store/v1/me`). */
+type StreamSubject = { type: 'staff'; id: number } | { type: 'account'; rank: 'merchant' | 'retail'; id: number };
+
 /** The stream of a signed-in account, after `ready` and the inbox count. */
-async function accountStream(subject: { type: 'staff' | 'client' | 'customer'; id: number }): Promise<TestStream> {
-  const session = await openSession(t, subject);
+async function accountStream(subject: StreamSubject): Promise<TestStream> {
+  const session = await openSession(t, { type: subject.type, id: subject.id });
   const path =
-    subject.type === 'staff' ? '/admin/stream' : subject.type === 'client' ? '/client/stream' : '/store/v1/me/stream';
+    subject.type === 'staff' ? '/admin/stream' : subject.rank === 'merchant' ? '/client/stream' : '/store/v1/me/stream';
   const opened = await stream(path, { ...SAME_ORIGIN, ...session.headers });
   expect(opened.status).toBe(200);
   expect((await opened.next()).event).toBe('ready');
@@ -110,7 +113,7 @@ async function customerTicket(subject = 'Where is my unlock?') {
   const customer = await makeCustomer(t, { name: 'Victor Hale' });
   const ticket = await insertSupportTicket(db, { requesterId: customer.id, subject, status: 'open' });
   const first = await insertSupportMessage(db, ticket.id, {
-    authorType: 'customer',
+    authorType: 'account',
     authorId: customer.id,
     body: 'I paid yesterday and still have no code.',
     // A minute before the clock's now, like a message of the past (the default would be the wall clock).
@@ -132,8 +135,7 @@ const onTicket = (method: 'GET' | 'POST', token: string, path: string, payload?:
 const barrier = (ticketId: number) => t.app.get(RealtimePublisher).publish('ticket', 'updated', { ticketId });
 
 /** Rings an inbox recount: a barrier frame (`unread.changed`) for every account stream. */
-const inboxBarrier = () =>
-  t.app.get(RealtimePublisher).publish('inbox', 'recount', { types: ['staff', 'client', 'customer'] });
+const inboxBarrier = () => t.app.get(RealtimePublisher).publish('inbox', 'recount', { types: ['staff', 'account'] });
 
 const ticketEvents = (frames: readonly StreamFrame[]) => frames.filter((frame) => frame.event.startsWith('ticket.'));
 
@@ -144,7 +146,7 @@ describe('a staff reply', () => {
   it('reaches the ticket link’s stream and the customer’s account stream in under a second, as the requester view', async () => {
     const { ticket, customer } = await customerTicket();
     const page = await ticketStream(ticket.token);
-    const account = await accountStream({ type: 'customer', id: customer.id });
+    const account = await accountStream({ type: 'account', rank: 'retail', id: customer.id });
     const startedAt = performance.now();
     const res = await staff.post(`/admin/support-tickets/${ticket.id}/reply`, { body: 'Your code is on its way.' });
     expect(res.status).toBe(201);
@@ -205,7 +207,7 @@ describe('a requester message', () => {
       message: {
         id: res.json().id,
         ticketId: ticket.id,
-        authorType: 'customer',
+        authorType: 'account',
         authorId: customer.id,
         authorName: 'Victor Hale',
         body: 'Any news?',
@@ -256,7 +258,7 @@ describe('the requester view', () => {
   it('never carries an internal note or a system message, nor a staff name, the assignee or the priority', async () => {
     const { ticket, customer } = await customerTicket();
     const page = await ticketStream(ticket.token);
-    const account = await accountStream({ type: 'customer', id: customer.id });
+    const account = await accountStream({ type: 'account', rank: 'retail', id: customer.id });
     const team = await staffStream(staff);
     const note = await staff.post(`/admin/support-tickets/${ticket.id}/note`, {
       body: 'Supplier is slow today (Lina).',
@@ -305,18 +307,18 @@ describe('the requester view', () => {
     const mine = await insertMerchant(db, { name: 'Zain Mobile Hub' });
     const other = await insertMerchant(db, { name: 'Other Shop' });
     const own = await insertSupportTicket(db, {
-      requesterType: 'client',
+      requesterType: 'account',
       requesterId: mine,
       token: null,
       status: 'open',
     });
     const foreign = await insertSupportTicket(db, {
-      requesterType: 'client',
+      requesterType: 'account',
       requesterId: other,
       token: null,
       status: 'open',
     });
-    const merchant = await accountStream({ type: 'client', id: mine });
+    const merchant = await accountStream({ type: 'account', rank: 'merchant', id: mine });
     const { ticket: first } = await customerTicket('First');
     const { ticket: second } = await customerTicket('Second');
     const secondPage = await ticketStream(second.token);
@@ -362,19 +364,22 @@ describe('ticket.updated', () => {
 });
 
 describe('the staff view of a ticket (decision 047)', () => {
-  it("sends the staff ticket row with the customer's address masked, also to a stream of a caller who holds customers:read", async () => {
+  it("sends the staff ticket row with the account's address masked, also to a stream of a caller who holds clients:read", async () => {
     const { ticket, customer } = await customerTicket();
-    const reader = await supportStaff(t, ['support:*', 'customers:read'], 'Rami K.');
+    const reader = await supportStaff(t, ['support:*', 'clients:read'], 'Rami K.');
     const plain = await staffStream(staff);
-    const customersReader = await staffStream(reader);
+    const accountsReader = await staffStream(reader);
     expect((await staff.patch(`/admin/support-tickets/${ticket.id}`, { priority: 'high' })).status).toBe(200);
     const masked = customer.email.replace(/^(.{2}).*(@.*)$/, '$1•••$2');
-    for (const team of [plain, customersReader]) {
+    for (const team of [plain, accountsReader]) {
       const frame = await team.next('ticket.updated');
-      expect(frame.data.ticket).toMatchObject({ id: ticket.id, requester: { name: 'Victor Hale', email: masked } });
+      expect(frame.data.ticket).toMatchObject({
+        id: ticket.id,
+        requester: { name: 'Victor Hale', email: masked, rankKind: 'retail' },
+      });
       expect(JSON.stringify(frame.data)).not.toContain(customer.email);
     }
-    // The REST answer still gives the holder of customers:read the address in full.
+    // The REST answer still gives the holder of clients:read the address in full.
     expect((await reader.get(`/admin/support-tickets/${ticket.id}`)).body.requester.email).toBe(customer.email);
     expect((await staff.get(`/admin/support-tickets/${ticket.id}`)).body.requester.email).toBe(masked);
   });
@@ -510,7 +515,7 @@ describe('the ticket stream', () => {
     const { ticket, customer } = await customerTicket();
     const page = await ticketStream(ticket.token);
     const privacy = await adminWith(t, ['customers:privacy']);
-    expect((await privacy.post(`/admin/customers/${customer.id}/anonymize`)).status).toBe(204);
+    expect((await privacy.post(`/admin/clients/${customer.id}/anonymize`)).status).toBe(204);
     expect(await page.next('bye')).toMatchObject({ data: { reason: 'session_ended' } });
     await page.ended;
     expect((await onTicket('GET', ticket.token, '')).statusCode).toBe(404);
@@ -561,7 +566,7 @@ describe('a ticket whose address is not proven (decision 053)', () => {
 
     // A reconnecting account stream replays none of its messages.
     const viewer: StreamViewer = {
-      kind: 'customer',
+      kind: 'account',
       id: customer.id,
       sessionId: 1,
       ip: '203.0.113.5',
@@ -585,9 +590,7 @@ describe('a ticket whose address is not proven (decision 053)', () => {
       .update(s.supportTickets)
       .set({ requesterProvenAt: new Date(clock.nowMs()) })
       .where(eq(s.supportTickets.id, ticket.id));
-    expect(new Set(await requesterKeys(message))).toEqual(
-      new Set([`ticket:${ticket.id}`, `u:customer:${customer.id}`]),
-    );
+    expect(new Set(await requesterKeys(message))).toEqual(new Set([`ticket:${ticket.id}`, `u:account:${customer.id}`]));
     expect(((await source.replay(viewer, 0, 100)) as unknown[]).length).toBeGreaterThanOrEqual(2);
   });
 });

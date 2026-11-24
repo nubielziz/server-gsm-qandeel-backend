@@ -1,27 +1,25 @@
 // A stand-in for the storefront in tests: it keeps the cookies and the CSRF token the way a browser and the storefront's API client
 // do, sends the anti-bot token on every request (decision 034: the lead turns Turnstile on for the three public auth routes
-// without touching the tests), and offers the customers and emailed links the sign-in tests need.
-import { randomUUID } from 'node:crypto';
-import { spyOn } from 'bun:test';
+// without touching the tests), and offers the retail accounts and emailed links the sign-in tests need.
 import type { LightMyRequestResponse } from 'fastify';
-import { eq } from 'drizzle-orm';
 import { CacheKeys } from '@src/infra/cache';
-import { PasswordHasher } from '@src/infra/crypto';
-import { onCommit, schema as s } from '@src/infra/db';
+import { schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
-import { CustomerAuthTokens } from '@src/modules/identity';
-import type { Customer } from '@src/modules/customers/db/schema';
+import { ACCOUNT_SESSION_COOKIE } from './account-sessions';
+import { accountLinks, captureAccountLinks } from './account-links';
+import { accountRow, makeAccount } from './accounts';
 import type { TestApp } from './app';
-import { testDb } from './db';
+
+export { ensureRetailGroup, makeAccount } from './accounts';
 
 /** The origin the storefront runs on in tests. */
 export const STORE_ORIGIN = 'https://shop.example.com';
 /** Cloudflare's dummy Turnstile token: the development verifier accepts exactly this one (decision 034). */
 export const TURNSTILE_TEST_TOKEN = 'XXXX.DUMMY.TOKEN.XXXX';
-/** The password of every customer `makeCustomer` creates unless told otherwise. */
+/** The password of every retail account `makeCustomer` creates unless told otherwise. */
 export const CUSTOMER_PASSWORD = 'correct-horse-battery';
-/** The name of the session cookie (not secure in tests). */
-export const STORE_SESSION_COOKIE = 'gsm_store_session';
+/** The name of the session cookie (not secure in tests): the one cookie of every account, the storefront reads it too (decision 064). */
+export const STORE_SESSION_COOKIE = ACCOUNT_SESSION_COOKIE;
 /** The readable CSRF cookie. */
 export const STORE_CSRF_COOKIE = 'csrf_token_store';
 
@@ -55,7 +53,7 @@ export class StoreClient {
     return this.jar.get(name);
   }
 
-  /** The customer session token in the jar. */
+  /** The account session token in the jar. */
   get sessionToken(): string | undefined {
     return this.jar.get(STORE_SESSION_COOKIE);
   }
@@ -156,13 +154,13 @@ export class StoreClient {
   }
 }
 
-/** What a test can change about the customer `makeCustomer` creates. */
-export type CustomerOverrides = Partial<typeof s.customers.$inferInsert> & {
+/** What a test can change about the retail account `makeCustomer` creates. */
+export type CustomerOverrides = Partial<typeof s.clients.$inferInsert> & {
   /** Store no password hash (an account that was invited, or one that signs in by link). */
   readonly noPassword?: boolean;
   /** The password to hash (default {@link CUSTOMER_PASSWORD}). */
   readonly password?: string;
-  /** Make a guest: no account, no credentials row. */
+  /** Make a guest: no login (`has_account` false), no password, no username. */
   readonly guest?: boolean;
   /** Set `must_change_password` (a temporary password). */
   readonly mustChangePassword?: boolean;
@@ -172,81 +170,53 @@ export type CustomerOverrides = Partial<typeof s.customers.$inferInsert> & {
 export interface MadeCustomer {
   readonly id: number;
   readonly email: string;
-  readonly row: Customer;
+  readonly row: typeof s.clients.$inferSelect;
 }
 
-/** Creates an active customer with an account and a password, unless told otherwise. */
+/**
+ * Creates an active retail account with a login and a password, unless told otherwise.
+ *
+ * Why: a customer is a retail-rank row of the one account table (decision 064); the name stays so the callers of the old helper compile.
+ * It is `makeAccount({ rank: 'retail' })` with the old option names.
+ *
+ * @param t the running test app
+ * @param overrides the columns to change, `noPassword`, `password`, `guest`, `mustChangePassword`
+ * @returns the id, the email and the stored row
+ */
 export async function makeCustomer(t: TestApp, overrides: CustomerOverrides = {}): Promise<MadeCustomer> {
-  const { db } = await testDb();
   const { noPassword, password, guest, mustChangePassword, ...columns } = overrides;
-  const unique = randomUUID();
-  const [row] = await db
-    .insert(s.customers)
-    .values({
-      email: `customer-${unique}@example.com`,
-      name: 'Test Customer',
-      country: 'GB',
-      hasAccount: guest !== true,
-      status: 'active',
-      ...columns,
-    })
-    .returning();
-  if (guest !== true) {
-    await db.insert(s.customerCredentials).values({
-      customerId: row!.id,
-      passwordHash: noPassword ? null : await t.app.get(PasswordHasher).hash(password ?? CUSTOMER_PASSWORD),
-      mustChangePassword: mustChangePassword === true,
-      passwordChangedAt: noPassword ? null : new Date(),
-    });
-  }
-  return { id: row!.id, email: row!.email, row: row! };
+  const made = await makeAccount(t, {
+    rank: 'retail',
+    ...(guest === true ? { guest: true } : {}),
+    password: noPassword ? null : (password ?? CUSTOMER_PASSWORD),
+    ...(mustChangePassword === true ? { mustChangePassword: true } : {}),
+    ...columns,
+  });
+  return { id: made.id, email: made.email, row: made.row };
 }
 
-/** Reads a customer row back. */
-export async function customerRow(id: number): Promise<Customer> {
-  const { db } = await testDb();
-  const [row] = await db.select().from(s.customers).where(eq(s.customers.id, id));
-  return row!;
-}
+/** Reads a retail account row back (the same read as `accountRow`). */
+export const customerRow = accountRow;
 
-/** A link that was created for a customer's email. */
+/** A link that was created for an account's email. */
 export interface CustomerLink {
   /** The mail it belongs to: `magic_link`, `password_reset`, `invited` or `email_verification`. */
   readonly kind: string;
+  readonly accountId: number;
+  /** The same number as `accountId`, under the name the old helper used. */
   readonly customerId: number;
   readonly token: string;
 }
 
-const emailed: CustomerLink[] = [];
-const MAIL_KIND = {
-  magic_link: 'magic_link',
-  reset: 'password_reset',
-  invite: 'invited',
-  verify_email: 'email_verification',
-} as const;
-
 /**
- * Starts recording the links the app creates for customer emails (call it in `beforeEach`, and `mock.restore()` in `afterEach`).
+ * Starts recording the links the app creates for account emails (call it in `beforeEach`, and `mock.restore()` in `afterEach`).
  *
- * Why: the outbox carries ids only and the clear token of a mail is made later, inside the mail job, which rotates the token (decision 033).
- * The token the request makes is a placeholder nobody receives, but it works until the job rotates it, so a test that follows a link
- * without running the job takes the placeholder from the token service as it is issued. A test of the mail itself runs the job and reads
- * the link from the mailbox (`customer-mail.test.ts`).
+ * Why: see {@link captureAccountLinks}: the token service is one for every rank.
  *
  * @param t the running test app
  */
 export function captureCustomerLinks(t: TestApp): void {
-  emailed.length = 0;
-  const tokens = t.app.get(CustomerAuthTokens);
-  const issue = tokens.issue.bind(tokens);
-  spyOn(tokens, 'issue').mockImplementation(async (work, input) => {
-    const issued = await issue(work, input);
-    // Recorded at the commit: a link of a run that is rolled back on purpose (an email that gets no mail) was never sent.
-    onCommit(
-      () => void emailed.push({ kind: MAIL_KIND[input.purpose], customerId: input.customerId, token: issued.token }),
-    );
-    return issued;
-  });
+  captureAccountLinks(t);
 }
 
 /**
@@ -255,7 +225,7 @@ export function captureCustomerLinks(t: TestApp): void {
  * @returns a copy of the list
  */
 export function customerLinks(): CustomerLink[] {
-  return [...emailed];
+  return accountLinks().map((link) => ({ ...link, customerId: link.accountId }));
 }
 
 /**

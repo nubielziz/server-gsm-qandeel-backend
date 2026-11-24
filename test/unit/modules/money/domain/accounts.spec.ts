@@ -1,14 +1,20 @@
-// Unit tests of the account rules (decision 024): normal sides, the sign of stored balances and the wallet figures.
+// Unit tests of the account rules (decision 024, decision 064): normal sides, the sign of stored balances, the owner of every wallet and
+// the wallet figures of the live wallet.
 import { describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
 import { LEDGER_ACCOUNT_KINDS } from '@src/modules/money/db/schema';
 import {
+  ACCOUNT_OWNER_TYPE,
   CREDIT_NORMAL_KINDS,
   DEBIT_NORMAL_KINDS,
   balanceDelta,
   emptyWalletView,
+  holdAccountOf,
+  liveWalletFigures,
   normalSideOf,
+  storeWalletAccountOf,
   toDebitPositive,
+  walletAccountOf,
   walletViewOf,
 } from '@src/modules/money/domain/accounts';
 
@@ -82,5 +88,63 @@ describe('wallet view', () => {
       creditLimit: '0.0000',
       available: '0.0000',
     });
+  });
+});
+
+describe('the owner of a wallet', () => {
+  it('is an account for every wallet and hold, whatever the rank (decision 064)', () => {
+    expect(ACCOUNT_OWNER_TYPE).toBe('account');
+    expect(walletAccountOf(7)).toEqual({ kind: 'client_wallet', ownerType: 'account', ownerId: 7 });
+    expect(holdAccountOf(7)).toEqual({ kind: 'client_hold', ownerType: 'account', ownerId: 7 });
+    expect(storeWalletAccountOf(7)).toEqual({ kind: 'customer_wallet', ownerType: 'account', ownerId: 7 });
+  });
+
+  it('uses an owner type the stored list allows, and never the old words', () => {
+    const owners = [walletAccountOf(1), holdAccountOf(1), storeWalletAccountOf(1)].map((ref) => ref.ownerType);
+    for (const owner of owners) {
+      expect(owner).toBe('account');
+      expect(['client', 'customer']).not.toContain(owner);
+    }
+  });
+});
+
+describe('liveWalletFigures', () => {
+  const merchant = { kind: 'merchant', hold: Money.zero(), frozen: false, enabled: true } as const;
+  const store = { kind: 'store', hold: Money.zero(), creditLimit: Money.zero(), enabled: true } as const;
+
+  it('gives a merchant wallet the four figures of walletViewOf: the hold is reserved, credit adds to what is available', () => {
+    expect(liveWalletFigures({ ...merchant, balance: m('120.5'), hold: m('20'), creditLimit: m('500') })).toEqual({
+      balance: '120.5000',
+      reserved: '20.0000',
+      creditLimit: '500.0000',
+      available: '620.5000',
+    });
+  });
+
+  it('keeps a frozen merchant wallet spendable in the figure: the freeze refuses new holds, it does not hide money', () => {
+    const figures = liveWalletFigures({ ...merchant, balance: m('40'), creditLimit: m('10'), frozen: true });
+    expect(figures.available).toBe('50.0000');
+  });
+
+  it('gives a store balance no hold and no credit; the balance is what can be spent', () => {
+    expect(liveWalletFigures({ ...store, balance: m('48.5'), frozen: false })).toEqual({
+      balance: '48.5000',
+      reserved: '0.0000',
+      creditLimit: '0.0000',
+      available: '48.5000',
+    });
+  });
+
+  it('gives a store balance nothing to spend while it is on hold, switched off or not above zero', () => {
+    expect(liveWalletFigures({ ...store, balance: m('48.5'), frozen: true }).available).toBe('0.0000');
+    expect(liveWalletFigures({ ...store, balance: m('48.5'), frozen: false, enabled: false }).available).toBe('0.0000');
+    expect(liveWalletFigures({ ...store, balance: Money.zero(), frozen: false }).available).toBe('0.0000');
+    const clawedBack = liveWalletFigures({ ...store, balance: m('-12'), frozen: true });
+    expect(clawedBack).toMatchObject({ balance: '-12.0000', available: '0.0000' });
+  });
+
+  it('ignores a hold and a credit limit that a store account should never have', () => {
+    const figures = liveWalletFigures({ ...store, balance: m('5'), hold: m('3'), creditLimit: m('9'), frozen: false });
+    expect(figures).toMatchObject({ reserved: '0.0000', creditLimit: '0.0000', available: '5.0000' });
   });
 });

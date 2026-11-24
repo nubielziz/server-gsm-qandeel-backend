@@ -1,9 +1,11 @@
-// ClientGroupDirectory: the read-only view of merchant groups other modules use (identity: creating a merchant, moving it to
-// another group, the group inside a merchant row). Resolution identity-platform-3.
+// ClientGroupDirectory: the read-only view of the ranks (`client_groups`) other modules use: identity (creating a merchant, moving an
+// account to another rank, the rank inside an account row) and, through the `RankGroupReads` seam, every module that needs the kind
+// of a rank (decision 064). Resolution identity-platform-3.
 import { Injectable } from '@nestjs/common';
-import { eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type ClientGroup, clientGroups } from '../db/schema';
+import type { ClientGroupKind, RankGroupReads } from '../ports/rank-group-reads';
 
 /** The only group kind that is not for merchants: the storefront's single retail group. */
 export const RETAIL_GROUP_KIND = 'b2c_retail';
@@ -48,16 +50,18 @@ function toRef(row: ClientGroup): ClientGroupRef {
 }
 
 /**
- * Reads merchant groups for modules that do not own the `client_groups` table.
+ * Reads ranks for modules that do not own the `client_groups` table.
  *
  * Why: RESOLUTIONS identity-platform-3: creating a merchant needs the chosen group (or the default one) to exist, to be a
  * merchant group and to say whether credit is allowed, and merchant rows show the group's name and discount. The catalog
- * module owns the table, so the other modules ask this directory (module ownership, decision 016).
+ * module owns the table, so the other modules ask this directory (module ownership, decision 016). It also implements
+ * {@link RankGroupReads} (decision 064): the kind of a rank, the one retail rank, a rank's name for the rank history and the rank order
+ * of the staff list of accounts, so no other module reads the table.
  *
  * Side effects: none (reads only).
  */
 @Injectable()
-export class ClientGroupDirectory {
+export class ClientGroupDirectory implements RankGroupReads {
   /**
    * Finds a group by id.
    *
@@ -108,5 +112,75 @@ export class ClientGroupDirectory {
     if (unique.length === 0) return new Map();
     const rows = await db.select().from(clientGroups).where(inArray(clientGroups.id, unique));
     return new Map(rows.map((row) => [row.id, toRef(row)]));
+  }
+
+  /**
+   * Reads the kind of a rank ({@link RankGroupReads.kindOf}).
+   *
+   * Why: the kind decides an account's rights and its wallet (`rankKindOf`); the identity, money and rank-change code ask here
+   * instead of reading `client_groups` (decision 064).
+   *
+   * @param db the database or the caller's transaction
+   * @param groupId the rank
+   * @returns the stored kind (`b2b` or `b2c_retail`), or `undefined` when the rank does not exist
+   */
+  async kindOf(db: DbExecutor, groupId: number): Promise<ClientGroupKind | undefined> {
+    const [row] = await db
+      .select({ kind: clientGroups.kind })
+      .from(clientGroups)
+      .where(eq(clientGroups.id, groupId))
+      .limit(1);
+    return row?.kind;
+  }
+
+  /**
+   * Finds the one retail rank ({@link RankGroupReads.retailGroupId}).
+   *
+   * Why: every guest and every retail account belongs to it, and the shop prices from it (decision 064; the index
+   * `client_groups_single_retail_uq` allows one).
+   *
+   * @param db the database or the caller's transaction
+   * @returns the id of the rank of kind `b2c_retail`
+   * @throws {Error} when the catalog has no retail rank (a seeding error: migration 0005 inserts it)
+   */
+  async retailGroupId(db: DbExecutor): Promise<number> {
+    const retail = await this.findRetail(db);
+    if (!retail) throw new Error('The catalog has no retail rank (a client group of kind b2c_retail).');
+    return retail.id;
+  }
+
+  /**
+   * Reads the name of a rank ({@link RankGroupReads.nameOf}).
+   *
+   * Why: the rank history keeps the names of both ranks as they were, so a rank deleted afterwards stays readable.
+   *
+   * @param db the database or the caller's transaction
+   * @param groupId the rank
+   * @returns the name, or `undefined` when the rank does not exist
+   */
+  async nameOf(db: DbExecutor, groupId: number): Promise<string | undefined> {
+    const [row] = await db
+      .select({ name: clientGroups.name })
+      .from(clientGroups)
+      .where(eq(clientGroups.id, groupId))
+      .limit(1);
+    return row?.name;
+  }
+
+  /**
+   * Lists every rank in rank order ({@link RankGroupReads.rankOrder}).
+   *
+   * Why: the staff list of accounts sorts by rank in one query; the order is the one of the ranks page (`sort`, then id), so the
+   * list and the page never disagree.
+   *
+   * @param db the database or the caller's transaction
+   * @returns the ids of every rank, ordered by `client_groups.sort`, then by id
+   */
+  async rankOrder(db: DbExecutor): Promise<number[]> {
+    const rows = await db
+      .select({ id: clientGroups.id })
+      .from(clientGroups)
+      .orderBy(asc(clientGroups.sort), asc(clientGroups.id));
+    return rows.map((row) => row.id);
   }
 }

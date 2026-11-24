@@ -9,15 +9,14 @@ import type { SessionStage, SubjectType } from '../db/schema';
  *
  * Why: decision 018 makes the lifetimes settings with defaults (ANSWERS: "staff sessions 8 h absolute, 30 min idle, pre-2FA
  * stage 10 min"). The keys follow the `area.snake_case` style of the other settings (`payments.auto_credit_delay_minutes`).
- * The settings route of feature 2a validates and writes them.
+ * The settings route of feature 2a validates and writes them. The two `client` keys serve every account whatever its rank (decision
+ * 064: one account session); the `customer` keys are no longer read.
  */
 export const SESSION_SETTING_KEYS = {
   staffAbsolute: 'sessions.staff_absolute_minutes',
   staffIdle: 'sessions.staff_idle_minutes',
   clientAbsolute: 'sessions.client_absolute_minutes',
   clientIdle: 'sessions.client_idle_minutes',
-  customerAbsolute: 'sessions.customer_absolute_minutes',
-  customerIdle: 'sessions.customer_idle_minutes',
   pending: 'sessions.pending_minutes',
 } as const;
 
@@ -28,16 +27,14 @@ const BOUNDS = { min: 1, max: 365 * MINUTES_PER_DAY } as const;
 /**
  * The default lifetimes in minutes.
  *
- * Why: decision 018: staff 8 hours absolute and 30 minutes idle; merchants and customers 30 days absolute and 7 days idle;
- * a pending sign-in step 10 minutes.
+ * Why: decision 018: staff 8 hours absolute and 30 minutes idle; accounts 30 days absolute and 7 days idle; a pending sign-in step 10
+ * minutes.
  */
 export const SESSION_DEFAULT_MINUTES = {
   staffAbsolute: 8 * 60,
   staffIdle: 30,
   clientAbsolute: 30 * MINUTES_PER_DAY,
   clientIdle: 7 * MINUTES_PER_DAY,
-  customerAbsolute: 30 * MINUTES_PER_DAY,
-  customerIdle: 7 * MINUTES_PER_DAY,
   pending: 10,
 } as const;
 
@@ -48,8 +45,6 @@ const SETTING_SPECS = {
   [SESSION_SETTING_KEYS.staffIdle]: spec(SESSION_DEFAULT_MINUTES.staffIdle),
   [SESSION_SETTING_KEYS.clientAbsolute]: spec(SESSION_DEFAULT_MINUTES.clientAbsolute),
   [SESSION_SETTING_KEYS.clientIdle]: spec(SESSION_DEFAULT_MINUTES.clientIdle),
-  [SESSION_SETTING_KEYS.customerAbsolute]: spec(SESSION_DEFAULT_MINUTES.customerAbsolute),
-  [SESSION_SETTING_KEYS.customerIdle]: spec(SESSION_DEFAULT_MINUTES.customerIdle),
   [SESSION_SETTING_KEYS.pending]: spec(SESSION_DEFAULT_MINUTES.pending),
 } satisfies Record<SessionSettingKey, IntegerSetting>;
 
@@ -94,7 +89,7 @@ export class SessionPolicy {
   /**
    * Returns the lifetimes of a subject type.
    *
-   * @param subjectType staff, merchant (`client`) or storefront customer
+   * @param subjectType staff or account (every rank has the account limits)
    * @returns the absolute, idle and pending limits in milliseconds
    */
   async limits(subjectType: SubjectType): Promise<SessionLimits> {
@@ -108,16 +103,10 @@ export class SessionPolicy {
           idleMs: ms(SESSION_SETTING_KEYS.staffIdle),
           pendingMs,
         };
-      case 'client':
+      case 'account':
         return {
           absoluteMs: ms(SESSION_SETTING_KEYS.clientAbsolute),
           idleMs: ms(SESSION_SETTING_KEYS.clientIdle),
-          pendingMs,
-        };
-      case 'customer':
-        return {
-          absoluteMs: ms(SESSION_SETTING_KEYS.customerAbsolute),
-          idleMs: ms(SESSION_SETTING_KEYS.customerIdle),
           pendingMs,
         };
     }

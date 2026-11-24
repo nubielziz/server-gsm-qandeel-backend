@@ -1,5 +1,5 @@
 // SignInLock: the policy of the temporary lock on an email after repeated failed sign-ins, with the exception for networks the account
-// already signed in from (decision 052). The console, the merchant portal and the storefront all use it.
+// already signed in from (decision 052). The console and the sign-in of every account (merchant or retail rank) use it.
 import { Injectable, Logger } from '@nestjs/common';
 import { AppError } from '../../../common/errors';
 import { parseIpAddress, signInNetworkKey } from '../../../common/ip-address';
@@ -18,7 +18,12 @@ import { SignInFailures } from '../infra/sign-in-failures';
 import { fullSignInAddresses } from '../security/session.repository';
 import type { RequestMeta } from './request-meta';
 
-/** The account an email belongs to, when it has one that may sign in with a password. */
+/**
+ * The account an email belongs to, when it has one that may sign in with a password.
+ *
+ * Why: the caller finds it with `AccountDirectory.findLoginByEmail` (the login partition only), so a guest row that holds the same
+ * email is never named here (decision 064).
+ */
 export interface SignInAccount {
   readonly subjectType: SubjectType;
   readonly subjectId: number;
@@ -30,15 +35,15 @@ export interface SignInAccount {
  * Why: decision 052. Attempts are counted per email across addresses, so guessing from many
  * addresses still ends in a lock, and they are counted before the slow password check, atomically, so a burst of parallel attempts
  * cannot all be checked: ten counted attempts are checked, the eleventh is refused and starts a lock of 15 minutes. A correct password
- * takes back only its own attempt (`giveBack`), never the failures others caused: two shop accounts of one email may belong to two
- * people (a password chosen without the emailed link proves no mailbox), so one's success must not reopen the other's guessing. A lock that refused every caller
+ * takes back only its own attempt (`giveBack`), never the failures others caused: a success of the account's holder must not cancel the
+ * guesses a stranger made at the same email (a password chosen without the emailed link proves no mailbox). A lock that refused every caller
  * would let a stranger keep the owner out, so while the email is locked an attempt is refused (`429` with `Retry-After`) unless the
  * request comes from a network (an IPv4 /24 or IPv6 /64) that one of the newest 50 full sessions of the account being signed into came
  * from; the attempts such a network is still allowed share one budget per email and network (limiter `sign-in-familiar`, 5 in 15
  * minutes: the sixth is refused like any other attempt on a locked email, before its password is checked). The sessions are read whenever
  * the email is locked, with the account's id or with an id no account has, so a locked email answers alike for every email. Count and lock end (`clear`) only with a new password
- * from an emailed link (it proves the mailbox), one staff set, or the own change of an account whose holder proved the mailbox or was
- * made by staff (customers, console members); a merchant's own change does not end them (a password chosen without the emailed link proves no mailbox).
+ * from an emailed link (it proves the mailbox), or one staff set; an account's own change does not end them (a password chosen without the
+ * emailed link proves no mailbox), and only the own change of a console member does.
  *
  * Side effects: the Redis hash of `SignInFailures`; one `sessions` read while an email is locked; while it is locked, one point of the
  * `sign-in-familiar` counter (`gsm:{env}:ratelimit:sign-in-familiar:{hash}`) for an attempt that comes from a network the account used.
@@ -82,7 +87,7 @@ export class SignInLock {
     // The same read for every email: an id no account has finds no rows, so a locked email costs the same whoever owns it.
     const addresses = await fullSignInAddresses(
       this.db.db,
-      account?.subjectType ?? (scope === 'staff' ? 'staff' : 'client'),
+      account?.subjectType ?? (scope === 'staff' ? 'staff' : 'account'),
       account?.subjectId ?? NO_ACCOUNT_ID,
       FAMILIAR_SIGN_INS_READ,
     );

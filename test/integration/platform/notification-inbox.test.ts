@@ -1,6 +1,6 @@
 // Integration tests of the inbox routes on the three surfaces (feature 23, plan section 10.4): the staff console, the merchant portal and
 // the storefront account list, count and mark the signed-in person's own items; isolation by (type, id), the unread cap, paging, filters,
-// campaign and event texts, cancelled campaigns and the guards of each surface (session, CSRF, a pending and a suspended merchant).
+// campaign and event texts, cancelled campaigns and the guards of each surface (session, CSRF, a suspended account).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
@@ -31,7 +31,8 @@ afterAll(async () => {
   await closeTestDb();
 });
 
-type Type = 'staff' | 'client' | 'customer';
+// Decision 064: one stored word for every account, whatever its rank.
+type Type = 'staff' | 'account';
 type Item = typeof s.notificationInbox.$inferInsert;
 
 /** Inserts an event item (or any item) straight into the table. */
@@ -54,7 +55,7 @@ async function addItem(type: Type, id: number, values: Partial<Item> = {}): Prom
 /** A customer with an account and a signed-in session, speaking to the storefront's routes. */
 async function customerClient(overrides: Parameters<typeof makeCustomer>[1] = {}) {
   const customer = await makeCustomer(t, overrides);
-  const session = await openSession(t, { type: 'customer', id: customer.id });
+  const session = await openSession(t, { type: 'account', id: customer.id });
   const call = async (method: 'GET' | 'POST', url: string, payload?: unknown, withSession = true, csrf = true) => {
     const headers: Record<string, string> = { origin: STORE_ORIGIN };
     if (withSession) Object.assign(headers, csrf ? session.mutationHeaders : session.headers);
@@ -110,17 +111,17 @@ describe('who may call', () => {
     expect(noCsrf.body.code).toBe('CSRF_FAILED');
   });
 
-  it('lets a merchant who waits for approval read its inbox and refuses a suspended one', async () => {
-    const pending = await merchant({ status: 'pending' });
+  it('lets an active account read its inbox and refuses a suspended one', async () => {
+    const active = await merchant();
     const { db } = await testDb();
     await db.insert(s.notificationInbox).values({
-      recipientType: 'client',
-      recipientId: pending.clientId,
+      recipientType: 'account',
+      recipientId: active.accountId,
       event: 'wallet.low_balance',
       category: 'wallet',
       variables: { available: '3.00', currency: 'GBP', threshold: '10.00' },
     });
-    const list = await pending.call('GET', '/client/notifications');
+    const list = await active.call('GET', '/client/notifications');
     expect(list.status).toBe(200);
     expect(list.body).toHaveLength(1);
     const suspended = await merchant({ status: 'suspended' });
@@ -140,14 +141,14 @@ describe('GET /admin/inbox, /client/notifications, /store/v1/me/notifications', 
       category: 'announcement',
       variables: { title: 'T', body: 'B' },
     });
-    // Tables count from 1 each, so the three people below usually share one numeric id: only the type keeps their items apart.
+    // A staff member and an account can share one numeric id (two tables count from 1 each): only the type keeps their items apart.
     await addItem('staff', staff.staffId + 1000, { event: 'broadcast.test', category: 'announcement' });
-    const merchantItem = await addItem('client', m.clientId, {
+    const merchantItem = await addItem('account', m.accountId, {
       event: 'wallet.low_balance',
       category: 'wallet',
       variables: { available: '3.00', currency: 'GBP', threshold: '10.00' },
     });
-    const customerItem = await addItem('customer', customer.id);
+    const customerItem = await addItem('account', customer.id);
 
     const staffList = await staff.get('/admin/inbox');
     expect(staffList.status).toBe(200);
@@ -159,7 +160,7 @@ describe('GET /admin/inbox, /client/notifications, /store/v1/me/notifications', 
     expect(merchantList.body[0]).toMatchObject({
       category: 'wallet',
       title: 'Low wallet balance',
-      link: '/merchant/wallet',
+      link: '/account/wallet',
       readAt: null,
       campaignId: null,
       event: 'wallet.low_balance',
@@ -220,7 +221,7 @@ describe('GET /admin/inbox, /client/notifications, /store/v1/me/notifications', 
     const dana = await customerClient({ name: 'Dana' });
     const dan = await customerClient({ name: 'Dan' });
     for (const reader of [dana, dan]) {
-      await addItem('customer', reader.id, {
+      await addItem('account', reader.id, {
         event: null,
         campaignId: draft.id,
         category: 'announcement',
@@ -240,7 +241,7 @@ describe('GET /admin/inbox, /client/notifications, /store/v1/me/notifications', 
     // The language parameter is gone (decision 039): the strict list refuses the unknown key.
     expect((await dana.call('GET', '/store/v1/me/notifications?locale=en')).status).toBe(422);
     // The event text is English too.
-    await addItem('customer', dana.id);
+    await addItem('account', dana.id);
     const events = await dana.call('GET', '/store/v1/me/notifications?category=order');
     expect(events.body[0]).toMatchObject({ title: 'Order 4021 completed' });
   });
@@ -249,8 +250,13 @@ describe('GET /admin/inbox, /client/notifications, /store/v1/me/notifications', 
     const owner = await adminWith(t, ['*']);
     const draft = await createDraft(owner, { channels: ['in_app'] });
     const m = await merchant();
-    await addItem('client', m.clientId, { event: null, campaignId: draft.id, category: 'announcement', variables: {} });
-    await addItem('client', m.clientId, { event: 'wallet.low_balance', category: 'wallet' });
+    await addItem('account', m.accountId, {
+      event: null,
+      campaignId: draft.id,
+      category: 'announcement',
+      variables: {},
+    });
+    await addItem('account', m.accountId, { event: 'wallet.low_balance', category: 'wallet' });
     expect((await m.call('GET', '/client/notifications')).body).toHaveLength(2);
     expect((await m.call('GET', '/client/notifications/unread-count')).body).toEqual({ unread: 2 });
     const { db } = await testDb();
@@ -301,8 +307,8 @@ describe('POST .../:id/read', () => {
     const m = await merchant();
     const customer = await customerClient();
     const staffItem = await addItem('staff', staff.staffId, { event: 'broadcast.test', category: 'announcement' });
-    const merchantItem = await addItem('client', m.clientId, { event: 'wallet.low_balance', category: 'wallet' });
-    const customerItem = await addItem('customer', customer.id);
+    const merchantItem = await addItem('account', m.accountId, { event: 'wallet.low_balance', category: 'wallet' });
+    const customerItem = await addItem('account', customer.id);
     const { db } = await testDb();
     const readAt = async (id: number) =>
       (await db.select().from(s.notificationInbox).where(eq(s.notificationInbox.id, id)))[0]!.readAt;
@@ -317,7 +323,7 @@ describe('POST .../:id/read', () => {
     expect((await m.call('POST', `/client/notifications/${merchantItem}/read`)).status).toBe(204);
     expect((await customer.call('POST', `/store/v1/me/notifications/${customerItem}/read`)).status).toBe(204);
 
-    // Another person's id, another type's id and an id that does not exist are all 404 and change nothing.
+    // Another person's id, a staff member's id and an id that does not exist are all 404 and change nothing.
     const foreign = [
       await staff.post(`/admin/inbox/${merchantItem}/read`),
       await staff.post('/admin/inbox/99999/read'),
@@ -328,7 +334,7 @@ describe('POST .../:id/read', () => {
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('NOT_FOUND');
     }
-    const untouched = await addItem('customer', customer.id);
+    const untouched = await addItem('account', customer.id);
     expect((await m.call('POST', `/client/notifications/${untouched}/read`)).status).toBe(404);
     expect(await readAt(untouched)).toBeNull();
     expect((await staff.post('/admin/inbox/abc/read')).status).toBe(422);
@@ -340,8 +346,8 @@ describe('POST .../read-all', () => {
     const m = await merchant();
     const other = await merchant();
     for (let n = 0; n < 3; n += 1)
-      await addItem('client', m.clientId, { event: 'wallet.low_balance', category: 'wallet' });
-    await addItem('client', other.clientId, { event: 'wallet.low_balance', category: 'wallet' });
+      await addItem('account', m.accountId, { event: 'wallet.low_balance', category: 'wallet' });
+    await addItem('account', other.accountId, { event: 'wallet.low_balance', category: 'wallet' });
     const res = await m.call('POST', '/client/notifications/read-all', {});
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ updated: 3 });

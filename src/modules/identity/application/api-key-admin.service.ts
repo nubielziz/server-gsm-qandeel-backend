@@ -1,10 +1,11 @@
-// ApiKeyAdminService: what staff do with a merchant's API keys (routes GET /admin/clients/:id/api-keys, POST /admin/clients/:id/api-keys,
+// ApiKeyAdminService: what staff do with an account's API keys (routes GET /admin/clients/:id/api-keys, POST /admin/clients/:id/api-keys,
 // PATCH /admin/api-keys/:id and DELETE /admin/api-keys/:id): read them, create one, change its limits and revoke one, audited.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
 import { AuditService } from '../../platform';
+import { canAct } from '../accounts/account-status';
 import {
   type ApiKeyWire,
   DEFAULT_RATE_LIMIT_PER_MIN,
@@ -14,14 +15,12 @@ import {
   classifyKeyChange,
 } from '../domain/api-key-input';
 import {
+  accountNameOf,
   listAllKeysOfClient,
   lockKey,
-  lockKeysOfClient,
-  merchantNameOf,
   revokeKeyRow,
   updateKey,
 } from '../infra/api-key-manage.repository';
-import { lockClient } from '../infra/client-admin.repository';
 import { requireOwner } from '../security/principal';
 import type { StaffPrincipal } from '../security/principal';
 import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory';
@@ -46,18 +45,19 @@ export interface CreatedClientApiKey {
 }
 
 /**
- * Lets staff read, create, limit and revoke the API keys of merchants.
+ * Lets staff read, create, limit and revoke the API keys of accounts.
  *
- * Why: the merchants tab of the console lists a merchant's keys with their last use, revokes one that leaked or is no longer wanted
+ * Why: the Accounts page lists an account's keys with their last use, revokes one that leaked or is no longer wanted
  * (map rows `GET /admin/clients/:id/api-keys`, `DELETE /admin/api-keys/:id`, MISMATCHES B31) and, since feature 20 (O-9), creates a key
- * for an active merchant (`api_keys:create` and an Owner, decision 046; shown once, recorded in `api_keys.created_by`, the merchant is mailed) and changes a
- * key's per-minute limit and allowed addresses (`api_keys:update`). Every change is effective at once: the cached view of the key is
- * dropped after the commit (P2.5c), and each one writes an audit row under the merchant.
+ * for an active account of a merchant rank (`api_keys:create` and an Owner, decision 046; shown once, recorded in `api_keys.created_by`, the
+ * merchant is mailed) and changes a key's per-minute limit and allowed addresses (`api_keys:update`). Every change is effective at once: the
+ * cached view of the key is dropped after the commit (P2.5c), and each one writes an audit row under the account (decision 064: the audit
+ * entity is `account`). The keys of an account that left the merchant rank stay readable (revoked), but no key is made for it.
  *
- * Side effects: `create` inserts `api_keys`, a `merchant.security_notice` notification and an audit row (never the key); `update`
- * writes `api_keys`, an audit row and, when a value changes, a `merchant.security_notice` notification; `revoke` sets
- * `api_keys.revoked_at` and writes `audit_logs` (`revoked API key of`, entity `merchant`); `update` and `revoke` drop the cached
- * view of the key after the commit.
+ * Side effects: `create` takes the `api-keys:<accountId>` advisory lock and then the account row `FOR UPDATE`, inserts `api_keys`, a
+ * `merchant.security_notice` notification and an audit row (never the key); `update` writes `api_keys`, an audit row and, when a value
+ * changes, a `merchant.security_notice` notification; `revoke` sets `api_keys.revoked_at` and writes `audit_logs` (`revoked API key
+ * of`, entity `account`); `update` and `revoke` drop the cached view of the key after the commit.
  *
  * @see docs/contract/endpoints/identity.md (the api-keys sections)
  */
@@ -73,43 +73,50 @@ export class ApiKeyAdminService {
   ) {}
 
   /**
-   * Lists every key of a merchant, newest first.
+   * Lists every key of an account, newest first.
    *
-   * @param clientId the merchant id
-   * @returns the keys, revoked and expired included
-   * @throws {AppError} `NOT_FOUND` (404) when no merchant has the id
+   * @param clientId the account id
+   * @returns the keys, revoked and expired included (an account that left the merchant rank shows the keys it had, all revoked)
+   * @throws {AppError} `NOT_FOUND` (404) when no account has the id
    */
   async list(clientId: number): Promise<ApiKeyWire[]> {
-    if ((await merchantNameOf(this.db.db, clientId)) === undefined) {
-      throw new AppError('NOT_FOUND', { detail: 'No merchant has this id.' });
+    if ((await accountNameOf(this.db.db, clientId)) === undefined) {
+      throw new AppError('NOT_FOUND', { detail: 'No account has this id.' });
     }
     return (await listAllKeysOfClient(this.db.db, clientId)).map(apiKeyToWire);
   }
 
   /**
-   * Creates a key for an active merchant and returns it once.
+   * Creates a key for an active account of a merchant rank and returns it once.
+   *
+   * Why: the two locks come first and in the one order, like the merchant's own creation (the advisory lock `api-keys:<accountId>`, then
+   * the account row `FOR UPDATE`, decision 064): a rank change to retail that holds the row makes this creation wait, and the locked read
+   * then shows the retail rank and refuses, so no live key is left on a retail account.
    *
    * @param caller the signed-in staff member
-   * @param clientId the merchant id
+   * @param clientId the account id
    * @param input the name, allowed addresses, expiry and per-minute limit
    * @returns the stored key (`createdByStaff: true`) and the full key text
-   * @throws {AppError} `FORBIDDEN` (403: only an Owner creates a key for a merchant, decision 046), `NOT_FOUND` (404), `NOT_ACTIVE`
-   *   (409: the merchant is pending or suspended, so the key could not be used), `VALIDATION_FAILED` (422) on
-   *   `allowedIps.N`, `expiresAt`, `rateLimitPerMin` or `name` (10 live keys already)
+   * @throws {AppError} `FORBIDDEN` (403: only an Owner creates a key for a merchant, decision 046), `NOT_FOUND` (404), `CONFLICT`
+   *   (409: the account is not of a merchant rank, so a key could not be used), `NOT_ACTIVE` (409: the account is suspended, blocked or
+   *   erased, so the key could not be used), `VALIDATION_FAILED` (422) on `allowedIps.N`, `expiresAt`, `rateLimitPerMin` or `name`
+   *   (10 live keys already)
    */
   async create(caller: StaffPrincipal, clientId: number, input: CreateClientApiKeyInput): Promise<CreatedClientApiKey> {
     // Decision 046: a key that spends a merchant's money is made by the merchant, or by an Owner.
     requireOwner(caller, 'Only an owner can create an API key for a merchant.');
     return this.db.runInTransaction(async (work) => {
-      // Lock order: the merchant's key lock first, then the merchant row. The merchant's own creation takes the key lock and then reads the
-      // merchant row for the foreign key of the insert (a shared row lock that waits for `FOR UPDATE`): the reverse order would deadlock.
-      // The issuer takes the same advisory lock again (it is re-entrant inside one transaction).
-      await lockKeysOfClient(work.tx, clientId);
-      const client = await lockClient(work.tx, clientId);
-      if (!client) throw new AppError('NOT_FOUND', { detail: 'No merchant has this id.' });
-      if (client.status !== 'active') {
+      // Lock order (the one named exception of the lock order, decision 064): the key lock first, then the account row, both taken by the
+      // issuer. The merchant's own creation takes them in the same order; the rank change and the erasure hold the row and revoke the keys
+      // without the key lock, so no cycle can form.
+      const account = await this.issuer.lockOwner(work.tx, clientId);
+      if (!account) throw new AppError('NOT_FOUND', { detail: 'No account has this id.' });
+      if (account.rankKind !== 'merchant') {
+        throw new AppError('CONFLICT', { detail: 'Only an account of a merchant rank can have an API key.' });
+      }
+      if (!canAct(account.status)) {
         throw new AppError('NOT_ACTIVE', {
-          detail: 'Only an active merchant can have an API key. Approve or reactivate the account first.',
+          detail: 'Only an active account can have an API key. Reactivate the account first.',
         });
       }
       const { row, secret } = await this.issuer.issue(work.tx, {
@@ -121,12 +128,12 @@ export class ApiKeyAdminService {
         createdBy: caller.staffId,
         limitMessage: `This merchant already has ${MAX_LIVE_KEYS} active keys; revoke one first.`,
       });
-      await this.lifecycleMails.securityNotice(work, client, 'api_key_created');
+      await this.lifecycleMails.securityNotice(work, account, 'api_key_created');
       await this.audit.record(work.tx, {
         action: 'created API key for',
-        entityType: 'merchant',
+        entityType: 'account',
         entityId: clientId,
-        entityLabel: client.name,
+        entityLabel: account.name,
         // Never the key: only what identifies it.
         after: {
           keyId: row.id,
@@ -178,7 +185,7 @@ export class ApiKeyAdminService {
       });
       // The cached view holds both values: drop it so the change applies on the next call.
       await this.directory.invalidate([row.keyHash], work);
-      const merchantName = (await merchantNameOf(work.tx, row.clientId)) ?? `Merchant ${row.clientId}`;
+      const merchantName = (await accountNameOf(work.tx, row.clientId)) ?? `Account ${row.clientId}`;
       if (kind !== 'none') {
         await this.lifecycleMails.securityNotice(work, { id: row.clientId, name: merchantName }, 'api_key_changed');
       }
@@ -191,7 +198,7 @@ export class ApiKeyAdminService {
       });
       await this.audit.record(work.tx, {
         action: 'changed limits of API key of',
-        entityType: 'merchant',
+        entityType: 'account',
         entityId: row.clientId,
         entityLabel: merchantName,
         before: facts(row),
@@ -216,9 +223,9 @@ export class ApiKeyAdminService {
       await this.directory.invalidate([row.keyHash], work);
       await this.audit.record(work.tx, {
         action: 'revoked API key of',
-        entityType: 'merchant',
+        entityType: 'account',
         entityId: row.clientId,
-        entityLabel: (await merchantNameOf(work.tx, row.clientId)) ?? `Merchant ${row.clientId}`,
+        entityLabel: (await accountNameOf(work.tx, row.clientId)) ?? `Account ${row.clientId}`,
         before: { keyId: row.id, name: row.name, prefix: row.prefix, revoked: false },
         after: { keyId: row.id, name: row.name, prefix: row.prefix, revoked: true },
       });

@@ -6,6 +6,7 @@ import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import { AppError } from '../../../common/errors';
 import { ledgerAccounts } from '../db/schema';
+import { ACCOUNT_OWNER_TYPE } from '../domain/accounts';
 import {
   ADJUST_WINDOW_MS,
   adjustmentNeedsOwner,
@@ -33,7 +34,7 @@ export interface CreditLimitGrant {
 
 /** What {@link MerchantAccounts.open} needs. */
 export interface OpenMerchantAccountsInput {
-  /** The merchant (`clients.id`) the accounts belong to. */
+  /** The account (`clients.id`; a merchant keeps its old number as its account id) the wallet and hold belong to. */
   readonly clientId: number;
   /** ISO currency code of the wallet (a `currencies.code`); merchants hold USD today. */
   readonly currency: string;
@@ -54,11 +55,12 @@ export interface OpenedWallet {
 }
 
 /**
- * Opens the `client_wallet` and `client_hold` accounts of a merchant inside the caller's transaction.
+ * Opens the `client_wallet` and `client_hold` accounts of a merchant-rank account inside the caller's transaction.
  *
  * Why: the user decided that creating a merchant creates its wallet in the same transaction, so a credit limit given at
  * creation is stored at once (resolution identity-platform-1); user rule 2 refuses a limit above zero on a group
- * without overdraft. No ledger transaction is posted: a new wallet has no money yet.
+ * without overdraft. No ledger transaction is posted: a new wallet has no money yet. Both accounts are owned by `('account', id)`
+ * (decision 064). A retail account has no wallet here: its store balance opens with its first posting or freeze.
  */
 @Injectable()
 export class MerchantAccounts {
@@ -99,7 +101,7 @@ export class MerchantAccounts {
     const limit = checkCreditLimit(input.creditLimit, input.overdraftAllowed);
     const grant = limit.isPositive() ? input.grant : undefined;
     if (grant) await this.judgeGrant(tx, grant, limit);
-    const owner = { ownerType: 'client' as const, ownerId: input.clientId, currency: input.currency };
+    const owner = { ownerType: ACCOUNT_OWNER_TYPE, ownerId: input.clientId, currency: input.currency };
     const opened = await tx
       .insert(ledgerAccounts)
       .values([

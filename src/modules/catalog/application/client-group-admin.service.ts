@@ -1,13 +1,13 @@
-// ClientGroupAdminService: the use cases of the merchant group routes (map domain B, stage 4): list, show, create, change and
-// delete. The rules: one default group at all times, a group name is unique, the storefront retail group is protected, and a
-// group stops allowing overdraft only while none of its merchants has credit (user rule 2).
+// ClientGroupAdminService: the use cases of the rank routes (map domain B, stage 4; decision 064): list, show, create, change and
+// delete. The rules: one default group at all times, a group name is unique, the storefront retail group is protected and never
+// allows credit, and a group stops allowing overdraft only while none of its merchants has credit (user rule 2).
 import { Injectable } from '@nestjs/common';
 import { Decimal } from 'decimal.js';
 import { sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { DbService, type DbExecutor, isUniqueViolation, isForeignKeyViolation } from '../../../infra/db';
-import { MerchantGroupMembers } from '../../identity';
+import { MerchantGroupMembers, type RankKind, rankKindOf } from '../../identity';
 import { MerchantWallets, PaymentGateways } from '../../money';
 import { AuditService } from '../../platform';
 import { CatalogPriceVersion } from './catalog-price-version';
@@ -32,19 +32,22 @@ import { RETAIL_GROUP_KIND } from './client-group-directory';
 /** Advisory lock key of the default mark: changing which group is the default is one change at a time. */
 const DEFAULT_MARK_LOCK_KEY = 7_204_001;
 
-/** A group as the console reads it. */
+/** A group (a rank) as the console reads it. */
 export interface GroupView {
   readonly id: number;
   readonly name: string;
+  /** The stored kind: `b2b` or `b2c_retail` (the price grid reads the `b2b` ranks as its columns). */
   readonly kind: string;
+  /** What the rank gives its accounts: `merchant` for `b2b`, `retail` for anything else (`rankKindOf`). */
+  readonly rankKind: RankKind;
   readonly discountPercent: string;
   readonly isDefault: boolean;
   readonly depositLimit: string;
   readonly overdraftAllowed: boolean;
   readonly sort: number;
   readonly createdAt: string;
-  /** Left out for the storefront retail group: no merchant joins it. */
-  readonly merchantCount?: number;
+  /** Every account of the rank, whatever its status and kind of row (a guest counts); the retail rank's too. */
+  readonly accountCount: number;
 }
 
 /** The fields of `POST /admin/client-groups` (the optional ones default to 0 or false). */
@@ -76,27 +79,31 @@ const snapshot = (group: ClientGroup) => ({
   overdraftAllowed: group.overdraftAllowed,
 });
 
-const toView = (group: ClientGroup, merchants: number | undefined): GroupView => ({
+const toView = (group: ClientGroup, accounts: number | undefined): GroupView => ({
   id: group.id,
   name: group.name,
   kind: group.kind,
+  rankKind: rankKindOf(group.kind),
   discountPercent: group.discountPercent,
   isDefault: group.isDefault,
   depositLimit: group.depositLimit,
   overdraftAllowed: group.overdraftAllowed,
   sort: group.sort,
   createdAt: group.createdAt.toISOString(),
-  ...(group.kind === RETAIL_GROUP_KIND || merchants === undefined ? {} : { merchantCount: merchants }),
+  accountCount: accounts ?? 0,
 });
 
 /**
- * Manages merchant groups.
+ * Manages the ranks (merchant groups and the one retail rank).
  *
  * Why: the groups price the catalog (discount), cap deposits and say whether credit is
  * allowed (docs/contract/endpoints/catalog.md, RESOLUTIONS catalog-5 and catalog-17). A default group must always exist, because
  * merchants are invited into it: making another group the default moves the mark in one transaction, and the
  * default group cannot be deleted or unmarked. Group rows are locked `FOR UPDATE` while they change; the code that moves a
  * merchant into a group or sets a credit limit takes `FOR SHARE` on the same row, so user rule 2 holds under concurrency.
+ * Every rank answers its kind (`rankKind`) and the number of accounts in it (`accountCount`, the retail rank's too, decision 064); the
+ * retail rank never allows credit (the table refuses it as well); a delete is refused only while an account sits in the rank, never
+ * because of the rank history, which keeps the name and kind of both ranks and holds no foreign key to this table.
  *
  * Side effects: writes `client_groups` (and, on delete, `service_group_prices`, `pricing_rules`,
  * `service_categories.allowed_group_ids` and, through money's `PaymentGateways`, `payment_gateways.allowed_group_ids`) and `audit_logs` (entity `client_group`).
@@ -116,7 +123,7 @@ export class ClientGroupAdminService {
   ) {}
 
   /**
-   * Lists groups with their merchant counts.
+   * Lists groups with their account counts.
    *
    * @param query the parsed list request
    * @returns the page of groups and the exact total
@@ -136,7 +143,7 @@ export class ClientGroupAdminService {
    * Shows one group.
    *
    * @param id the group id
-   * @returns the group with its merchant count
+   * @returns the group with its account count
    * @throws {AppError} `NOT_FOUND` (404)
    */
   async show(id: number): Promise<GroupView> {
@@ -149,7 +156,7 @@ export class ClientGroupAdminService {
    * Creates a merchant group (kind `b2b`, last in the order).
    *
    * @param input the group fields
-   * @returns the new group (no merchants yet)
+   * @returns the new group (no accounts yet)
    * @throws {AppError} `VALIDATION_FAILED` (422 on `name` for a repeated name)
    */
   async create(input: CreateGroupInput): Promise<GroupView> {
@@ -190,8 +197,8 @@ export class ClientGroupAdminService {
    * @param changes the keys to change
    * @returns the updated group
    * @throws {AppError} `NOT_FOUND` (404); `VALIDATION_FAILED` (422 on `name` for a repeat, on `isDefault` for the storefront
-   *   group, on `overdraftAllowed` while a merchant of the group has credit); `DEFAULT_GROUP_REQUIRED` (409: `isDefault: false`
-   *   on the default group)
+   *   group, on `overdraftAllowed` while a merchant of the group has credit and for `true` on the retail rank:
+   *   `retail_no_credit`); `DEFAULT_GROUP_REQUIRED` (409: `isDefault: false` on the default group)
    */
   async update(id: number, changes: UpdateGroupInput): Promise<GroupView> {
     return this.db.runInTransaction(async (work) => {
@@ -215,6 +222,10 @@ export class ClientGroupAdminService {
             { field: 'isDefault', code: 'DEFAULT_GROUP_REQUIRED', message: 'Make another group the default first.' },
           ],
         });
+      }
+      if (changes.overdraftAllowed === true && before.kind === RETAIL_GROUP_KIND) {
+        // The table refuses it too (`client_groups_retail_no_credit_check`); this answers a 422 on the field instead of a 500.
+        throw invalid('overdraftAllowed', 'The storefront retail rank cannot allow credit.', 'retail_no_credit');
       }
       if (changes.overdraftAllowed === false && before.overdraftAllowed) await this.assertNoCreditHolder(tx, before);
 
@@ -247,13 +258,15 @@ export class ClientGroupAdminService {
   }
 
   /**
-   * Deletes a group that no merchant is in, with what hangs on it.
+   * Deletes a group that no account is in, with what hangs on it.
    *
    * Why: RESOLUTIONS catalog-5: the group prices, the pricing rules of the group and the group id inside the allowed groups of
    * categories and payment methods go in the same transaction (the foreign keys would otherwise answer 500); orders keep their pricing snapshot.
+   * The rank history of accounts (`account_rank_changes`) names the group by id and by name without a foreign key, so it never blocks
+   * the delete and stays readable afterwards (decision 064).
    *
    * @param id the group id
-   * @throws {AppError} `NOT_FOUND` (404); `GROUP_IN_USE` (409: the default group, the storefront group, or merchants in it)
+   * @throws {AppError} `NOT_FOUND` (404); `GROUP_IN_USE` (409: the default group, the storefront group, or accounts in it)
    */
   async remove(id: number): Promise<void> {
     await this.db.runInTransaction(async (work) => {
@@ -270,8 +283,8 @@ export class ClientGroupAdminService {
           detail: 'The default group cannot be deleted. Make another group the default first.',
         });
       }
-      const merchants = (await this.members.countByGroup(tx, [id])).get(id) ?? 0;
-      if (merchants > 0) throw groupInUse(group.name, merchants);
+      const accounts = (await this.members.countByGroup(tx, [id])).get(id) ?? 0;
+      if (accounts > 0) throw groupInUse(group.name, accounts);
 
       // The group's prices and rules go with it: cached price lists start over.
       this.priceVersion.bumpAfterCommit(work);
@@ -330,8 +343,9 @@ export class ClientGroupAdminService {
   }
 }
 
-function groupInUse(name: string, merchants: number): AppError {
+/** The refusal of a delete while accounts sit in the rank (only a merchant rank can get here: the retail rank is refused first). */
+function groupInUse(name: string, accounts: number): AppError {
   return new AppError('GROUP_IN_USE', {
-    detail: `Move the ${merchants} ${merchants === 1 ? 'merchant' : 'merchants'} in ${name} to another group first.`,
+    detail: `Move the ${accounts} ${accounts === 1 ? 'merchant' : 'merchants'} in ${name} to another group first.`,
   });
 }

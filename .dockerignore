@@ -24,6 +24,7 @@ scripts/*
 !scripts/first-run.ts
 !scripts/search-keys.ts
 !scripts/english-only-export.ts
+!scripts/accounts-merge-check.ts
 !scripts/lib
 scripts/lib/*
 !scripts/lib/first-run-flow.ts

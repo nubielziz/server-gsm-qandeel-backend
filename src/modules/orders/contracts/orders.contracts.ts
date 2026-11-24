@@ -9,8 +9,10 @@ import { ORDER_QUEUES, ORDER_SORTS, StaffEventSchema, StaffOrderSchema } from '.
 /**
  * The list dialect of the staff order list, shared by the list route and the export.
  *
- * Why: the console filters by status (repeat the key for IN), queue (derived), type, supplier, merchant, customer, channel and
- * `pastSla`, searches with `q` and sorts by `createdAt`, `totalPrice` or `status`; the export takes the same parameters.
+ * Why: the console filters by status (repeat the key for IN), queue (derived), type, supplier, buyer account, rank, channel and
+ * `pastSla`, searches with `q` and sorts by `createdAt`, `totalPrice` or `status`; the export takes the same parameters. The buyer is an
+ * account (decision 064): `accountId` is the filter and `clientId` its alias (a merchant's number is its account number); `customerId` is not a
+ * filter any more (an old customer number is not an account number), so it answers `422 VALIDATION_FAILED` like any unknown parameter.
  */
 const STAFF_ORDER_QUERY = listQuery({
   sorts: ORDER_SORTS,
@@ -20,12 +22,13 @@ const STAFF_ORDER_QUERY = listQuery({
     queue: { type: 'enum', values: ORDER_QUEUES, ops: ['eq'] },
     type: { type: 'enum', values: SERVICE_TYPES, ops: ['eq'] },
     supplierId: { type: 'id', ops: ['eq'] },
+    accountId: { type: 'id', ops: ['eq'] },
     clientId: { type: 'id', ops: ['eq'] },
-    customerId: { type: 'id', ops: ['eq'] },
+    rankId: { type: 'id', ops: ['eq'] },
     channel: { type: 'enum', values: ['b2b', 'b2c'], ops: ['eq'] },
     pastSla: { type: 'boolean' },
   },
-  search: ['id', 'imei', 'supplierRef', 'client.name', 'customer.name', 'service.name'],
+  search: ['id', 'imei', 'supplierRef', 'account.name', 'service.name'],
 });
 
 const SNAPSHOT = {
@@ -60,8 +63,13 @@ const ORDER_EXAMPLE = {
   channel: 'b2b',
   source: 'dhru',
   service: { id: 5, name: 'AT&T USA Premier Unlock', type: 'imei', slaMinutes: 1440, category: 'Carrier unlock' },
-  client: { id: 8, name: 'Casablanca Unlock' },
-  customer: null,
+  account: {
+    id: 8,
+    name: 'Casablanca Unlock',
+    email: 'ca•••@casablanca-unlock.example',
+    rank: { id: 2, name: 'Wholesale', kind: 'merchant' },
+    guest: false,
+  },
   supplier: { id: 1, name: 'Nordic GSM' },
   supplierRef: 'NG-8841',
   attempts: 1,
@@ -78,12 +86,13 @@ export const listOrders = defineRoute({
   key: 'GET /admin/orders',
   summary: 'List orders',
   description:
-    'Merchant and storefront orders with their queues. Filters (repeat a key for IN): `status`, `queue` (`pending`, `manual`, ' +
+    'Merchant and storefront orders with their queues; each row names its buyer `account` (id, name, address, `rank` and `guest`), ' +
+    'whatever the door. Filters (repeat a key for IN): `status`, `queue` (`pending`, `manual`, ' +
     '`needs_attention`, `verification`, `review`; derived from the status and the dispatch state, decision 025), `type`, `supplierId`, ' +
-    '`clientId`, `customerId`, `channel` (`b2b`, `b2c`) and `pastSla=true` (an open order older than its service SLA, one age-only ' +
-    'predicate shared with the dashboard and System health). `q` searches the input, the supplier reference and the service, merchant ' +
-    'and customer names, and the order id exactly when it is all digits. Sort by `createdAt` (default, newest first), `totalPrice` or ' +
-    '`status`. Never cached.',
+    "`accountId` (`clientId` is its alias), `rankId` (the buyer's rank today), `channel` (`b2b`, `b2c`; from the door) and `pastSla=true` " +
+    '(an open order older than its service SLA, one age-only predicate shared with the dashboard and System health). `customerId` is ' +
+    'refused with `422`. `q` searches the input, the supplier reference and the service and account names, and the order id exactly when it ' +
+    'is all digits. Sort by `createdAt` (default, newest first), `totalPrice` or `status`. Never cached.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
@@ -100,7 +109,7 @@ export const exportOrders = defineRoute({
   summary: 'Export orders as CSV',
   description:
     'Every order that matches the same filters, `q` and sort as `GET /admin/orders` (`_start` and `_end` are ignored) as `text/csv` with ' +
-    '`Content-Disposition: attachment`. Columns: `id,created,channel,buyer,service,input,status,supplier,price,cost`; CRLF line ends, ' +
+    '`Content-Disposition: attachment`. Columns: `id,created,channel,buyer,service,input,status,supplier,price,cost,rank`; CRLF line ends, ' +
     'cells that start with `=`, `+`, `-` or `@` are written as text. The matching rows are counted first: more than 100,000 is ' +
     '`422` ("Too many rows (N); narrow the filters (max 100000)"). The file is streamed. Every export writes an audit row. It is ' +
     'answered only to a request started by the console itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the ' +
@@ -152,7 +161,8 @@ export const listOrderEvents = defineRoute({
         type: 'created',
         fromStatus: null,
         toStatus: null,
-        actor: { type: 'client', id: 8, name: 'Casablanca Unlock' },
+        actor: { type: 'account', id: 8, name: 'Casablanca Unlock' },
+        account: { id: 8 },
         data: { message: 'Order received via Dhru API', source: 'dhru' },
         createdAt: '2026-10-02T06:23:25.000Z',
       },

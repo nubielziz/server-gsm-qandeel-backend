@@ -1,5 +1,5 @@
-// Unit tests of the staff edit rules of a merchant (feature 20): the three kinds of change, the comparison with the stored row and the
-// mark of an address staff set (decision 046).
+// Unit tests of the staff edit rules of an account (feature 20, decision 064): the kinds of change, the refusal of a rank in the body, the
+// comparison with the stored row and the mark of an address staff set (decision 046).
 import { describe, expect, it } from 'bun:test';
 import type { Client } from '@src/modules/identity/db/schema';
 import { detailChanges, emailMarkAfterEdit, kindOfClientChange } from '@src/modules/identity/domain/client-details';
@@ -16,19 +16,24 @@ const stored = {
 } as unknown as Client;
 
 describe('kindOfClientChange', () => {
-  it('knows a status change, a group move and a details edit', () => {
+  it('knows a status change and a details edit', () => {
     expect(kindOfClientChange({ status: 'active' })).toEqual({ kind: 'status' });
     expect(kindOfClientChange({ status: 'suspended', reason: 'Chargebacks' })).toEqual({ kind: 'status' });
-    expect(kindOfClientChange({ groupId: 3 })).toEqual({ kind: 'group' });
     expect(kindOfClientChange({ name: 'Zain', phone: '+962' })).toEqual({ kind: 'details' });
   });
 
+  it('refuses a rank in the body with the code use_rank_route, whatever else the body carries', () => {
+    const refused = { problem: { field: 'groupId', code: 'use_rank_route' } };
+    expect(kindOfClientChange({ groupId: 3 })).toMatchObject(refused);
+    expect(kindOfClientChange({ status: 'active', groupId: 3 })).toMatchObject(refused);
+    expect(kindOfClientChange({ groupId: 3, company: 'X' })).toMatchObject(refused);
+  });
+
   it('refuses a body of two kinds on the first key of the second kind', () => {
-    expect(kindOfClientChange({ status: 'active', groupId: 3 })).toMatchObject({ problem: { field: 'groupId' } });
-    expect(kindOfClientChange({ groupId: 3, company: 'X' })).toMatchObject({ problem: { field: 'company' } });
     expect(kindOfClientChange({ status: 'active', taxId: '1', email: 'a@b.co' })).toMatchObject({
       problem: { field: 'email' },
     });
+    expect(kindOfClientChange({ status: 'suspended', company: 'X' })).toMatchObject({ problem: { field: 'company' } });
   });
 
   it('refuses an empty body', () => {

@@ -9,7 +9,12 @@ import {
   ledgerTransactions,
 } from '../db/schema';
 
-/** The header of a ledger transaction as the writer reads it back. */
+/**
+ * The header of a ledger transaction as the writer reads it back.
+ *
+ * Why the wide types: the journal is append-only, so a row written before the one account type keeps `client` or `customer` in its
+ * reference and actor words; a writer passes the current words only (`account`, decision 064), and the database refuses the old ones in a new row.
+ */
 export interface LedgerHeader {
   readonly id: number;
   readonly kind: string;

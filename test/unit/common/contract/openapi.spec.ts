@@ -23,7 +23,8 @@ describe('buildOperation: the responses', () => {
 
   it('documents the request id on every response, and Retry-After on the 429', () => {
     const { responses } = buildOperation(route);
-    expect(Object.keys(responses)).toEqual(['200', '401', '404', '429']);
+    // 403 is the rank gate (RANK_NOT_ALLOWED): every merchant-session route can answer it (decision 064).
+    expect(Object.keys(responses)).toEqual(['200', '401', '403', '404', '429']);
     for (const [status, response] of Object.entries(responses)) {
       expect(Object.keys(response.headers ?? {}), status).toContain('x-request-id');
     }

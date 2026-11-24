@@ -77,7 +77,7 @@ export const listDisputes = defineRoute({
   description:
     'Disputes (chargebacks) with their evidence deadline, without the evidence pack. Sorted by `evidenceDueAt` ascending (the default) ' +
     'the disputes that still need an answer come first, soonest deadline first, then the others by deadline. `q` searches the id, the ' +
-    'reason code and the customer name and email (the email only for callers who hold `customers:read`, decision 047).',
+    'reason code and the buyer’s name and email (the email only for callers who hold `clients:read`, decision 047).',
   tags: ['refunds'],
   surface: 'admin',
   access: 'staff-permission',

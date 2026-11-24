@@ -69,7 +69,8 @@ export class AdminApi {
 
   get = (url: string) => this.call('GET', url);
   post = (url: string, payload?: unknown, headers?: Record<string, string>) => this.call('POST', url, payload, headers);
-  patch = (url: string, payload?: unknown) => this.call('PATCH', url, payload);
+  patch = (url: string, payload?: unknown, headers?: Record<string, string>) =>
+    this.call('PATCH', url, payload, headers);
   put = (url: string, payload?: unknown) => this.call('PUT', url, payload);
   delete = (url: string) => this.call('DELETE', url);
 }

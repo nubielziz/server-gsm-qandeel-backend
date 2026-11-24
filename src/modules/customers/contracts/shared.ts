@@ -48,3 +48,16 @@ export const NotesField = z.string().trim().max(MAX_NOTES_LENGTH, `Use at most $
 export const PasswordModeField = z.enum(['reset_link', 'temporary_password'], {
   error: 'Choose how they get a password.',
 });
+
+/**
+ * The sentence every retired customer route opens its description with.
+ *
+ * Why: decision 064: a customer is an account of the retail rank, so each `/admin/customers` address stays registered during the
+ * expand release and answers `410 ROUTE_RETIRED`; the description keeps the old behaviour for the client that still calls it.
+ *
+ * @param replacement the account route that does the work now
+ * @returns the sentence, ending with a space
+ */
+export function retiredNote(replacement: string): string {
+  return `Retired with the one account type (decision 064): the route answers \`410 ROUTE_RETIRED\` and changes nothing; use \`${replacement}\`. What follows is the old behaviour, kept for a client that still calls it. `;
+}

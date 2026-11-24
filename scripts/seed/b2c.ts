@@ -2,8 +2,9 @@
 // its 11 refunds and 5 disputes, mapped as the frontend mocks map them (src/features/refunds/mocks/seed.ts of the frontend): ids without the prefix
 // (`SF-20400` is 20400, `RF-1007` is 1007, `DP-2005` is 2005), a payment takes the id of its order, amounts in USD in the demo become the
 // payment currency at the order's rate. The journals of these orders are in the ledger already (the money seed replays the demo's journals):
-// this seeder links refunds and lost disputes to them and posts nothing. Customers are 14b's: the customers seeder runs before this one and writes
-// every customer of the demo, so an order whose customer is missing is skipped. Runs after the money, billing, catalog, customers and storefront seeders.
+// this seeder links refunds and lost disputes to them and posts nothing. The shoppers are accounts of the retail rank (decision 064): the customers
+// seeder runs before this one and writes every demo customer as the account `100 + N` (`c3` is account 103), so an order whose account is missing is
+// skipped. Runs after the money, billing, catalog, customers and storefront seeders.
 import { eq, sql } from 'drizzle-orm';
 import type { AppConfig } from '../../src/config';
 import { Money } from '../../src/common/money';
@@ -12,6 +13,7 @@ import { schema as s, type DbExecutor } from '../../src/infra/db';
 import { CHECKOUT_IMEI_AAD } from '../../src/modules/customers';
 import { fromUsd } from '../../src/modules/money/domain/b2c-money';
 import { invoiceNumber } from '../../src/modules/money/domain/invoice-rules';
+import { accountIdOfDemo } from './account-ids';
 import { type DemoSeed, demoNumericId, demoRows, toDate, toMoney } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
 
@@ -46,7 +48,7 @@ interface DemoStoreOrder {
   events: DemoEvent[];
 }
 
-/** A customer of the demo (the fields the orders use; the customer rows themselves are 14b's). */
+/** A customer of the demo (the fields the orders use; the account rows themselves are the customers seeder's). */
 interface DemoCustomer {
   id: string;
   name: string;
@@ -175,8 +177,8 @@ export async function seedB2c(db: DbExecutor, demo: DemoSeed, config?: AppConfig
   const local = (usd: number, order: { fx: number; cur: string }): string =>
     fromUsd(Money.of(toMoney(usd)), order.fx.toFixed(8), decimals.get(order.cur) ?? 2).toWire();
 
-  // 1. The customers are written by the customers seeder (14b), which runs first: an order of a customer that is not there is skipped.
-  const customerIds = new Set((await db.select({ id: s.customers.id }).from(s.customers)).map((row) => row.id));
+  // 1. The accounts are written by the customers seeder, which runs first: an order of an account that is not there is skipped.
+  const accountIds = new Set((await db.select({ id: s.clients.id }).from(s.clients)).map((row) => row.id));
 
   // 2. Orders, sessions, payments, receipts, timelines.
   const orderRows: OrderInsert[] = [];
@@ -189,11 +191,11 @@ export async function seedB2c(db: DbExecutor, demo: DemoSeed, config?: AppConfig
   let skipped = 0;
   for (const demoOrder of demoOrders) {
     const id = demoNumericId(demoOrder.id);
-    const customerId = demoNumericId(demoOrder.cid);
+    const accountId = accountIdOfDemo(demoOrder.cid);
     const service = services.get(demoOrder.sid);
     const gatewayId = gatewayIds.get(demoOrder.pay.method === 'crypto' ? 'crypto' : 'card');
     if (
-      !customerIds.has(customerId) ||
+      !accountIds.has(accountId) ||
       !demoCustomers.has(demoOrder.cid) ||
       !service ||
       !serviceIds.has(demoNumericId(service.id)) ||
@@ -213,7 +215,7 @@ export async function seedB2c(db: DbExecutor, demo: DemoSeed, config?: AppConfig
     const actorOf = (by: string): Pick<EventInsert, 'actorType' | 'actorId'> => {
       const staffId = staff.get(by);
       if (staffId !== undefined) return { actorType: 'staff', actorId: staffId };
-      if (by === customer.name) return { actorType: 'customer', actorId: customerId };
+      if (by === customer.name) return { actorType: 'account', actorId: accountId };
       const supplier = suppliers.get(by);
       if (supplier !== undefined) return { actorType: 'supplier', actorId: supplier };
       return { actorType: 'system', actorId: null };
@@ -240,7 +242,7 @@ export async function seedB2c(db: DbExecutor, demo: DemoSeed, config?: AppConfig
     sessionRows.push({
       id,
       token: longToken('cs', `${id}${demoOrder.token}`),
-      customerId,
+      accountId,
       email: customer.email,
       serviceId,
       imeiEnc: encryption ? encryption.encrypt(demoOrder.input, CHECKOUT_IMEI_AAD) : null,
@@ -263,8 +265,9 @@ export async function seedB2c(db: DbExecutor, demo: DemoSeed, config?: AppConfig
     });
     orderRows.push({
       id,
-      customerId,
-      clientId: null,
+      // A shop order has no merchant column: the door is `source`, and `legacy_client_id` stays empty (`orders_door_check`).
+      accountId,
+      legacyClientId: null,
       serviceId,
       type: service.type.toLowerCase() as OrderInsert['type'],
       source: 'store',
@@ -298,7 +301,7 @@ export async function seedB2c(db: DbExecutor, demo: DemoSeed, config?: AppConfig
     paymentRows.push({
       id,
       invoiceId,
-      customerId,
+      accountId,
       orderId: id,
       purpose: 'order',
       gatewayId,
@@ -318,7 +321,7 @@ export async function seedB2c(db: DbExecutor, demo: DemoSeed, config?: AppConfig
     invoiceRows.push({
       id: invoiceId,
       number: invoiceNumber(paidAt.getUTCFullYear(), invoiceId),
-      customerId,
+      accountId,
       orderId: id,
       kind: 'receipt',
       amount: paid,
@@ -338,8 +341,8 @@ export async function seedB2c(db: DbExecutor, demo: DemoSeed, config?: AppConfig
       updatedAt: paidAt,
     });
     const proof = (purpose: 'terms' | 'privacy' | 'withdrawal_waiver') => ({
-      subjectType: 'customer' as const,
-      subjectId: customerId,
+      subjectType: 'account' as const,
+      subjectId: accountId,
       legalDocumentId: purpose === 'withdrawal_waiver' ? null : (legal.get(purpose) ?? null),
       purpose,
       granted: true,
@@ -353,7 +356,7 @@ export async function seedB2c(db: DbExecutor, demo: DemoSeed, config?: AppConfig
   }
   if (skipped > 0)
     console.log(
-      `  b2c       skipped ${skipped} storefront orders of customers, services or gateways that are not seeded`,
+      `  b2c       skipped ${skipped} storefront orders of accounts, services or gateways that are not seeded`,
     );
 
   const insertedOrders = new Set<number>();
@@ -401,21 +404,22 @@ export async function seedB2c(db: DbExecutor, demo: DemoSeed, config?: AppConfig
     const orderId = demoNumericId(refund.oid);
     const order = seeded.get(orderId);
     if (!order) continue;
-    const customerId = demoNumericId(refund.cid);
+    // Every refund that names a payment carries its payment's account: the account of the order.
+    const accountId = accountIdOfDemo(order.cid);
     const decidedBy = !refund.auto && refund.status !== 'requested' ? staff.get(refund.by) : undefined;
     refundRows.push({
       id: demoNumericId(refund.id),
       paymentId: orderId,
       orderId,
-      customerId,
+      accountId,
       amount: local(refund.amount, order),
       currency: refund.cur,
       reason: refund.reason,
       method: refund.method,
       status: refund.status,
       gatewayRefundId: refund.gw,
-      requestedByType: refund.auto ? 'system' : 'customer',
-      requestedById: refund.auto ? null : customerId,
+      requestedByType: refund.auto ? 'system' : 'account',
+      requestedById: refund.auto ? null : accountId,
       approvedBy: decidedBy ?? null,
       ledgerTxId: refund.status === 'completed' || refund.status === 'failed' ? journalOf('refund', orderId) : null,
       completedAt: refund.status === 'completed' ? toDate(refund.created) : null,
@@ -435,7 +439,7 @@ export async function seedB2c(db: DbExecutor, demo: DemoSeed, config?: AppConfig
       id: demoNumericId(dispute.id),
       paymentId: orderId,
       orderId,
-      customerId: demoNumericId(dispute.cid),
+      accountId: accountIdOfDemo(order.cid),
       gatewayDisputeId: `dp_seed_${demoNumericId(dispute.id)}`,
       reasonCode: reasonCodeOf(dispute.code),
       amount: local(dispute.amount, order),

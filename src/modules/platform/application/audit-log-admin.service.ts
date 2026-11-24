@@ -3,8 +3,7 @@ import { Injectable } from '@nestjs/common';
 import type { JsonObject, ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
-import type { AuditLog } from '../db/schema';
-import { findAuditRow, listAuditRows } from '../infra/audit-log.repository';
+import { type AuditRowWithAccount, findAuditRow, listAuditRows } from '../infra/audit-log.repository';
 
 /** An audit entry as the console reads it. */
 export interface AuditLogView {
@@ -13,16 +12,22 @@ export interface AuditLogView {
   readonly action: string;
   readonly entityType: string;
   readonly entityId: number;
-  readonly actorType: AuditLog['actorType'];
+  readonly actorType: AuditRowWithAccount['log']['actorType'];
   readonly actorId: number | null;
   readonly actorName: string | null;
   readonly entityLabel: string | null;
   readonly before: JsonObject | null;
   readonly after: JsonObject | null;
   readonly ip: string | null;
+  /**
+   * The account the entry is about: the account of the record when the record is an account (an old `merchant` row, an old `customer` row
+   * through the legacy map), else the account that acted, else `null`. The console links through it, so it never has to guess which number space an
+   * old id belongs to (decision 064).
+   */
+  readonly account: { readonly id: number } | null;
 }
 
-function toView(row: AuditLog): AuditLogView {
+function toView({ log: row, accountId }: AuditRowWithAccount): AuditLogView {
   return {
     id: row.id,
     createdAt: row.createdAt.toISOString(),
@@ -38,6 +43,7 @@ function toView(row: AuditLog): AuditLogView {
     before: row.before as JsonObject | null,
     after: row.after as JsonObject | null,
     ip: row.ip,
+    account: accountId === null ? null : { id: accountId },
   };
 }
 
@@ -46,7 +52,9 @@ function toView(row: AuditLog): AuditLogView {
  *
  * Why: the console's audit page lists who did what to which record (scenario admin-team, ip-rules and every admin write).
  * The names are snapshots written with each entry, so a rename or a deleted account does not rewrite history
- * (RESOLUTIONS identity-platform-7). Secrets were masked when the entry was written (`redactForAudit`).
+ * (RESOLUTIONS identity-platform-7). Secrets were masked when the entry was written (`redactForAudit`). Decision 064: the audit tab of an
+ * account reads its rows under every word they were written with (`account`, `merchant`, and the old numbers of `customer`), and every row says
+ * which account it is about.
  *
  * Side effects: none (reads only; the table is append-only).
  *

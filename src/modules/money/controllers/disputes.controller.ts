@@ -43,7 +43,7 @@ export class DisputesController {
    * Lists the disputes.
    *
    * @param query sort, range, filters and search
-   * @param staff the signed-in staff member (decides whether `q` may match a customer's address, decision 047)
+   * @param staff the signed-in staff member (decides whether `q` may match the buyer's address, decision 047)
    * @returns the page of disputes
    * @route GET /admin/disputes
    */

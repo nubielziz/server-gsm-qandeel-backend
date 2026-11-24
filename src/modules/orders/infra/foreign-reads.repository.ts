@@ -1,12 +1,13 @@
-// Read-only lookups into tables other modules own (services and their fields and supplier links, categories, merchants, customers,
-// suppliers, staff and files), kept in this one file: the order read model joins them and placement checks them.
+// Read-only lookups into tables other modules own (services and their fields and supplier links, categories, accounts and their ranks,
+// the map of old account numbers, suppliers, staff and files), kept in this one file: the order read model joins them and placement checks
+// them.
 //
 // DEVIATION to resolve when those features land: decision 016 wants these reads through the owning module's public service.
 // Catalog exports the merchant catalog and the price resolver but not the service row, its fields or its supplier links;
-// identity exports no merchant lookup; suppliers (6), customers (14b) and platform files export nothing yet. So this file reads
-// `services`, `service_categories`, `service_fields`, `service_supplier_links`, `service_listings`, `clients`, `customers`,
-// `suppliers`, `staff_users` and `files` with plain selects, like catalog's and money's foreign-read files. Replace the bodies with calls to
-// their services; nothing outside this file knows (the read model imports the table handles from here).
+// identity exports no account lookup that joins in SQL; suppliers (6) and platform files export nothing yet. So this file reads
+// `services`, `service_categories`, `service_fields`, `service_supplier_links`, `service_listings`, `clients`, `client_groups`,
+// `account_legacy_ids`, `suppliers`, `staff_users` and `files` with plain selects, like catalog's and money's foreign-read files.
+// Replace the bodies with calls to their services; nothing outside this file knows (the read model imports the table handles from here).
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 
@@ -15,13 +16,17 @@ export const foreignTables = {
   services: s.services,
   categories: s.serviceCategories,
   listings: s.serviceListings,
+  /** The accounts: the buyer of every order, whatever its rank (decision 064). */
   clients: s.clients,
-  customers: s.customers,
+  /** The ranks of the accounts. */
+  groups: s.clientGroups,
+  /** The map from the old merchant and customer numbers to accounts (append-only). */
+  legacyAccounts: s.accountLegacyIds,
   suppliers: s.suppliers,
   staff: s.staffUsers,
 } as const;
 
-/** A merchant as placement and the portal need it. */
+/** An account as placement and the portal need it: the merchant's id is the account id. */
 export interface MerchantRecord {
   readonly id: number;
   readonly name: string;
@@ -30,11 +35,14 @@ export interface MerchantRecord {
 }
 
 /**
- * Reads one merchant.
+ * Reads one account by its id.
+ *
+ * Why: a merchant is an account of a merchant rank and keeps its old id (decision 064), so the placement and the Dhru surface read it by the
+ * account id. This reads the row only; the rank gate and the placement check the kind and the status.
  *
  * @param db the database or a transaction
- * @param id the merchant id
- * @returns the merchant, or `undefined` when there is none
+ * @param id the account id
+ * @returns the account, or `undefined` when there is none
  */
 export async function merchantOf(db: DbExecutor, id: number): Promise<MerchantRecord | undefined> {
   const [row] = await db
@@ -140,93 +148,103 @@ export interface FileRecord {
 }
 
 /**
- * Reads a file the merchant uploaded.
+ * Reads a file the account uploaded.
  *
- * Why: a File service order names an input file; it must be the merchant's own upload (`owner_type client`), or any merchant
+ * Why: a File service order names an input file; it must be the account's own upload (`owner_type account`), or any merchant
  * could attach another's document to an order and read it back through the order.
  *
  * @param db the database or a transaction
- * @param clientId the merchant
+ * @param accountId the account that places the order
  * @param fileId the file id from the request
  * @returns the file, or `undefined` when it does not exist or belongs to someone else
  */
 export async function merchantFileOf(
   db: DbExecutor,
-  clientId: number,
+  accountId: number,
   fileId: number,
 ): Promise<FileRecord | undefined> {
   const [row] = await db
     .select({ id: s.files.id, filename: s.files.filename })
     .from(s.files)
-    .where(and(eq(s.files.id, fileId), eq(s.files.ownerType, 'client'), eq(s.files.ownerId, clientId)))
+    .where(and(eq(s.files.id, fileId), eq(s.files.ownerType, 'account'), eq(s.files.ownerId, accountId)))
     .limit(1);
   return row;
 }
 
 /**
- * A name lookup key: `staff:3`, `client:12`, `customer:8`, `supplier:2`.
+ * A lookup key of an actor of an order event: `staff:3`, `account:12`, `client:8`, `customer:8`, `supplier:2`.
  *
- * @param type the actor type of the event
- * @param id the actor's id
- * @returns the key of the map {@link actorNamesOf} returns
+ * @param type the actor type of the event (a row written before the accounts merged may still say `client` or `customer`)
+ * @param id the actor's id as the event stored it
+ * @returns the key of the map {@link actorFactsOf} returns
  */
 export function actorKey(type: string, id: number): string {
   return `${type}:${id}`;
 }
 
+/** What a timeline line knows of its actor once the map has been read. */
+export interface ActorFacts {
+  /** The actor's name now (the name of the account, the staff member or the supplier). */
+  readonly name: string;
+  /** The account the actor is: the id itself for `account` and `client`, the mapped account for an old `customer`; null for staff, suppliers. */
+  readonly accountId: number | null;
+}
+
 /**
- * Looks up the names of the actors of order events.
+ * Looks up the names of the actors of order events and the accounts they stand for.
+ *
+ * Why: decision 064. An event written after the accounts merged names its actor `account` with the account id. An event written before it
+ * keeps its old words: `client` (an old merchant number, which is the account id because merchants kept their ids) and `customer` (an old
+ * customer number, which is NOT an account id: it goes through `account_legacy_ids`, so customer 7 never reads as account 7). A pair the map
+ * does not know has no entry, shown as an unknown actor and never as another person.
  *
  * @param db the database or a transaction
  * @param actors the actors (system events have none)
- * @returns names by {@link actorKey}; an actor whose row is gone has no entry
+ * @returns facts by {@link actorKey}; an actor whose row is gone, or whose old number the map does not know, has no entry
  */
-export async function actorNamesOf(
+export async function actorFactsOf(
   db: DbExecutor,
   actors: ReadonlyArray<{ type: string; id: number }>,
-): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
+): Promise<Map<string, ActorFacts>> {
+  const facts = new Map<string, ActorFacts>();
   const idsOf = (type: string) => [...new Set(actors.filter((actor) => actor.type === type).map((actor) => actor.id))];
-  const lookups: Array<[string, Promise<Array<{ id: number; name: string }>>]> = [];
+  // One query per word that has ids, one after the other: the caller may hand over a transaction, which runs one statement at a time.
   const staff = idsOf('staff');
   if (staff.length > 0) {
-    lookups.push([
-      'staff',
-      db
-        .select({ id: s.staffUsers.id, name: s.staffUsers.name })
-        .from(s.staffUsers)
-        .where(inArray(s.staffUsers.id, staff)),
-    ]);
+    const rows = await db
+      .select({ id: s.staffUsers.id, name: s.staffUsers.name })
+      .from(s.staffUsers)
+      .where(inArray(s.staffUsers.id, staff));
+    for (const row of rows) facts.set(actorKey('staff', row.id), { name: row.name, accountId: null });
   }
-  const clients = idsOf('client');
-  if (clients.length > 0) {
-    lookups.push([
-      'client',
-      db.select({ id: s.clients.id, name: s.clients.name }).from(s.clients).where(inArray(s.clients.id, clients)),
-    ]);
+  // `account` and the old `client` word name the same number space: an account id.
+  for (const type of ['account', 'client']) {
+    const ids = idsOf(type);
+    if (ids.length === 0) continue;
+    const rows = await db
+      .select({ id: s.clients.id, name: s.clients.name })
+      .from(s.clients)
+      .where(inArray(s.clients.id, ids));
+    for (const row of rows) facts.set(actorKey(type, row.id), { name: row.name, accountId: row.id });
   }
   const customers = idsOf('customer');
   if (customers.length > 0) {
-    lookups.push([
-      'customer',
-      db
-        .select({ id: s.customers.id, name: s.customers.name })
-        .from(s.customers)
-        .where(inArray(s.customers.id, customers)),
-    ]);
+    const rows = await db
+      .select({ legacyId: s.accountLegacyIds.legacyId, accountId: s.clients.id, name: s.clients.name })
+      .from(s.accountLegacyIds)
+      .innerJoin(s.clients, eq(s.clients.id, s.accountLegacyIds.accountId))
+      .where(and(eq(s.accountLegacyIds.legacyType, 'customer'), inArray(s.accountLegacyIds.legacyId, customers)));
+    for (const row of rows) facts.set(actorKey('customer', row.legacyId), { name: row.name, accountId: row.accountId });
   }
   const suppliers = idsOf('supplier');
   if (suppliers.length > 0) {
-    lookups.push([
-      'supplier',
-      db
-        .select({ id: s.suppliers.id, name: s.suppliers.name })
-        .from(s.suppliers)
-        .where(inArray(s.suppliers.id, suppliers)),
-    ]);
+    const rows = await db
+      .select({ id: s.suppliers.id, name: s.suppliers.name })
+      .from(s.suppliers)
+      .where(inArray(s.suppliers.id, suppliers));
+    for (const row of rows) facts.set(actorKey('supplier', row.id), { name: row.name, accountId: null });
   }
-  for (const [type, rows] of lookups) for (const row of await rows) names.set(actorKey(type, row.id), row.name);
-  return names;
+  return facts;
 }
 
 /** A service as a paid storefront order needs it. */

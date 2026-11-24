@@ -16,7 +16,7 @@
     "gatewayRefundId": "re_00000001",
     "note": null,
     "requestedBy": {
-      "type": "customer",
+      "type": "account",
       "name": null
     },
     "approvedBy": {
@@ -24,7 +24,7 @@
       "name": "Rami K."
     },
     "customer": {
-      "id": 11,
+      "id": 111,
       "name": "Priya Nair"
     },
     "order": {

@@ -1,6 +1,6 @@
 // Unit tests of the IP audience mapping: which rule scopes reach which path, and the probe paths nothing judges.
 import { describe, expect, it } from 'bun:test';
-import { ipAudienceOf } from '@src/modules/identity/security/ip-rules/ip-audience';
+import { SHARED_SIGN_IN_PATHS, ipAudienceOf } from '@src/modules/identity/security/ip-rules/ip-audience';
 
 describe('ipAudienceOf', () => {
   it('maps each surface to the audience of the rule scopes', () => {
@@ -18,6 +18,35 @@ describe('ipAudienceOf', () => {
     expect(ipAudienceOf('/openapi.json')).toBe('other');
     expect(ipAudienceOf('/reference/openapi.json')).toBe('other');
     expect(ipAudienceOf('/nope')).toBe('other');
+  });
+
+  it('gives the eight sign-in routes every account shares both audiences, store and other (decision 064)', () => {
+    expect(SHARED_SIGN_IN_PATHS).toHaveLength(8);
+    expect([...SHARED_SIGN_IN_PATHS].sort()).toEqual(
+      [
+        '/client/auth/2fa',
+        '/client/auth/login',
+        '/client/auth/logout',
+        '/client/auth/password/change',
+        '/client/auth/password/forgot',
+        '/client/auth/password/reset',
+        '/client/auth/sign-in',
+        '/client/auth/verify-email',
+      ].sort(),
+    );
+    for (const path of SHARED_SIGN_IN_PATHS) expect(ipAudienceOf(path), path).toEqual(['store', 'other']);
+  });
+
+  it('leaves the other routes of the merchant portal, also under /client/auth, to the "all" rules', () => {
+    for (const path of [
+      '/client/auth/me',
+      '/client/auth/verify-email/resend',
+      '/client/auth/sign-in/extra',
+      '/client/security/password',
+      '/client/auth',
+    ]) {
+      expect(ipAudienceOf(path), path).toBe('other');
+    }
   });
 
   it('never judges signed incoming webhooks (B118)', () => {

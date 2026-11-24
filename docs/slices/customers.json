@@ -4,14 +4,14 @@
   "domain": "I",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 28,
-    "endpoints": 31,
+    "rows": 35,
+    "endpoints": 38,
     "bySurface": {
-      "store": 15,
-      "admin": 15,
+      "store": 18,
+      "admin": 19,
       "client": 1
     },
-    "frontendCalled": 13
+    "frontendCalled": 5
   },
   "stages": [
     14,
@@ -20,7 +20,8 @@
     19,
     21,
     23,
-    24
+    24,
+    48
   ],
   "ownedTables": [
     {
@@ -198,6 +199,10 @@
   ],
   "foreignTables": [
     {
+      "table": "api_keys",
+      "owner": "identity"
+    },
+    {
       "table": "audit_logs",
       "owner": "platform"
     },
@@ -222,8 +227,16 @@
       "owner": "risk"
     },
     {
+      "table": "files",
+      "owner": "platform"
+    },
+    {
       "table": "imei_checks",
       "owner": "risk"
+    },
+    {
+      "table": "ledger_accounts",
+      "owner": "money"
     },
     {
       "table": "ledger_entries",
@@ -256,6 +269,10 @@
     {
       "table": "sessions",
       "owner": "identity"
+    },
+    {
+      "table": "support_tickets",
+      "owner": "support"
     },
     {
       "table": "tax_rates",
@@ -694,11 +711,7 @@
       },
       "module": "customers",
       "description": "Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification.",
-      "frontend": {
-        "file": "src/features/customers/api/customers.ts",
-        "line": 28,
-        "fn": "listCustomers"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/customers/:id",
@@ -732,11 +745,7 @@
       },
       "module": "customers",
       "description": "Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification.",
-      "frontend": {
-        "file": "src/features/customers/api/customers.ts",
-        "line": 38,
-        "fn": "getCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers",
@@ -770,11 +779,7 @@
       },
       "module": "customers",
       "description": "Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification.",
-      "frontend": {
-        "file": "src/features/customers/api/customers.ts",
-        "line": 49,
-        "fn": "createCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "PATCH /admin/customers/:id",
@@ -808,11 +813,7 @@
       },
       "module": "customers",
       "description": "Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification.",
-      "frontend": {
-        "file": "src/features/customers/api/customers.ts",
-        "line": 59,
-        "fn": "updateCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/account",
@@ -845,11 +846,7 @@
       },
       "module": "customers",
       "description": "Create an account for a customer who bought as a guest: earlier orders are linked to the account and the customer receives a link to choose a password.",
-      "frontend": {
-        "file": "src/features/customers/api/accounts.ts",
-        "line": 17,
-        "fn": "createCustomerAccount"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/password",
@@ -882,11 +879,7 @@
       },
       "module": "customers",
       "description": "Send a password-setting link, or set a temporary password that must be changed at first sign-in; the current password is never shown and never enters the audit log, and the sessions can optionally be ended.",
-      "frontend": {
-        "file": "src/features/customers/api/accounts.ts",
-        "line": 32,
-        "fn": "setCustomerPassword"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/sessions/revoke",
@@ -916,11 +909,7 @@
       },
       "module": "customers",
       "description": "Sign the customer out of all devices: sets revoked_at on every active session.",
-      "frontend": {
-        "file": "src/features/customers/api/accounts.ts",
-        "line": 45,
-        "fn": "revokeCustomerSessions"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/suspend",
@@ -951,11 +940,7 @@
       },
       "module": "customers",
       "description": "Suspend the account with a reason: no sign-in and no new orders, orders in progress still complete, and sessions are ended; a temporary suspension adds nothing to the blocklist.",
-      "frontend": {
-        "file": "src/features/customers/api/accounts.ts",
-        "line": 55,
-        "fn": "suspendCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/reactivate",
@@ -985,11 +970,7 @@
       },
       "module": "customers",
       "description": "Reactivate a suspended account; the customer signs in again.",
-      "frontend": {
-        "file": "src/features/customers/api/accounts.ts",
-        "line": 64,
-        "fn": "reactivateCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/block",
@@ -1020,11 +1001,7 @@
       },
       "module": "customers",
       "description": "Block a customer for fraud, or lift the block, with a reason; blocking adds the customer fingerprint to the blocklist (use suspend for a temporary stop).",
-      "frontend": {
-        "file": "src/features/customers/api/accounts.ts",
-        "line": 74,
-        "fn": "blockCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/customers/:id/export",
@@ -1056,11 +1033,7 @@
       },
       "module": "customers",
       "description": "Export the customer data for a data-protection request.",
-      "frontend": {
-        "file": "src/features/customers/api/privacy.ts",
-        "line": 9,
-        "fn": "exportCustomerData"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/anonymize",
@@ -1091,11 +1064,7 @@
       },
       "module": "customers",
       "description": "Anonymize the name, email and IMEI while keeping payment records for accounting.",
-      "frontend": {
-        "file": "src/features/customers/api/privacy.ts",
-        "line": 19,
-        "fn": "anonymizeCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/checkouts/abandoned",
@@ -1188,7 +1157,7 @@
       "description": "Sales funnel: check, then payment started, then paid, then delivered.",
       "frontend": {
         "file": "src/features/finance/api/reports.ts",
-        "line": 54,
+        "line": 56,
         "fn": "getFunnel"
       }
     },
@@ -1296,6 +1265,274 @@
       "addition": {
         "file": "scripts/map-additions/24a.mjs",
         "spec": "B-TBD smart-sign-in"
+      }
+    },
+    {
+      "key": "POST /admin/clients/:id/block",
+      "method": "POST",
+      "path": "/admin/clients/:id/block",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Block an account for fraud, or lift the block, with a reason; blocking adds its email and the card and IMEI fingerprints of its shop orders to the blocklist.",
+      "access": "staff-permission",
+      "permission": "clients:block",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:block",
+      "stage": 48,
+      "tables": [
+        "clients",
+        "blocklist_entries",
+        "sessions",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/block",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/block"
+      },
+      "module": "customers",
+      "description": "Block an account for fraud, or lift the block, with a reason; blocking adds its email and the card and IMEI fingerprints of its shop orders to the blocklist.",
+      "frontend": {
+        "file": "src/features/accounts/api/privacy.ts",
+        "line": 22,
+        "fn": "blockAccount"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "GET /admin/clients/:id/privacy",
+      "method": "GET",
+      "path": "/admin/clients/:id/privacy",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "The privacy facts of an account: the marketing choice, the consents of its latest shop order and its risk signals.",
+      "access": "staff-permission",
+      "permission": "clients:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:read",
+      "stage": 48,
+      "tables": [
+        "clients",
+        "consent_records",
+        "checkout_sessions",
+        "risk_assessments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/clients/:id/privacy",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/clients/:id/privacy"
+      },
+      "module": "customers",
+      "description": "The privacy facts of an account: the marketing choice, the consents of its latest shop order and its risk signals.",
+      "frontend": {
+        "file": "src/features/accounts/api/privacy.ts",
+        "line": 11,
+        "fn": "getAccountPrivacy"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/clients/:id/export",
+      "method": "GET",
+      "path": "/admin/clients/:id/export",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Export the data of an account for a data-protection request.",
+      "access": "staff-permission",
+      "permission": "customers:privacy",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:privacy",
+      "stage": 48,
+      "tables": [
+        "clients",
+        "orders",
+        "checkout_sessions",
+        "consent_records",
+        "support_tickets",
+        "files",
+        "data_requests"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/clients/:id/export",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/clients/:id/export"
+      },
+      "module": "customers",
+      "description": "Export the data of an account for a data-protection request.",
+      "frontend": {
+        "file": "src/features/accounts/api/privacy.ts",
+        "line": 33,
+        "fn": "exportAccountData"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/clients/:id/anonymize",
+      "method": "POST",
+      "path": "/admin/clients/:id/anonymize",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Anonymize the name, email and IMEI of a retail account while keeping the payment records for accounting.",
+      "access": "staff-permission",
+      "permission": "customers:privacy",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:privacy",
+      "stage": 48,
+      "tables": [
+        "clients",
+        "data_requests",
+        "sessions",
+        "api_keys",
+        "ledger_accounts",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/anonymize",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/anonymize"
+      },
+      "module": "customers",
+      "description": "Anonymize the name, email and IMEI of a retail account while keeping the payment records for accounting.",
+      "frontend": {
+        "file": "src/features/accounts/api/privacy.ts",
+        "line": 45,
+        "fn": "anonymizeAccount"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /store/v1/me/2fa/setup",
+      "method": "POST",
+      "path": "/store/v1/me/2fa/setup",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "A new authenticator secret with a QR code for the signed-in account (a password is needed first).",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customer-session",
+      "stage": 48,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/2fa/setup",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/2fa/setup"
+      },
+      "module": "customers",
+      "description": "A new authenticator secret with a QR code for the signed-in account (a password is needed first).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      }
+    },
+    {
+      "key": "POST /store/v1/me/2fa/enable",
+      "method": "POST",
+      "path": "/store/v1/me/2fa/enable",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "Turn on two-factor sign-in for the signed-in account after confirming a code.",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customer-session",
+      "stage": 48,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/2fa/enable",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/2fa/enable"
+      },
+      "module": "customers",
+      "description": "Turn on two-factor sign-in for the signed-in account after confirming a code.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      }
+    },
+    {
+      "key": "POST /store/v1/me/2fa/disable",
+      "method": "POST",
+      "path": "/store/v1/me/2fa/disable",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "Turn off two-factor sign-in for the signed-in account with a code.",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customer-session",
+      "stage": 48,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/2fa/disable",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/2fa/disable"
+      },
+      "module": "customers",
+      "description": "Turn off two-factor sign-in for the signed-in account with a code.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
       }
     }
   ],

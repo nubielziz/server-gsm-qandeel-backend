@@ -15,6 +15,7 @@ import {
   RealtimeSources,
   type StreamViewer,
 } from '../../../infra/realtime';
+import { RankGroupReads } from '../../catalog';
 import { grants } from '../../identity';
 import { TicketAttachmentService } from '../application/ticket-attachment.service';
 import { TICKET_TOPIC } from '../application/ticket-events';
@@ -66,9 +67,8 @@ export const TICKET_REPLAY_LIMIT = 100;
  */
 export const ticketStreamKey = (ticketId: number): string => `ticket:${ticketId}`;
 
-/** The account key of a ticket's requester (`u:customer:42`, `u:client:7`: the default key of brief 27). */
-const accountKey = (ticket: Pick<SupportTicket, 'requesterType' | 'requesterId'>): string =>
-  `u:${ticket.requesterType}:${ticket.requesterId}`;
+/** The account key of a ticket's requester (`u:account:42`: the default key of every account's stream, whatever its rank, decision 064). */
+const accountKey = (ticket: Pick<SupportTicket, 'requesterId'>): string => `u:account:${ticket.requesterId}`;
 
 const isId = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 
@@ -76,9 +76,13 @@ const isId = (value: unknown): value is number => typeof value === 'number' && N
 const requesterMay = (message: Pick<TicketMessage, 'isInternal' | 'authorType'>): boolean =>
   !message.isInternal && message.authorType !== 'system';
 
-/** The id a requester event names: a merchant's ticket id, `null` for a customer (who addresses the ticket by its token). */
-const requesterTicketId = (ticket: Pick<SupportTicket, 'id' | 'requesterType'>): number | null =>
-  ticket.requesterType === 'client' ? ticket.id : null;
+/**
+ * The id a requester event names: the ticket id of a ticket opened in the portal (it has no link token, and the portal addresses tickets by
+ * id), `null` for a ticket that has a link token (its page is the token's; a token is never put in an event). The rank of the requester does
+ * not decide it: the page a ticket has does.
+ */
+const requesterTicketId = (ticket: Pick<SupportTicket, 'id' | 'token' | 'tokenHash'>): number | null =>
+  ticket.token === null && ticket.tokenHash === null ? ticket.id : null;
 
 const iso = (date: Date | null): string | null => (date === null ? null : date.toISOString());
 
@@ -112,6 +116,7 @@ export class TicketRealtimeSource implements RealtimeSource, OnModuleInit {
     private readonly db: DbService,
     private readonly attachments: TicketAttachmentService,
     private readonly sources: RealtimeSources,
+    private readonly ranks: RankGroupReads,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -309,7 +314,7 @@ export class TicketRealtimeSource implements RealtimeSource, OnModuleInit {
 
   /** The requester view of a message; `undefined` for anything that is not public (a second guard behind the callers'). */
   private requesterMessageFrame(
-    ticket: Pick<SupportTicket, 'id' | 'number' | 'requesterType'>,
+    ticket: Pick<SupportTicket, 'id' | 'number' | 'token' | 'tokenHash'>,
     message: TicketMessage,
     files: AttachmentFiles,
     live: boolean,
@@ -331,10 +336,11 @@ export class TicketRealtimeSource implements RealtimeSource, OnModuleInit {
   /** The staff view of a ticket: the inbox row, with the time of its latest public message and `late` from the clock. */
   private async staffUpdatedFrame(row: TicketRow): Promise<Frame | undefined> {
     const times = await lastPublicTimes(this.db.db, [row.ticket.id]);
+    const retailGroupId = await this.ranks.retailGroupId(this.db.db);
     return this.frame(TICKET_UPDATED_EVENT, zStaffTicketUpdated, {
-      // Decision 047: one frame for every staff stream, so a customer's address goes masked; the REST answers give it in full to holders of
-      // customers:read.
-      ticket: toTicketView(row, times.get(row.ticket.id), this.clock.now(), 'masked'),
+      // Decision 047: one frame for every staff stream, so an account's address, of any rank, goes masked; the REST answers give it in
+      // full to holders of clients:read.
+      ticket: toTicketView(row, times.get(row.ticket.id), this.clock.now(), 'masked', retailGroupId),
     });
   }
 
@@ -365,13 +371,8 @@ export class TicketRealtimeSource implements RealtimeSource, OnModuleInit {
 
 /** What a viewer may replay: every message for staff with `support:read`, public messages of its own tickets or of its link's ticket. */
 function scopeOf(viewer: StreamViewer): MessageScope | undefined {
-  switch (viewer.kind) {
-    case 'staff':
-      return grants(viewer.permissions, 'support:read') ? { kind: 'all' } : undefined;
-    case 'ticket':
-      return { kind: 'ticket', ticketId: viewer.id };
-    case 'customer':
-    case 'client':
-      return { kind: 'requester', type: viewer.kind, id: viewer.id };
-  }
+  if (viewer.kind === 'staff') return grants(viewer.permissions, 'support:read') ? { kind: 'all' } : undefined;
+  if (viewer.kind === 'ticket') return { kind: 'ticket', ticketId: viewer.id };
+  // Every other viewer is an account of either rank (decision 064: one viewer kind, `account`): its own tickets.
+  return { kind: 'requester', id: viewer.id };
 }

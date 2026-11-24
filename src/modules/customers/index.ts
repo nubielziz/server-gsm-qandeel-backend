@@ -1,7 +1,9 @@
 // Public API of the customers module: the checkout rules other modules share (session lifetime, the consent purposes and how a
 // session's status is judged), the read-only storefront funnel (shared by the dashboard and the funnel report), the customer directory
-// (find or make a guest customer), then the modules: the checkout, the customer accounts and the customer mail module (the worker loads
-// the mail module). Other modules import only this file.
+// (the buyer facts the orders and money modules read, by account id), then the modules: the checkout and the customer accounts. Other modules import only this file.
+// The privacy facts of an account (a port with no dependencies; decision 064): the staff detail of the identity module reads them through it.
+export { AccountPrivacyReads } from './ports/account-privacy-reads';
+export type { AccountConsentRecord, AccountPrivacy } from './ports/account-privacy-reads';
 export {
   CHECKOUT_IMEI_AAD,
   CHECKOUT_SESSION_TTL_MINUTES,
@@ -10,13 +12,12 @@ export {
   requiredConsents,
 } from './domain/checkout';
 export { storefrontFunnel, type StorefrontFunnel } from './storefront-funnel';
-export { CustomerDirectory, type CustomerRef, type OrderLinkStanding } from './application/customer-directory';
+export { CustomerDirectory, type OrderLinkStanding } from './application/customer-directory';
 export { CustomerDirectoryModule } from './customer-directory.module';
 export { CheckoutModule } from './checkout.module';
 export { GrowthModule } from './growth.module';
 export { CustomersModule } from './customers.module';
 export { CustomersAccountsModule } from './customers-accounts.module';
-export { CustomerMailModule } from './customer-mail.module';
 // The one-off seal pass of the checkout tokens stored as issued (decision 054); its module is loaded by the worker only.
 export {
   CHECKOUT_TOKENS_SEAL_EVENT,
@@ -27,7 +28,5 @@ export { CheckoutTokenSealModule } from './jobs/checkout-token-seal.module';
 export { CustomerErasureModule } from './customer-erasure.module';
 export { CustomerNotificationsModule } from './notifications/customer-notifications.module';
 export { CustomerAudience } from './notifications/customer-audience';
-export { CustomerErasureHooks } from './application/customer-erasure-hooks';
-export type { CustomerErasureHook } from './application/customer-erasure-hooks';
-export { CUSTOMER_MAIL_EVENTS } from './application/mail/customer-mail-outbox';
-export type { CustomerMailKind } from './application/mail/customer-mail-outbox';
+export { AccountErasureHooks } from './application/customer-erasure-hooks';
+export type { AccountErasureHook } from './application/customer-erasure-hooks';

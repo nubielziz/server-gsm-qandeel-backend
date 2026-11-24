@@ -1,9 +1,9 @@
 // Route contracts of the merchant portal's account area (map domain A, stage 2): profile, password and two-factor sign-in.
-// Shapes follow docs/contract/MISMATCHES.md B130 to B134; every route is open to a merchant waiting for approval (B153) because it
-// manages the merchant's own account.
+// Shapes follow docs/contract/MISMATCHES.md B130 to B134. The routes serve the merchant ranks (the default of a merchant session route);
+// a retail account changes its password and its two-step sign-in on the store routes (decision 064).
 import { z } from 'zod';
 import { defineRoute } from '../../../common/contract';
-import { MERCHANT_ME_EXAMPLE, MerchantCode, MerchantCountry, MerchantMeShape } from './merchant-auth.contracts';
+import { ACCOUNT_ME_EXAMPLE, AccountMeShape, MerchantCode, MerchantCountry } from './merchant-auth.contracts';
 
 /** The fields of the profile; a missing key stays as it is. */
 const ProfileBody = z.object({
@@ -27,15 +27,16 @@ const TwoFactorSetup = z.object({ secret: z.string(), otpauthUrl: z.string(), qr
 export const merchantUpdateProfile = defineRoute({
   key: 'PATCH /client/profile',
   summary: 'Update the merchant profile',
-  description: 'A partial body: a missing key stays as it is. The email, username and group cannot be changed here.',
+  description:
+    'A partial body: a missing key stays as it is. The email, username and rank cannot be changed here. Answers `AccountMe`, the same keys as `GET /client/auth/me`.',
   tags: ['auth'],
   surface: 'client',
   access: 'merchant-session',
   pendingMerchant: 'allow',
   body: ProfileBody,
-  success: { status: 200, schema: MerchantMeShape },
+  success: { status: 200, schema: AccountMeShape },
   errors: ['VALIDATION_FAILED', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED', 'CSRF_FAILED'],
-  examples: { request: { company: 'Hassan Mobile', country: 'JO' }, response: MERCHANT_ME_EXAMPLE },
+  examples: { request: { company: 'Hassan Mobile', country: 'JO' }, response: ACCOUNT_ME_EXAMPLE },
 });
 
 /** `POST /client/security/password`: change the password with the current one. */
@@ -43,8 +44,8 @@ export const merchantChangePassword = defineRoute({
   key: 'POST /client/security/password',
   summary: 'Change the password',
   description:
-    "Ends the merchant's other sessions (this one stays). A wrong current password is `422` on `currentPassword`, never `401`, " +
-    'which would sign the caller out.',
+    "Ends the account's other sessions (this one stays). A wrong current password is `422` on `currentPassword`, never `401`, " +
+    'which would sign the caller out. An account that has no password yet is `409 CONFLICT` ("Choose a password first."): it gets its first password from a mailed link.',
   tags: ['auth'],
   surface: 'client',
   access: 'merchant-session',
@@ -54,6 +55,7 @@ export const merchantChangePassword = defineRoute({
   errors: [
     'VALIDATION_FAILED',
     'WEAK_PASSWORD',
+    'CONFLICT',
     'UNAUTHORIZED',
     'ACCOUNT_SUSPENDED',
     'IP_NOT_ALLOWED',
@@ -70,7 +72,8 @@ export const merchantSetupTwoFactor = defineRoute({
   description:
     'Stores the secret as pending (two-factor sign-in stays off) and answers it once. Every call replaces the pending secret; ' +
     '`/client/security/2fa/enable` confirms it with a code. Two-step sign-in can be switched on only for a confirmed email address: ' +
-    "while the merchant's email is not confirmed yet the call is `409 CONFLICT` and nothing is stored.",
+    "while the merchant's email is not confirmed yet the call is `409 CONFLICT` and nothing is stored. The same `409 CONFLICT` answers an account " +
+    'that has no password yet ("Choose a password first."), where it used to be `401`.',
   tags: ['auth'],
   surface: 'client',
   access: 'merchant-session',
@@ -136,6 +139,7 @@ export const merchantDisableTwoFactor = defineRoute({
   errors: [
     'VALIDATION_FAILED',
     'TWOFA_NOT_ENABLED',
+    'CONFLICT',
     'UNAUTHORIZED',
     'ACCOUNT_SUSPENDED',
     'IP_NOT_ALLOWED',

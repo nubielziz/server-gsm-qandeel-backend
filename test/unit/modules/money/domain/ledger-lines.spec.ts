@@ -80,7 +80,7 @@ describe('reversalLines', () => {
       ...debitLine(clearing, m('4.79')),
     ]);
     expect(code(lines)).toBe('ok');
-    const wallet = { kind: 'customer_wallet', ownerType: 'customer', ownerId: 7 } as const;
+    const wallet = { kind: 'customer_wallet', ownerType: 'account', ownerId: 7 } as const;
     expect(reversalLines([{ amount: m('-2.0000'), account: wallet }])).toEqual(debitLine(wallet, m('2')));
   });
 });

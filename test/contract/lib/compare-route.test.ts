@@ -53,6 +53,7 @@ function snapshotOf(key: string, parts: Partial<RouteSnapshot> & Pick<RouteSnaps
     surface: 'admin',
     access: 'staff-permission',
     permission: 'staff:read',
+    rank: null,
     errors: [],
     queryIsList: false,
     ...parts,
@@ -265,6 +266,7 @@ describe('an ideal contract written from the console own types', () => {
       surface: 'admin',
       access: 'staff-permission',
       permission: 'x:read',
+      rank: null,
       errors: [],
       success: {
         // A documented redirect cannot be a contract status; the real route needs a decision (see the README).

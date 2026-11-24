@@ -1,8 +1,8 @@
-// The customers and TAC seed (feature 14b): the demo's customers and TACs appear with the ids, names, statuses and risk words of the
-// frontend mocks, through the real API, and a second run changes nothing.
+// The customers and TAC seed (feature 14b, decision 064): the demo's customers and TACs appear with the ids, names and statuses of the
+// frontend mocks, through the real API (the demo's customer cN is the retail account 100 + N), and a second run changes nothing.
 import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { eq } from 'drizzle-orm';
+import { and, between, eq, isNotNull } from 'drizzle-orm';
 import { seedCustomerDevCredentials } from '../../../scripts/seed/customers';
 import { demoStatePath, loadDemoState } from '../../../scripts/seed/demo-state';
 import { runSeed } from '../../../scripts/seed/run';
@@ -32,7 +32,7 @@ beforeAll(async () => {
   await runSeed(db, await loadDemoState(), t.config);
   // The seed wrote IP rules and the allowlist switch straight to Postgres: drop any snapshot another file left in the shared cache.
   await t.app.get(IpRuleCache).invalidate();
-  staff = await adminWith(t, ['customers:*', 'catalog:*']);
+  staff = await adminWith(t, ['clients:*', 'customers:privacy', 'catalog:*']);
 });
 /**
  * Empties the database and every cache the seed filled.
@@ -54,15 +54,27 @@ afterAll(async () => {
   await closeTestDb();
 });
 
+/** The ids of the demo's 30 customers: the customer cN is the account 100 + N. */
+const DEMO_FIRST_ID = 101;
+const DEMO_LAST_ID = 130;
+
 describe.skipIf(!frontendPresent)('the customers seed', () => {
-  it("writes the demo's 30 customers by their demo ids, with the currency of the country and `medium` for the demo's `med`", async () => {
+  it("writes the demo's 30 customers as retail accounts by their demo ids, with the currency of the country and the demo's statuses", async () => {
     const { db } = await testDb();
-    // The growth seed (feature 19) adds a guest customer per left checkout from id 900 000; the demo's own customers come first.
-    const rows = (await db.select().from(s.customers).orderBy(s.customers.id)).filter((row) => row.id < 900_000);
+    const rows = await db
+      .select()
+      .from(s.clients)
+      .where(between(s.clients.id, DEMO_FIRST_ID, DEMO_LAST_ID))
+      .orderBy(s.clients.id);
     expect(rows).toHaveLength(30);
-    expect(rows.map((row) => row.id)).toEqual(Array.from({ length: 30 }, (_, index) => index + 1));
+    expect(rows.map((row) => row.id)).toEqual(Array.from({ length: 30 }, (_, index) => index + DEMO_FIRST_ID));
+    const [retail] = await db
+      .select({ id: s.clientGroups.id })
+      .from(s.clientGroups)
+      .where(eq(s.clientGroups.kind, 'b2c_retail'));
+    expect(rows.every((row) => row.groupId === retail!.id)).toBe(true);
     expect(rows[0]).toMatchObject({
-      id: 1,
+      id: DEMO_FIRST_ID,
       name: 'Daniel Whitmore',
       email: 'daniel.whitmore@mail.example',
       country: 'GB',
@@ -70,34 +82,42 @@ describe.skipIf(!frontendPresent)('the customers seed', () => {
       hasAccount: true,
       status: 'active',
       createdBy: null,
-      totalSpent: '0.0000',
     });
     expect(rows.filter((row) => row.status === 'blocked')).toHaveLength(1);
     expect(rows.filter((row) => row.status === 'suspended')).toHaveLength(1);
-    // Every account has a credentials row without a password; guests have none.
-    const credentials = await db.select().from(s.customerCredentials);
-    expect(credentials).toHaveLength(rows.filter((row) => row.hasAccount).length);
-    expect(credentials.every((row) => row.passwordHash === null)).toBe(true);
+    // The seed gives no account a password (the development password is a separate step), and a retail account has no username.
+    expect(rows.filter((row) => row.hasAccount).every((row) => row.passwordHash === null)).toBe(true);
+    expect(rows.every((row) => row.username === null)).toBe(true);
   });
 
-  it('shows through the admin routes as the console expects, and the detail answers for a seeded customer', async () => {
+  it('shows through the admin routes as the console expects, and the detail answers for a seeded account', async () => {
     // Descending, so the demo's named customers come before the growth seed's nameless guests (an empty name sorts first).
-    const list = await staff.get('/admin/customers?_start=0&_end=100&_sort=name&_order=desc');
+    const list = await staff.get('/admin/clients?rankKind=retail&_start=0&_end=100&_sort=name&_order=desc');
     expect(list.status).toBe(200);
-    // Every customer row counts, the growth seed's guests included.
+    // Every retail row counts, the growth seed's guests included.
     const { db } = await testDb();
-    expect(list.total).toBe((await db.select({ id: s.customers.id }).from(s.customers)).length);
+    const retailRows = await db
+      .select({ id: s.clients.id })
+      .from(s.clients)
+      .innerJoin(s.clientGroups, eq(s.clientGroups.id, s.clients.groupId))
+      .where(eq(s.clientGroups.kind, 'b2c_retail'));
+    expect(list.total).toBe(retailRows.length);
     const named = list.body.filter((row: { name: string }) => row.name !== '');
     expect(named).toHaveLength(30);
     // The storefront money seeder (feature 16) runs after this one and gives the demo's customers their orders: Ana Costa has two.
     expect(named.at(-1)).toMatchObject({ name: 'Ana Costa', currencyCode: 'EUR', ordersCount: 2 });
-    const blocked = await staff.get('/admin/customers?status=blocked');
+    const blocked = await staff.get('/admin/clients?rankKind=retail&status=blocked');
     expect(blocked.total).toBe(1);
     expect(blocked.body[0]).toMatchObject({ status: 'blocked' });
     expect(blocked.body[0]).not.toHaveProperty('riskLevel');
-    const detail = await staff.get('/admin/customers/1');
+    const detail = await staff.get(`/admin/clients/${DEMO_FIRST_ID}`);
     expect(detail.status).toBe(200);
-    expect(detail.body).toMatchObject({ id: 1, name: 'Daniel Whitmore', account: { mustChangePassword: false } });
+    expect(detail.body).toMatchObject({
+      id: DEMO_FIRST_ID,
+      name: 'Daniel Whitmore',
+      rank: { kind: 'retail' },
+      security: { mustChangePassword: false },
+    });
   });
 
   it("writes the demo's eight TACs with the model code and the marketing name the console shows", async () => {
@@ -117,9 +137,7 @@ describe.skipIf(!frontendPresent)('the customers seed', () => {
   it('is idempotent: a second run inserts nothing', async () => {
     const { db } = await testDb();
     const reports = await runSeed(db, await loadDemoState(), t.config);
-    for (const report of reports.filter((r) =>
-      ['customers', 'customer_credentials', 'tac_catalog'].includes(r.table),
-    )) {
+    for (const report of reports.filter((r) => ['clients', 'customers', 'tac_catalog'].includes(r.table))) {
       expect(report.inserted, report.table).toBe(0);
     }
   });
@@ -132,12 +150,17 @@ describe.skipIf(!frontendPresent)('the customers seed', () => {
     expect(second.inserted).toBe(0);
     const [account] = await db
       .select()
-      .from(s.customerCredentials)
-      .where(eq(s.customerCredentials.mustChangePassword, false))
+      .from(s.clients)
+      .where(
+        and(
+          between(s.clients.id, DEMO_FIRST_ID, DEMO_LAST_ID),
+          eq(s.clients.mustChangePassword, false),
+          isNotNull(s.clients.passwordHash),
+        ),
+      )
       .limit(1);
     expect(await t.app.get(PasswordHasher).verify(account!.passwordHash!, 'demo-password')).toBe(true);
-    const customer = (await db.select().from(s.customers).where(eq(s.customers.id, account!.customerId)))[0]!;
-    const login = await new StoreClient(t, '198.18.99.9').login(customer.email, 'demo-password');
+    const login = await new StoreClient(t, '198.18.99.9').login(account!.email, 'demo-password');
     expect(login.statusCode).toBe(200);
   });
 

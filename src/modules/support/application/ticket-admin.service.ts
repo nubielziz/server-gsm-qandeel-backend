@@ -6,6 +6,7 @@ import type { ParsedListQuery } from '../../../common/contract';
 import type { CustomerContact } from '../../../common/customer-contact';
 import { AppError, type FieldError } from '../../../common/errors';
 import { DbService, type DbExecutor } from '../../../infra/db';
+import { RankGroupReads } from '../../catalog';
 import { AuditService } from '../../platform';
 import type { SupportTicket, TicketPriority, TicketStatus } from '../db/schema';
 import { replyChannelsOf } from '../domain/reply-channels';
@@ -68,6 +69,7 @@ export class TicketAdminService {
     private readonly audit: AuditService,
     private readonly attachments: TicketAttachmentService,
     private readonly events: TicketEvents,
+    private readonly ranks: RankGroupReads,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -75,7 +77,7 @@ export class TicketAdminService {
    * Lists tickets.
    *
    * @param query the parsed list request
-   * @param contact what the caller may see of a customer requester's address (decision 047; it also decides whether `q` matches it)
+   * @param contact what the caller may see of an account's address (decision 047; it also decides whether `q` matches it)
    * @returns the page of inbox rows and the exact total
    */
   async list(
@@ -83,36 +85,41 @@ export class TicketAdminService {
     contact: CustomerContact,
   ): Promise<{ rows: TicketRowView[]; total: number }> {
     const now = this.clock.now();
-    const { rows, total } = await listTicketRows(this.db.db, query, now, contact);
+    const retailGroupId = await this.ranks.retailGroupId(this.db.db);
+    const { rows, total } = await listTicketRows(this.db.db, query, now, contact, retailGroupId);
     const times = await lastPublicTimes(
       this.db.db,
       rows.map((row) => row.ticket.id),
     );
-    return { rows: rows.map((row) => toTicketView(row, times.get(row.ticket.id), now, contact)), total };
+    return {
+      rows: rows.map((row) => toTicketView(row, times.get(row.ticket.id), now, contact, retailGroupId)),
+      total,
+    };
   }
 
   /**
    * Reads one ticket with its thread.
    *
    * @param id the ticket id
-   * @param contact what the caller may see of a customer requester's address (decision 047)
+   * @param contact what the caller may see of an account's address (decision 047)
    * @returns the ticket, every message (internal notes included, each with its attachments) and the channels a reply may use
    * @throws {AppError} `NOT_FOUND`
    */
   async show(id: number, contact: CustomerContact): Promise<TicketDetailView> {
     const row = await findTicketRow(this.db.db, id);
     if (!row) throw notFound();
-    const [times, messages, requester] = await Promise.all([
+    const [times, messages, requester, retailGroupId] = await Promise.all([
       lastPublicTimes(this.db.db, [id]),
       listMessageRows(this.db.db, id, false),
-      findRequester(this.db.db, row.ticket.requesterType, row.ticket.requesterId),
+      findRequester(this.db.db, row.ticket.requesterId),
+      this.ranks.retailGroupId(this.db.db),
     ]);
     const files = await this.attachments.filesOf(
       this.db.db,
       messages.map((message) => message.message),
     );
     const channels = replyChannelsOf({ reachable: requester?.reachable ?? false });
-    return toDetailView(row, times.get(id), messages, files, channels, this.clock.now(), contact);
+    return toDetailView(row, times.get(id), messages, files, channels, this.clock.now(), contact, retailGroupId);
   }
 
   /**
@@ -121,7 +128,7 @@ export class TicketAdminService {
    * @param id the ticket id
    * @param input the keys to change
    * @param staffId the staff member making the change
-   * @param contact what the caller may see of a customer requester's address in the answer (decision 047)
+   * @param contact what the caller may see of an account's address in the answer (decision 047)
    * @returns the updated inbox row
    * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` (422 on `assigneeId` for anyone who is not an active staff member, on `status`
    *   for a move the ticket cannot make)
@@ -251,6 +258,6 @@ export class TicketAdminService {
     const row = await findTicketRow(db, id);
     if (!row) throw notFound();
     const times = await lastPublicTimes(db, [id]);
-    return toTicketView(row, times.get(id), now, contact);
+    return toTicketView(row, times.get(id), now, contact, await this.ranks.retailGroupId(db));
   }
 }

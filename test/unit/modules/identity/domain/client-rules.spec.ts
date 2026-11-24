@@ -1,8 +1,10 @@
-// Unit tests of the merchant rules: the status machine, the suspension reason and usernames.
+// Unit tests of the account rules of staff status writes: the status machine, the suspension reason and usernames.
 import { describe, expect, it } from 'bun:test';
 import { CLIENT_STATUSES } from '@src/modules/identity/db/schema';
 import {
+  NEVER_APPROVED_REASON,
   canMoveClient,
+  reactivationNeedsOwner,
   statusChangePermission,
   suspendReasonProblem,
   usernameBase,
@@ -10,22 +12,22 @@ import {
 } from '@src/modules/identity/domain/client-rules';
 
 describe('canMoveClient', () => {
-  it('allows exactly approve, reactivate, suspend and decline (suspend a pending applicant)', () => {
+  it('allows exactly suspend and reactivate: blocked and anonymized accounts move only through their own routes', () => {
     const allowed = CLIENT_STATUSES.flatMap((from) => CLIENT_STATUSES.map((to) => [from, to] as const)).filter(
       ([from, to]) => canMoveClient(from, to),
     );
     expect(allowed).toEqual([
       ['active', 'suspended'],
       ['suspended', 'active'],
-      ['pending', 'active'],
-      ['pending', 'suspended'],
     ]);
   });
 
-  it('never goes back to pending', () => {
-    expect(canMoveClient('active', 'pending')).toBe(false);
-    expect(canMoveClient('suspended', 'pending')).toBe(false);
-    expect(canMoveClient('pending', 'pending')).toBe(false);
+  it('never leaves blocked or anonymized, and never stays where it is', () => {
+    for (const to of CLIENT_STATUSES) {
+      expect(canMoveClient('blocked', to)).toBe(false);
+      expect(canMoveClient('anonymized', to)).toBe(false);
+      expect(canMoveClient(to, to)).toBe(false);
+    }
   });
 });
 
@@ -58,15 +60,34 @@ describe('usernameBase and usernameCandidate', () => {
 });
 
 describe('statusChangePermission', () => {
-  it('asks clients:security to suspend, decline or reactivate, and nothing more to approve', () => {
+  it('asks clients:security to suspend or reactivate', () => {
     expect(statusChangePermission('active', 'suspended')).toBe('clients:security');
-    expect(statusChangePermission('pending', 'suspended')).toBe('clients:security');
     expect(statusChangePermission('suspended', 'active')).toBe('clients:security');
-    expect(statusChangePermission('pending', 'active')).toBeNull();
   });
 
   it('asks nothing for pairs that touch neither side of a suspension', () => {
-    expect(statusChangePermission('active', 'pending')).toBeNull();
+    expect(statusChangePermission('active', 'blocked')).toBeNull();
+    expect(statusChangePermission('blocked', 'active')).toBeNull();
     expect(statusChangePermission('active', 'active')).toBeNull();
+  });
+});
+
+describe('reactivationNeedsOwner', () => {
+  const neverApproved = {
+    status: 'suspended',
+    rankKind: 'merchant',
+    suspendedBy: null,
+    suspendedReason: NEVER_APPROVED_REASON,
+  } as const;
+
+  it('asks for the Owner to make active a merchant rank that the retirement of the approval step suspended', () => {
+    expect(reactivationNeedsOwner(neverApproved, 'active')).toBe(true);
+  });
+
+  it('leaves every other case to the usual permissions: a staff suspension, another reason, a retail rank, another move', () => {
+    expect(reactivationNeedsOwner({ ...neverApproved, suspendedBy: 7 }, 'active')).toBe(false);
+    expect(reactivationNeedsOwner({ ...neverApproved, suspendedReason: 'Unpaid debt' }, 'active')).toBe(false);
+    expect(reactivationNeedsOwner({ ...neverApproved, rankKind: 'retail' }, 'active')).toBe(false);
+    expect(reactivationNeedsOwner({ ...neverApproved, status: 'active' }, 'suspended')).toBe(false);
   });
 });

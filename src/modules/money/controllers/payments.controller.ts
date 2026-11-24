@@ -23,7 +23,7 @@ export class PaymentsController {
    * Lists the top-ups.
    *
    * @param query sort, range, filters and search
-   * @param staff the signed-in staff member (decides whether a customer's address is shown and searched, decision 047)
+   * @param staff the signed-in staff member (decides whether an account's address is shown and searched, decision 047)
    * @returns the page of payments
    * @route GET /admin/payments
    */
@@ -39,7 +39,7 @@ export class PaymentsController {
    * Reads one top-up.
    *
    * @param params the payment id
-   * @param staff the signed-in staff member (decides whether a customer's address is shown, decision 047)
+   * @param staff the signed-in staff member (decides whether an account's address is shown, decision 047)
    * @returns the payment
    * @route GET /admin/payments/:id
    */
@@ -72,7 +72,7 @@ export class PaymentsController {
    *
    * @param staff the signed-in staff member
    * @param params the payment id
-   * @param body the reason the merchant sees
+   * @param body the reason the account sees
    * @returns the payment after the decision
    * @route POST /admin/payments/:id/reject
    */

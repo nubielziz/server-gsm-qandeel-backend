@@ -1,4 +1,5 @@
-// Unit tests of the session cookie helpers (decision 018): names per subject, __Host- prefix when secure, attributes, CSRF cookie.
+// Unit tests of the session cookie helpers (decisions 018 and 064): names per subject, __Host- prefix when secure, attributes, the CSRF
+// cookie named by the rank kind of an account, and the clearing of the old shop cookie.
 import { describe, expect, it } from 'bun:test';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { parseEnv } from '@src/config';
@@ -7,6 +8,7 @@ import { SECOND, TestClock } from '../../../../support/clock';
 import { CsrfService } from '@src/modules/identity/security/csrf';
 import {
   CSRF_COOKIE_NAMES,
+  LEGACY_STORE_SESSION_COOKIE_NAME,
   SESSION_COOKIE_NAMES,
   SessionCookies,
 } from '@src/modules/identity/security/session-cookies';
@@ -50,28 +52,39 @@ function cookiesFor(env: Record<string, string>) {
 
 describe('names', () => {
   it("uses one session cookie name per subject, and the console's csrf_token for staff", () => {
-    expect(SESSION_COOKIE_NAMES).toEqual({
-      staff: 'gsm_admin_session',
-      client: 'gsm_client_session',
-      customer: 'gsm_store_session',
-    });
+    expect(SESSION_COOKIE_NAMES).toEqual({ staff: 'gsm_admin_session', account: 'gsm_client_session' });
     expect(CSRF_COOKIE_NAMES.staff).toBe('csrf_token');
     expect(new Set(Object.values(CSRF_COOKIE_NAMES)).size).toBe(3);
     const cookies = cookiesFor({});
     expect(cookies.sessionCookieName('staff')).toBe('gsm_admin_session');
-    expect(cookies.csrfCookieName('client')).toBe('csrf_token_client');
+    expect(cookies.sessionCookieName('account')).toBe('gsm_client_session');
+  });
+
+  it('names the readable CSRF cookie of an account by its rank kind, for good', () => {
+    expect(CSRF_COOKIE_NAMES.merchant).toBe('csrf_token_client');
+    expect(CSRF_COOKIE_NAMES.retail).toBe('csrf_token_store');
+    const cookies = cookiesFor({});
+    expect(cookies.csrfCookieName('merchant')).toBe('csrf_token_client');
+    expect(cookies.csrfCookieName('retail')).toBe('csrf_token_store');
+  });
+
+  it('has no cookie of a customer subject any more: the shop cookie of before is only cleared', () => {
+    expect(Object.keys(SESSION_COOKIE_NAMES)).not.toContain('customer');
+    expect(Object.keys(SESSION_COOKIE_NAMES)).not.toContain('client');
+    expect(LEGACY_STORE_SESSION_COOKIE_NAME).toBe('gsm_store_session');
+    expect(Object.values(SESSION_COOKIE_NAMES)).not.toContain(LEGACY_STORE_SESSION_COOKIE_NAME);
   });
 
   it('adds the __Host- prefix to the session cookie when cookies are Secure', () => {
     const cookies = cookiesFor({ COOKIE_SECURE: 'true' });
     expect(cookies.sessionCookieName('staff')).toBe('__Host-gsm_admin_session');
-    expect(cookies.sessionCookieName('customer')).toBe('__Host-gsm_store_session');
+    expect(cookies.sessionCookieName('account')).toBe('__Host-gsm_client_session');
     // The CSRF cookie must be readable and may carry a Domain, which __Host- forbids.
     expect(cookies.csrfCookieName('staff')).toBe('csrf_token');
   });
 });
 
-describe('set', () => {
+describe('set (staff)', () => {
   it('sets the httpOnly session cookie, the readable CSRF cookie and the response header', () => {
     const cookies = cookiesFor({});
     const { reply, calls, headers } = fakeReply();
@@ -86,17 +99,7 @@ describe('set', () => {
     expect('domain' in csrfCookie!.options).toBe(false);
     expect(csrfCookie!.options.maxAge).toBe(session!.options.maxAge);
     expect(headers['x-csrf-token']).toBe(csrf);
-  });
-
-  it('marks both cookies Secure and prefixes the session cookie in production-style settings', () => {
-    const cookies = cookiesFor({ COOKIE_SECURE: 'true', CSRF_COOKIE_DOMAIN: 'example.com' });
-    const { reply, calls } = fakeReply();
-    cookies.set(reply, 'client', 'tok', after(60 * SECOND));
-    expect(calls[0]).toMatchObject({ name: '__Host-gsm_client_session' });
-    expect(calls[0]!.options).toMatchObject({ secure: true, httpOnly: true });
-    expect('domain' in calls[0]!.options).toBe(false);
-    expect(calls[1]).toMatchObject({ name: 'csrf_token_client' });
-    expect(calls[1]!.options).toMatchObject({ secure: true, httpOnly: false, domain: 'example.com' });
+    expect(calls).toHaveLength(2);
   });
 
   it('gives a session that already ended a Max-Age of 0 instead of a negative one', () => {
@@ -115,7 +118,88 @@ describe('set', () => {
   });
 });
 
-describe('clear', () => {
+describe('setAccount', () => {
+  const names = (calls: readonly Call[]) => calls.map((call) => [call.kind, call.name]);
+
+  it('sets the one session cookie and the CSRF cookie of a retail account, and clears the merchant name and the old shop cookie', () => {
+    const cookies = cookiesFor({});
+    const { reply, calls, headers } = fakeReply();
+    const csrf = cookies.setAccount(reply, 'the-session-token', after(600 * SECOND), 'retail');
+    expect(names(calls)).toEqual([
+      ['set', 'gsm_client_session'],
+      ['set', 'csrf_token_store'],
+      ['clear', 'csrf_token_client'],
+      ['clear', 'gsm_store_session'],
+    ]);
+    expect(calls[0]).toMatchObject({ value: 'the-session-token' });
+    expect(calls[0]!.options).toMatchObject({ httpOnly: true, secure: false, sameSite: 'lax', path: '/', maxAge: 600 });
+    expect(calls[1]).toMatchObject({ value: csrf });
+    expect(calls[1]!.options).toMatchObject({ httpOnly: false, sameSite: 'lax', path: '/', maxAge: 600 });
+    expect(headers['x-csrf-token']).toBe(csrf);
+  });
+
+  it('sets the CSRF cookie of a merchant account and clears the retail name (the reverse)', () => {
+    const { reply, calls } = fakeReply();
+    cookiesFor({}).setAccount(reply, 'tok', after(60 * SECOND), 'merchant');
+    expect(names(calls)).toEqual([
+      ['set', 'gsm_client_session'],
+      ['set', 'csrf_token_client'],
+      ['clear', 'csrf_token_store'],
+      ['clear', 'gsm_store_session'],
+    ]);
+  });
+
+  it('never sets both readable CSRF names: the shop decides merchant or retail from the one that exists', () => {
+    for (const kind of ['merchant', 'retail'] as const) {
+      const { reply, calls } = fakeReply();
+      cookiesFor({}).setAccount(reply, 'tok', after(60 * SECOND), kind);
+      const set = calls.filter((call) => call.kind === 'set' && call.name.startsWith('csrf_token'));
+      expect(
+        set.map((call) => call.name),
+        kind,
+      ).toEqual([CSRF_COOKIE_NAMES[kind]]);
+    }
+  });
+
+  it('gives both CSRF names one value: the HMAC of the one session', () => {
+    const config = parseEnv({ NODE_ENV: 'test' });
+    const csrf = new CsrfService(config);
+    const tokens = new TokenService(config);
+    const expected = csrf.tokenFor(tokens.hash('abc'));
+    for (const kind of ['merchant', 'retail'] as const) {
+      const { reply, headers } = fakeReply();
+      expect(new SessionCookies(config, csrf, tokens, clock).setAccount(reply, 'abc', after(SECOND), kind), kind).toBe(
+        expected,
+      );
+      expect(headers['x-csrf-token']).toBe(expected);
+    }
+  });
+
+  it('marks the cookies Secure, prefixes the session cookie and the old shop cookie, and gives the CSRF names a Domain', () => {
+    const { reply, calls } = fakeReply();
+    cookiesFor({ COOKIE_SECURE: 'true', CSRF_COOKIE_DOMAIN: 'example.com' }).setAccount(
+      reply,
+      'tok',
+      after(60 * SECOND),
+      'merchant',
+    );
+    expect(names(calls)).toEqual([
+      ['set', '__Host-gsm_client_session'],
+      ['set', 'csrf_token_client'],
+      ['clear', 'csrf_token_store'],
+      ['clear', '__Host-gsm_store_session'],
+    ]);
+    expect(calls[0]!.options).toMatchObject({ secure: true, httpOnly: true });
+    expect('domain' in calls[0]!.options).toBe(false);
+    expect(calls[1]!.options).toMatchObject({ secure: true, httpOnly: false, domain: 'example.com' });
+    // The cleared name carries the same Domain as the one it replaces, or the browser keeps it.
+    expect(calls[2]!.options).toMatchObject({ domain: 'example.com', path: '/' });
+    expect(calls[3]!.options).toMatchObject({ secure: true, httpOnly: true, path: '/' });
+    expect('domain' in calls[3]!.options).toBe(false);
+  });
+});
+
+describe('clear (staff)', () => {
   it('clears both cookies with the attributes they were set with', () => {
     const cookies = cookiesFor({ COOKIE_SECURE: 'true', CSRF_COOKIE_DOMAIN: 'example.com' });
     const { reply, calls } = fakeReply();
@@ -129,16 +213,45 @@ describe('clear', () => {
   });
 });
 
+describe('clearAccount', () => {
+  it('clears the session cookie, both CSRF names with their Domain and the old shop cookie', () => {
+    const cookies = cookiesFor({ COOKIE_SECURE: 'true', CSRF_COOKIE_DOMAIN: 'example.com' });
+    const { reply, calls } = fakeReply();
+    cookies.clearAccount(reply);
+    expect(calls.map((call) => [call.kind, call.name])).toEqual([
+      ['clear', '__Host-gsm_client_session'],
+      ['clear', 'csrf_token_client'],
+      ['clear', 'csrf_token_store'],
+      ['clear', '__Host-gsm_store_session'],
+    ]);
+    expect(calls[0]!.options).toMatchObject({ path: '/', secure: true, httpOnly: true });
+    expect(calls[1]!.options).toMatchObject({ path: '/', domain: 'example.com' });
+    expect(calls[2]!.options).toMatchObject({ path: '/', domain: 'example.com' });
+    expect(calls[3]!.options).toMatchObject({ path: '/', secure: true, httpOnly: true });
+  });
+
+  it('does not touch the staff cookies', () => {
+    const { reply, calls } = fakeReply();
+    cookiesFor({}).clearAccount(reply);
+    expect(calls.map((call) => call.name)).not.toContain('gsm_admin_session');
+    expect(calls.map((call) => call.name)).not.toContain('csrf_token');
+  });
+});
+
 describe('readToken', () => {
   const request = (cookies: Record<string, string | undefined> | undefined) =>
     ({ cookies }) as unknown as FastifyRequest;
 
-  it('reads the cookie of the subject only', () => {
+  it('reads the cookie of the subject only, and never the old shop cookie', () => {
     const cookies = cookiesFor({});
-    const req = request({ gsm_admin_session: 'staff-token', gsm_client_session: 'client-token' });
+    const req = request({
+      gsm_admin_session: 'staff-token',
+      gsm_client_session: 'account-token',
+      gsm_store_session: 'old-shop-token',
+    });
     expect(cookies.readToken(req, 'staff')).toBe('staff-token');
-    expect(cookies.readToken(req, 'client')).toBe('client-token');
-    expect(cookies.readToken(req, 'customer')).toBeUndefined();
+    expect(cookies.readToken(req, 'account')).toBe('account-token');
+    expect(cookies.readToken(request({ gsm_store_session: 'old-shop-token' }), 'account')).toBeUndefined();
   });
 
   it('treats a missing or empty cookie as no session, and reads the prefixed name when Secure', () => {
@@ -147,5 +260,6 @@ describe('readToken', () => {
     const secure = cookiesFor({ COOKIE_SECURE: 'true' });
     expect(secure.readToken(request({ gsm_admin_session: 'plain' }), 'staff')).toBeUndefined();
     expect(secure.readToken(request({ '__Host-gsm_admin_session': 'prefixed' }), 'staff')).toBe('prefixed');
+    expect(secure.readToken(request({ '__Host-gsm_client_session': 'prefixed' }), 'account')).toBe('prefixed');
   });
 });

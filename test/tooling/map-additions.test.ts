@@ -440,8 +440,130 @@ describe('the file reader', () => {
   });
 });
 
+describe('the accounts file (decision 064)', () => {
+  const FILE = 'scripts/map-additions/48-accounts.mjs';
+  const SPEC = 'B245';
+  /** What each new route is: its module, its permission or access name, and the status the console is promised (none for the shop). */
+  const EXPECTED: Array<{ key: string; group: string; module: string; a: string; successStatus?: number }> = [
+    { key: 'GET /admin/clients/counts', group: 'clients', module: 'identity', a: 'clients:read', successStatus: 200 },
+    {
+      key: 'GET /admin/legacy-accounts/:type/:id',
+      group: 'clients',
+      module: 'identity',
+      a: 'clients:read',
+      successStatus: 200,
+    },
+    {
+      key: 'POST /admin/clients/:id/account',
+      group: 'clients',
+      module: 'identity',
+      a: 'clients:update',
+      successStatus: 200,
+    },
+    { key: 'POST /admin/clients/:id/rank', group: 'clients', module: 'money', a: 'clients:update', successStatus: 200 },
+    {
+      key: 'POST /admin/clients/:id/block',
+      group: 'clients',
+      module: 'customers',
+      a: 'clients:block',
+      successStatus: 204,
+    },
+    {
+      key: 'GET /admin/clients/:id/privacy',
+      group: 'clients',
+      module: 'customers',
+      a: 'clients:read',
+      successStatus: 200,
+    },
+    {
+      key: 'GET /admin/clients/:id/export',
+      group: 'clients',
+      module: 'customers',
+      a: 'customers:privacy',
+      successStatus: 200,
+    },
+    {
+      key: 'POST /admin/clients/:id/anonymize',
+      group: 'clients',
+      module: 'customers',
+      a: 'customers:privacy',
+      successStatus: 204,
+    },
+    {
+      key: 'POST /admin/clients/:id/wallet/freeze',
+      group: 'clients',
+      module: 'money',
+      a: 'wallet:adjust',
+      successStatus: 200,
+    },
+    {
+      key: 'POST /admin/clients/:id/wallet/unfreeze',
+      group: 'clients',
+      module: 'money',
+      a: 'wallet:adjust',
+      successStatus: 200,
+    },
+    { key: 'POST /store/v1/me/2fa/setup', group: 'account', module: 'customers', a: 'customer-session' },
+    { key: 'POST /store/v1/me/2fa/enable', group: 'account', module: 'customers', a: 'customer-session' },
+    { key: 'POST /store/v1/me/2fa/disable', group: 'account', module: 'customers', a: 'customer-session' },
+  ];
+  const own = (map.additions as AdditionRow[]).filter((row) => row.addition.file === FILE);
+  const endpointOf = (row: AdditionRow) =>
+    map.expandRow(row)[0] as unknown as {
+      key: string;
+      surface: string;
+      group: string;
+      access: string;
+      permission: string | null;
+      turnstile: boolean;
+    };
+
+  it('holds exactly the thirteen new routes of the one account type, each once, and nothing else', () => {
+    expect(own.map((row) => endpointOf(row).key).sort()).toEqual(EXPECTED.map((entry) => entry.key).sort());
+    expect(own).toHaveLength(13);
+  });
+
+  it('gives each route its group, module, permission or access name, and the status the console is promised', () => {
+    for (const expected of EXPECTED) {
+      const row = own.find((candidate) => endpointOf(candidate).key === expected.key)!;
+      const endpoint = endpointOf(row);
+      expect(endpoint.group, expected.key).toBe(expected.group);
+      expect(row.addition.module, expected.key).toBe(expected.module);
+      expect(row.a, expected.key).toBe(expected.a);
+      expect(row.addition.successStatus, expected.key).toBe(expected.successStatus);
+      if (expected.key.startsWith('POST /store/')) {
+        expect(endpoint).toMatchObject({ surface: 'store', access: 'customer-session', permission: null });
+      } else {
+        expect(endpoint).toMatchObject({ surface: 'admin', access: 'staff-permission', permission: expected.a });
+      }
+    }
+  });
+
+  it('writes English only, one spec and the stage of the file, and no public route (nothing needs Turnstile)', () => {
+    for (const row of own) {
+      expect(row.addition.spec, row.p).toBe(SPEC);
+      expect(row.st, row.p).toBe(48);
+      expect(/[\u0600-\u06FF]/.test(`${row.f}${row.addition.en}`), row.p).toBe(false);
+      // a row without an Arabic sentence carries its English one in its place
+      expect(row.f, row.p).toBe(row.addition.en);
+      expect(endpointOf(row).turnstile, row.p).toBe(false);
+    }
+  });
+
+  it('repeats no route of the map or of another file, and passes every guard of the loader on its own', async () => {
+    const others = (map.additions as AdditionRow[]).filter((row) => row.addition.file !== FILE);
+    const taken = new Set(others.map((row) => endpointOf(row).key));
+    for (const row of own) expect(taken.has(endpointOf(row).key), endpointOf(row).key).toBe(false);
+    const real = await lib.readAdditionFiles([join(ROOT, 'scripts', 'map-additions')], ROOT);
+    const file = real.find((entry) => entry.file === FILE);
+    expect(file, FILE).toBeDefined();
+    // every table it names is a map table or an additionalTables entry (and none a retired one), every module and group exists
+    expect(map.checkAdditions([file!])).toHaveLength(13);
+  });
+});
+
 describe('the surface prefixes', () => {
-  it('agree with surfaceOfPath (src/common/surface.ts)', () => {
+  it('agree with surfaceOfPath (src/common/surface.ts), and the retired REST API v1 has no prefix', () => {
     for (const [surface, prefix] of Object.entries(lib.ADDITION_SURFACES)) {
       if (prefix === null) expect(surfaceOfPath('/w0-status'), surface).toBe(surface as 'system');
       else {
@@ -450,6 +572,9 @@ describe('the surface prefixes', () => {
       }
     }
     expect(Object.keys(lib.ADDITION_SURFACES).sort()).toEqual(['admin', 'client', 'hooks', 'store', 'system']);
+    // The merchant REST API v1 is retired: no addition can name it, and a path under it is read as a system path.
+    expect(surfaceOfPath('/v1')).toBe('system');
+    expect(surfaceOfPath('/v1/w0-x')).toBe('system');
   });
 
   it('list the success statuses a route may promise', () => {

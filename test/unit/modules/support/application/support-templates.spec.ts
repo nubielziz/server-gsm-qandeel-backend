@@ -4,14 +4,18 @@
 // deletes is the only one of 0016 the code no longer has), and `supportTemplatesSql()`, `supportReplyLinkSql()` and
 // `supportReceiptTextSql()` write today's shape.
 import { describe, expect, it } from 'bun:test';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { bodyUpdates, insertedTemplates } from '../../../../support/applied-templates';
 import { migrationFileName, migrationSql } from '../../../../support/migration-files';
 import { NotificationEventRegistry } from '@src/modules/platform';
 import { SUPPORT_EVENTS } from '@src/modules/support/application/support-events';
 import {
   CONVERSATION_LINK_LINE,
+  MERCHANT_RECEIPT_TEMPLATE,
   RECEIPT_BODY,
   SUPPORT_DEFAULT_TEMPLATES,
+  supportMerchantReceiptSql,
   supportReceiptTextSql,
   supportReplyLinkSql,
   supportTemplatesSql,
@@ -37,11 +41,14 @@ describe('SUPPORT_EVENTS', () => {
   it('register next to the platform events, and each variable has a sample for the preview', () => {
     const events = registry();
     expect(events.get('support.ticket_received', 'customer')).toBeDefined();
+    expect(events.get('support.ticket_received', 'merchant')).toBeDefined();
     // The survey mail that migration 0016 shipped is not an event any more.
     expect(events.get('support.csat_survey', 'customer')).toBeUndefined();
-    expect(SUPPORT_EVENTS.map((definition) => definition.key).sort()).toEqual([
-      'support.reply',
-      'support.ticket_received',
+    // The receipt has a customer and a merchant text (decision 064: the audience of a mail to an account is its rank kind).
+    expect(SUPPORT_EVENTS.map((definition) => `${definition.key}:${definition.audience}`).sort()).toEqual([
+      'support.reply:merchant',
+      'support.ticket_received:customer',
+      'support.ticket_received:merchant',
     ]);
     expect(events.get('support.reply', 'merchant')?.channels).toEqual(['email']);
     for (const definition of SUPPORT_EVENTS) {
@@ -54,6 +61,21 @@ describe('SUPPORT_EVENTS', () => {
     expect(receipt?.variables).toEqual(['ticketNumber', 'link']);
     expect(receipt?.channels).toEqual(['email']);
     expect(receipt?.description).toContain('repeats nothing the customer typed');
+  });
+
+  it('gives a merchant rank the same receipt: the ticket number and the link, transactional and a credential link (decision 064)', () => {
+    const customer = registry().get('support.ticket_received', 'customer');
+    const merchant = registry().get('support.ticket_received', 'merchant');
+    expect(merchant?.variables).toEqual(customer?.variables);
+    expect(merchant?.channels).toEqual(['email']);
+    expect(merchant?.transactional).toBe(true);
+    expect(merchant?.secretLink).toBe(true);
+    // A merchant's receipt is never a preference a merchant could switch off: the link is what proves the address.
+    expect(
+      registry()
+        .merchantPreferenceEvents()
+        .some((event) => event.key === 'support.ticket_received'),
+    ).toBe(false);
   });
 
   it('keeps a merchant’s support reply out of their preferences (the answer to their own ticket is always sent)', () => {
@@ -104,6 +126,8 @@ describe('SUPPORT_DEFAULT_TEMPLATES', () => {
       const template = SUPPORT_DEFAULT_TEMPLATES.find((t) => t.event === key && t.audience === 'customer')!;
       expect(template.body, key).toContain('{{link}}');
     }
+    // The merchant's receipt carries the link too: it is what confirms the address.
+    expect(has('support.ticket_received', 'email', 'merchant')).toBe(true);
   });
 });
 
@@ -111,7 +135,9 @@ const keyOf = (t: { event: string; channel: string; audience: string }) => `${t.
 
 describe('the receipt of a new ticket (decision 053)', () => {
   it('is fixed wording with the ticket number and the link, and holds no typed text', () => {
-    const receipt = SUPPORT_DEFAULT_TEMPLATES.find((t) => t.event === 'support.ticket_received')!;
+    const receipt = SUPPORT_DEFAULT_TEMPLATES.find(
+      (t) => t.event === 'support.ticket_received' && t.audience === 'customer',
+    )!;
     expect(receipt.body).toBe(RECEIPT_BODY);
     expect(receipt.subject).toBe('We got your message ({{ticketNumber}})');
     expect(placeholdersOf(receipt.body).sort()).toEqual(['link', 'ticketNumber']);
@@ -136,14 +162,14 @@ describe('migrations 0016_support_tickets, 0032_support_reply_link and the featu
   it('ship every template of the code: as 0016 inserted it, or with the body 0032 gives the row 0016 shipped', () => {
     // Migration 0016 also inserted the merchant's reply on the retired Telegram channel: the code leaves it out (a data step deletes the stored row).
     const retired = 'support.reply|telegram|merchant';
+    // The merchant's receipt is the one row 0016 did not ship: the accounts expand migration inserts it (tested below).
+    const added = keyOf(MERCHANT_RECEIPT_TEMPLATE);
     expect(shipped.map(keyOf)).toContain(retired);
-    expect(
-      shipped
-        .map(keyOf)
-        .filter((key) => key !== retired)
-        .sort(),
-    ).toEqual(SUPPORT_DEFAULT_TEMPLATES.map(keyOf).sort());
-    for (const template of SUPPORT_DEFAULT_TEMPLATES) {
+    expect(shipped.map(keyOf)).not.toContain(added);
+    expect([...shipped.map(keyOf).filter((key) => key !== retired), added].sort()).toEqual(
+      SUPPORT_DEFAULT_TEMPLATES.map(keyOf).sort(),
+    );
+    for (const template of SUPPORT_DEFAULT_TEMPLATES.filter((row) => keyOf(row) !== added)) {
       const first = shipped.find((row) => keyOf(row) === keyOf(template))!;
       expect(first.subject, keyOf(template)).toBe(template.subject);
       const update = updates.find((row) => keyOf(row) === keyOf(template));
@@ -187,6 +213,37 @@ describe('migrations 0016_support_tickets, 0032_support_reply_link and the featu
     expect(insert).toEndWith('ON CONFLICT ("event", "channel", "audience") DO NOTHING;');
     expect(insert.match(/, true\)/g)).toHaveLength(SUPPORT_DEFAULT_TEMPLATES.length);
     expect(insert).toContain(CONVERSATION_LINK_LINE);
+  });
+});
+
+describe('the merchant receipt (decision 064)', () => {
+  it('is the same fixed wording as the customer’s, and holds no typed text', () => {
+    expect(MERCHANT_RECEIPT_TEMPLATE).toEqual({
+      event: 'support.ticket_received',
+      channel: 'email',
+      audience: 'merchant',
+      subject: 'We got your message ({{ticketNumber}})',
+      body: RECEIPT_BODY,
+    });
+    expect(placeholdersOf(MERCHANT_RECEIPT_TEMPLATE.body).sort()).toEqual(['link', 'ticketNumber']);
+  });
+
+  it('is written by supportMerchantReceiptSql() as one insert that never overwrites a stored row', () => {
+    const insert = supportMerchantReceiptSql();
+    expect(insert.match(/, true\)/g)).toHaveLength(1);
+    expect(insert).toContain(
+      "('support.ticket_received', 'email', 'merchant', 'We got your message ({{ticketNumber}})'",
+    );
+    expect(insert).toEndWith('ON CONFLICT ("event", "channel", "audience") DO NOTHING;');
+  });
+
+  it('is inserted by one migration with exactly that statement (the accounts expand migration)', () => {
+    const drizzle = join(import.meta.dir, '../../../../../drizzle');
+    const holders = readdirSync(drizzle).filter(
+      (name) =>
+        name.endsWith('.sql') && readFileSync(join(drizzle, name), 'utf8').includes(supportMerchantReceiptSql()),
+    );
+    expect(holders).toHaveLength(1);
   });
 });
 

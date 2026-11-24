@@ -31,7 +31,9 @@ export const RefundSchema = z.object({
     ),
   requestedBy: z.object({ type: z.enum(REFUND_REQUESTER_TYPES), name: z.string().nullable() }),
   approvedBy: NamedRef.nullable().describe('The staff member who decided it.'),
-  customer: NamedRef.nullable(),
+  customer: NamedRef.nullable().describe(
+    'The buyer account (any rank, a guest included); the key keeps its name for the console.',
+  ),
   order: z.object({
     id: zId,
     deliveredAt: zIsoDateTime.nullable().describe('When the order completed; null while it has not.'),
@@ -64,7 +66,7 @@ const REFUND_EXAMPLE = {
   partial: false,
   gatewayRefundId: null,
   note: null,
-  requestedBy: { type: 'customer' as const, name: null },
+  requestedBy: { type: 'account' as const, name: null },
   approvedBy: null,
   customer: { id: 31, name: 'Jack Turner' },
   order: { id: 20467, deliveredAt: '2026-11-07T12:02:10.000Z', cost: '7.2000' },
@@ -82,9 +84,10 @@ export const listRefunds = defineRoute({
   key: 'GET /admin/refunds',
   summary: 'Storefront refund requests',
   description:
-    'Refunds of storefront customers only (a merchant refund goes through its order). Newest first. The page counts of the console are ' +
-    'this call with `_start=0&_end=1` and a `status` filter. `q` searches the id, the reason and the customer name and email (a guest has only an email); the email only for callers who ' +
-    'hold `customers:read` (decision 047). A customer without a name is shown by the masked address. `amount` sorts numerically.',
+    'Refunds of storefront orders only (a merchant order is refunded through the order itself; a return of a held payment has no order and is not listed). ' +
+    'The buyer is an account of any rank, a guest included, and a refund goes back to the wallet the account holds now (decision 064). Newest first. The page counts of the console are ' +
+    'this call with `_start=0&_end=1` and a `status` filter. `q` searches the id, the reason and the account name and email (a guest has only an email); the email only for callers who ' +
+    'hold `clients:read` (decision 047). An account without a name is shown by the masked address. `amount` sorts numerically.',
   tags: ['refunds'],
   surface: 'admin',
   access: 'staff-permission',
@@ -124,7 +127,9 @@ export const approveRefund = defineRoute({
     'reversed from revenue (the supplier cost is never recovered), an order that was not delivered is cancelled and refunded in full ' +
     'from customer funds; the VAT share is `round(tax x amount / paid, 2)`. A card or wallet refund goes to the gateway through a job ' +
     '(`processing` until it answers, then `completed` or `failed`); a crypto payment, or a gateway that cannot refund, is paid out ' +
-    'by hand and is `completed` at once. Without `amount` the amount on the request is refunded; the limit is what was paid minus the ' +
+    'by hand and is `completed` at once. A payment made from the balance goes back to the wallet the account holds now (the store balance, ' +
+    'or the merchant wallet after a rank change, decision 064), with the same key and the same limit; for an erased account (anonymized) ' +
+    'it is `409 ANONYMIZED` and nothing changes (nobody can open that wallet: pay it back another way and decline the request). Without `amount` the amount on the request is refunded; the limit is what was paid minus the ' +
     'other refunds that are completed or processing. The answer carries `netAmount` and `taxAmount` of the posted journal. An order that is ' +
     'being sent to its supplier right now is `409 ALREADY_SENT` (approve it once the supplier answered).',
   tags: ['refunds'],
@@ -141,7 +146,14 @@ export const approveRefund = defineRoute({
       .describe('A USD amount with up to 4 decimals (`7.5000`); left out means the amount on the request.'),
   }),
   success: { status: 200, schema: RefundSchema },
-  errors: [...DECISION_ERRORS, 'REFUND_NOT_PENDING', 'ORDER_NOT_OPEN', 'ALREADY_SENT', 'INVALID_TRANSITION'],
+  errors: [
+    ...DECISION_ERRORS,
+    'REFUND_NOT_PENDING',
+    'ORDER_NOT_OPEN',
+    'ALREADY_SENT',
+    'INVALID_TRANSITION',
+    'ANONYMIZED',
+  ],
   examples: {
     request: { amount: '7.5000' },
     response: {

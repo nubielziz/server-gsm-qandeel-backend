@@ -1,7 +1,8 @@
 // Ledger account rules shared by the writer, the readers and the wallet views (decision 024): which side each account kind
 // normally sits on, how a stored balance maps to the debit-positive sign of the wire, and the wallet figures.
 import { Money } from '../../../common/money';
-import type { LedgerAccountKind } from '../db/schema';
+import type { LedgerAccountKind, LedgerOwnerType } from '../db/schema';
+import type { AccountRef } from './ledger-lines';
 
 /**
  * The ledger is kept in the base currency (decision 011); merchants hold USD today.
@@ -9,6 +10,47 @@ import type { LedgerAccountKind } from '../db/schema';
  * Why: B111 and decision 011: foreign-currency payments are posted at their locked rate, so every ledger account is USD.
  */
 export const BASE_CURRENCY = 'USD';
+
+/**
+ * The one owner type of every wallet and hold in the ledger.
+ *
+ * Why: decision 064: a merchant and a shopper are one account type, so `client_wallet`, `client_hold` and `customer_wallet` are all owned
+ * by `('account', id)`; the ledger identity `(kind, owner_type, owner_id, currency)` then holds at most one wallet of each kind per account.
+ * Rows written before the merge keep their old owner words only until the expand migration re-keys them.
+ */
+export const ACCOUNT_OWNER_TYPE = 'account' as const satisfies LedgerOwnerType;
+
+/**
+ * The ledger account of an account's merchant-kind wallet.
+ *
+ * Why: the one place a `client_wallet` reference is built, so every money event names the owner the same way (decision 064).
+ *
+ * @param accountId the account (a merchant keeps its old number as its account id)
+ * @returns the reference of the `client_wallet` of the account
+ */
+export function walletAccountOf(accountId: number): AccountRef {
+  return { kind: 'client_wallet', ownerType: ACCOUNT_OWNER_TYPE, ownerId: accountId };
+}
+
+/**
+ * The ledger account of what an account's open orders hold.
+ *
+ * @param accountId the account
+ * @returns the reference of the `client_hold` of the account
+ */
+export function holdAccountOf(accountId: number): AccountRef {
+  return { kind: 'client_hold', ownerType: ACCOUNT_OWNER_TYPE, ownerId: accountId };
+}
+
+/**
+ * The ledger account of an account's store-kind wallet (the store balance).
+ *
+ * @param accountId the account
+ * @returns the reference of the `customer_wallet` of the account
+ */
+export function storeWalletAccountOf(accountId: number): AccountRef {
+  return { kind: 'customer_wallet', ownerType: ACCOUNT_OWNER_TYPE, ownerId: accountId };
+}
 
 /** The side of a journal on which an account's balance grows. */
 export type NormalSide = 'debit' | 'credit';
@@ -119,6 +161,46 @@ export function walletViewOf(figures: { balance: Money; reserved: Money; creditL
     reserved: figures.reserved.toWire(),
     creditLimit: figures.creditLimit.toWire(),
     available: figures.balance.add(figures.creditLimit).toWire(),
+  };
+}
+
+/** What the live wallet of one account is made of (decision 064: the wallet kind follows the rank kind). */
+export interface LiveWalletFacts {
+  /** `merchant`: `client_wallet` and `client_hold`, credit when the rank allows it; `store`: `customer_wallet`, pay first. */
+  readonly kind: 'merchant' | 'store';
+  /** The wallet balance in the account's own sign (zero while the wallet was never opened). */
+  readonly balance: Money;
+  /** The balance of the hold (merchant kind only; zero otherwise). */
+  readonly hold: Money;
+  /** The credit limit (merchant kind only; zero otherwise). */
+  readonly creditLimit: Money;
+  /** Whether staff put the wallet on hold. */
+  readonly frozen: boolean;
+  /** Whether the wallet may be used at all: always true for a merchant wallet, the master switch for a store balance. */
+  readonly enabled: boolean;
+}
+
+/**
+ * Builds the four wallet figures of an account from its live wallet.
+ *
+ * Why: a merchant wallet answers `available = balance + creditLimit` (a hold has already left the wallet, decision 024); a store balance has
+ * neither hold nor credit, and what can be spent is nothing while the wallet is on hold, switched off or not above zero (plan 21 § 7.1, the
+ * same rule as the store balance's own `availableOf`). One function, so the account list and the wallet routes answer the same numbers.
+ *
+ * @param facts the live wallet of the account
+ * @returns the four figures as wire strings
+ */
+export function liveWalletFigures(facts: LiveWalletFacts): WalletView {
+  if (facts.kind === 'merchant') {
+    return walletViewOf({ balance: facts.balance, reserved: facts.hold, creditLimit: facts.creditLimit });
+  }
+  const zero = Money.zero();
+  const spendable = facts.frozen || !facts.enabled || !facts.balance.isPositive() ? zero : facts.balance;
+  return {
+    balance: facts.balance.toWire(),
+    reserved: zero.toWire(),
+    creditLimit: zero.toWire(),
+    available: spendable.toWire(),
   };
 }
 

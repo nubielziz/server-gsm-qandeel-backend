@@ -14,6 +14,7 @@ import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertCheckout } from '../../support/growth';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { storefrontWorld } from '../../support/storefront';
+import { WorkerModule } from '@src/worker.module';
 
 const clock = new TestClock('2026-11-07T12:00:00.000Z');
 let t: TestApp;
@@ -57,6 +58,9 @@ describe('the retired abandoned-checkouts list and reminder', () => {
     expect(t.app.get(NotificationEventRegistry).has('checkout.abandoned')).toBe(false);
     const schedulers = t.app.get(JobSchedulerRegistry);
     expect(schedulers.list().map((scheduler) => scheduler.id)).not.toContain('checkout-recovery-sweep');
+    // The line that retires it is in the worker's root module (its scheduler runner removes the old scheduler from Redis when it starts):
+    // run that hook on this app's registry.
+    new WorkerModule(schedulers).onModuleInit();
     expect(schedulers.retired()).toContainEqual({ queue: 'maintenance', id: 'checkout-recovery-sweep' });
   });
 

@@ -1,6 +1,6 @@
-// Unit tests of the account views of the support chat (feature 28, slice B2): the rows of my tickets and of the merchant's tickets, and the
-// merchant's conversation. Pure mapping: the customer's row carries the link token and the merchant's never, `hasUnread` is the requester's
-// own side of the seen marks, and the conversation carries no staff detail.
+// Unit tests of the account views of the support chat (feature 28, slice B2): the rows of my tickets (a retail account) and of the portal's
+// tickets (a merchant rank), and the portal's conversation. Pure mapping: the shop row carries the link token and the portal's never,
+// `hasUnread` is the requester's own side of the seen marks, and the conversation carries no staff detail.
 import { describe, expect, it } from 'bun:test';
 import type { SupportTicket, TicketMessage } from '@src/modules/support/db/schema';
 import type { AccountTicketRow } from '@src/modules/support/infra/account-ticket.repository';
@@ -17,7 +17,7 @@ const ticket = (values: Partial<SupportTicket> = {}): SupportTicket => ({
   number: 'T-1043',
   subject: 'Invoice question',
   channel: 'web',
-  requesterType: 'client',
+  requesterType: 'account',
   requesterId: 7,
   orderId: null,
   category: 'billing',
@@ -108,7 +108,7 @@ describe('toClientTicket', () => {
     const view = toClientTicket(
       ticket({ requesterSeenMessageId: 9001, requesterSeenAt: at(12), csatScore: 5, surveySentAt: at(11) }),
       [
-        { message: message(9000, 'client', 'Re-issue it, please.'), authorName: 'Zain Mobile Hub' },
+        { message: message(9000, 'account', 'Re-issue it, please.'), authorName: 'Zain Mobile Hub' },
         { message: message(9001, 'staff', 'Done.'), authorName: 'Lina S.' },
       ],
       new Map(),

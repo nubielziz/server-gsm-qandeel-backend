@@ -1,4 +1,4 @@
-// Helpers for the notification center tests (feature 23): people of the three audiences, consent rows, a campaign made through the
+// Helpers for the notification center tests (feature 23): people of the three audiences (accounts of both ranks), consent rows, a campaign made through the
 // route, the fan-out with a small chunk, the bulk sender run as the worker would, and readers of the rows a campaign makes.
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
@@ -10,6 +10,7 @@ import {
   type CampaignFanOutResult,
   type DeliveryOutcome,
 } from '@src/modules/platform';
+import { makeAccount } from './accounts';
 import type { AdminApi } from './admin-api';
 import type { TestApp } from './app';
 
@@ -18,44 +19,44 @@ export const jobLike = <T>(data: T, attemptsMade = 0, attempts = 6) =>
   ({ data, attemptsMade, opts: { attempts } }) as never;
 
 /**
- * Inserts a customer.
+ * Inserts a retail account.
  *
  * @param db the test database
- * @param values columns to override (default: an active account holder in English whose address is proven; pass `emailVerifiedAt: null` for
- *   one that never was)
+ * @param values columns to override (default: an active account holder whose address is proven; pass `emailVerifiedAt: null` for
+ *   one that never was, `hasAccount: false` for a guest)
  * @returns the id
  */
 export async function insertCustomer(
   db: Database,
-  values: Partial<typeof s.customers.$inferInsert> = {},
+  values: Partial<typeof s.clients.$inferInsert> = {},
 ): Promise<number> {
-  const [row] = await db
-    .insert(s.customers)
-    .values({
-      email: `customer-${randomUUID()}@mail.example`,
-      name: 'Test Customer',
-      hasAccount: true,
-      status: 'active',
-      // A customer whose address was proven (a used sign-in or verification link): campaigns reach only those (decision 053).
-      emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
-      ...values,
-    })
-    .returning({ id: s.customers.id });
-  return row!.id;
+  const made = await makeAccount({
+    db,
+    rank: 'retail',
+    // no password: the people of a campaign are reached by mail or inbox, they never sign in here
+    password: null,
+    email: `customer-${randomUUID()}@mail.example`,
+    name: 'Test Customer',
+    status: 'active',
+    // An account whose address was proven (a used sign-in or verification link): campaigns reach only those (decision 053).
+    emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
+    ...values,
+  });
+  return made.id;
 }
 
 /**
- * Records a customer's marketing choice the way the account page does: the switch and a consent record.
+ * Records an account's marketing choice the way the account page does: the switch and a consent record.
  *
  * @param db the test database
- * @param customerId the customer
+ * @param accountId the account
  * @param granted yes or no
  */
-export async function setMarketingConsent(db: Database, customerId: number, granted: boolean): Promise<void> {
-  await db.update(s.customers).set({ marketingOptIn: granted }).where(eq(s.customers.id, customerId));
+export async function setMarketingConsent(db: Database, accountId: number, granted: boolean): Promise<void> {
+  await db.update(s.clients).set({ marketingOptIn: granted }).where(eq(s.clients.id, accountId));
   await db
     .insert(s.consentRecords)
-    .values({ subjectType: 'customer', subjectId: customerId, purpose: 'marketing', granted, ip: '' });
+    .values({ subjectType: 'account', subjectId: accountId, purpose: 'marketing', granted, ip: '' });
 }
 
 /** A campaign as `POST /admin/notification-campaigns` takes it. */
@@ -65,7 +66,7 @@ export const CAMPAIGN_INPUT = {
   channels: ['in_app', 'email'],
   audience: { staff: {}, merchants: {}, customers: { hasAccount: true } },
   content: { title: 'Maintenance for {{name}}', body: 'The portal is read-only on Friday.' },
-  link: { customer: '/account/orders', merchant: '/merchant/wallet' },
+  link: { customer: '/account/orders', merchant: '/account/wallet' },
 };
 
 /**

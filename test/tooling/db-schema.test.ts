@@ -13,20 +13,24 @@ import { TEST_DATABASE_URL, closeTestDb, testDb } from '../support/db';
 
 afterAll(closeTestDb);
 
-/** The tables the map assigns to modules (scripts/module-map.mjs), loaded at run time because it is plain JavaScript. */
+/**
+ * The tables the database must hold: the ones the map assigns to modules (scripts/module-map.mjs) and each module's additionalTables,
+ * without the retired ones (decision 064: a retired table stays owned by its module but the contract release drops it). Loaded at run
+ * time because the map is plain JavaScript.
+ */
 async function mappedTables(): Promise<string[]> {
-  const path = '../../scripts/module-map.mjs';
-  const { modules } = (await import(path)) as {
-    modules: Array<{ id: string; tables: string[]; additionalTables?: string[] }>;
-  };
-  return modules.flatMap((module) => [...module.tables, ...(module.additionalTables ?? [])]).sort();
+  const modulesPath = '../../scripts/module-map.mjs';
+  const mapPath = '../../scripts/lib/map.mjs';
+  const { modules } = (await import(modulesPath)) as { modules: unknown[] };
+  const { liveTablesOf } = (await import(mapPath)) as { liveTablesOf(list: unknown[]): string[] };
+  return liveTablesOf(modules);
 }
 
 const drizzleTables = (): PgTable[] =>
   (Object.values(schema) as unknown[]).filter((value): value is PgTable => is(value, PgTableClass));
 
 describe('migrations', () => {
-  it("create exactly the tables of the module map (the map's tables and each module's additionalTables)", async () => {
+  it("create exactly the live tables of the module map (the map's tables and each module's additionalTables, without the retired ones)", async () => {
     const { pool } = await testDb();
     const { rows } = await pool.query<{ tablename: string }>(
       `select tablename from pg_tables where schemaname = 'public' order by tablename`,
@@ -63,15 +67,25 @@ describe('migrations', () => {
         const tables = await scratch.query(`select 1 from pg_tables where schemaname = 'public'`);
         expect(tables.rowCount).toBe((await mappedTables()).length);
         const triggers = await scratch.query(`select tgname from pg_trigger where not tgisinternal order by tgname`);
-        expect(triggers.rows.map((row) => row.tgname)).toEqual([
-          'audit_logs_append_only',
-          // Feature 21: a customer wallet below zero must be frozen at commit.
-          'ledger_accounts_negative_customer_wallet_frozen',
-          'ledger_entries_append_only',
-          'ledger_entries_zero_sum',
-          'ledger_transactions_append_only',
-          'order_events_append_only',
-        ]);
+        // Sorted here as well as by the database: the order of a name list must not depend on the collation of the server.
+        expect(triggers.rows.map((row) => row.tgname as string).sort()).toEqual(
+          [
+            // Decision 064: the three new history tables refuse update and delete, and the two retired tables refuse every write
+            // (forbid_retired_write(), constraint name <table>_retired).
+            'account_legacy_ids_append_only',
+            'account_rank_changes_append_only',
+            'audit_logs_append_only',
+            'customer_credentials_retired',
+            'customers_retired',
+            // Feature 21: a customer wallet below zero must be frozen at commit.
+            'ledger_accounts_negative_customer_wallet_frozen',
+            'ledger_entries_append_only',
+            'ledger_entries_zero_sum',
+            'ledger_transactions_append_only',
+            'order_events_append_only',
+            'wallet_action_keys_append_only',
+          ].sort(),
+        );
       } finally {
         await scratch.end();
       }
@@ -169,8 +183,37 @@ describe('the migrated database', () => {
       'ledger_accounts_kind_check',
       'ledger_transactions_ref_type_check',
       'support_tickets_status_check',
+      // Decision 064: the accounts table, the ranks and the vocabularies the one type word narrows or widens.
+      'clients_status_check',
+      'clients_guest_check',
+      'clients_anonymized_check',
+      'client_groups_kind_check',
+      'client_groups_retail_no_credit_check',
+      'files_owner_type_check',
+      'ledger_accounts_owner_type_check',
+      'orders_hold_buyer_check',
+      'orders_door_check',
+      'invoices_wallet_kind_check',
+      'invoices_client_account_check',
+      'refunds_account_refs_check',
+      'account_legacy_ids_type_check',
+      'account_legacy_ids_client_check',
+      'account_legacy_ids_merged_check',
+      'account_rank_changes_kind_check',
+      'account_rank_changes_groups_check',
+      'account_rank_changes_amount_check',
+      'account_rank_changes_transaction_check',
+      'wallet_action_keys_action_check',
+      'audit_logs_actor_type_current_check',
+      'order_events_actor_type_current_check',
+      'ledger_transactions_created_by_type_current_check',
+      'ledger_transactions_ref_type_current_check',
     ]) {
       expect(names.has(expected), expected).toBe(true);
+    }
+    // The checks the one account type replaced are gone.
+    for (const gone of ['orders_buyer_check', 'refunds_storefront_refs_check']) {
+      expect(names.has(gone), gone).toBe(false);
     }
   });
 });

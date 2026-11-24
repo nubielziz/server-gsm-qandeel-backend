@@ -143,18 +143,20 @@ Sends emails, and the Telegram messages of the operations alerts.
     relay for the outbox event `notification.send` (written with the row by `NotificationService.enqueue`), and, delayed, for a digest row.
   - `notification.plan` (`NotificationPlanProcessor`): turns an outbox event a merchant may want to hear about into notifications (`EventNotifier`): `wallet.low_balance`,
     `order.status_changed` (`order.completed`, `order.failed` for merchants who opted in), `service.price_changed` (the daily digest) and `invoice.paid`. The platform's `NotificationRoutes` registers their routes: one outbox event, one job on this queue.
-  - `merchant.email_verification`, `merchant.password_reset`, `merchant.invited` (identity, `src/modules/identity/jobs/merchant-mail.processors.ts`, feature 2b/12a): rotate the
-    link's token on its `auth_tokens` row and send the mail with the clear link as a secret that is never stored.
-  - `customer.magic_link`, `customer.password_reset`, `customer.invited`, `customer.email_verification` (customers,
-    `src/modules/customers/jobs/customer-mail.processors.ts`, feature 14b, handled by `CustomerMailJobs`): the storefront customer's links.
-    Built like the merchant mails (decision 033): the job re-reads the customer and the link, sends nothing when the customer is not
-    active (suspended, blocked, anonymized) or the link was used, voided or has expired, rotates the link's token on its `auth_tokens` row
-    and sends the mail (`<STORE_BASE_URL>/sign-in`, `/set-password` or `/verify-email` with `?token=`) through `NotificationService.sendNow`
-    with the clear link as a secret that is never stored or logged. One `notifications` row per mail (`outbox-<event id>:email`, with its
-    attempts); a repeat after a delivered mail is skipped before it can spoil the link that arrived. A missing or switched-off template does not
-    stop these emails: the shipped text is sent, and so it is when the stored text breaks the link rules or the rules of a security email (decision 047). A staff change of an
-    account's email also writes a security notice (`merchant.security_notice`, or `customer.security_notice`): a `notification.send` row that names the address
-    it goes to (`payload.to`, the address before the change).
+  - `merchant.email_verification`, `merchant.password_reset`, `merchant.invited`, `customer.magic_link`, `customer.password_reset`, `customer.invited`, `customer.email_verification`
+    (identity, `src/modules/identity/jobs/account-mail.processors.ts`, features 2b, 12a and 14b, decision 064, handled by `AccountMailJobs`): the one-time links of
+    every account. One processor per event type; the event type is chosen when the mail is queued (`AccountMailOutbox`) by the rank kind of the account, read under
+    the account row lock: a merchant rank gets the `merchant.*` family, a retail rank the `customer.*` family (the sign-in link is for the retail rank only). The stored
+    templates keep their names; there are no `account.*` events. Built like the staff mails (decision 033): the job re-reads the account and the link, sends nothing when the
+    account cannot act (suspended, blocked, anonymized), when its rank kind is no longer the one the mail was written for (`rank_changed`), or when the link is not an
+    account's, was used, voided or has expired, rotates the link's token on its `auth_tokens` row and sends the mail (`<STORE_BASE_URL>/sign-in`, `/set-password` or
+    `/verify-email` with `?token=`, for every rank) through `NotificationService.sendNow` with the clear link as a secret that is never stored or logged. One
+    `notifications` row per mail (`outbox-<event id>:email`, with its attempts); a repeat after a delivered mail is skipped before it can spoil the link that arrived. A missing
+    or switched-off template does not stop these emails: the shipped text is sent, and so it is when the stored text breaks the link rules or the rules of a security email
+    (decision 047). The job reads the account from `payload.accountId`; a job of the retired customer table (`aggregateType` `customers`, no `accountId`) is discarded with
+    `UnrecoverableError` and its customer number is never read as an account id; a merchant mail queued before the cut-over (no `accountId`, `aggregateType` `clients`)
+    names the merchant as its aggregate, which is the account id, and is sent. A staff change of an account's email also writes a security notice
+    (`merchant.security_notice`, or `customer.security_notice` for a retail rank): a `notification.send` row that names the address it goes to (`payload.to`, the address before the change).
   - `staff.invited`, `staff.password_reset` (identity, `src/modules/identity/jobs/staff-mail.processors.ts`, feature 20, handled by `StaffMailJobs`): the invitation and the
     set-password link of a staff member. Built like the merchant mails: the job re-reads the member and the link, sends nothing when the member is gone or suspended, the link
     was used, voided or has expired (a missing or switched-off template does not stop the mail: the shipped text is sent, decision 047), rotates the link's token on its `auth_tokens`
@@ -182,14 +184,14 @@ Sends emails, and the Telegram messages of the operations alerts.
     continuation delayed 15 s (backpressure, so the noeviction Redis stays bounded). Added by the relay for the outbox event `notification.campaign_fanout`
     (written by `POST /admin/notification-campaigns/:id/send` and by the `notification_campaign_sweep` job), by itself (continuations) and by the sweep (re-kick).
 - **Payload:** `OutboxJobData` of the event (ids only). `notification.send` carries the row (`aggregateId` = the `notifications.id`; a digest job carries `{ notificationId }`). The
-  merchant mail jobs carry `aggregateId` = the merchant and `payload.tokenId`; the customer mail jobs carry `aggregateId` = the customer and `payload.tokenId`; a ticket mail job carries `aggregateId` = the ticket and `payload.kind` (`received` or `reply`), with `messageId` and `channel` for a reply. `notification.campaign_fanout` carries `aggregateId` = the campaign (from the relay) or `{ campaignId, round }` (a continuation or a re-kick). Never a token, a link, an address or a message text: the job re-reads the row, the recipient and the
+  account mail jobs carry `aggregateId` = the account, `payload.accountId` and `payload.tokenId`; a ticket mail job carries `aggregateId` = the ticket and `payload.kind` (`received` or `reply`), with `messageId` and `channel` for a reply. `notification.campaign_fanout` carries `aggregateId` = the campaign (from the relay) or `{ campaignId, round }` (a continuation or a re-kick). Never a token, a link, an address or a message text: the job re-reads the row, the recipient and the
   active template.
 - **Idempotency:** the outbox job id is `outbox-<event id>` (per queue). A `notifications` row has a `dedupe_key` (`outbox-<event id>:<channel>` for the planning job,
   `digest:<event>:<channel>:<merchant>:<day>` for a digest, unique where not null): a job that runs twice makes no second row.
   A send is guarded (`status = 'queued'` on the update): a row already `sent` or `failed` is skipped, so a job that runs twice records one send; the row's id is the
   `Message-ID` of the mail (`<notification-<id>@<domain of MAIL_FROM>>`), so a provider that dedupes drops the rare repeat after a crash between the provider's answer and the update.
   A digest job has the id `notification-<id>` and a delay up to the end of its period (06:00 UTC), at least 10 seconds (`MIN_DIGEST_DELAY_MS`: a job added before its transaction commits must not run before the row is visible); the send job closes the digest first (`payload.closed`), so a change that arrives
-  later joins the next period's row. A merchant or customer mail job asks the row's status before it rotates the token, so a repeat after a delivered mail never spoils the link that arrived.
+  later joins the next period's row. An account mail job asks the row's status before it rotates the token, so a repeat after a delivered mail never spoils the link that arrived.
 - **Idempotency of the fan-out:** a chunk that runs twice makes nothing twice (the partial unique keys `notification_inbox (campaign_id, recipient_type,
   recipient_id)` and `notifications.dedupe_key` = `campaign-<campaign>:<channel>:<type>-<recipient>`), and two fan-out jobs of one campaign are serialized by the row
   lock, each taking the next chunk. Job ids: `outbox-<event id>`, `campaign-fanout-<campaign>-<chunks done>` (a continuation),
@@ -813,9 +815,13 @@ none); the job id is `outbox-<event id>`.
 
 | Event type | Queue | Job name | Payload (ids only) | Registered by |
 |---|---|---|---|---|
-| `merchant.email_verification` | `notifications` | `merchant.email_verification` | `tokenId` (aggregate: `clients`, the merchant) | identity (`MerchantMailOutbox`), written by `POST /client/auth/verify-email/resend` and by a staff change of a merchant's address |
-| `merchant.password_reset` | `notifications` | `merchant.password_reset` | `tokenId` (aggregate: `clients`) | identity (`MerchantMailOutbox`), written by `POST /client/auth/password/forgot` |
-| `merchant.invited` | `notifications` | `merchant.invited` | `tokenId` (aggregate: `clients`) | identity (`MerchantMailOutbox`), written by `POST /admin/clients` (feature 2a) |
+| `merchant.email_verification` | `notifications` | `merchant.email_verification` | `accountId`, `tokenId` (aggregate: `clients`, the account) | identity (`AccountMailOutbox`), written by `POST /client/auth/verify-email/resend` and by a staff change of a merchant-rank account's address |
+| `merchant.password_reset` | `notifications` | `merchant.password_reset` | `accountId`, `tokenId` (aggregate: `clients`) | identity (`AccountMailOutbox`), written by `POST /client/auth/password/forgot` and the staff reset link of a merchant-rank account |
+| `merchant.invited` | `notifications` | `merchant.invited` | `accountId`, `tokenId` (aggregate: `clients`) | identity (`AccountMailOutbox`), written by `POST /admin/clients` for a merchant rank (feature 2a) and by a rank change to a merchant rank of an account without a password |
+| `customer.magic_link` | `notifications` | `customer.magic_link` | `accountId`, `tokenId` (aggregate: `clients`, the account or guest row) | identity (`AccountMailOutbox`), written by `POST /store/v1/auth/magic-link` (retail rank only) |
+| `customer.password_reset` | `notifications` | `customer.password_reset` | `accountId`, `tokenId` (aggregate: `clients`) | identity (`AccountMailOutbox`), written by `POST /client/auth/password/forgot` and by the staff reset link of a retail-rank account |
+| `customer.invited` | `notifications` | `customer.invited` | `accountId`, `tokenId` (aggregate: `clients`) | identity (`AccountMailOutbox`), written by `POST /admin/clients` for a retail rank and by a rank change to a retail rank of an account without a password |
+| `customer.email_verification` | `notifications` | `customer.email_verification` | `accountId`, `tokenId` (aggregate: `clients`) | identity (`AccountMailOutbox`), written by `POST /client/auth/verify-email/resend` and by a staff change of a retail-rank account's address |
 | `staff.invited` | `notifications` | `staff.invited` | `tokenId` (aggregate: `staff_users`, the member) | identity (`StaffMailOutbox`, loaded by the API and the worker), written by `POST /admin/staff` (onboarding `invite`) and `POST /admin/staff/:id/password` while the member is `invited` (feature 20) |
 | `staff.password_reset` | `notifications` | `staff.password_reset` | `tokenId` (aggregate: `staff_users`) | identity (`StaffMailOutbox`), written by `POST /admin/staff/:id/password` (`reset_link`, member already active) (feature 20) |
 | `support.ticket_mail` | `notifications` | `support.ticket_mail` | `kind` (`received`, `reply`), `messageId` and `channel` for a reply, and `fromMessageId` for one email that carries every unseen reply from that message to `messageId` (feature 28) (aggregate: `support_tickets`) | support (`TicketMailRoutes`, loaded by the API and the worker), written by `POST /store/v1/tickets` (the receipt), `POST /admin/support-tickets/:id/reply` (an email reply when `support.replyEmailDelayMinutes` is 0), the `support_reply_mail_sweep` job (the batched email of the unseen replies) (features 17 and 28) |

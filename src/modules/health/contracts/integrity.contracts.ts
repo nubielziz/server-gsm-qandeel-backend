@@ -3,6 +3,7 @@
 // Q35, Q36, MISMATCHES B99).
 import { z } from 'zod';
 import { defineRoute, zId, zIsoDateTime, zSignedMoney } from '../../../common/contract';
+import { CHECK_KEYS } from '../domain/integrity';
 import { JobRunShape } from './system-ops.contracts';
 
 const Finding = z.object({
@@ -10,7 +11,9 @@ const Finding = z.object({
   id: zId,
   ref: z
     .string()
-    .describe('`#<ledger_transactions.id>`, `<account kind>:<owner id>`, `#<order id>` or the gateway transaction id.'),
+    .describe(
+      '`#<ledger_transactions.id>`, `<account kind>:<owner id>` (the owner is an account id), `#<order id>` or the gateway transaction id.',
+    ),
   label: z.string(),
   difference: zSignedMoney.nullable(),
   ageSeconds: z.number().int().nullable(),
@@ -18,7 +21,7 @@ const Finding = z.object({
 });
 
 const Check = z.object({
-  key: z.enum(['entries_balanced', 'accounts_match_lines', 'stuck_holds', 'payments_without_entry']),
+  key: z.enum(CHECK_KEYS),
   label: z.string(),
   status: z.enum(['pass', 'fail', 'unknown']),
   count: z.number().int().describe('The full number of findings.'),
@@ -37,8 +40,10 @@ export const IntegrityReportShape = z.object({
   result: z
     .enum(['pass', 'fail', 'unknown'])
     .optional()
-    .describe('Extra field (always sent): the worst of the four checks of `lastRun`.'),
-  checks: z.array(Check).describe('The four checks of `lastRun`, in the map order.'),
+    .describe('Extra field (always sent): the worst of the five checks of `lastRun`.'),
+  checks: z
+    .array(Check)
+    .describe("The five checks of `lastRun`, in order: the map's four, then `wallets_follow_rank`."),
 });
 
 const REPORT_EXAMPLE = {
@@ -92,6 +97,14 @@ const REPORT_EXAMPLE = {
       difference: '0.0000',
       findings: [],
     },
+    {
+      key: 'wallets_follow_rank',
+      label: 'Every wallet follows the rank of its account',
+      status: 'pass',
+      count: 0,
+      difference: '0.0000',
+      findings: [],
+    },
   ],
 } as const;
 
@@ -100,11 +113,14 @@ export const getIntegrity = defineRoute({
   key: 'GET /admin/system/integrity',
   summary: 'Money integrity report',
   description:
-    'The four checks of the last finished run of the job `ledger_integrity` (nightly at 02:30 UTC and manual): every entry sums to zero, every account ' +
-    'balance equals the sum of its lines (the same comparison as `POST /admin/ledger/reconcile`, debit-positive differences), no hold is stuck for more than ' +
-    '24 hours, and every confirmed payment has an entry. Each check has a `status`, the full `count`, the summed `difference` and the first 20 findings with ' +
-    'a label, a reference and, where it applies, the difference, the age or the time of the last entry. A check reads `unknown` when it never ran. The check ' +
-    'only reads the ledger: a difference is put right with a reversing entry in Finance. During a database outage the route answers `503 DATABASE_UNAVAILABLE`.',
+    'The five checks of the last finished run of the job `ledger_integrity` (nightly at 02:30 UTC and manual): every entry sums to zero, every account ' +
+    'balance equals the sum of its lines (the same comparison as `POST /admin/ledger/reconcile`, debit-positive differences), no hold of a merchant-door order is ' +
+    'stuck for more than 24 hours, every confirmed payment has an entry, and every wallet follows the rank of its account (`wallets_follow_rank`, findings of ' +
+    'kind `account`): a wallet of the kind the rank does not use holds money, carries a credit limit or is on hold, a merchant wallet has a credit limit on a ' +
+    'rank without credit, or a ledger account has no account behind it. Each check has a `status`, the full `count`, the summed `difference` and the first 20 ' +
+    'findings with a label, a reference and, where it applies, the difference, the age or the time of the last entry. A check reads `unknown` when it never ran ' +
+    '(a run made before the fifth check existed shows it unknown). The check only reads the ledger: a difference is put right with a reversing entry in Finance. ' +
+    'During a database outage the route answers `503 DATABASE_UNAVAILABLE`.',
   tags: ['system-health'],
   surface: 'admin',
   access: 'staff-permission',

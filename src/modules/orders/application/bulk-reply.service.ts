@@ -28,10 +28,8 @@ export interface BulkReplyLineView {
   readonly code: string | null;
   readonly orderId: number | null;
   readonly status: BulkReplyLineStatus;
-  /** The merchant of the matched order (`null` unless the line is matched to a merchant's order). */
-  readonly client: NamedRef | null;
-  /** The storefront customer of the matched order (`null` unless the line is matched to a storefront order). */
-  readonly customer: NamedRef | null;
+  /** The buyer account of the matched order, a merchant, a shop customer or a guest (`null` unless the line is matched). */
+  readonly account: NamedRef | null;
   /** The service of the matched order (`null` unless the line is matched). */
   readonly service: NamedRef | null;
 }
@@ -68,12 +66,12 @@ export class BulkReplyService {
   /**
    * Reads the pasted text and matches each line to an order.
    *
-   * Why: a line is matched only when exactly one order with its input is open and no order with that input but another buyer or
-   * another service is open or was cancelled or rejected in the last 7 days (`matchLine`); a matched line names the buyer and the
+   * Why: a line is matched only when exactly one order with its input is open and no order with that input but another buyer account or
+   * another service is open or was cancelled or rejected in the last 7 days (`matchLine`); a matched line names the buyer account and the
    * service of the order it completes, so staff see whose order a result goes to.
    *
    * @param text the pasted lines
-   * @returns one entry per non-blank line, with the buyer and the service of a matched order
+   * @returns one entry per non-blank line, with the account and the service of a matched order
    * @throws {AppError} `VALIDATION_FAILED` on `text` when nothing was pasted or the paste is over 500 lines
    */
   async preview(text: string): Promise<{ lines: BulkReplyLineView[] }> {
@@ -113,14 +111,7 @@ export class BulkReplyService {
           code: line.code,
           orderId,
           status,
-          client:
-            order === undefined || order.clientId === null
-              ? null
-              : { id: order.clientId, name: order.clientName ?? '' },
-          customer:
-            order === undefined || order.customerId === null
-              ? null
-              : { id: order.customerId, name: order.customerName ?? '' },
+          account: order === undefined ? null : { id: order.accountId, name: order.accountName },
           service: order === undefined ? null : { id: order.serviceId, name: order.serviceName },
         };
       }),

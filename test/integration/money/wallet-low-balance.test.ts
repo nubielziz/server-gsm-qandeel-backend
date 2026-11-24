@@ -5,10 +5,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { eq } from 'drizzle-orm';
 import { Money } from '@src/common/money';
 import { type Database, schema as s } from '@src/infra/db';
-import { LedgerPoster, adjust, deposit, order } from '@src/modules/money';
+import { LedgerPoster, adjust, b2cWalletPay, deposit, order } from '@src/modules/money';
 import type { PostTransactionInput } from '@src/modules/money';
+import { makeAccount } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
+import { fundCustomer } from '../../support/customer-wallet';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
+import { insertUsd } from '../../support/fixtures';
 import { fundWallet, insertWalletMerchant } from '../../support/money';
 import { rejectionOf } from '../../support/rejection';
 
@@ -75,6 +78,7 @@ describe('wallet.low_balance', () => {
       aggregateId: await walletId(merchant.id),
     });
     expect(event?.payload).toMatchObject({
+      accountId: merchant.id,
       clientId: merchant.id,
       currency: 'USD',
       available: '40.0000',
@@ -135,7 +139,17 @@ describe('wallet.low_balance', () => {
     await post(order({ clientId: a.id, amount: m('20') }));
     await post(order({ clientId: b.id, amount: m('20') }));
     const events = await alerts();
-    expect(events.map((event) => (event.payload as { clientId: number }).clientId)).toEqual([b.id]);
+    expect(events.map((event) => (event.payload as { accountId: number }).accountId)).toEqual([b.id]);
+  });
+
+  it('writes nothing for a store balance: only a merchant-kind wallet has an alert threshold', async () => {
+    const shopper = await makeAccount({ rank: 'retail', db });
+    // The wallet's currency (a merchant fixture inserts it itself).
+    await insertUsd(db);
+    await fundCustomer(db, shopper.id, '100');
+    await setThreshold(shopper.id, '95');
+    await post(b2cWalletPay({ customerId: shopper.id, net: m('20'), vat: m('0') }));
+    expect(await alerts()).toEqual([]);
   });
 
   it('writes nothing for a replayed posting, and nothing when the posting rolls back', async () => {

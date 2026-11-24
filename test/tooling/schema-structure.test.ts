@@ -65,12 +65,19 @@ const IMMUTABLE = new Set([
   'ticket_messages',
   // The raised part of a credit limit, per staff member, merchant and time: written once, summed over 24 hours.
   'credit_limit_raises',
+  // Decision 064: the map of old merchant and customer numbers to accounts, the history of rank changes, and the keys of the staff
+  // freeze, unfreeze and credit-limit changes: each written once, none updated (append-only triggers and grants).
+  'account_legacy_ids',
+  'account_rank_changes',
+  'wallet_action_keys',
 ]);
 
 /**
  * Columns MISMATCHES B116 adds to the map's tables, and later additions: staff_users.totp_last_step (P2.6) and the
  * pre-Phase-3 audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003), and the billing feature's invoices.checkout_url and
- * kyc_submissions.submitted_note (migration 0009), and services.sort, the stored order of services (decision 063, migration 0063).
+ * kyc_submissions.submitted_note (migration 0009), and services.sort, the stored order of services (decision 063, migration 0063), and
+ * the columns of the one account type (decision 064): the five new columns of `clients` and the `account_id` buyer column of every table
+ * that named a customer (the old columns keep their SQL names and stay in the map's lists until the contract release drops them).
  */
 const ADDITIONS: Record<string, string[]> = {
   sessions: ['stage'],
@@ -100,12 +107,19 @@ const ADDITIONS: Record<string, string[]> = {
     'password_set_by_staff',
     // Set by a staff change of the email address.
     'email_set_by_staff',
+    // Decision 064: a guest is a row without a login; the shop currency; the marketing choice; the erasure time; who created the row.
+    'has_account',
+    'currency',
+    'marketing_opt_in',
+    'anonymized_at',
+    'created_by',
   ],
   api_keys: ['created_by'],
   // The keyed hash of the cookie of the browser that asked for a storefront sign-in link.
   auth_tokens: ['browser_hash'],
   staff_users: ['totp_last_step', 'totp_failures', 'totp_failures_since', 'totp_locked_at'],
   payments: [
+    'account_id',
     'reviewed_at',
     'review_note',
     'review_required',
@@ -121,19 +135,31 @@ const ADDITIONS: Record<string, string[]> = {
   ],
   // Feature 21 (customer wallet, migration 0020): the store top-up's Idempotency-Key and request fingerprint. Decision 049: who issued a
   // manual invoice.
-  invoices: ['description', 'checkout_url', 'idempotency_key', 'request_fingerprint', 'issued_by'],
+  // Decision 064: the account the invoice is for and the wallet kind a top-up or manual invoice credits.
+  invoices: [
+    'description',
+    'checkout_url',
+    'idempotency_key',
+    'request_fingerprint',
+    'issued_by',
+    'account_id',
+    'wallet_kind',
+  ],
   // Decision 049: when a refresh held the provider's rate.
   currencies: ['rate_held_at'],
   // Feature 21: the freeze state of a customer wallet; whether a checkout was opened by a signed-in customer.
   ledger_accounts: ['frozen_at', 'frozen_reason'],
   // Feature 44 (decision 054): the keyed hash and the encrypted copy of the link token. Feature 40 (decision 050): the visitor's country.
-  checkout_sessions: ['opened_signed_in', 'token_hash', 'token_enc', 'ip_country'],
-  orders: ['public_token_hash', 'public_token_enc'],
+  checkout_sessions: ['opened_signed_in', 'token_hash', 'token_enc', 'ip_country', 'account_id'],
+  orders: ['public_token_hash', 'public_token_enc', 'account_id'],
   kyc_submissions: ['submitted_note'],
   // Feature 16 (migration 0014): which idempotency key the next gateway send of the refund uses; and when a send ended without a
   // definite answer (migration 0058).
-  refunds: ['note', 'send_attempt', 'unanswered_send_at'],
-  data_requests: ['note'],
+  refunds: ['note', 'send_attempt', 'unanswered_send_at', 'account_id'],
+  data_requests: ['note', 'account_id'],
+  // Decision 064: the buyer account of a dispute and of a risk assessment.
+  disputes: ['account_id'],
+  risk_assessments: ['account_id'],
   notifications: ['error', 'attempts', 'dedupe_key', 'campaign_id'],
   // Feature 28 (migration 0031): the seen marks of both sides, the newest message of each side and the reply-mail sweep's columns.
   support_tickets: [
@@ -174,7 +200,7 @@ const ADDITIONS: Record<string, string[]> = {
   supplier_api_logs: ['outcome'],
   imei_checks: ['country'],
   // Feature 40 (decision 050): an entry limited to guest checkouts.
-  blocklist_entries: ['customer_id', 'guest_only'],
+  blocklist_entries: ['customer_id', 'guest_only', 'account_id'],
   // Feature 22 (storefront catalog): first publication, 30-day sales for the popularity sort, the service picture.
   service_listings: ['listed_at', 'sales_30d', 'image_file_id'],
   // Feature 32 (migration 0040): the ready-made method a payment method was made from, and the logo staff uploaded for it.
@@ -197,34 +223,55 @@ const REMOVED: Record<string, string[]> = {
 };
 
 interface Slice {
-  ownedTables: Array<{ name: string; columns: string[] }>;
+  /** `retired: true` marks a table of the module's `retiredTables` (scripts/build-route-slices.mjs): its columns are not checked. */
+  ownedTables: Array<{ name: string; columns: string[]; retired?: boolean }>;
+}
+
+interface ModuleEntry {
+  id: string;
+  tables: string[];
+  additionalTables?: string[];
+  retiredTables?: string[];
+}
+
+/** The module map and the live tables it implies (the retired ones left out), loaded at run time because both are plain JavaScript. */
+async function moduleMap(): Promise<{ modules: ModuleEntry[]; live: string[] }> {
+  const modulesPath = '../../scripts/module-map.mjs';
+  const mapPath = '../../scripts/lib/map.mjs';
+  const { modules } = (await import(modulesPath)) as { modules: ModuleEntry[] };
+  const { liveTablesOf } = (await import(mapPath)) as { liveTablesOf(list: ModuleEntry[]): string[] };
+  return { modules, live: liveTablesOf(modules) };
 }
 const slice = (module: string): Slice => JSON.parse(readFileSync(join(ROOT, `docs/slices/${module}.json`), 'utf8'));
 
 describe('module ownership', () => {
-  it('each module schema exports exactly the tables the map assigns to it', async () => {
-    const path = '../../scripts/module-map.mjs';
-    const { modules } = (await import(path)) as {
-      modules: Array<{ id: string; tables: string[]; additionalTables?: string[] }>;
-    };
+  it('each module schema exports exactly the live tables the map assigns to it (a retired table is owned but not exported)', async () => {
+    const { modules } = await moduleMap();
     // A module of the map without its schema import above (or the reverse) fails here by name.
     expect(modules.map((module) => module.id).sort()).toEqual(Object.keys(moduleSchemas).sort());
     for (const module of modules) {
       const owned = tablesOf(moduleSchemas[module.id]!).map(nameOf);
-      expect(owned.sort(), module.id).toEqual([...module.tables, ...(module.additionalTables ?? [])].sort());
+      const retired = new Set(module.retiredTables ?? []);
+      const expected = [...module.tables, ...(module.additionalTables ?? [])].filter((name) => !retired.has(name));
+      expect(owned.sort(), module.id).toEqual(expected.sort());
     }
   });
 
-  it("the infra barrel re-exports every table of the module map once (the map's tables and each module's additionalTables)", async () => {
-    const path = '../../scripts/module-map.mjs';
-    const { modules } = (await import(path)) as {
-      modules: Array<{ id: string; tables: string[]; additionalTables?: string[] }>;
-    };
+  it("the infra barrel re-exports every live table of the module map once (the map's tables and each module's additionalTables)", async () => {
+    const { live } = await moduleMap();
     const names = tablesOf(barrel).map(nameOf);
     expect(new Set(names).size, 'the barrel exports a table twice').toBe(names.length);
-    expect([...names].sort()).toEqual(
-      modules.flatMap((module) => [...module.tables, ...(module.additionalTables ?? [])]).sort(),
-    );
+    expect([...names].sort()).toEqual(live);
+  });
+
+  it('the slices mark exactly the retired tables of the module map', async () => {
+    const { modules } = await moduleMap();
+    for (const module of modules) {
+      const marked = slice(module.id)
+        .ownedTables.filter((owned) => owned.retired === true)
+        .map((owned) => owned.name);
+      expect(marked.sort(), module.id).toEqual([...(module.retiredTables ?? [])].sort());
+    }
   });
 });
 
@@ -234,6 +281,8 @@ describe('columns', () => {
   it('contain every column of the map plus the id, timestamps and the B116 additions, and nothing else', () => {
     for (const module of Object.keys(moduleSchemas)) {
       for (const owned of slice(module).ownedTables) {
+        // A retired table is a map table the contract release dropped: it has no Drizzle table and no columns to compare.
+        if (owned.retired === true) continue;
         const table = all.find((candidate) => nameOf(candidate) === owned.name)!;
         const actual = getTableConfig(table).columns.map((column) => casing.getColumnCasing(column));
         const fromMap = owned.columns.map((column) => column.split(' ')[0]!);
@@ -346,7 +395,7 @@ describe('audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003)', () 
     const required: Array<[string, string[]]> = [
       ['audit_logs', ['actor_name']],
       ['ledger_transactions', ['ref_id']],
-      ['invoices', ['net_amount', 'tax_amount', 'tax_rate', 'tax_country', 'customer_vat_id']],
+      ['invoices', ['net_amount', 'tax_amount', 'tax_rate', 'tax_country', 'customer_vat_id', 'account_id']],
       ['services', ['base_price', 'effective_cost', 'price_mode', 'duplicate_rule']],
       ['inventory_codes', ['batch_ref']],
       ['supplier_api_logs', ['http_status', 'duration_ms', 'error', 'outcome']],
@@ -354,7 +403,12 @@ describe('audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003)', () 
       ['job_runs', ['duration_ms', 'processed']],
       ['commission_accruals', ['order_id']],
       ['consent_records', ['ip']],
-      ['payments', ['brand', 'review_required']],
+      ['payments', ['brand', 'review_required', 'account_id']],
+      // Decision 064: every order, dispute and data request has a buyer account, and every account says whether it has a login.
+      ['orders', ['account_id']],
+      ['disputes', ['account_id']],
+      ['data_requests', ['account_id']],
+      ['clients', ['has_account', 'marketing_opt_in']],
     ];
     for (const [table, columns] of required) {
       for (const name of columns) expect(columnOf(table, name).notNull, `${table}.${name}`).toBe(true);
@@ -370,8 +424,15 @@ describe('audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003)', () 
       ['services', ['archived_at']],
       ['payments', ['auto_credit_at', 'card_fingerprint']],
       ['commission_accruals', ['approved_at']],
-      ['blocklist_entries', ['customer_id']],
-      ['checkout_sessions', ['ip_country']],
+      ['blocklist_entries', ['customer_id', 'account_id']],
+      ['checkout_sessions', ['ip_country', 'account_id']],
+      // Decision 064: not every row has these (a refund without a payment, an invoice that is no top-up or manual one, a checkout
+      // made signed out); a guest has no username; the old customer column of a data request is no longer filled.
+      ['refunds', ['account_id']],
+      ['risk_assessments', ['account_id']],
+      ['invoices', ['wallet_kind']],
+      ['clients', ['username', 'currency', 'anonymized_at', 'created_by']],
+      ['data_requests', ['customer_id']],
     ];
     for (const [table, columns] of optional) {
       for (const name of columns) expect(columnOf(table, name).notNull, `${table}.${name}`).toBe(false);
@@ -404,6 +465,13 @@ describe('audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003)', () 
       ['payments', 'brand', ''],
       ['payments', 'review_required', false],
       ['blocklist_entries', 'guest_only', false],
+      ['clients', 'has_account', true],
+      ['clients', 'marketing_opt_in', false],
+      ['clients', 'status', 'active'],
+      ['account_legacy_ids', 'merged', false],
+      ['account_rank_changes', 'moved_amount', '0'],
+      ['account_rank_changes', 'sessions_ended', 0],
+      ['account_rank_changes', 'api_keys_revoked', 0],
     ];
     for (const [table, name, value] of defaults) {
       expect(columnOf(table, name).default, `${table}.${name}`).toEqual(value);
@@ -421,7 +489,7 @@ describe('audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003)', () 
       ['audit_logs', ['audit_logs_actor_type_check']],
       ['notifications', ['notifications_recipient_type_check']],
       ['payments', ['payments_status_check', 'payments_method_type_check']],
-      ['refunds', ['refunds_method_check', 'refunds_storefront_refs_check']],
+      ['refunds', ['refunds_method_check', 'refunds_account_refs_check']],
       ['ledger_transactions', ['ledger_transactions_ref_type_check', 'ledger_transactions_ref_id_check']],
       ['services', ['services_price_mode_check', 'services_duplicate_rule_check', 'services_effective_cost_check']],
       ['services', ['services_archived_check', 'services_prices_check']],
@@ -439,7 +507,36 @@ describe('audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003)', () 
       ['service_checks', ['service_checks_supplier_key_check', 'service_checks_gateway_key_check']],
       ['job_runs', ['job_runs_counts_check']],
       ['inventory_codes', ['inventory_codes_batch_ref_check']],
-      ['client_groups', ['client_groups_amounts_check']],
+      [
+        'client_groups',
+        ['client_groups_amounts_check', 'client_groups_kind_check', 'client_groups_retail_no_credit_check'],
+      ],
+      // Decision 064: the accounts table and the one stored type word.
+      ['clients', ['clients_status_check', 'clients_guest_check', 'clients_anonymized_check']],
+      ['files', ['files_owner_type_check']],
+      ['ledger_accounts', ['ledger_accounts_owner_type_check']],
+      ['orders', ['orders_hold_buyer_check', 'orders_door_check']],
+      ['invoices', ['invoices_wallet_kind_check', 'invoices_client_account_check']],
+      ['audit_logs', ['audit_logs_actor_type_check', 'audit_logs_actor_type_current_check']],
+      ['order_events', ['order_events_actor_type_check', 'order_events_actor_type_current_check']],
+      [
+        'ledger_transactions',
+        ['ledger_transactions_created_by_type_current_check', 'ledger_transactions_ref_type_current_check'],
+      ],
+      [
+        'account_legacy_ids',
+        ['account_legacy_ids_type_check', 'account_legacy_ids_client_check', 'account_legacy_ids_merged_check'],
+      ],
+      [
+        'account_rank_changes',
+        [
+          'account_rank_changes_kind_check',
+          'account_rank_changes_groups_check',
+          'account_rank_changes_amount_check',
+          'account_rank_changes_transaction_check',
+        ],
+      ],
+      ['wallet_action_keys', ['wallet_action_keys_action_check']],
     ];
     for (const [table, names] of expected) {
       for (const name of names) expect(checkNames(table), `${table} lacks ${name}`).toContain(name);
@@ -508,5 +605,114 @@ describe('audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003)', () 
 
   it('numbers inventory batches from one sequence', () => {
     expect(catalog.inventoryBatchRefSeq.seqName).toBe('inventory_batch_ref_seq');
+  });
+});
+
+describe('one account type (decision 064)', () => {
+  const all = tablesOf(barrel);
+  /** What the expand release of decision 064 adds to the schema, read by name: a symbol that is missing fails its own case instead of the whole file. */
+  const symbols = barrel as unknown as Record<string, unknown>;
+  const sorted = (values: unknown): string[] => [...(values as readonly string[])].sort();
+  const tableOf = (name: string) => all.find((table) => nameOf(table) === name)!;
+  const tableConfig = (name: string) => getTableConfig(tableOf(name));
+  const indexNamed = (table: string, name: string) => {
+    const config = tableConfig(table);
+    return (
+      config.indexes.find((index) => index.config.name === name) ??
+      config.uniqueConstraints.find((unique) => unique.name === name)
+    );
+  };
+  const isUnique = (table: string, name: string): boolean => {
+    const found = indexNamed(table, name) as { config?: { unique?: boolean } } | undefined;
+    return found === undefined ? false : found.config === undefined || found.config.unique === true;
+  };
+
+  it('narrows the mutable vocabularies to the one word account', () => {
+    expect(sorted(symbols.SUBJECT_TYPES)).toEqual(sorted(['staff', 'account']));
+    expect(sorted(symbols.LEDGER_OWNER_TYPES)).toEqual(sorted(['account', 'supplier']));
+    expect(sorted(symbols.NOTIFICATION_RECIPIENT_TYPES)).toEqual(sorted(['staff', 'account']));
+    expect(sorted(symbols.TICKET_REQUESTER_TYPES)).toEqual(['account']);
+    expect(sorted(symbols.TICKET_AUTHOR_TYPES)).toEqual(sorted(['staff', 'account', 'system']));
+    expect(sorted(symbols.CONSENT_SUBJECT_TYPES)).toEqual(['account']);
+    expect(sorted(symbols.FILE_OWNER_TYPES)).toEqual(sorted(['staff', 'account']));
+    expect(sorted(symbols.REFUND_REQUESTER_TYPES)).toEqual(sorted(['staff', 'account', 'system']));
+    expect(sorted(symbols.ALERT_SUBJECT_TYPES)).toEqual(
+      sorted(['system', 'supplier', 'queue', 'gateway', 'ledger_account', 'account']),
+    );
+  });
+
+  it('widens the append-only vocabularies by account and keeps the words of today in a CURRENT_* list', () => {
+    expect(sorted(symbols.AUDIT_ACTOR_TYPES)).toEqual(sorted(['staff', 'client', 'customer', 'system', 'account']));
+    expect(sorted(symbols.CURRENT_AUDIT_ACTOR_TYPES)).toEqual(sorted(['staff', 'account', 'system']));
+    expect(sorted(symbols.ORDER_EVENT_ACTOR_TYPES)).toEqual(
+      sorted(['staff', 'client', 'customer', 'supplier', 'system', 'account']),
+    );
+    expect(sorted(symbols.LEDGER_ACTOR_TYPES)).toEqual(sorted(['staff', 'client', 'customer', 'system', 'account']));
+    for (const word of ['account', 'client', 'customer']) expect(sorted(symbols.LEDGER_REF_TYPES)).toContain(word);
+  });
+
+  it('closes the rank kinds, the client statuses and the wallet actions', () => {
+    expect(sorted(symbols.RANK_KINDS)).toEqual(['merchant', 'retail']);
+    expect(sorted(symbols.CLIENT_GROUP_KINDS)).toEqual(['b2b', 'b2c_retail']);
+    expect(sorted(symbols.WALLET_ACTIONS)).toEqual(['credit_limit', 'freeze', 'unfreeze']);
+    // The final four: the expand migration converts pending and narrows the check.
+    expect(sorted(symbols.CLIENT_STATUSES)).toEqual(['active', 'anonymized', 'blocked', 'suspended']);
+  });
+
+  it('keeps one email unique among the rows with a login and, apart, among the guest rows', () => {
+    for (const name of ['clients_login_email_uq', 'clients_guest_email_uq']) {
+      const index = tableConfig('clients').indexes.find((candidate) => candidate.config.name === name);
+      expect(index, name).toBeDefined();
+      expect(index!.config.unique, name).toBe(true);
+      expect(index!.config.where, `${name} is partial`).toBeDefined();
+    }
+    // The one index over every row is gone: a guest and a login row may share an email.
+    expect(tableConfig('clients').indexes.find((index) => index.config.name === 'clients_email_uq')).toBeUndefined();
+  });
+
+  it('indexes the buyer account of orders, invoices and payments, and keeps an invoice key unique per account', () => {
+    expect(indexNamed('orders', 'orders_account_created_idx')).toBeDefined();
+    expect(indexNamed('invoices', 'invoices_account_created_idx')).toBeDefined();
+    expect(indexNamed('payments', 'payments_account_id_idx')).toBeDefined();
+    expect(isUnique('invoices', 'invoices_account_key_uq')).toBe(true);
+  });
+
+  it('declares the three history tables with their unique keys', () => {
+    expect(isUnique('account_legacy_ids', 'account_legacy_ids_legacy_uq')).toBe(true);
+    expect(indexNamed('account_legacy_ids', 'account_legacy_ids_account_idx')).toBeDefined();
+    expect(isUnique('account_rank_changes', 'account_rank_changes_key_uq')).toBe(true);
+    expect(isUnique('wallet_action_keys', 'wallet_action_keys_key_uq')).toBe(true);
+  });
+
+  it('gives the group ids of a rank change no foreign key, so a deleted rank leaves the history readable', () => {
+    const foreign = new Set(
+      tableConfig('account_rank_changes').foreignKeys.map((key) => casing.getColumnCasing(key.reference().columns[0]!)),
+    );
+    expect([...foreign].sort()).toEqual(['account_id', 'ledger_transaction_id', 'staff_id']);
+  });
+
+  it('renames the retired columns and tables in TypeScript only: the SQL names stay (decision 064, section 2.9)', () => {
+    const column = (table: string, key: string): string => {
+      const found = (symbols[table] as Record<string, unknown> | undefined)?.[key];
+      if (found === undefined) throw new Error(`${table}.${key} is not exported by the schema`);
+      return casing.getColumnCasing(found as never);
+    };
+    for (const table of ['orders', 'invoices']) {
+      expect(column(table, 'legacyClientId'), table).toBe('client_id');
+      expect(column(table, 'retiredCustomerId'), table).toBe('customer_id');
+    }
+    for (const table of [
+      'payments',
+      'refunds',
+      'disputes',
+      'checkoutSessions',
+      'riskAssessments',
+      'blocklistEntries',
+      'dataRequests',
+    ]) {
+      expect(column(table, 'retiredCustomerId'), table).toBe('customer_id');
+    }
+    expect(nameOf(symbols.retiredCustomers as PgTable)).toBe('customers');
+    expect(nameOf(symbols.retiredCustomerCredentials as PgTable)).toBe('customer_credentials');
   });
 });

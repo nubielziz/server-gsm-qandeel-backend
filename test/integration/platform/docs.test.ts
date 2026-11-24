@@ -194,7 +194,8 @@ describe('GET /reference/openapi.json (internal document)', () => {
     const { securitySchemes } = (await get(t, '/reference/openapi.json')).json().components;
     expect(securitySchemes.staffSession).toMatchObject({ type: 'apiKey', in: 'cookie', name: 'gsm_admin_session' });
     expect(securitySchemes.merchantSession).toMatchObject({ in: 'cookie', name: 'gsm_client_session' });
-    expect(securitySchemes.customerSession).toMatchObject({ in: 'cookie', name: 'gsm_store_session' });
+    // Decision 064: one session cookie for every account; `gsm_store_session` is never read.
+    expect(securitySchemes.customerSession).toMatchObject({ in: 'cookie', name: 'gsm_client_session' });
     expect(securitySchemes.apiKey).toBeUndefined();
     expect(securitySchemes.dhruCredentials).toMatchObject({ type: 'http', scheme: 'dhru' });
     expect(securitySchemes.webhookSignature).toBeUndefined();

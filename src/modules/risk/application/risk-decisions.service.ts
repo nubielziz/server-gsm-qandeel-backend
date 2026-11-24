@@ -4,12 +4,18 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { DbService, type DbExecutor } from '../../../infra/db';
+import { AccountDirectory } from '../../identity';
 import { OrderTransitions, placementDispatchState } from '../../orders';
 import { AuditService } from '../../platform';
 import { auditBlockLabel } from '../domain/blocklist-values';
 import { refundReason, signalsOf } from '../domain/queue-view';
 import { markDecided } from '../infra/assessment.repository';
-import { type HeldOrderContext, lockHeldContext, serviceDispatchFacts } from '../infra/foreign-reads.repository';
+import {
+  type HeldOrderContext,
+  accountStandingOf,
+  lockHeldContext,
+  serviceDispatchFacts,
+} from '../infra/foreign-reads.repository';
 import { Blocklist, type BlockRequest } from './blocklist';
 
 /** The words added to the reason of an email entry that is limited to guest checkouts, so the blocklist row shows its scope (decision 050). */
@@ -19,7 +25,7 @@ const GUEST_ONLY_SUFFIX = ' (guest checkouts only)';
 export interface RefundHeldInput {
   /** The reviewer's reason; blank means the default sentence made from the first signal. */
   readonly reason?: string | undefined;
-  /** Add the customer's email to the blocklist (a guest order's email, with its card: decision 050). */
+  /** Add the buyer's email to the blocklist (a guest order's email, with its card: decision 050). */
   readonly blockEmail: boolean;
   /** Add the order's IMEI (the device) to the blocklist. */
   readonly blockDevice: boolean;
@@ -33,10 +39,12 @@ export interface RefundHeldInput {
  * contacting a supplier and returns the money (the machine's `b2c_refund` ledger move), then adds the chosen blocklist entries.
  * Both run in one transaction: the assessment row is locked first (a second staff member waits and then finds it decided, `409
  * NOT_HELD`), then the order moves through `OrderTransitions` (the guarded update, the ledger, the timeline lines, the outbox),
- * then the assessment records who decided and how. The customer's status is not changed: blocking the customer stays
- * `POST /admin/customers/:id/block` (B77). Decision 050: for an order whose checkout was not opened signed in (a guest checkout),
+ * then the assessment records who decided and how. The account's status is not changed: blocking the account stays
+ * `POST /admin/clients/:id/block` (B77). Decision 050: for an order whose checkout was not opened signed in (a guest checkout),
  * `blockEmail` also blocks the card that paid it, and the email entry is limited to guest checkouts when the email belonged to an account
- * before the order (the account keeps signing in and ordering signed in); otherwise it blocks the email everywhere, as before. The
+ * before the order (the account keeps signing in and ordering signed in); otherwise it blocks the email everywhere, as before. Decision 064:
+ * a guest checkout has a guest row of its own, so "an account of that email" is the login account the directory finds for the email, never
+ * the buyer row of the order; it existed before the order when staff made it or its holder proved the mailbox before the order was placed. The
  * refunds row and the gateway refund of a storefront payment are feature 16's, hooked into the machine's `b2c_refund` move like a staff rejection: the whole payment goes back through `B2cRefunds` (one `refunds` row
  * requested by the staff member, one `b2c_refund` journal, one `refund.process` event), never a second journal or refund.
  * {@link RiskDecisionsService.refundBlocked} is the same refund done by the system for a payment the rules blocked at capture.
@@ -52,6 +60,7 @@ export class RiskDecisionsService {
     private readonly transitions: OrderTransitions,
     private readonly blocklist: Blocklist,
     private readonly audit: AuditService,
+    private readonly accounts: AccountDirectory,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -86,7 +95,7 @@ export class RiskDecisionsService {
         action: 'approved after risk review',
         entityType: 'order',
         entityId: orderId,
-        entityLabel: `ORD-${orderId} for ${held.customerName}`,
+        entityLabel: `ORD-${orderId} for ${held.accountName}`,
         before: { risk_decision: 'review' },
         after: { risk_decision: 'approved' },
       });
@@ -116,7 +125,7 @@ export class RiskDecisionsService {
         action: 'refunded after risk review',
         entityType: 'order',
         entityId: orderId,
-        entityLabel: `ORD-${orderId} for ${held.customerName}`,
+        entityLabel: `ORD-${orderId} for ${held.accountName}`,
         before: { risk_decision: 'review' },
         // The audit row keeps no readable IMEI: it names the kind and the masked display (the blocklist page has the rest).
         after: {
@@ -189,8 +198,8 @@ export class RiskDecisionsService {
   }
 
   /**
-   * Adds the entries the reviewer chose. They are manual entries of the reviewer and keep `customer_id` empty: only the customer's
-   * own block links entries to a customer (RESOLUTIONS b2c-5). A value that is already blocked is skipped silently.
+   * Adds the entries the reviewer chose. They are manual entries of the reviewer and keep `account_id` empty: only the account's
+   * own block links entries to an account (RESOLUTIONS b2c-5). A value that is already blocked is skipped silently.
    *
    * Decision 050: what a guest order used is blocked, never the account's standing. For a guest order (a checkout opened without a
    * signed-in session) `blockEmail` adds the checkout's own email and the card that paid; the email entry is limited to guest checkouts
@@ -207,12 +216,14 @@ export class RiskDecisionsService {
     reason: string,
   ): Promise<{ labels: string[]; guestEmail: boolean; widenedEmail: boolean }> {
     const guestOrder = held.openedSignedIn === false;
-    const limited = guestOrder && held.accountBeforeOrder;
+    const email = held.sessionEmail ?? held.accountEmail;
+    // Only an email block asks the directory (the card and the device never depend on the account).
+    const limited = guestOrder && input.blockEmail && (await this.accountExistedBefore(tx, held, email));
     const requests: BlockRequest[] = [];
     if (input.blockEmail) {
       requests.push({
         kind: 'email',
-        value: held.sessionEmail ?? held.customerEmail,
+        value: email,
         reason: limited ? `${reason}${GUEST_ONLY_SUFFIX}` : reason,
         source: 'manual',
         createdBy: staffId,
@@ -233,7 +244,7 @@ export class RiskDecisionsService {
       input.blockEmail && !limited && !added.some((entry) => entry.kind === 'email')
         ? await this.blocklist.widenGuestOnly(tx, {
             kind: 'email',
-            value: held.sessionEmail ?? held.customerEmail,
+            value: email,
             reason,
             createdBy: staffId,
           })
@@ -244,5 +255,29 @@ export class RiskDecisionsService {
       guestEmail: added.some((entry) => entry.kind === 'email' && entry.guestOnly),
       widenedEmail: widened !== undefined,
     };
+  }
+
+  /**
+   * Tells whether a login account of the email existed before the order.
+   *
+   * Why: decision 050 (an email block of a guest order must not lock out the account that owns the email) in the one-account model of
+   * decision 064: the guest row of the checkout is not that account, so the login row is found by the email through the directory. It
+   * existed before the order when staff made it (`created_by`) or when its holder proved the mailbox before the order was placed.
+   * Without a login account of the email, or one that signed itself up after the order, the email is blocked everywhere.
+   *
+   * @param tx the decision's transaction
+   * @param held the locked order context
+   * @param email the checkout's email
+   * @returns true when the block of this email must be limited to guest checkouts
+   */
+  private async accountExistedBefore(tx: DbExecutor, held: HeldOrderContext, email: string): Promise<boolean> {
+    const login = await this.accounts.findLoginByEmail(tx, email);
+    if (!login) return false;
+    const standing = await accountStandingOf(tx, login.id);
+    if (!standing) return false;
+    return (
+      standing.createdBy !== null ||
+      (standing.emailVerifiedAt !== null && standing.emailVerifiedAt.getTime() < held.orderCreatedAt.getTime())
+    );
   }
 }

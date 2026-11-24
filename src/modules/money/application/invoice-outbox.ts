@@ -11,7 +11,7 @@ export const INVOICE_PAID_EVENT = 'invoice.paid';
  *
  * Why: user rule 3: paying an invoice credits the wallet and tells the merchant. The row is written in the same
  * transaction as the credit, so the event exists exactly when the money moved. The payload is ids only: the notification job re-reads
- * the invoice (decision 020) and needs `clientId` to find the merchant.
+ * the invoice (decision 020) and needs `clientId` (the merchant's account id, decision 064) to find the merchant.
  *
  * Side effects: `paid` inserts one `outbox_events` row.
  */
@@ -23,7 +23,7 @@ export class InvoiceOutbox {
    * Writes `invoice.paid`.
    *
    * @param tx the transaction that credited the wallet
-   * @param invoice the invoice and its merchant
+   * @param invoice the invoice and its merchant (`clientId` is the account id of the invoice's account)
    */
   async paid(tx: DbExecutor, invoice: { readonly invoiceId: number; readonly clientId: number }): Promise<void> {
     await this.outbox.add(tx, {

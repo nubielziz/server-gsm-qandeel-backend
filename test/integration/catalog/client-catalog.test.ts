@@ -1,10 +1,12 @@
 // Integration tests of the merchant catalog (feature 4b): GET /client/services, GET /client/services/:id and GET
 // /client/prices/export with a merchant session: prices resolved for the merchant, visibility, the listed-price memory (user
-// rule 9), the CSV file, and the refusals (pending merchant, no session).
+// rule 9), the CSV file, and the refusals (suspended merchant, retail account, no session).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { ListedPrices } from '@src/modules/catalog';
+import { openAccountSession } from '../../support/account-sessions';
+import { makeAccount } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, openSession } from '../../support/auth';
 import { insertCategory, insertService } from '../../support/catalog';
@@ -63,7 +65,7 @@ async function world() {
 }
 
 async function as(clientId: number) {
-  const session = await openSession(t, { type: 'client', id: clientId });
+  const session = await openSession(t, { type: 'account', id: clientId });
   const get = (url: string) => t.app.inject({ method: 'GET', url, headers: session.headers });
   // The portal downloads the price list in the browser, which marks such a request `Sec-Fetch-Site: same-origin` (decision 045).
   const download = (url: string) =>
@@ -220,16 +222,33 @@ describe('GET /client/services', () => {
     expect(await price()).toBe('15.5500');
   });
 
-  it('is refused for a pending merchant (B153) and for a request without a session', async () => {
+  it('is refused for a suspended merchant and for a request without a session', async () => {
     const { db, groups } = await world();
-    const pending = await insertMerchantIn(db, groups.standard, { status: 'pending' });
-    const { get } = await as(pending);
+    const suspended = await insertMerchantIn(db, groups.standard, { status: 'suspended' });
     for (const url of ['/client/services', '/client/services/1', '/client/prices/export']) {
+      // A refusal for suspension also ends every session of the account (decision 018): each route is asked with a session of its own.
+      const { get } = await as(suspended);
       const res = await get(url);
       expect(res.statusCode, url).toBe(403);
-      expect(res.json().code).toBe('ACCOUNT_PENDING_APPROVAL');
+      expect(res.json().code).toBe('ACCOUNT_SUSPENDED');
     }
     expect((await t.app.inject({ method: 'GET', url: '/client/services' })).statusCode).toBe(401);
+  });
+
+  it('is not open to an account of the retail rank: 403 RANK_NOT_ALLOWED, and nothing is remembered', async () => {
+    await world();
+    const retail = await makeAccount(t, { rank: 'retail' });
+    const session = await openAccountSession(t, retail.id);
+    for (const url of ['/client/services', '/client/services/1', '/client/prices/export']) {
+      const res = await t.app.inject({
+        method: 'GET',
+        url,
+        headers: { ...session.headers, 'sec-fetch-site': 'same-origin' },
+      });
+      expect(res.statusCode, url).toBe(403);
+      expect(res.json().code, url).toBe('RANK_NOT_ALLOWED');
+    }
+    expect(await listedRows()).toEqual([]);
   });
 
   it('is not open to a staff session', async () => {

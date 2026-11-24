@@ -1,13 +1,12 @@
 // Drizzle queries of the file download routes on `files` (platform module), plus the one foreign read they need: whether a file is the
-// input or result of a merchant's own order.
+// input or result of an account's own order.
 //
 // DEVIATION to resolve when the orders module exports a lookup for it: decision 016 wants this read through the owning module's public
 // service. The orders module has none yet, so `ownsOrderFile` reads `orders` with a plain select, like catalog's and money's foreign-read files.
-// The same holds for `merchantIsApproved` (decision 053): the identity module exports no reader the platform may import (decision 032), so it
-// reads `clients.status` with a plain select. The upload quotas and the janitor of feature 43 live here too (decision 053).
+// The upload quotas and the janitor of feature 43 live here too (decision 053). Every file owner is `staff` or `account` (decision 064).
 import { and, eq, or, sql, type SQL } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
-import { type NewStoredFile, type StoredFile, files } from '../db/schema';
+import { type FileOwnerType, type NewStoredFile, type StoredFile, files } from '../db/schema';
 import type { FileReferences } from '../files/file-kinds';
 
 /**
@@ -41,14 +40,14 @@ export async function insertFile(db: DbExecutor, row: NewStoredFile): Promise<St
  * document of the same owner (an invoice PDF, a receipt) never counts against them.
  *
  * @param db the database or a transaction
- * @param owner the merchant or customer who owns the files
+ * @param owner the account (or staff member) who owns the files
  * @param keyPrefixes the object key prefixes that count (at least one)
  * @param since only files created after this time count; `null` counts everything the owner holds
  * @returns the number of files and their total size in bytes
  */
 export async function uploadUsage(
   db: DbExecutor,
-  owner: { readonly type: 'client' | 'customer'; readonly id: number },
+  owner: { readonly type: FileOwnerType; readonly id: number },
   keyPrefixes: readonly string[],
   since: Date | null,
 ): Promise<{ files: number; bytes: number }> {
@@ -71,16 +70,17 @@ export async function uploadUsage(
  * Takes the transaction lock of an owner's uploads.
  *
  * Why: decision 053. The quota is checked and the row inserted under this lock, so two uploads of one owner that run together cannot both
- * take the last place (the precedent: `api-key-manage.repository`).
+ * take the last place (the precedent: `api-key-manage.repository`). Decision 064: one owner per person, so the key is
+ * `upload-quota:account:<id>` whichever route the upload came through.
  *
  * Side effects: `pg_advisory_xact_lock`, released at the end of the transaction.
  *
  * @param tx the transaction that will insert the file row
- * @param owner the merchant or customer who owns the file
+ * @param owner the account (or staff member) who owns the file
  */
 export async function lockUploadOwner(
   tx: DbExecutor,
-  owner: { readonly type: 'client' | 'customer'; readonly id: number },
+  owner: { readonly type: FileOwnerType; readonly id: number },
 ): Promise<void> {
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended('upload-quota:' || ${owner.type} || ':' || ${String(owner.id)}, 0))`,
@@ -88,44 +88,56 @@ export async function lockUploadOwner(
 }
 
 /**
- * Tells whether a merchant is approved.
+ * Moves the files of one owner row to another, locking them without waiting.
  *
- * Why: decision 053. A merchant waiting for approval has a smaller upload quota than an active one.
+ * Why: decision 064, the guest-order claim. A guest row (an email only, no login) can own files: the attachments of a public support
+ * request come through the ticket link as uploads of the requester. When the holder of the mailbox signs in and claims its guest
+ * records, those files belong to the account. Every participant of the claim locks its rows `FOR UPDATE NOWAIT` so the claim never waits
+ * for another request (a janitor run, a ticket reply): the lock error (SQLSTATE 55P03) rolls the claim back to its savepoint.
  *
- * @param db the database or a transaction
- * @param clientId the merchant
- * @returns true when `clients.status` is `active`; a missing row is not approved
+ * Side effects: updates `files.owner_id` (and `updated_at`) of the guest row's files; the object keys keep their old owner path, which is
+ * only a name.
+ *
+ * @param tx the claim's transaction
+ * @param guestId the guest row that owns the files now
+ * @param accountId the account that takes them
+ * @returns how many files moved
+ * @throws the lock error (55P03) when another transaction holds one of the rows
  */
-export async function merchantIsApproved(db: DbExecutor, clientId: number): Promise<boolean> {
-  const [row] = await db
-    .select({ status: s.clients.status })
-    .from(s.clients)
-    .where(eq(s.clients.id, clientId))
-    .limit(1);
-  return row?.status === 'active';
+export async function moveGuestFiles(tx: DbExecutor, guestId: number, accountId: number): Promise<number> {
+  const mine = and(eq(files.ownerType, 'account'), eq(files.ownerId, guestId));
+  const locked = await tx
+    .select({ id: files.id })
+    .from(files)
+    .where(mine)
+    .orderBy(files.id)
+    .for('update', { noWait: true });
+  if (locked.length === 0) return 0;
+  const moved = await tx.update(files).set({ ownerId: accountId }).where(mine).returning({ id: files.id });
+  return moved.length;
 }
 
 /**
- * Tells whether a file is the input or the result file of one of a merchant's own orders.
+ * Tells whether a file is the input or the result file of one of an account's own orders.
  *
  * @param db the database or a transaction
- * @param clientId the merchant
+ * @param accountId the account (an order's buyer is `orders.account_id`, decision 064)
  * @param fileId the file id
- * @returns true when one of the merchant's orders points at the file
+ * @returns true when one of the account's orders points at the file
  */
-export async function ownsOrderFile(db: DbExecutor, clientId: number, fileId: number): Promise<boolean> {
+export async function ownsOrderFile(db: DbExecutor, accountId: number, fileId: number): Promise<boolean> {
   const [row] = await db
     .select({ id: s.orders.id })
     .from(s.orders)
     .where(
-      and(eq(s.orders.clientId, clientId), or(eq(s.orders.inputFileId, fileId), eq(s.orders.resultFileId, fileId))),
+      and(eq(s.orders.accountId, accountId), or(eq(s.orders.inputFileId, fileId), eq(s.orders.resultFileId, fileId))),
     )
     .limit(1);
   return row !== undefined;
 }
 
 /**
- * Deletes a merchant's file row when nothing points at it, and says where the object was.
+ * Deletes an account's file row when nothing points at it, and says where the object was.
  *
  * Why: P4a (B166). A Dhru file order stores the upload before it places the order; when the placement is refused the file must not stay.
  * "Nothing points at it" is the one list of references, {@link unreferenced}: the tables that keep file ids in an array, which the database
@@ -137,19 +149,19 @@ export async function ownsOrderFile(db: DbExecutor, clientId: number, fileId: nu
  * Side effects: deletes one `files` row.
  *
  * @param db the database or a transaction
- * @param clientId the merchant who must own the file (another owner's file is never touched)
+ * @param accountId the account that must own the file (another owner's file is never touched)
  * @param fileId the file id
- * @returns the bucket and key of the object to delete, or `undefined` when the file is gone, not the merchant's, or still in use
+ * @returns the bucket and key of the object to delete, or `undefined` when the file is gone, not the account's, or still in use
  * @throws a foreign-key violation (`23503`) when a row with a foreign key still points at the file; the caller treats it as "in use"
  */
-export async function deleteUnreferencedClientFile(
+export async function deleteUnreferencedAccountFile(
   db: DbExecutor,
-  clientId: number,
+  accountId: number,
   fileId: number,
 ): Promise<{ bucket: string; key: string } | undefined> {
   const result = await db.execute(sql`
     delete from files
-    where id = ${fileId} and owner_type = 'client' and owner_id = ${clientId}
+    where id = ${fileId} and owner_type = 'account' and owner_id = ${accountId}
       and ${unreferenced('files')}
     returning bucket, key
   `);

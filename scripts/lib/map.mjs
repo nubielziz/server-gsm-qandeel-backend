@@ -1,7 +1,8 @@
 // Shared loader for the API design map (reference/gsm-map/data/*.mjs) used by the manifest and slices scripts.
 // Turns map rows into endpoints with normalised access rules, so every script expands rows the same way.
 // `routes` is the map's rows plus the backend's own rows of scripts/map-additions (decision 035), checked at load time; `rowFlags` are
-// the add-only Turnstile flags those files put on map rows (feature 24A).
+// the add-only Turnstile flags those files put on map rows (feature 24A). `retiredTables` (decision 064) is the seam for the tables
+// the contract release drops: checked at load time, and subtracted from what an addition row may name.
 
 import { routes as mapRoutes, surfaces, groups } from '../../reference/gsm-map/data/routes.mjs';
 import { tables, domains } from '../../reference/gsm-map/data/schema.mjs';
@@ -144,20 +145,94 @@ export function expandRow(row) {
 }
 
 /**
+ * The tables the contract release drops (decision 064): the `retiredTables` of every module.
+ * Why: the map still names them, so a module keeps owning them (every map table needs one owner), but the database and Drizzle no
+ * longer hold them and no new route row may touch them. The lists are empty in the expand release and filled by the contract release.
+ * @param {{ retiredTables?: string[] }[]} moduleList the module map's modules (or a synthetic list, as the tests use)
+ * @returns {string[]} every retired table, in module order
+ */
+export const retiredTablesOf = (moduleList = modules) => moduleList.flatMap((m) => m.retiredTables ?? []);
+
+/**
+ * The tables the database and the Drizzle schema must hold: the modules' tables and additionalTables, without the retired ones.
+ * Why: the schema tests subtract the retired tables from what they expect; a retired table stays owned but is absent from both.
+ * @param {{ tables: string[], additionalTables?: string[], retiredTables?: string[] }[]} moduleList the modules (or a synthetic list)
+ * @returns {string[]} the live table names, sorted
+ */
+export const liveTablesOf = (moduleList = modules) => {
+  const retired = new Set(retiredTablesOf(moduleList));
+  return moduleList
+    .flatMap((m) => [...m.tables, ...(m.additionalTables ?? [])])
+    .filter((name) => !retired.has(name))
+    .sort();
+};
+
+/**
+ * Problems with the `retiredTables` lists: each list is an array, each entry is a map table the same module owns, once, never an
+ * additionalTables entry of any module, and never retired by two modules.
+ * @param {{ id: string, tables: string[], additionalTables?: string[], retiredTables?: unknown }[]} moduleList the modules (or a synthetic list)
+ * @param {string[]} mapTableNames the names of the map's tables
+ * @returns {string[]} one line per problem (empty when the lists are sound)
+ */
+export function retiredTableProblems(moduleList = modules, mapTableNames = tables.map((t) => t.n)) {
+  const problems = [];
+  const additional = new Set(moduleList.flatMap((m) => m.additionalTables ?? []));
+  const retiredBy = new Map();
+  for (const m of moduleList) {
+    const list = m.retiredTables ?? [];
+    if (!Array.isArray(list)) {
+      problems.push(`${m.id}: retiredTables must be an array`);
+      continue;
+    }
+    if (new Set(list).size !== list.length) problems.push(`${m.id}: retiredTables lists a table twice`);
+    for (const name of list) {
+      if (!mapTableNames.includes(name)) problems.push(`${m.id}: retired table ${name} is not a table of the map`);
+      else if (!m.tables.includes(name)) problems.push(`${m.id}: retired table ${name} is not one of the module's own tables`);
+      if (additional.has(name)) problems.push(`${m.id}: retired table ${name} is also an additionalTables entry`);
+      if (retiredBy.has(name) && retiredBy.get(name) !== m.id) problems.push(`${name}: retired by ${retiredBy.get(name)} and ${m.id}`);
+      retiredBy.set(name, m.id);
+    }
+  }
+  return problems;
+}
+
+/**
+ * Stops the tool that loads the map when a `retiredTables` list is unsound (see {@link retiredTableProblems}).
+ * @param {{ id: string, tables: string[], additionalTables?: string[], retiredTables?: unknown }[]} moduleList the modules (or a synthetic list)
+ * @param {string[]} mapTableNames the names of the map's tables
+ * @returns {void}
+ * @throws {Error} `retired tables problems:` listing every problem
+ */
+export function checkRetiredTables(moduleList = modules, mapTableNames = tables.map((t) => t.n)) {
+  const problems = retiredTableProblems(moduleList, mapTableNames);
+  if (problems.length) throw new Error(`retired tables problems:\n  ${problems.join('\n  ')}`);
+}
+
+checkRetiredTables();
+
+/**
  * Checks addition files against the map: shape, groups, tables, modules, auth text, no repeated or overriding row.
+ * A row may name a map table or an additionalTables entry, never a retired table.
  * @param {{ file: string, rows: unknown[] }[]} files result of readAdditionFiles (or the same shape built in memory)
+ * @param {{ id: string, tables: string[], additionalTables?: string[], retiredTables?: string[] }[]} moduleList the modules whose
+ *   tables and ids the rows may name (the real map's unless a test passes a synthetic list)
  * @returns {object[]} the normalised addition rows
  * @throws {Error} `map additions problems:` listing every problem with its file, row number and row key
  */
-export const checkAdditions = (files) =>
-  validateAdditions(files, {
+export const checkAdditions = (files, moduleList = modules) => {
+  const retired = new Set(retiredTablesOf(moduleList));
+  return validateAdditions(files, {
     mapRoutes,
     groups,
-    tableNames: new Set([...tables.map((t) => t.n), ...modules.flatMap((m) => m.additionalTables ?? [])]),
-    moduleIds: new Set(modules.map((m) => m.id)),
+    tableNames: new Set([
+      ...tables.map((t) => t.n).filter((name) => !retired.has(name)),
+      ...moduleList.flatMap((m) => m.additionalTables ?? []),
+    ]),
+    moduleIds: new Set(moduleList.map((m) => m.id)),
     expandRow,
     rowKey,
   });
+};
 
 /**
  * Checks the row flags of addition files against the map (add-only Turnstile on public client and store rows, feature 24A).

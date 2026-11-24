@@ -70,21 +70,22 @@ async function order(options: { deliver?: boolean; email?: string } = {}): Promi
   return paid;
 }
 
-/** Inserts a refund request of a customer (the customer's own request route belongs to the support feature). */
+/** Inserts a refund request of the buyer account (the customer's own request route belongs to the support feature). */
 async function request(paid: PaidOrder, values: Partial<typeof s.refunds.$inferInsert> = {}) {
+  const accountId = (await orderRow(db, paid.orderId)).accountId;
   const [row] = await db
     .insert(s.refunds)
     .values({
       paymentId: paid.paymentId,
       orderId: paid.orderId,
-      customerId: (await orderRow(db, paid.orderId)).customerId!,
+      accountId,
       amount: paid.charged,
       currency: 'GBP',
       reason: 'The code did not work',
       method: 'original',
       status: 'requested',
-      requestedByType: 'customer',
-      requestedById: (await orderRow(db, paid.orderId)).customerId!,
+      requestedByType: 'account',
+      requestedById: accountId,
       createdAt: clock.now(),
       updatedAt: clock.now(),
       ...values,
@@ -116,7 +117,7 @@ describe('GET /admin/refunds and /admin/refunds/:id', () => {
       partial: false,
       gatewayRefundId: null,
       note: null,
-      requestedBy: { type: 'customer', name: null },
+      requestedBy: { type: 'account', name: null },
       approvedBy: null,
       // Decision 047, rule B: a customer without a name is labelled by the masked address.
       customer: { id: expect.any(Number), name: 'sa•••@mail.example' },
@@ -132,10 +133,10 @@ describe('GET /admin/refunds and /admin/refunds/:id', () => {
     expect((await staff.get('/admin/refunds/999999')).status).toBe(404);
   });
 
-  it('shows a customer without a name by the masked address, and searches the address only for callers with customers:read (decision 047)', async () => {
+  it('shows a customer without a name by the masked address, and searches the address only for callers with clients:read (decision 047)', async () => {
     const paid = await order({ deliver: true });
     const refund = await request(paid);
-    const reader = await adminWith(t, ['refunds:read', 'customers:read']);
+    const reader = await adminWith(t, ['refunds:read', 'clients:read']);
     for (const api of [staff, reader]) {
       expect((await api.get('/admin/refunds')).body[0].customer.name).toBe('sa•••@mail.example');
       expect((await api.get(`/admin/refunds/${refund.id}`)).body.customer.name).toBe('sa•••@mail.example');
@@ -148,7 +149,7 @@ describe('GET /admin/refunds and /admin/refunds/:id', () => {
     ]);
   });
 
-  it('filters by status, sorts, searches and pages with the exact total; merchant refunds never show', async () => {
+  it('filters by status, sorts, searches and pages with the exact total; merchant refunds and returns of held payments never show', async () => {
     const paid = await order();
     const open = await request(paid);
     await request(paid, {
@@ -165,6 +166,16 @@ describe('GET /admin/refunds and /admin/refunds/:id', () => {
       status: 'requested',
       requestedByType: 'system',
     });
+    // A return of a held payment names its payment and that payment's account but no order (decision 048): the page leaves it out.
+    await db.insert(s.refunds).values({
+      paymentId: paid.paymentId,
+      accountId: (await orderRow(db, paid.orderId)).accountId,
+      amount: '3.8400',
+      currency: 'GBP',
+      method: 'original',
+      status: 'rejected',
+      requestedByType: 'system',
+    });
     expect((await staff.get('/admin/refunds')).total).toBe(2);
     expect((await staff.get('/admin/refunds?status=requested')).body.map((row: { id: number }) => row.id)).toEqual([
       open.id,
@@ -172,9 +183,9 @@ describe('GET /admin/refunds and /admin/refunds/:id', () => {
     expect(
       (await staff.get('/admin/refunds?_sort=amount&_order=asc')).body.map((row: { amount: string }) => row.amount),
     ).toEqual(['1.2471', '4.7900']);
-    // Decision 047: the address is searched only by a caller who may read customers.
+    // Decision 047: the address is searched only by a caller who may read accounts (clients:read).
     expect((await staff.get('/admin/refunds?q=sam@')).total).toBe(0);
-    const customersReader = await adminWith(t, ['refunds:read', 'customers:read']);
+    const customersReader = await adminWith(t, ['refunds:read', 'clients:read']);
     expect((await customersReader.get('/admin/refunds?q=sam@')).total).toBe(2);
     expect((await staff.get('/admin/refunds?q=did+not+work')).total).toBe(1);
     expect((await staff.get(`/admin/refunds?q=${open.id}`)).body[0].id).toBe(open.id);
@@ -891,20 +902,20 @@ describe('the refund the system opens when a paid order is rejected', () => {
 
   it('an approved refund of an open order is paid out of the payment it names', async () => {
     const { orderId, second } = await orderPaidSecond();
-    const customerId = (await orderRow(db, orderId)).customerId!;
+    const accountId = (await orderRow(db, orderId)).accountId;
     const [named] = await db
       .insert(s.refunds)
       .values({
         paymentId: second.id,
         orderId,
-        customerId,
+        accountId,
         amount: '3.8400',
         currency: 'GBP',
         reason: 'The code did not work',
         method: 'original',
         status: 'requested',
-        requestedByType: 'customer',
-        requestedById: customerId,
+        requestedByType: 'account',
+        requestedById: accountId,
         createdAt: clock.now(),
         updatedAt: clock.now(),
       })

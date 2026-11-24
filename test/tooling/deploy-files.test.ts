@@ -920,6 +920,22 @@ describe('Dockerfile and .dockerignore', () => {
     expect(imports.sort()).toEqual(['node:crypto', 'node:fs', 'node:path', 'pg']);
   });
 
+  it('carries the check the release of one account type runs before its migration: allowed, copied and imported by the verify stage', () => {
+    expect(read('.dockerignore').split('\n')).toContain('!scripts/accounts-merge-check.ts');
+    expect(dockerfile).toMatch(/^COPY [^\n]*scripts\/accounts-merge-check\.ts [^\n]*\.\/scripts\/$/m);
+    expect(dockerfile).toContain("'accounts-merge-check'");
+    // It reads the expand migration from drizzle/ (copied whole) and imports nothing of src/ or scripts/lib/.
+    expect(dockerfile).toMatch(/^COPY drizzle \.\/drizzle$/m);
+    const source = read('scripts/accounts-merge-check.ts');
+    const imports = [...source.matchAll(/^(?:import|export)\b[^;]*?\bfrom '([^']+)'/gm)].map((match) => match[1]);
+    expect(source).not.toMatch(/\bimport\(/);
+    expect(imports.sort()).toEqual(['node:fs', 'node:path', 'pg']);
+    // The sources of the migration itself (phase files, phase map, assembler, fixture) stay out of the image.
+    expect(read('.dockerignore').split('\n')).toContain('scripts/*');
+    expect(read('.dockerignore')).not.toMatch(/^!scripts\/accounts-merge\//m);
+    expect(dockerfile).not.toContain('scripts/accounts-merge/');
+  });
+
   it('copies no environment file into the image and bakes in no secret', () => {
     expect(dockerfile).not.toMatch(/COPY[^\n]*\.env/);
     expect(dockerfile).not.toMatch(/^(ENV|ARG)[^\n]*(SECRET|PASSWORD|TOKEN|PEPPER|KEY)/m);

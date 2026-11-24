@@ -18,6 +18,8 @@ const MODULE_PATH = /^src\/modules(?:\/([^/]+)(?:\/(.*))?)?$/;
 const SCHEMA_FILE = /^db\/schema(?:\.[cm]?[jt]s)?$/;
 // What `import ... from '../orders'` resolves to: the module's public API.
 const INDEX_FILE = /^index(?:\.[cm]?[jt]s)?$/;
+// A file under a module's `ports/` folder: the seams exception 3 below allows.
+const PORTS_FILE = /^ports\/./;
 const INFRA_SCHEMA_INDEX = 'src/infra/db/schema.ts';
 
 /**
@@ -59,6 +61,8 @@ export function judgeImport(file, target) {
   // Exception 2: src/infra/db/schema.ts re-exports every module's db/schema.ts for Drizzle.
   const infraSchemaIndex = file === INFRA_SCHEMA_INDEX && to.inner !== undefined && SCHEMA_FILE.test(to.inner);
   if (schemaToSchema || infraSchemaIndex) return undefined;
+  // Exception 3: a module may import another module's ports/** file: ports are leaf abstract classes, so importing one never re-enters a barrel cycle.
+  if (from.zone === 'module' && to.inner !== undefined && PORTS_FILE.test(to.inner)) return undefined;
 
   if (from.zone === 'common' || from.zone === 'infra') return 'noModuleImport';
   const viaIndex = to.inner === undefined || INDEX_FILE.test(to.inner);
@@ -71,12 +75,12 @@ export const moduleBoundaries = {
     type: 'problem',
     docs: {
       description:
-        'Modules import each other only through src/modules/<id>/index.ts; src/common and src/infra never import src/modules.',
+        'Modules import each other only through src/modules/<id>/index.ts (or a file of its ports/ folder); src/common and src/infra never import src/modules.',
     },
     schema: [],
     messages: {
       deepImport:
-        'Import another module only through its public API (src/modules/<id>/index.ts), not "{{specifier}}" (decision 016).',
+        'Import another module only through its public API (src/modules/<id>/index.ts) or a file of its ports/ folder, not "{{specifier}}" (decision 016).',
       noModuleImport:
         'src/common and src/infra never import from src/modules ("{{specifier}}"): modules register with infrastructure, not the other way round (decision 016).',
     },

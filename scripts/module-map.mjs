@@ -7,6 +7,9 @@
  * `tables`: tables the module owns (only it reads/writes them; others call its public service).
  * `additionalTables`: tables the backend adds beyond the map's 66 (MISMATCHES B116 note); owned like the others, but no map row
  * describes them, so slices and route checks ignore them. A row of `scripts/map-additions` (decision 035) may list one in its tables.
+ * `retiredTables`: tables the module still owns but no code reads or writes (a subset of `tables`, disjoint from `additionalTables`);
+ * empty until the contract migration of decision 064 drops them. The tooling subtracts them from the database and Drizzle expectations
+ * and an addition row may not name one.
  * `rows`: matchers on the row key "<surface> <m> <p>" (string = exact key, RegExp = pattern). They decide for map rows only: a row of
  * `scripts/map-additions` names its module itself, and the matchers are not consulted for it.
  * Every map row must match exactly one module: scripts/build-route-manifest.mjs fails on a gap or an overlap.
@@ -17,6 +20,9 @@ export const modules = [
     name: 'Identity & access',
     domain: 'A',
     tables: ['staff_users', 'roles', 'clients', 'sessions', 'auth_tokens', 'api_keys', 'kyc_submissions', 'ip_rules'],
+    // Decision 064 (one account type): the map from every old merchant and customer id to its account.
+    additionalTables: ['account_legacy_ids'],
+    retiredTables: [],
     rows: [
       /^admin \S+ \/admin\/(auth|staff|ip-rules|access|roles|permissions|sessions)(\/|$)/,
       'admin CRUD /admin/clients',
@@ -33,6 +39,7 @@ export const modules = [
     tables: ['settings', 'notification_templates', 'notifications', 'webhook_endpoints', 'webhook_deliveries', 'outbox_events', 'audit_logs', 'files'],
     // Feature 23 (notification center): the campaigns and the in-app inbox.
     additionalTables: ['notification_campaigns', 'notification_inbox'],
+    retiredTables: [],
     rows: [
       /^admin \S+ \/admin\/(audit-logs|settings|files|dashboard|webhook-deliveries|notification-templates|notifications)(\/|$)/,
       /^client \S+ \/client\/(files|webhooks|notification-preferences|telegram)(\/|$)/,
@@ -50,7 +57,9 @@ export const modules = [
       'payments', 'withdrawal_requests', 'refunds', 'disputes', 'tax_rates',
     ],
     // Decision 049: the record of credit-limit raises, read for a staff member's 24-hour sum.
-    additionalTables: ['credit_limit_raises'],
+    // Decision 064: the rank-change history and the keys of staff wallet actions.
+    additionalTables: ['credit_limit_raises', 'account_rank_changes', 'wallet_action_keys'],
+    retiredTables: [],
     rows: [
       /^admin \S+ \/admin\/clients\/:id\/(wallet|statement|credit-limit)(\/|$)/,
       /^admin \S+ \/admin\/(ledger|currencies|payment-gateways|invoices|payments|tax-rates|refunds|disputes)(\/|$)/,
@@ -72,6 +81,7 @@ export const modules = [
     ],
     // Feature 31 (decision 040): the retail price rules, the record of which retail prices follow them, and what the follow pass did.
     additionalTables: ['listed_prices', 'retail_price_rules', 'retail_price_follows', 'retail_price_changes'],
+    retiredTables: [],
     rows: [
       /^admin \S+ \/admin\/(client-groups|service-categories|client-prices|pricing-rules|pricing|inventory-codes|tac-catalog)(\/|$)/,
       'admin CRUD /admin/services',
@@ -87,6 +97,7 @@ export const modules = [
     domain: 'D',
     tables: ['orders', 'order_events'],
     additionalTables: ['idempotency_keys'],
+    retiredTables: [],
     rows: [
       /^admin \S+ \/admin\/orders(\/|$)/,
       'admin GET /admin/reports/top-clients',
@@ -105,6 +116,7 @@ export const modules = [
     tables: ['suppliers', 'supplier_services', 'service_supplier_links', 'supplier_api_logs'],
     // Feature 26 (supplier quick add): the record of a background import of a supplier's services.
     additionalTables: ['supplier_import_runs'],
+    retiredTables: [],
     rows: [
       /^admin \S+ \/admin\/(suppliers|supplier-api-logs)(\/|$)/,
       'admin PUT /admin/services/:id/supplier-links',
@@ -118,6 +130,7 @@ export const modules = [
     domain: 'G',
     tables: ['service_checks', 'alert_rules', 'alert_events', 'incidents', 'job_runs'],
     additionalTables: ['alert_streaks'],
+    retiredTables: [],
     rows: [/^admin \S+ \/admin\/(system|alert-rules|alerts|incidents|queues)(\/|$)/, /^system GET \/(health|metrics)$/],
   },
   {
@@ -125,6 +138,7 @@ export const modules = [
     name: 'Commissions & referrals',
     domain: 'F',
     tables: ['commission_plans', 'commission_assignments', 'commission_accruals'],
+    retiredTables: [],
     rows: [/^admin \S+ \/admin\/commission-/, /^client GET \/client\/(referrals|commissions)$/],
   },
   {
@@ -132,6 +146,7 @@ export const modules = [
     name: 'Storefront customers & checkout (B2C)',
     domain: 'I',
     tables: ['customers', 'customer_credentials', 'checkout_sessions', 'consent_records'],
+    retiredTables: [],
     rows: [
       /^admin \S+ \/admin\/(customers|checkouts)(\/|$)/,
       'admin GET /admin/reports/funnel',
@@ -151,6 +166,7 @@ export const modules = [
       'search_synonyms', 'search_pins', 'search_hidden_terms', 'search_terms_daily', 'search_index_state', 'legacy_slugs',
       'listing_publish_runs', 'listing_publish_items',
     ],
+    retiredTables: [],
     rows: [
       /^admin \S+ \/admin\/(service-listings|content-pages|help-articles|legal-documents|storefront)(\/|$)/,
       /^store GET \/store\/v1\/(config|services|pages|help)(\/|$)/,
@@ -161,6 +177,7 @@ export const modules = [
     name: 'Support',
     domain: 'J',
     tables: ['support_tickets', 'ticket_messages', 'reply_templates'],
+    retiredTables: [],
     rows: [/^admin \S+ \/admin\/(support-tickets|reply-templates)(\/|$)/, /^store \S+ \/store\/v1\/tickets(\/|$)/],
   },
   {
@@ -168,6 +185,7 @@ export const modules = [
     name: 'Risk & compliance',
     domain: 'K',
     tables: ['imei_checks', 'risk_assessments', 'blocklist_entries', 'data_requests'],
+    retiredTables: [],
     rows: [
       /^admin \S+ \/admin\/(risk|imei-checks|blocklist|data-requests)(\/|$)/,
       'store POST /store/v1/imei/check',

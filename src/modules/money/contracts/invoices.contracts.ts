@@ -1,11 +1,15 @@
 // Route contracts of the invoices for staff (map domain E, stage 8, routes /admin/invoices). Shapes match the console's `Invoice`
-// and `CreateInvoiceBody` (docs/contract/endpoints/money.md, RESOLUTIONS money-7).
+// and `CreateInvoiceBody` (docs/contract/endpoints/money.md, RESOLUTIONS money-7). Decision 064: an invoice belongs to an account.
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
 import { INVOICE_KINDS, INVOICE_STATUSES } from '../db/schema';
 import { INVOICE_FILTER_KINDS } from '../domain/invoice-rules';
 
-/** An invoice as the console shows it: a merchant's top-up or manual invoice, or a storefront customer's tax receipt. */
+/**
+ * An invoice as the console shows it: a merchant's top-up or manual invoice, a store top-up, or a storefront customer's tax receipt.
+ *
+ * The invoice's account is the `client` of a merchant-wallet invoice and the `customer` of any other one; its id is the account id.
+ */
 export const InvoiceSchema = z.object({
   id: zId,
   number: z.string().describe('`INV-<year>-<id>`, for example `INV-2026-0042`.'),
@@ -32,7 +36,7 @@ export const InvoiceSchema = z.object({
       email: z
         .string()
         .describe(
-          "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
+          "The customer's address; masked (`ja•••@example.com`) unless the caller holds `clients:read` (decision 047).",
         ),
     })
     .nullable(),
@@ -73,8 +77,9 @@ export const listInvoices = defineRoute({
   key: 'GET /admin/invoices',
   summary: 'Invoices',
   description:
-    'Top-up and manual invoices of merchants, statements and the tax receipts of storefront orders, newest first. `q` searches the ' +
-    'number and the merchant or customer name.',
+    'Top-up and manual invoices of merchants, store top-ups, statements and the tax receipts of storefront orders, newest first. ' +
+    '`q` searches the number and the name of the account. `accountId` lists the invoices of one account; `clientId` is its alias (a ' +
+    'merchant id is an account id).',
   tags: ['finance'],
   surface: 'admin',
   access: 'staff-permission',
@@ -85,6 +90,7 @@ export const listInvoices = defineRoute({
     filters: {
       status: { type: 'enum', values: INVOICE_STATUSES },
       kind: { type: 'enum', values: INVOICE_FILTER_KINDS },
+      accountId: { type: 'id', ops: ['eq'] },
       clientId: { type: 'id', ops: ['eq'] },
     },
     search: ['number', 'client.name', 'customer.name'],
@@ -115,8 +121,9 @@ export const createInvoice = defineRoute({
   description:
     'Issues a manual invoice to a merchant: kind manual, status open, no fee, tax at the B2B VAT rate (setting, 0 for now), due in ' +
     '14 days, in the base currency. It is a top-up invoice: when it is paid the wallet is credited and the merchant is told. No ' +
-    'ledger entry at issue. A merchant without a billing country is 422 on `clientId`. Audited. The invoice records who issued it: ' +
-    'that staff member cannot approve its payment unless they are an Owner (decision 049).',
+    'ledger entry at issue. A merchant without a billing country is 422 on `clientId` (`no_country`), and so is an account of a retail ' +
+    'rank (`not_merchant`: it has no merchant wallet and no route to pay an invoice; decision 064). Audited. The invoice records who ' +
+    'issued it: that staff member cannot approve its payment unless they are an Owner (decision 049).',
   tags: ['finance'],
   surface: 'admin',
   access: 'staff-permission',

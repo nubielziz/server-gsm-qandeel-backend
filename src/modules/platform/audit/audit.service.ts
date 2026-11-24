@@ -76,7 +76,7 @@ export class AuditService {
     const [row] = await tx
       .insert(auditLogs)
       .values({
-        // No actor means the system acted (a job, a scheduled check).
+        // No actor means the system acted (a job, a scheduled check). An account acts as `account` (decision 064), never `client` or `customer`.
         actorType: context?.actor?.type ?? 'system',
         actorId: context?.actor?.id ?? null,
         // A snapshot, like entity_label: renamed or deleted accounts still read correctly (identity-platform-7).

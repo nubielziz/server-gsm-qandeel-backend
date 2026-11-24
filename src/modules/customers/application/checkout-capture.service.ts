@@ -6,6 +6,7 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import { EncryptionService, TokenService } from '../../../infra/crypto';
+import { AccountDirectory } from '../../identity';
 import {
   type CaptureOutcome,
   type CaptureRequest,
@@ -25,7 +26,7 @@ import {
 import { CustomerOrderPlacement } from '../../orders';
 import { RiskDecisionsService, RiskScreening, holdReason } from '../../risk';
 import { CHECKOUT_IMEI_AAD } from '../domain/checkout';
-import { lockCheckoutSession, markSessionPaid } from '../infra/checkout.repository';
+import { findCheckoutSession, lockCheckoutSession, markSessionPaid } from '../infra/checkout.repository';
 
 /** Reads the string values of a session's stored order inputs. */
 function inputsOf(raw: Record<string, unknown> | null): Record<string, string> {
@@ -37,10 +38,12 @@ function inputsOf(raw: Record<string, unknown> | null): Record<string, string> {
 /**
  * Creates the order of a paid checkout.
  *
- * Why: scenario b2c-paid step 7: "in one transaction: the payment is captured and the session paid, a new order with `customer_id` and a
+ * Why: scenario b2c-paid step 7: "in one transaction: the payment is captured and the session paid, a new order with the buyer account and a
  * `public_token`, the capture journal, and the outbox job for dispatch". It runs under the payment row's lock (taken by the webhook), then
- * takes the session's lock: a second confirmation for the same session finds it paid and is recorded and refunded as a duplicate instead
- * of creating a second order. Decision 048, in this order: a payment whose money is being sent back (or was) changes nothing; a payment
+ * takes the session's account row `FOR KEY SHARE` and then the session's lock (decision 064: the account row comes before the rows of
+ * the path; it never refuses, so a payment made before a rank change places its shop order whatever the rank is by then, and a rank change
+ * waits for the capture or is seen by the `open_checkout` blocker): a second confirmation for the same session finds it paid and is recorded and
+ * refunded as a duplicate instead of creating a second order. Decision 048, in this order: a payment whose money is being sent back (or was) changes nothing; a payment
  * whose gateway record belongs to another checkout is held before any other check, with nothing sent back and its reference left free
  * (the record, whatever it says, is that checkout's payment, and its own confirmation must still capture); then a payment whose record
  * shows its money refunded (in full or in part) or disputed since, held with nothing sent back (the money already went back or is
@@ -73,6 +76,7 @@ export class CheckoutCaptureService implements StorefrontCapture, OnModuleInit {
     private readonly mails: StorefrontMails,
     private readonly risk: RiskScreening,
     private readonly decisions: RiskDecisionsService,
+    private readonly accounts: AccountDirectory,
     private readonly encryption: EncryptionService,
     private readonly tokens: TokenService,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -106,9 +110,17 @@ export class CheckoutCaptureService implements StorefrontCapture, OnModuleInit {
     if (check?.afterPayment !== undefined) {
       return this.hold(tx, request, aftermathNote(check.afterPayment), false, true, true);
     }
-    const session =
-      payment.checkoutSessionId === null ? undefined : await lockCheckoutSession(tx, payment.checkoutSessionId);
-    if (!session || session.customerId === null) {
+    // The payment is locked (by the webhook). Next the session's account `FOR KEY SHARE`, then the session row: the account id comes from an
+    // unlocked read, and the locked row must still name the same account (it can only change through the guest claim, which never moves
+    // a session that is open or has a pending payment).
+    const known =
+      payment.checkoutSessionId === null ? undefined : await findCheckoutSession(tx, payment.checkoutSessionId);
+    const account =
+      known === undefined || known.accountId === null
+        ? undefined
+        : await this.accounts.lockForKeyShare(tx, known.accountId);
+    const session = known === undefined || account === undefined ? undefined : await lockCheckoutSession(tx, known.id);
+    if (!session || account === undefined || session.accountId !== account.id) {
       return this.hold(tx, request, 'The checkout of this payment cannot be found.', true);
     }
     if (check !== undefined && check.status !== 'confirmed') {
@@ -153,7 +165,7 @@ export class CheckoutCaptureService implements StorefrontCapture, OnModuleInit {
     // The rules judge the payment before the order exists; the verdict decides how the order starts. The card fingerprint comes from the
     // event: the payment row only gets it in `recordCapture`.
     const screening = await this.risk.assess(tx, {
-      customerId: session.customerId,
+      accountId: account.id,
       email: session.email,
       checkoutSessionId: session.id,
       amountUsd: Money.of(session.netAmount).add(Money.of(session.taxAmount)).toWire(),
@@ -175,7 +187,7 @@ export class CheckoutCaptureService implements StorefrontCapture, OnModuleInit {
     const order = await this.placement.place(
       tx,
       {
-        customerId: session.customerId,
+        accountId: account.id,
         checkoutSessionId: session.id,
         serviceId: session.serviceId,
         quantity: session.quantity,

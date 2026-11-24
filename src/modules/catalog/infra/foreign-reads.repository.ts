@@ -15,6 +15,7 @@
 // Replace the bodies with calls to their services; nothing outside this file knows.
 import { type SQL, eq, inArray, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
+import { type RankKind, rankKindOf } from '../../identity/ports/rank-kind';
 
 /** An id and a name, as a service row joins a supplier. */
 export interface SupplierRef {
@@ -119,52 +120,72 @@ export async function listingTitlesOf(db: DbExecutor, serviceIds: readonly numbe
   return new Map(rows.map((row) => [row.serviceId, row.title]));
 }
 
-/** A merchant as the price routes need it. */
+/** An account as the price routes need it: its name, rank, rank kind and status. */
 export interface MerchantRef {
   readonly id: number;
   readonly name: string;
   readonly groupId: number;
+  /** `merchant` or `retail`, told by the kind of the rank (`rankKindOf`); only a merchant rank has fixed prices and a catalog of its own. */
+  readonly rankKind: RankKind;
   readonly status: string;
 }
 
+/** The columns {@link MerchantRef} is built from: the account and the stored kind of its rank. */
+const merchantColumns = {
+  id: s.clients.id,
+  name: s.clients.name,
+  groupId: s.clients.groupId,
+  status: s.clients.status,
+  groupKind: s.clientGroups.kind,
+};
+
+const toMerchantRef = ({ groupKind, ...row }: { groupKind: string } & Omit<MerchantRef, 'rankKind'>): MerchantRef => ({
+  ...row,
+  rankKind: rankKindOf(groupKind),
+});
+
 /**
- * Reads one merchant: its name, group and status.
+ * Reads one account: its name, rank, rank kind and status.
  *
- * Why: a client price is checked against the floor of the merchant's group, the resolver prices for that group, and the
- * merchant catalog lists what the group may see (RESOLUTIONS catalog-1, catalog-4, catalog-16).
+ * Why: a client price is checked against the floor of the account's rank, the resolver prices for that rank, the merchant
+ * catalog lists what the rank may see, and only an account of a merchant rank may have a fixed price (decision 064; RESOLUTIONS
+ * catalog-1, catalog-4, catalog-16). Every account has a rank, so the join never drops a row.
  *
  * @param db the database or a transaction
- * @param id the merchant id
- * @returns the merchant, or `undefined` when there is none
+ * @param id the account id (a merchant id is an account id)
+ * @returns the account, or `undefined` when there is none
  */
 export async function merchantOf(db: DbExecutor, id: number): Promise<MerchantRef | undefined> {
   const [row] = await db
-    .select({ id: s.clients.id, name: s.clients.name, groupId: s.clients.groupId, status: s.clients.status })
+    .select(merchantColumns)
     .from(s.clients)
+    .innerJoin(s.clientGroups, eq(s.clientGroups.id, s.clients.groupId))
     .where(eq(s.clients.id, id))
     .limit(1);
-  return row;
+  return row && toMerchantRef(row);
 }
 
 /**
- * Reads several merchants in one query (a page of client prices).
+ * Reads several accounts in one query (a page of client prices).
  *
  * @param db the database or a transaction
- * @param ids the merchant ids; duplicates are fine
- * @returns the merchants that exist, by id
+ * @param ids the account ids; duplicates are fine
+ * @returns the accounts that exist, by id
  */
 export async function merchantsOf(db: DbExecutor, ids: readonly number[]): Promise<Map<number, MerchantRef>> {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return new Map();
   const rows = await db
-    .select({ id: s.clients.id, name: s.clients.name, groupId: s.clients.groupId, status: s.clients.status })
+    .select(merchantColumns)
     .from(s.clients)
+    .innerJoin(s.clientGroups, eq(s.clientGroups.id, s.clients.groupId))
     .where(inArray(s.clients.id, unique));
-  return new Map(rows.map((row) => [row.id, row]));
+  return new Map(rows.map((row) => [row.id, toMerchantRef(row)]));
 }
 
 /** The last price a merchant paid for a service, with the merchant's group (what the price change scan compares). */
 export interface RecentOrderPrice {
+  /** The merchant's account id. */
   readonly clientId: number;
   readonly serviceId: number;
   readonly groupId: number;
@@ -176,8 +197,11 @@ export interface RecentOrderPrice {
  * Reads, for each merchant and service, the unit price of the merchant's latest order since a time.
  *
  * Why: user rule 9 (5) and MISMATCHES B117: a merchant who ordered a service in the last 30 days is told when the price it would
- * pay changes. The price of its latest order is the price it knows. Only active merchants are read, and the page after a key is
- * returned so a scan can walk the whole set in small steps (one row per merchant and service, ordered by both ids).
+ * pay changes. The price of its latest order is the price it knows. Only active accounts of a merchant rank are read (decision 064: a
+ * retail account pays the shop price, which is not a price this scan watches), and only orders of the merchant doors: a shop order
+ * (`source = 'store'`) was paid at the retail price, even when its buyer was raised to a merchant rank later, so it is never the price
+ * that merchant knows. The page after a key is returned so a scan can walk the whole set in small steps (one row per merchant and
+ * service, ordered by both ids).
  *
  * @param db the database or a transaction
  * @param since the start of the window (30 days before now)
@@ -191,13 +215,15 @@ export async function recentOrderPrices(
   after: { readonly clientId: number; readonly serviceId: number } | undefined,
   limit: number,
 ): Promise<RecentOrderPrice[]> {
+  // `b2b` is the one stored rank kind with merchant rights (`rankKindOf`); `store` is the one door that is paid first.
   const result = await db.execute<{ client_id: string; service_id: string; group_id: string; unit_price: string }>(sql`
-    select distinct on (o.client_id, o.service_id) o.client_id, o.service_id, c.group_id, o.unit_price
+    select distinct on (o.account_id, o.service_id) o.account_id as client_id, o.service_id, c.group_id, o.unit_price
     from ${s.orders} o
-    join ${s.clients} c on c.id = o.client_id
-    where o.client_id is not null and c.status = 'active' and o.created_at >= ${since}
-      ${after ? sql`and (o.client_id, o.service_id) > (${after.clientId}, ${after.serviceId})` : sql``}
-    order by o.client_id, o.service_id, o.created_at desc, o.id desc
+    join ${s.clients} c on c.id = o.account_id
+    join ${s.clientGroups} g on g.id = c.group_id
+    where g.kind = 'b2b' and o.source <> 'store' and c.status = 'active' and o.created_at >= ${since}
+      ${after ? sql`and (o.account_id, o.service_id) > (${after.clientId}, ${after.serviceId})` : sql``}
+    order by o.account_id, o.service_id, o.created_at desc, o.id desc
     limit ${limit}`);
   return result.rows.map((row) => ({
     clientId: Number(row.client_id),

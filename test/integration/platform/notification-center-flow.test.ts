@@ -22,6 +22,7 @@ import {
 } from '../../support/campaigns';
 import { MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
+import { mapLegacyCustomer } from '../../support/legacy-accounts';
 import { mailbox, merchantSession, seedDefaultTemplates, sendAllQueued } from '../../support/notifications';
 import { deleteBullKeys, testBullPrefix } from '../../support/queues';
 import { STORE_ORIGIN } from '../../support/store';
@@ -78,7 +79,7 @@ describe('the notification center, end to end', () => {
     expect(preview.body).toMatchObject({
       total: 2,
       reachable: 2,
-      byType: { staff: 0, client: 1, customer: 1 },
+      byType: { staff: 0, merchant: 1, retail: 1 },
       byChannel: { inApp: 2, email: 2 },
     });
     const rendered = await owner.post(`/admin/notification-campaigns/${draft.id}/preview`, {
@@ -131,14 +132,14 @@ describe('the notification center, end to end', () => {
     expect(merchantItems).toHaveLength(1);
     expect(merchantItems[0]).toMatchObject({
       title: 'Maintenance for Zain Mobile Hub',
-      link: '/merchant/wallet',
+      link: '/account/wallet',
       campaignId: draft.id,
       readAt: null,
     });
     expect((await merchant.call('GET', '/client/notifications/unread-count')).body).toEqual({ unread: 1 });
     expect((await merchant.call('POST', `/client/notifications/${merchantItems[0].id}/read`)).status).toBe(204);
 
-    const session = await openSession(t, { type: 'customer', id: customerId });
+    const session = await openSession(t, { type: 'account', id: customerId });
     const asCustomer = async (url: string) => {
       const res = await t.app.inject({ method: 'GET', url, headers: { origin: STORE_ORIGIN, ...session.headers } });
       return JSON.parse(res.body);
@@ -181,6 +182,53 @@ describe('the notification center, end to end', () => {
       'staff: sent test notification',
       'staff: scheduled notification campaign',
       'system: sent scheduled notification campaign',
+    ]);
+  });
+
+  it('the inbox and the log of account 1 show nothing of the customer whose old number was 1, and the account that took its place shows that history', async () => {
+    // Merchant 1 kept its number; the old customer number 1 became the next account. The rows are as the migration leaves them: the old
+    // customer's history is under the account that took its place (decision 064).
+    const merchantId = await insertMerchant(db, { name: 'Zain Mobile Hub', email: 'ops@zainmobilehub.example' });
+    const customerId = await insertCustomer(db, { name: 'Huda', email: 'huda@mail.example' });
+    expect(customerId).not.toBe(merchantId);
+    await mapLegacyCustomer(db, merchantId, customerId);
+    await db.insert(s.notificationInbox).values({
+      recipientType: 'account',
+      recipientId: customerId,
+      event: 'order.completed',
+      category: 'order',
+      variables: { orderId: '4021', service: 'Unlock' },
+      dedupeKey: 'inapp:customer:order.completed:old-order-4021',
+    });
+    await db.insert(s.notifications).values({
+      recipientType: 'account',
+      recipientId: customerId,
+      channel: 'email',
+      event: 'order.completed',
+      status: 'sent',
+      sentAt: clock.now(),
+      attempts: 1,
+      payload: { variables: { customerName: 'Huda', orderId: '4021' } },
+    });
+
+    // The merchant's inbox and log hold nothing of the customer's history.
+    const merchant = await merchantSession(t, merchantId);
+    expect((await merchant.call('GET', '/client/notifications')).body).toEqual([]);
+    expect((await merchant.call('GET', '/client/notifications/unread-count')).body).toEqual({ unread: 0 });
+    const byMerchant = await owner.get(`/admin/notifications?q=${encodeURIComponent('ops@zainmobilehub.example')}`);
+    expect(byMerchant.body).toEqual([]);
+
+    // The account that took the number 1 of the customers has it.
+    const session = await openSession(t, { type: 'account', id: customerId });
+    const res = await t.app.inject({
+      method: 'GET',
+      url: '/store/v1/me/notifications',
+      headers: { origin: STORE_ORIGIN, ...session.headers },
+    });
+    expect(JSON.parse(res.body)).toMatchObject([{ title: 'Order 4021 completed', event: 'order.completed' }]);
+    const byCustomer = await owner.get(`/admin/notifications?q=${encodeURIComponent('huda@mail.example')}`);
+    expect(byCustomer.body).toMatchObject([
+      { recipientType: 'account', recipientId: customerId, event: 'order.completed' },
     ]);
   });
 });

@@ -4,6 +4,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
 import type {
+  NotificationAudience,
   NotificationChannel,
   NotificationRecipientType,
   NotificationStatus,
@@ -13,7 +14,7 @@ import { OutboxService } from '../outbox/outbox.service';
 import { type AttemptContext, NotificationDelivery } from './notification-delivery';
 import { NotificationInbox } from './inbox/notification-inbox';
 import { type NotificationEventDefinition, NotificationEventRegistry } from './notification-events';
-import { type Recipient, recipientOf } from './notification-foreign-reads';
+import { type Recipient, recipientOf, withAudience } from './notification-foreign-reads';
 import { OPERATIONS_RECIPIENT_ID } from './notification-payload';
 import { type TemplateKey, findTemplateFor } from './notification-template.repository';
 import { linkTemplateProblems } from './template-rules';
@@ -29,10 +30,19 @@ export const NOTIFICATION_SEND_EVENT = 'notification.send';
 
 /** What a caller asks for: one message to one recipient on one channel. */
 export interface NotificationInput {
-  /** A registered event key for the recipient's audience. */
+  /** A registered event key for the message's audience (see `audience`). */
   readonly event: string;
+  /** `staff`, or `account` for a person of either rank (decision 064: a merchant's and a shopper's id are both account ids). */
   readonly recipient: { readonly type: NotificationRecipientType; readonly id: number };
   readonly channel: NotificationChannel;
+  /**
+   * The audience whose text this message uses, when it is not the audience of the recipient's rank today (decision 064): an order,
+   * payment or refund mail follows the door of the order (`store` is the customer text with the tracking link, every other door the
+   * merchant text), a wallet mail the kind of the wallet (`client_wallet` is the merchant text, `customer_wallet` the customer text) and
+   * a support reply the rank of the asker. Omitted: `merchant` for an account of a merchant rank, `customer` for any other rank and for
+   * a guest. The audience is kept in the row, so a rank change between the row and its sending never swaps the text.
+   */
+  readonly audience?: NotificationAudience;
   /** The values of the event's placeholders. They are stored on the row and shown in the log: no secret goes here. */
   readonly variables?: Readonly<Record<string, string>>;
   /** Names the occurrence, so a repeat makes no second row (`outbox-<id>:email`). */
@@ -79,6 +89,19 @@ export type SendNowResult =
   | { readonly status: 'skipped'; readonly reason: SkipReason | 'already_sent' | 'already_failed' };
 
 /**
+ * The part of a payload that keeps the audience of an account's message.
+ *
+ * Why: the row is sent later (a retry, a digest a day on) and the account's rank may have changed by then; the text stays the one the message was made for
+ * (the door of the order, the kind of the wallet). A staff message has one audience and keeps nothing.
+ *
+ * @param recipient the recipient with the audience of the message
+ * @returns `{ audience }` for an account, nothing for staff
+ */
+function audienceOfPayload(recipient: Recipient): { audience?: NotificationAudience } {
+  return recipient.type === 'account' ? { audience: recipient.audience } : {};
+}
+
+/**
  * Makes and sends notifications.
  *
  * Why: brief 12a: one delivery path. A use case (or the planning job of an outbox event) calls `enqueue` inside its transaction: the
@@ -110,7 +133,7 @@ export class NotificationService {
    * @param work the caller's transaction (`runInTransaction`; a use case that holds the transaction as a `DbExecutor` passes it as `{ tx }`)
    * @param input the event, recipient, channel and variables
    * @returns the row id (and whether this call made it), or why nothing was made
-   * @throws {RangeError} when the event is not registered for the recipient's audience, the event has no such channel, or `to` is given for an
+   * @throws {RangeError} when the event is not registered for the message's audience, the event has no such channel, or `to` is given for an
    *   event without the `namedAddress` flag (programming errors)
    *
    * Side effects: also inserts the in-app item of the event (`notification_inbox`) when one has a registered text and the call has a dedupe key.
@@ -124,6 +147,7 @@ export class NotificationService {
         event: input.event,
         variables: input.variables ?? {},
         occurrence: input.dedupeKey.replace(/:(email|telegram)$/, ''),
+        ...(input.audience === undefined ? {} : { audience: input.audience }),
       });
     }
     const checked = await this.check(work.tx, input);
@@ -135,6 +159,7 @@ export class NotificationService {
     const payload: NotificationPayload = {
       variables: { ...(input.variables ?? {}) },
       ...(input.to === undefined ? {} : { to: input.to }),
+      ...audienceOfPayload(checked.recipient),
     };
     const { row, created } = await insertNotificationOnce(work.tx, {
       recipientType: input.recipient.type,
@@ -169,11 +194,12 @@ export class NotificationService {
    * @param work the caller's transaction
    * @param input the event, recipient, channel and the text as variables
    * @returns the row, or why nothing was made (`recipient_gone`, `recipient_suspended`)
-   * @throws {RangeError} when the event is not registered for the recipient's audience, has a template, or lacks the channel
+   * @throws {RangeError} when the event is not registered for the message's audience, has a template, or lacks the channel
    */
   async enqueueInline(work: { readonly tx: DbExecutor }, input: Omit<NotificationInput, 'to'>): Promise<EnqueueResult> {
-    const recipient = await recipientOf(work.tx, input.recipient.type, input.recipient.id);
-    if (!recipient) return { status: 'skipped', reason: 'recipient_gone' };
+    const found = await recipientOf(work.tx, input.recipient.type, input.recipient.id);
+    if (!found) return { status: 'skipped', reason: 'recipient_gone' };
+    const recipient = withAudience(found, input.audience);
     const definition = this.registry.get(input.event, recipient.audience);
     if (!definition || definition.templated !== false || !definition.channels.includes(input.channel)) {
       throw new RangeError(
@@ -187,7 +213,7 @@ export class NotificationService {
       recipientId: input.recipient.id,
       channel: input.channel,
       event: input.event,
-      payload: { variables: { ...(input.variables ?? {}) } },
+      payload: { variables: { ...(input.variables ?? {}) }, ...audienceOfPayload(recipient) },
       status: 'queued',
       dedupeKey: input.dedupeKey ?? null,
       createdAt: now,
@@ -301,7 +327,7 @@ export class NotificationService {
       recipientId: input.recipient.id,
       channel: input.channel,
       event: input.event,
-      payload: { variables: { ...(input.variables ?? {}) } },
+      payload: { variables: { ...(input.variables ?? {}) }, ...audienceOfPayload(checked.recipient) },
       status: 'queued',
       dedupeKey: input.dedupeKey,
       createdAt: now,
@@ -363,15 +389,16 @@ export class NotificationService {
    *
    * @param db the database or a transaction
    * @param input the event, recipient and channel to check
-   * @returns the recipient and the event, or the reason to skip
-   * @throws {RangeError} when the event is not registered for the recipient's audience, or the event has no such channel
+   * @returns the recipient (its `audience` is the audience of this message: the input's, else the rank's) and the event, or the reason to skip
+   * @throws {RangeError} when the event is not registered for the message's audience, or the event has no such channel
    */
   async check(
     db: DbExecutor,
     input: NotificationInput,
   ): Promise<{ recipient: Recipient; definition: NotificationEventDefinition } | { skipped: SkipReason }> {
-    const recipient = await recipientOf(db, input.recipient.type, input.recipient.id);
-    if (!recipient) return { skipped: 'recipient_gone' };
+    const found = await recipientOf(db, input.recipient.type, input.recipient.id);
+    if (!found) return { skipped: 'recipient_gone' };
+    const recipient = withAudience(found, input.audience);
     const definition = this.registry.get(input.event, recipient.audience);
     if (!definition) {
       throw new RangeError(`The event "${input.event}" is not registered for the audience "${recipient.audience}".`);

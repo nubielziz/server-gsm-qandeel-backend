@@ -1,5 +1,5 @@
 // PricingResolveService: the use case of GET /admin/pricing/resolve (map domain B, stage 4): the price of one service for one
-// merchant with the trace, and the same service priced for every merchant group.
+// merchant with the trace, and the same service priced for every merchant group. A retail account is refused: it pays the shop price.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
@@ -28,7 +28,8 @@ export interface ResolutionView {
  *
  * Why: the console no longer prices in the browser; it draws what the server resolved (M98). The answer is the one resolver's
  * (catalog-4), so it matches what an order would be charged now; `otherGroups` is the same service for every merchant group
- * without a client override, drawn as the "Same service, other groups" table.
+ * without a client override, drawn as the "Same service, other groups" table. The shop prices every retail account from the single
+ * retail rank, so the resolver is asked for merchant ranks only (decision 064).
  *
  * Side effects: none (reads only).
  *
@@ -46,14 +47,27 @@ export class PricingResolveService {
    * Resolves a price for a merchant.
    *
    * @param serviceId the service
-   * @param clientId the merchant
+   * @param clientId the merchant (an account id)
    * @returns the price, the raw price, the floor, the margin, the steps and the price for every merchant group
-   * @throws {AppError} `NOT_FOUND` (404: unknown or archived service, or unknown merchant)
+   * @throws {AppError} `NOT_FOUND` (404: unknown or archived service, or unknown merchant); `VALIDATION_FAILED` (422 on
+   *   `clientId`, code `retail_rank`: the account is of the retail rank and pays the shop price)
    */
   async resolve(serviceId: number, clientId: number): Promise<ResolutionView> {
     const db = this.db.db;
     const merchant = await merchantOf(db, clientId);
     if (!merchant) throw new AppError('NOT_FOUND', { detail: 'No merchant has this id.' });
+    if (merchant.rankKind !== 'merchant') {
+      throw new AppError('VALIDATION_FAILED', {
+        errors: [
+          {
+            field: 'clientId',
+            code: 'retail_rank',
+            message:
+              'This account is on the retail rank: it pays the shop price, so there is nothing to resolve for it.',
+          },
+        ],
+      });
+    }
     const context = await this.resolver.context(db, {
       serviceIds: [serviceId],
       clientIds: [clientId],

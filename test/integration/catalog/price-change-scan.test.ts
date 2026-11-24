@@ -10,11 +10,13 @@ import { CatalogPriceVersion, PriceChangeScan } from '@src/modules/catalog';
 import { recentOrderPrices } from '@src/modules/catalog/infra/foreign-reads.repository';
 import { OutboxRouteRegistry } from '@src/modules/platform';
 import { type TestApp, createTestApp } from '../../support/app';
+import { ensureRetailGroup, makeAccount } from '../../support/accounts';
 import { insertMerchant } from '../../support/auth';
 import { insertCategory, insertService } from '../../support/catalog';
 import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { deleteBullKeys, testBullPrefix } from '../../support/queues';
+import { insertOrderRow } from '../../support/orders';
 import { insertOrder, insertUsd } from '../../support/portal-orders';
 
 const prefix = testBullPrefix();
@@ -121,7 +123,43 @@ describe('PriceChangeScan.run', () => {
     expect(await scan().run()).toEqual({ checked: 1, announced: 1 });
   });
 
-  it('does not count a storefront order (no merchant) and ignores an archived service', async () => {
+  it('does not count a shop order, whoever placed it: a retail buyer, or a merchant that was raised after buying in the shop', async () => {
+    const serviceId = await insertService(db, await insertCategory(db), {
+      basePrice: '10.0000',
+      name: 'iPhone iCloud Clean',
+    });
+    const shopper = await makeAccount(t, { rank: 'retail' });
+    await insertOrderRow(db, {
+      accountId: shopper.id,
+      serviceId,
+      source: 'store',
+      unitPrice: '5.0000',
+      totalPrice: '5.0000',
+      createdAt: ago(1),
+    });
+    const raised = await insertMerchant(db);
+    await insertOrderRow(db, {
+      accountId: raised,
+      serviceId,
+      source: 'store',
+      unitPrice: '5.0000',
+      totalPrice: '5.0000',
+      createdAt: ago(1),
+    });
+    expect(await scan().run()).toEqual({ checked: 0, announced: 0 });
+    expect(await events()).toEqual([]);
+  });
+
+  it('does not count an account that is on the retail rank, even with an order through a merchant door', async () => {
+    const { clientId } = await buyer({ paid: '5.0000' });
+    await db
+      .update(s.clients)
+      .set({ groupId: await ensureRetailGroup(db) })
+      .where(eq(s.clients.id, clientId));
+    expect(await scan().run()).toEqual({ checked: 0, announced: 0 });
+  });
+
+  it('ignores an archived service', async () => {
     const { serviceId } = await buyer({ paid: '5.0000' });
     await db
       .update(s.services)

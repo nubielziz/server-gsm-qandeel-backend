@@ -3,7 +3,7 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import type { DbExecutor } from '../../../infra/db';
 import { OutboxRouteRegistry, OutboxService } from '../../platform';
-import type { OrderStatus } from '../db/schema';
+import type { OrderSource, OrderStatus } from '../db/schema';
 
 /**
  * The outbox event types of the order engine.
@@ -17,11 +17,18 @@ export const ORDER_OUTBOX_EVENTS = {
   dispatchRequested: 'order.dispatch_requested',
 } as const;
 
-/** What `order.status_changed` carries: ids and status words only. */
+/**
+ * What `order.status_changed` carries: ids and status words only.
+ *
+ * Why: decision 064: the buyer is always an account, and the door (`source`) says whose notices apply: a merchant's notice goes only for an
+ * order held from a wallet (any door but `store`), never for a shop order, whatever rank its account has today.
+ */
 export interface StatusChangedPayload {
   readonly orderId: number;
-  /** The merchant; `null` for a storefront order. */
-  readonly clientId: number | null;
+  /** The buyer account of the order. */
+  readonly accountId: number;
+  /** The door the order came through (`store` is paid first through the shop). */
+  readonly source: OrderSource;
   readonly fromStatus: OrderStatus;
   readonly toStatus: OrderStatus;
 }
@@ -54,7 +61,7 @@ export class OrderOutbox implements OnModuleInit {
    * Writes `order.status_changed`.
    *
    * @param tx the transition's transaction
-   * @param payload the order, its merchant and the two statuses
+   * @param payload the order, its buyer account and door, and the two statuses
    */
   async statusChanged(tx: DbExecutor, payload: StatusChangedPayload): Promise<void> {
     await this.outbox.add(tx, {

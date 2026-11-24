@@ -4,7 +4,7 @@
 /** The most lines one paste or one apply may hold (RESOLUTIONS orders-suppliers-19: at most 500 items per apply). */
 export const MAX_BULK_ITEMS = 500;
 
-/** How long an order closed by a cancel or a reject still keeps its input from matching another buyer's or service's order. */
+/** How long an order closed by a cancel or a reject still keeps its input from matching another account's or service's order. */
 export const RECENT_REJECTION_DAYS = 7;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -36,19 +36,14 @@ export interface MatchCandidate {
 /**
  * Names the buyer and the service of an order as one key.
  *
- * Why: a pasted result belongs to one buyer's order of one service; two orders with the same input but another merchant, another
- * storefront customer or another service are different work, so `matchLine` compares these keys.
+ * Why: a pasted result belongs to one account's order of one service; two orders with the same input but another account (a merchant, a shop
+ * customer or a guest are all accounts, decision 064) or another service are different work, so `matchLine` compares these keys.
  *
- * @param order the order's merchant or customer and its service
- * @returns a key equal for two orders exactly when they have the same buyer and the same service
+ * @param order the order's buyer account and its service
+ * @returns a key equal for two orders exactly when they have the same buyer account and the same service
  */
-export function ownerKey(order: {
-  readonly clientId: number | null;
-  readonly customerId: number | null;
-  readonly serviceId: number;
-}): string {
-  const buyer = order.clientId === null ? `customer ${order.customerId ?? 'none'}` : `client ${order.clientId}`;
-  return `${buyer} service ${order.serviceId}`;
+export function ownerKey(order: { readonly accountId: number; readonly serviceId: number }): string {
+  return `account ${order.accountId} service ${order.serviceId}`;
 }
 
 /**

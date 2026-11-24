@@ -1,5 +1,5 @@
-// Re-hashing a merchant's proven password at the configured argon2 cost (decision 007): shared by the portal's login and the smart
-// sign-in of feature 24A (both through `MerchantSignInService.startSession`), so the rule lives once.
+// Re-hashing an account's proven password at the configured argon2 cost (decision 007): used by the one sign-in use case of every
+// account (`AccountSignInService`), so the rule lives once.
 import type { Logger } from '@nestjs/common';
 import type { PasswordHasher } from '../../../infra/crypto';
 import type { Client } from '../db/schema';
@@ -15,7 +15,7 @@ import type { Client } from '../db/schema';
  *
  * @param hasher the password hasher
  * @param logger where a failed upgrade is reported (without the password)
- * @param client the merchant whose password was just proven
+ * @param client the account whose password was just proven
  * @param password the proven password
  * @returns the new hash, or `undefined` when no upgrade is due or the hashing failed
  */
@@ -29,7 +29,7 @@ export async function upgradedClientPasswordHash(
   try {
     return await hasher.hash(password);
   } catch (error) {
-    logger.warn(`Could not upgrade the password hash of merchant ${client.id}: ${String(error)}`);
+    logger.warn(`Could not upgrade the password hash of account ${client.id}: ${String(error)}`);
     return undefined;
   }
 }

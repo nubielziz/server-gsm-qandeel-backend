@@ -1,7 +1,7 @@
 // Drizzle queries on `notifications` (platform module, feature 12a): a row made once per occurrence, the guarded writes of a send's result,
 // the digest row that collects a day's price changes, and the staff's log with its recipient joins. Every function takes a DbExecutor.
 //
-// DEVIATION (decision 016, same as notification-foreign-reads.ts): the log joins `clients`, `staff_users` and `customers` read-only, because the
+// DEVIATION (decision 016, same as notification-foreign-reads.ts): the log joins `clients`, `client_groups` and `staff_users` read-only, because the
 // server masks the recipient's address and the list searches and counts by it in one query; the owners export no reader, and the platform
 // module imports no module (decision 032). Replace the joins with the owners' public reads when they exist.
 import { type SQL, and, eq, sql } from 'drizzle-orm';
@@ -11,8 +11,8 @@ import { type DbExecutor, type ListColumns, escapeLike, listOrderBy, listWhere, 
 import {
   type NewNotification,
   type Notification,
+  type NotificationAudience,
   type NotificationChannel,
-  type NotificationRecipientType,
   notifications,
 } from '../db/schema';
 
@@ -27,6 +27,12 @@ export type NotificationSortField = 'createdAt' | 'id';
  */
 export interface NotificationPayload {
   readonly variables?: Readonly<Record<string, string>>;
+  /**
+   * The audience whose text the message uses (an account's message only; decision 064): the door of an order or the kind of a wallet
+   * can differ from the rank the account holds when the row is sent. A row without it (made before the accounts were merged) uses
+   * the audience of its recipient's rank.
+   */
+  readonly audience?: NotificationAudience;
   /** The Telegram chat of an operations message (an alert's Telegram message, feature 12b). */
   readonly chatId?: string;
   /** The addresses of an email that goes to the ops mailbox named by configuration, joined by commas (an alert's message, feature 12b). */
@@ -199,7 +205,18 @@ export async function closeDigest(db: DbExecutor, id: number, now: Date): Promis
 }
 
 /** The recipient's current address (the join the log masks); never put into an answer unmasked. */
-const RECIPIENT_ADDRESS = sql`coalesce(${s.clients.email}, ${s.staffUsers.email}, ${s.customers.email})`;
+const RECIPIENT_ADDRESS = sql`coalesce(${s.clients.email}, ${s.staffUsers.email})`;
+
+/**
+ * The audience a row was sent for: the one its payload keeps, else the one of its recipient's rank (a row made before the audience was kept).
+ *
+ * Why: the 30-day count of a template is per event, channel and audience, and an account's two audiences share one recipient type. The
+ * rank rule is the same as `rankKindOf`: only a `b2b` rank is a merchant rank.
+ */
+const ROW_AUDIENCE = sql<NotificationAudience>`coalesce(${notifications.payload} ->> 'audience', case
+  when ${notifications.recipientType} = 'staff' then 'staff'
+  when ${s.clientGroups.kind} = 'b2b' then 'merchant'
+  else 'customer' end)`;
 
 const LOG_COLUMNS: ListColumns = {
   id: notifications.id,
@@ -217,7 +234,7 @@ const LOG_COLUMNS: ListColumns = {
  *
  * Why: the answer shows only a masked address, so a contains-search over the real address would let repeated searches rebuild it one
  * letter at a time. The address matches only when `q` is the whole address (any letter case), which proves nothing staff did not know.
- * Decision 047: a caller who may not read customers does not match the address of a customer recipient at all.
+ * Decision 047: a caller who may not read accounts does not match the address of an account recipient (any rank) at all.
  */
 function logWhere(query: ParsedListQuery<NotificationSortField>, contact: CustomerContact): SQL | undefined {
   const { search } = query;
@@ -226,8 +243,8 @@ function logWhere(query: ParsedListQuery<NotificationSortField>, contact: Custom
   const addressMatch =
     contact === 'full'
       ? sql`lower(${RECIPIENT_ADDRESS}) = lower(${search.text})`
-      : // Decision 047: a customer's address is not searched for a caller who may not read customers.
-        sql`(${notifications.recipientType} <> 'customer' and lower(${RECIPIENT_ADDRESS}) = lower(${search.text}))`;
+      : // Decision 047: an account's address is not searched for a caller who may not read accounts (clients:read).
+        sql`(${notifications.recipientType} <> 'account' and lower(${RECIPIENT_ADDRESS}) = lower(${search.text}))`;
   const matchesSearch = sql`(${notifications.event} ilike ${`%${escapeLike(search.text)}%`} or ${addressMatch})`;
   return base ? sql`${base} and ${matchesSearch}` : matchesSearch;
 }
@@ -247,15 +264,11 @@ function logSelect(db: DbExecutor) {
     .from(notifications)
     .leftJoin(
       s.clients,
-      and(eq(notifications.recipientType, sql`'client'`), eq(s.clients.id, notifications.recipientId)),
+      and(eq(notifications.recipientType, sql`'account'`), eq(s.clients.id, notifications.recipientId)),
     )
     .leftJoin(
       s.staffUsers,
       and(eq(notifications.recipientType, sql`'staff'`), eq(s.staffUsers.id, notifications.recipientId)),
-    )
-    .leftJoin(
-      s.customers,
-      and(eq(notifications.recipientType, sql`'customer'`), eq(s.customers.id, notifications.recipientId)),
     );
 }
 
@@ -264,7 +277,7 @@ function logSelect(db: DbExecutor) {
  *
  * @param db the database or a transaction
  * @param query the parsed list request (filters `status`, `channel`, `event`, `recipientType`; `q` contains-search over the event, equals-search over the address)
- * @param contact what the caller may see of customers' addresses: for `masked` the address search leaves customer recipients out (decision 047)
+ * @param contact what the caller may see of accounts' addresses: for `masked` the address search leaves account recipients out (decision 047)
  * @returns the page of rows with their recipients, and the exact total for the filter
  */
 export async function listLogRows(
@@ -287,7 +300,7 @@ export async function listLogRows(
 /**
  * Counts the log rows a filter matches, joining the recipient tables only when the search needs the address.
  *
- * Why: feature 23, plan 10.3: the three left joins are 1:1 by primary key, so they change no count; only `RECIPIENT_ADDRESS` (the equals
+ * Why: feature 23, plan 10.3: the two left joins are 1:1 by primary key, so they change no count; only `RECIPIENT_ADDRESS` (the equals
  * search over the address) reads them. Without a search the count is `SELECT count(*) FROM notifications WHERE <filters>`, which a
  * campaign of tens of thousands of rows would otherwise make every page of the log pay for. The total stays exact.
  */
@@ -304,15 +317,11 @@ async function countLogRows(db: DbExecutor, where: SQL | undefined, needsAddress
     .from(notifications)
     .leftJoin(
       s.clients,
-      and(eq(notifications.recipientType, sql`'client'`), eq(s.clients.id, notifications.recipientId)),
+      and(eq(notifications.recipientType, sql`'account'`), eq(s.clients.id, notifications.recipientId)),
     )
     .leftJoin(
       s.staffUsers,
       and(eq(notifications.recipientType, sql`'staff'`), eq(s.staffUsers.id, notifications.recipientId)),
-    )
-    .leftJoin(
-      s.customers,
-      and(eq(notifications.recipientType, sql`'customer'`), eq(s.customers.id, notifications.recipientId)),
     )
     .where(where);
   return row?.total ?? 0;
@@ -334,24 +343,27 @@ export async function findLogRow(db: DbExecutor, id: number): Promise<LogRow | u
 export interface SentCountKey {
   readonly event: string;
   readonly channel: NotificationChannel;
-  readonly recipientType: NotificationRecipientType;
+  /** The audience the message was sent for (a template belongs to one audience; both audiences of an account share one recipient type). */
+  readonly audience: NotificationAudience;
 }
 
 /**
  * Builds the key a count is stored under.
  *
- * @param key the event, channel and recipient type
+ * @param key the event, channel and audience
  * @returns the three joined with `|`
  */
 export function sentCountKey(key: SentCountKey): string {
-  return `${key.event}|${key.channel}|${key.recipientType}`;
+  return `${key.event}|${key.channel}|${key.audience}`;
 }
 
 /**
- * Counts the notifications sent since a moment, per event, channel and recipient type.
+ * Counts the notifications sent since a moment, per event, channel and audience.
  *
  * Why: identity-platform-11: `sentLast30Days` of a template is the count of `sent` notifications with the same event, channel and
- * recipient type since `now - 30 days`. One grouped query serves a whole page of templates.
+ * audience since `now - 30 days`. The audience of a row is the one its payload keeps; a row made before the accounts were merged has none
+ * and reads as the audience of its recipient's rank (the one table of accounts holds both). One grouped query serves a whole page of
+ * templates.
  *
  * @param db the database or a transaction
  * @param since the start of the window, from the injected clock
@@ -369,10 +381,15 @@ export async function sentCountsSince(
     .select({
       event: notifications.event,
       channel: notifications.channel,
-      recipientType: notifications.recipientType,
+      audience: ROW_AUDIENCE,
       total: sql<number>`count(*)::int`,
     })
     .from(notifications)
+    .leftJoin(
+      s.clients,
+      and(eq(notifications.recipientType, sql`'account'`), eq(s.clients.id, notifications.recipientId)),
+    )
+    .leftJoin(s.clientGroups, eq(s.clientGroups.id, s.clients.groupId))
     .where(
       and(
         eq(notifications.status, 'sent'),
@@ -383,7 +400,7 @@ export async function sentCountsSince(
         )})`,
       ),
     )
-    .groupBy(notifications.event, notifications.channel, notifications.recipientType);
+    .groupBy(notifications.event, notifications.channel, ROW_AUDIENCE);
   for (const row of rows) counts.set(sentCountKey(row), row.total);
   return counts;
 }

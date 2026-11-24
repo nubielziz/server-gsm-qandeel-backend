@@ -1,5 +1,6 @@
-// ClientStatementService: makes the official account statement PDF of a merchant (route GET /admin/reports/client-statement/:clientId,
-// stage 11). Reads the wallet ledger in one snapshot, draws it with the platform's PdfRenderer and writes an audit row.
+// ClientStatementService: makes the official account statement PDF of the live wallet of an account (route GET
+// /admin/reports/client-statement/:clientId, stage 11). Reads the wallet ledger in one snapshot, draws it with the platform's PdfRenderer and
+// writes an audit row.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
@@ -7,8 +8,15 @@ import { type DbExecutor, DbService, REPORT_STATEMENT_TIMEOUT_MS } from '../../.
 import { type PermissionHolder, requirePermission } from '../../identity';
 import { AuditService, PdfRenderer } from '../../platform';
 import { BASE_CURRENCY } from '../domain/accounts';
-import { type StatementData, statementDocument, statementFilename, statementTotals } from '../domain/client-statement';
+import {
+  type StatementData,
+  type StatementWallet,
+  statementDocument,
+  statementFilename,
+  statementTotals,
+} from '../domain/client-statement';
 import { dayWindow, isOrderedRange } from '../domain/report-figures';
+import { readCustomerWallet } from '../infra/customer-wallet.repository';
 import {
   listInvoicesBetween,
   listWalletLinesBetween,
@@ -17,6 +25,7 @@ import {
 } from '../infra/client-statement.repository';
 import { findStatementMerchant } from '../infra/foreign-directory.repository';
 import { type StatementEntryRow, readWalletAccounts } from '../infra/ledger-read.repository';
+import { AccountWallets } from '../ports/account-wallets';
 
 /** The most wallet lines (and the most invoices) one statement holds; an explicit period with more must be narrowed. */
 export const STATEMENT_PDF_MAX_ROWS = 10_000;
@@ -32,7 +41,10 @@ export interface StatementFile {
 /**
  * Renders the client statement.
  *
- * Why: the console's merchant page downloads "the official statement" accountants keep (contract money.md). Figures come straight from
+ * Why: the console's account page downloads "the official statement" accountants keep (contract money.md). It is the statement of the
+ * account's live wallet and of that wallet's invoices (decision 064: a statement lists the live wallet): the merchant wallet (`client_wallet`)
+ * of a merchant rank, the store balance (`customer_wallet`) and its top-ups of the retail rank. The history of a wallet the account left at a
+ * rank change is on the staff statement page (`GET /admin/clients/:id/statement?wallet=merchant|store`). Figures come straight from
  * the ledger accounts and lines in one read-only repeatable-read transaction, never from a cache (decision 022), so the opening
  * balance, the lines and the closing balance describe one moment. The PDF is built in memory, sent whole (not streamed) and not
  * stored (decision 030). Days are UTC days like the other reports (ANSWERS finance Q7). Lines are ordered, and the opening balance is
@@ -50,14 +62,15 @@ export class ClientStatementService {
     private readonly db: DbService,
     private readonly pdf: PdfRenderer,
     private readonly audit: AuditService,
+    private readonly wallets: AccountWallets,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
-   * Makes the statement of a merchant.
+   * Makes the statement of the live wallet of an account.
    *
    * @param caller the signed-in staff member (the same ledger lines as the wallet statement, so `wallet:read` too, decision 046)
-   * @param clientId the merchant
+   * @param accountId the account (the route parameter is still called `clientId`: merchants kept their ids)
    * @param query the optional first and last day (`YYYY-MM-DD`, both included); a missing `to` is today, a missing `from` the day of
    *   the first wallet line, or, when the history holds more than `maxRows` lines, the day of the first of the most recent
    *   `maxRows` lines (the opening balance is the balance before that line); without `from` the invoices are cut the same way, to the
@@ -66,11 +79,11 @@ export class ClientStatementService {
    * @returns the file name and the PDF bytes
    * @throws {AppError} `FORBIDDEN` (403) when the caller lacks `wallet:read`; `VALIDATION_FAILED` (422 on `from`) when `from` is after `to`, or when an explicit `from` period holds more
    *   than `maxRows` lines or more than `maxRows` invoices (a request without `from` is never refused for size); `NOT_FOUND` when
-   *   there is no merchant with this id
+   *   there is no account with this id
    */
   async render(
     caller: PermissionHolder,
-    clientId: number,
+    accountId: number,
     query: { from?: string | undefined; to?: string | undefined },
     maxRows = STATEMENT_PDF_MAX_ROWS,
   ): Promise<StatementFile> {
@@ -83,7 +96,7 @@ export class ClientStatementService {
       throw invalid('The first day must not be after the last day.');
     }
 
-    const data = await this.read(clientId, query.from, to, now, maxRows);
+    const data = await this.read(accountId, query.from, to, now, maxRows);
     const bytes = await this.pdf.render(statementDocument(data));
 
     const totals = statementTotals(data.opening, data.lines);
@@ -91,10 +104,11 @@ export class ClientStatementService {
       this.audit.record(tx, {
         // The demo has no statement export; this follows its 'exported data of' (customer) phrase.
         action: 'exported statement of',
-        entityType: 'merchant',
-        entityId: clientId,
+        entityType: 'account',
+        entityId: accountId,
         entityLabel: data.merchant.name,
         after: {
+          wallet: data.wallet,
           from: data.from,
           to: data.to,
           lines: data.lines.length,
@@ -104,12 +118,12 @@ export class ClientStatementService {
         },
       }),
     );
-    return { filename: statementFilename(clientId, data.from, data.to), bytes };
+    return { filename: statementFilename(accountId, data.from, data.to), bytes };
   }
 
   /** Reads everything the statement shows in one read-only snapshot. */
   private read(
-    clientId: number,
+    accountId: number,
     from: string | undefined,
     to: string,
     now: Date,
@@ -117,9 +131,11 @@ export class ClientStatementService {
   ): Promise<StatementData> {
     return this.db.runInTransaction(
       async ({ tx }): Promise<StatementData> => {
-        const merchant = await findStatementMerchant(tx, clientId);
-        if (!merchant) throw new AppError('NOT_FOUND', { detail: 'No merchant with this id.' });
-        const accounts = await readWalletAccounts(tx, clientId, BASE_CURRENCY);
+        const merchant = await findStatementMerchant(tx, accountId);
+        if (!merchant) throw new AppError('NOT_FOUND', { detail: 'No account with this id.' });
+        // The rank is read in the same snapshot as the lines, so the wallet named is the one whose lines are shown.
+        const wallet = await this.wallets.kindOf(tx, accountId);
+        const accounts = await this.walletOf(tx, accountId, wallet);
         const { end } = dayWindow(to, to);
         const { lines, start } = await readLines(tx, accounts.walletId, from, to, maxRows);
         const { start: begin } = dayWindow(start, to);
@@ -127,7 +143,8 @@ export class ClientStatementService {
         // Without `from` the newest `maxRows` invoices are kept, the way the lines are cut; an explicit period must fit.
         const invoices = await listInvoicesBetween(
           tx,
-          clientId,
+          accountId,
+          wallet,
           begin,
           end,
           from === undefined ? maxRows : maxRows + 1,
@@ -144,6 +161,7 @@ export class ClientStatementService {
               : await walletBalanceBeforeMoment(tx, accounts.walletId, begin);
         return {
           merchant,
+          wallet,
           from: start,
           to,
           opening,
@@ -157,6 +175,20 @@ export class ClientStatementService {
       { isolation: 'repeatable read', readOnly: true, statementTimeoutMs: REPORT_STATEMENT_TIMEOUT_MS },
     );
   }
+
+  /** The ledger account of the live wallet (`undefined` while it was never opened) and its credit limit (zero for a store balance). */
+  private async walletOf(
+    tx: DbExecutor,
+    accountId: number,
+    wallet: StatementWallet,
+  ): Promise<{ walletId: number | undefined; creditLimit: string }> {
+    if (wallet === 'store') {
+      const row = await readCustomerWallet(tx, accountId);
+      return { walletId: row?.id, creditLimit: '0.0000' };
+    }
+    const accounts = await readWalletAccounts(tx, accountId, BASE_CURRENCY);
+    return { walletId: accounts.walletId, creditLimit: accounts.creditLimit };
+  }
 }
 
 /**
@@ -166,7 +198,7 @@ export class ClientStatementService {
  * history longer than `maxRows` is cut to its newest lines instead (the console sends no period and must get a statement, not a 422).
  *
  * @param tx the statement's transaction
- * @param walletId the merchant's `client_wallet` account, `undefined` when the merchant has none
+ * @param walletId the ledger account of the live wallet, `undefined` when the account has none
  * @param from the explicit first day, if the caller sent one
  * @param to the last day
  * @param maxRows the most lines a statement holds

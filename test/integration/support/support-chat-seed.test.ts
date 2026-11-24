@@ -12,7 +12,7 @@ import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { merchantSession } from '../../support/notifications';
-import { customerSession } from '../../support/support-accounts';
+import { revealedToken } from '../../support/capability-tokens';
 
 setDefaultTimeout(180_000);
 
@@ -115,19 +115,18 @@ describe.skipIf(!frontendPresent)('the support seed of the live chat', () => {
     // The test stack has its object store (a machine without one runs the seed without the attachment, which this test does not cover).
     expect(stored).toBeDefined();
     const file = stored!;
-    expect(file).toMatchObject({ ownerType: 'customer', mime: 'application/pdf', filename: 'payment-receipt.pdf' });
+    expect(file).toMatchObject({ ownerType: 'account', mime: 'application/pdf', filename: 'payment-receipt.pdf' });
     const [carrier] = (await db.select().from(s.ticketMessages)).filter((row) => row.fileIds.includes(file.id));
-    expect(carrier).toMatchObject({ authorType: 'customer', authorId: file.ownerId, isInternal: false });
+    expect(carrier).toMatchObject({ authorType: 'account', authorId: file.ownerId, isInternal: false });
     const [ticket] = await db.select().from(s.supportTickets).where(eq(s.supportTickets.id, carrier!.ticketId));
-    const customer = await customerSession(t, file.ownerId);
-    const mine = (await customer.call('GET', '/store/v1/me/tickets')).body.find(
-      (row: { number: string }) => row.number === ticket!.number,
-    );
-    const page = await t.app.inject({ method: 'GET', url: `/store/v1/tickets/${mine.token}` });
+    // The first ticket with a page can be a guest's (an account without a login has no session and no list of its own): the page is
+    // reached with the ticket's own link, as the requester reaches it from the mail.
+    const token = revealedToken(t, 'ticket', { enc: ticket!.tokenEnc, plain: ticket!.token });
+    const page = await t.app.inject({ method: 'GET', url: `/store/v1/tickets/${token}` });
     expect(page.json().messages.at(-1).attachments).toEqual([
       { id: file.id, filename: 'payment-receipt.pdf', mime: 'application/pdf', size: file.size },
     ]);
-    const download = await t.app.inject({ method: 'GET', url: `/store/v1/tickets/${mine.token}/files/${file.id}` });
+    const download = await t.app.inject({ method: 'GET', url: `/store/v1/tickets/${token}/files/${file.id}` });
     expect(download.statusCode).toBe(302);
     expect((await staff.get(`/admin/support-tickets/${ticket!.id}/files/${file.id}`)).status).toBe(302);
     // Running the seed again attaches the same file and adds nothing.

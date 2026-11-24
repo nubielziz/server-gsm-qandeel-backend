@@ -1,14 +1,17 @@
 // Integration tests of the daily cap on wrong authenticator codes (POST /admin/auth/2fa and POST /client/auth/2fa) through HTTP on the
-// real application: twenty wrong codes of one account within 24 hours close its code step, also to the right code, until those 24
-// hours end (it then opens by itself with a count of zero), a new password is set by an emailed link or by staff, or staff reset
-// two-factor sign-in; a correct code never resets the count; the closing is audited once; every wrong code is logged.
+// real application: twenty wrong codes of one person (a staff member, or an account of either rank) within 24 hours close the code step,
+// also to the right code, until those 24 hours end (it then opens by itself with a count of zero), a new password is set by an emailed
+// link or by staff, or staff reset two-factor sign-in; a correct code never resets the count; the closing is audited once; every wrong
+// code is logged.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { asc, eq } from 'drizzle-orm';
 import { TokenService } from '@src/infra/crypto';
 import { DbService, schema as s } from '@src/infra/db';
 import { StaffAuthTokens } from '@src/modules/identity';
 import { CodeStepLock } from '@src/modules/identity/application/code-step-lock';
+import { CLIENT_TOTP_AAD, TotpService } from '@src/modules/identity/application/totp.service';
 import { MAX_FAILED_CODES } from '@src/modules/identity/domain/code-step-lock';
+import { makeAccount } from '../../support/accounts';
 import { adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, clearRateLimits } from '../../support/auth';
@@ -72,7 +75,7 @@ const lockRows = async () =>
  * also records the closing, as the wrong code that reached the cap does.
  */
 async function setCount(
-  type: 'staff' | 'client',
+  type: 'staff' | 'account',
   id: number,
   failures: number,
   sinceMs: number,
@@ -90,7 +93,7 @@ async function setCount(
 
 /** The count of wrong codes on an account's row. */
 async function countOf(
-  type: 'staff' | 'client',
+  type: 'staff' | 'account',
   id: number,
 ): Promise<{ totpFailures: number; totpFailuresSince: Date | null; totpLockedAt: Date | null }> {
   const { db } = await testDb();
@@ -106,7 +109,7 @@ async function countOf(
 }
 
 /** The warnings the code step wrote for the wrong codes of one account. */
-const wrongCodeWarnings = (type: 'staff' | 'client', id: number) =>
+const wrongCodeWarnings = (type: 'staff' | 'account', id: number) =>
   logSink.lines.filter(
     (line) => line.level === 40 && String(line.msg ?? '').startsWith(`Wrong authenticator code (${type} ${id})`),
   );
@@ -396,7 +399,7 @@ describe('the code step of a merchant', () => {
       }
       await nextQuarterHour();
     }
-    const warnings = wrongCodeWarnings('client', merchant.id);
+    const warnings = wrongCodeWarnings('account', merchant.id);
     expect(warnings).toHaveLength(20);
     for (const line of warnings) expect(String(line.msg)).toContain(guesserIp);
 
@@ -408,11 +411,11 @@ describe('the code step of a merchant', () => {
     const real = new MerchantPortal(t, own);
     expect((await real.login(merchant.email)).statusCode).toBe(200);
     expect((await real.code(await codeNow(merchant.secret))).statusCode).toBe(429);
-    expect(await lockRows()).toMatchObject([{ entityType: 'merchant', entityId: merchant.id }]);
+    expect(await lockRows()).toMatchObject([{ entityType: 'account', entityId: merchant.id }]);
 
     // A new password from a reset link opens it again.
     await (await testDb()).db.insert(s.authTokens).values({
-      subjectType: 'client',
+      subjectType: 'account',
       subjectId: merchant.id,
       purpose: 'reset',
       tokenHash: t.app.get(TokenService).hash('code-cap-reset-1'),
@@ -427,21 +430,21 @@ describe('the code step of a merchant', () => {
   it('opens again by itself when the 24 hours from the first wrong code end', async () => {
     const merchant = await makeMerchant(t, { twofa: true, emailVerifiedAt: new Date(clock.nowMs()) });
     const firstWrongMs = clock.nowMs() - HOUR;
-    await setCount('client', merchant.id, 19, firstWrongMs);
+    await setCount('account', merchant.id, 19, firstWrongMs);
     const p = new MerchantPortal(t, freshClientIp());
     expect((await p.login(merchant.email)).statusCode).toBe(200);
     expect((await p.code(await wrongCode(merchant.secret))).statusCode).toBe(422);
     const closed = await p.code(await codeNow(merchant.secret));
     expect(closed.statusCode).toBe(429);
     expect(closed.headers['retry-after']).toBe(String(23 * 3600));
-    expect(await lockRows()).toMatchObject([{ entityType: 'merchant', entityId: merchant.id }]);
+    expect(await lockRows()).toMatchObject([{ entityType: 'account', entityId: merchant.id }]);
 
     clock.set(firstWrongMs + DAY);
     await clearRateLimits(t);
     const q = new MerchantPortal(t, freshClientIp());
     expect((await q.login(merchant.email)).statusCode).toBe(200);
     expect((await q.code(await codeNow(merchant.secret))).statusCode).toBe(204);
-    expect(await countOf('client', merchant.id)).toEqual({
+    expect(await countOf('account', merchant.id)).toEqual({
       totpFailures: 0,
       totpFailuresSince: null,
       totpLockedAt: null,
@@ -456,7 +459,7 @@ describe('the code step of a merchant', () => {
     expect((await own.code(await codeNow(merchant.secret))).statusCode).toBe(204);
 
     // Closed while the merchant still holds a full session: its own password change leaves the step closed.
-    await setCount('client', merchant.id, 20, clock.nowMs(), true);
+    await setCount('account', merchant.id, 20, clock.nowMs(), true);
     expect((await own.changePassword(MERCHANT_PASSWORD, NEW_PASSWORD)).statusCode).toBe(204);
     const [kept] = await db.select().from(s.clients).where(eq(s.clients.id, merchant.id));
     expect(kept!.totpFailures).toBe(20);
@@ -481,18 +484,63 @@ describe('the code step of a merchant', () => {
 
   it('forgets the count with a 2FA reset by staff', async () => {
     const merchant = await makeMerchant(t, { twofa: true, emailVerifiedAt: new Date(clock.nowMs()) });
-    await setCount('client', merchant.id, 20, clock.nowMs(), true);
+    await setCount('account', merchant.id, 20, clock.nowMs(), true);
     const p = new MerchantPortal(t, freshClientIp());
     expect((await p.login(merchant.email)).statusCode).toBe(200);
     expect((await p.code(await codeNow(merchant.secret))).statusCode).toBe(429);
 
     const staff = await adminWith(t, ['clients:read', 'clients:security']);
     expect((await staff.post(`/admin/clients/${merchant.id}/reset-2fa`)).status).toBe(204);
-    expect(await countOf('client', merchant.id)).toEqual({
+    expect(await countOf('account', merchant.id)).toEqual({
       totpFailures: 0,
       totpFailuresSince: null,
       totpLockedAt: null,
     });
     expect((await new MerchantPortal(t, freshClientIp()).login(merchant.email)).json()).toEqual({ next: 'done' });
+  });
+});
+
+describe('the code step of a retail account', () => {
+  /** A retail account with two-step sign-in on and a verified email: the secret to type codes from. */
+  async function makeRetailWithTwoFactor(): Promise<{ id: number; email: string; secret: string }> {
+    const totp = t.app.get(TotpService);
+    const secret = totp.newSecret();
+    const made = await makeAccount(t, {
+      rank: 'retail',
+      password: MERCHANT_PASSWORD,
+      twofaEnabled: true,
+      totpSecretEnc: totp.seal(secret, CLIENT_TOTP_AAD),
+      emailVerifiedAt: new Date(clock.nowMs()),
+    });
+    return { id: made.id, email: made.email, secret };
+  }
+
+  it('is closed after twenty wrong codes as for a merchant rank: one count on the account row, one audit row, opened by the clock', async () => {
+    const customer = await makeRetailWithTwoFactor();
+    const firstWrongMs = clock.nowMs() - HOUR;
+    await setCount('account', customer.id, 19, firstWrongMs);
+    const p = new MerchantPortal(t, freshClientIp());
+    expect((await p.login(customer.email)).json()).toEqual({ next: 'totp' });
+    expect((await p.code(await wrongCode(customer.secret))).statusCode).toBe(422);
+    expect(wrongCodeWarnings('account', customer.id)).toHaveLength(1);
+    const closed = await p.code(await codeNow(customer.secret));
+    expect(closed.statusCode).toBe(429);
+    expect(problem(closed).code).toBe('RATE_LIMITED');
+    expect(closed.headers['retry-after']).toBe(String(23 * 3600));
+    expect(await lockRows()).toMatchObject([{ entityType: 'account', entityId: customer.id }]);
+    // The twentieth wrong code is counted; the right code that was refused took its own count back.
+    expect(await countOf('account', customer.id)).toMatchObject({ totpFailures: 20, totpLockedAt: expect.any(Date) });
+
+    // At the end of the 24 hours the right code works and nothing stays counted.
+    clock.set(firstWrongMs + DAY);
+    await clearRateLimits(t);
+    const q = new MerchantPortal(t, freshClientIp());
+    expect((await q.login(customer.email)).json()).toEqual({ next: 'totp' });
+    expect((await q.code(await codeNow(customer.secret))).statusCode).toBe(204);
+    expect(await countOf('account', customer.id)).toEqual({
+      totpFailures: 0,
+      totpFailuresSince: null,
+      totpLockedAt: null,
+    });
   });
 });

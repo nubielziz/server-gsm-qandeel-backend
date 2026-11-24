@@ -89,6 +89,8 @@ export interface PortalAnswer {
 
 /** A signed-in merchant's calls to the portal routes (the shared `portalFor` has no PUT, which the preferences need). */
 export interface MerchantSession {
+  readonly accountId: number;
+  /** The same number as `accountId`, under the name the old helper used. */
   readonly clientId: number;
   call(method: 'GET' | 'POST' | 'PUT', url: string, payload?: unknown): Promise<PortalAnswer>;
   /** Sends a mutation with the cookie but no CSRF token. */
@@ -104,7 +106,7 @@ export interface MerchantSession {
  * @returns the client
  */
 export async function merchantSession(t: TestApp, clientId: number, ip = '127.0.0.1'): Promise<MerchantSession> {
-  const session = await openSession(t, { type: 'client', id: clientId });
+  const session = await openSession(t, { type: 'account', id: clientId });
   const send = async (
     method: 'GET' | 'POST' | 'PUT',
     url: string,
@@ -121,6 +123,7 @@ export async function merchantSession(t: TestApp, clientId: number, ip = '127.0.
     return { body: res.body === '' ? undefined : JSON.parse(res.body), status: res.statusCode, res };
   };
   return {
+    accountId: clientId,
     clientId,
     call: (method, url, payload) =>
       send(method, url, method === 'GET' ? session.headers : session.mutationHeaders, payload),

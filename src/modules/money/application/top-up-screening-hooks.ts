@@ -16,7 +16,7 @@ export const TOP_UP_SCREENING_UNAVAILABLE =
 export interface TopUpScreeningFacts {
   /** The gateway's card fingerprint of the payment (`payments.card_fingerprint`), when the gateway gave one. */
   readonly cardFingerprint: string | null;
-  /** The email of the merchant that is topping up, when known. */
+  /** The email of the account that is topping up, of either rank, when known. */
   readonly email: string | null;
 }
 

@@ -1,5 +1,6 @@
-// The pure side of the money integrity check (job `ledger_integrity`, feature 12b): the four checks in the map's order, how a finding is
-// labelled, and what the job stores in `job_runs.result`. RESOLUTIONS health-commissions-9, ANSWERS system-health Q35 and Q36, B99.
+// The pure side of the money integrity check (job `ledger_integrity`, feature 12b): the five checks (the map's four, then the one decision 064
+// adds), how a finding is labelled, and what the job stores in `job_runs.result`. RESOLUTIONS health-commissions-9, ANSWERS system-health Q35
+// and Q36, B99.
 
 /** The `job_runs.job` of the nightly and the manual integrity run. */
 export const INTEGRITY_JOB = 'ledger_integrity';
@@ -10,12 +11,13 @@ export const MAX_FINDINGS = 20;
 /** A hold older than this with no release or settlement is stuck (map: "holds stuck over 24 hours"). */
 export const STUCK_HOLD_HOURS = 24;
 
-/** The four checks of the map, in its order. */
+/** The checks, in the map's order, then the one the one-account-type model adds (decision 064). */
 export const CHECK_KEYS = [
   'entries_balanced',
   'accounts_match_lines',
   'stuck_holds',
   'payments_without_entry',
+  'wallets_follow_rank',
 ] as const;
 /** One check key. */
 export type CheckKey = (typeof CHECK_KEYS)[number];
@@ -32,6 +34,7 @@ export const CHECKS: Readonly<Record<CheckKey, { label: string; kind: FindingKin
   accounts_match_lines: { label: 'Every account balance equals the sum of its lines', kind: 'account', money: true },
   stuck_holds: { label: 'No hold is stuck for more than 24 hours', kind: 'hold', money: false },
   payments_without_entry: { label: 'Every confirmed payment has an entry', kind: 'payment', money: true },
+  wallets_follow_rank: { label: 'Every wallet follows the rank of its account', kind: 'account', money: true },
 };
 
 /** One problem a check found (the console's `IntegrityFinding`); fields a kind does not use are `null`. */
@@ -82,9 +85,9 @@ export function accountRef(kind: string, ownerId: number | null): string {
  *
  * @param kind the account kind
  * @param ownerId the owner's id, or `null` for a system account
- * @param ownerName the merchant's, supplier's or storefront customer's name, when it is known
- * @returns `Wallet · <merchant>`, `Hold · <merchant>`, `Supplier prepaid · <supplier>`, `Customer wallet · <customer>` (feature 21), or
- *   the kind in words
+ * @param ownerName the account's or supplier's name, when it is known
+ * @returns `Wallet · <account>`, `Hold · <account>`, `Supplier prepaid · <supplier>`, `Customer wallet · <account>` (the store balance of
+ *   an account with a retail rank), or the kind in words
  */
 export function accountLabel(kind: string, ownerId: number | null, ownerName: string | null): string {
   const owner = ownerName ?? (ownerId === null ? null : `#${ownerId}`);
@@ -94,6 +97,37 @@ export function accountLabel(kind: string, ownerId: number | null, ownerName: st
   if (kind === 'supplier_prepaid') return `Supplier prepaid · ${owner}`;
   if (kind === 'customer_wallet') return `Customer wallet · ${owner}`;
   return `${kindInWords(kind)} · ${owner}`;
+}
+
+/** What is wrong with a wallet that the fifth check lists. */
+export type RankProblem = 'inactive_wallet' | 'credit_without_rank' | 'no_account';
+
+/** The words after the owner's name in a finding of the fifth check. */
+const RANK_PROBLEM_WORDS: Readonly<Record<RankProblem, string>> = {
+  inactive_wallet: 'not the wallet of its rank',
+  credit_without_rank: 'credit on a rank without credit',
+  no_account: 'no account behind it',
+};
+
+/**
+ * The label of a finding of the fifth check.
+ *
+ * Why: the wallet kind follows the rank kind (decision 064): a wallet of the other kind must hold zero, stay unfrozen and carry no credit limit, a rank
+ * without credit has no credit limit, and every wallet has an account behind it. The label says which of the three it is.
+ *
+ * @param problem what is wrong
+ * @param kind the account kind
+ * @param ownerId the owner's id, or `null` for an account with no owner
+ * @param ownerName the account's name, when it is known
+ * @returns for example `Wallet · Zain · not the wallet of its rank`
+ */
+export function rankFindingLabel(
+  problem: RankProblem,
+  kind: string,
+  ownerId: number | null,
+  ownerName: string | null,
+): string {
+  return `${accountLabel(kind, ownerId, ownerName)} · ${RANK_PROBLEM_WORDS[problem]}`;
 }
 
 /**
@@ -130,9 +164,9 @@ export function checkResult(key: CheckKey, count: number, findings: Finding[], d
 }
 
 /**
- * The four checks of a run that never happened or did not finish.
+ * The checks of a run that never happened or did not finish.
  *
- * @returns the four checks in the map's order, each `unknown` with no findings
+ * @returns every check in order, each `unknown` with no findings
  */
 export function unknownChecks(): CheckResult[] {
   return CHECK_KEYS.map((key) => ({
@@ -152,8 +186,8 @@ export function unknownChecks(): CheckResult[] {
  * not sum to zero, an account off from its lines and a confirmed payment with no entry are all the ledger disagreeing; a stuck
  * hold is a process delay with a console page of its own (the stuck-orders list), not a disagreement.
  *
- * @param checks the four checks of a run
- * @returns the number of findings of the three money checks
+ * @param checks the checks of a run
+ * @returns the number of findings of the money checks (a wallet that does not follow its rank is one: money sits where it should not)
  */
 export function mismatchCountOf(checks: readonly CheckResult[]): number {
   return checks.filter((check) => check.key !== 'stuck_holds').reduce((sum, check) => sum + check.count, 0);
@@ -169,7 +203,7 @@ export interface IntegrityTotals {
 /**
  * The `result` stored on the `job_runs` row of a finished integrity run.
  *
- * @param checks the four checks
+ * @param checks the checks of the run
  * @param totals how much the run looked at
  * @returns top-level counters (what the jobs page prints) and the nested `checks` (what the integrity page reads)
  */
@@ -185,18 +219,19 @@ export function integrityResult(checks: readonly CheckResult[], totals: Integrit
     accountDifferences: count('accounts_match_lines'),
     stuckHolds: count('stuck_holds'),
     paymentsWithoutEntry: count('payments_without_entry'),
+    walletsOffRank: count('wallets_follow_rank'),
     checks,
   };
 }
 
 /**
- * Reads the four checks back from a run's `result`.
+ * Reads the checks back from a run's `result`.
  *
  * Why: the report shows the checks of the last finished run; a run that failed or was skipped has no `checks`, and a check
- * missing from the result reads `unknown`, never `pass`.
+ * missing from the result reads `unknown`, never `pass` (a run stored before the fifth check existed shows it unknown until the next run).
  *
  * @param result a `job_runs.result` (any shape)
- * @returns the four checks in the map's order
+ * @returns every check in order
  */
 export function checksFromResult(result: Record<string, unknown> | null | undefined): CheckResult[] {
   const stored = result?.checks;
@@ -226,7 +261,7 @@ export function isCleanRun(status: string, result: Record<string, unknown> | nul
  * Whether a finished run counts toward the report's `lastRun`.
  *
  * Why: a run that was skipped because another was going on checked nothing; the run it made way for finishes and becomes the last
- * one, so showing the skipped one would only turn four known results into four unknown ones.
+ * one, so showing the skipped one would only turn known results into unknown ones.
  *
  * @param status the run's status
  * @returns true unless the run was skipped
@@ -236,7 +271,7 @@ export const countsAsLastRun = (status: string): boolean => status !== 'skipped'
 /**
  * The overall verdict of a run's checks (`result` of the report, ANSWERS Q35).
  *
- * @param checks the four checks
+ * @param checks the checks of a run
  * @returns `fail` when any check failed, else `unknown` when any is unknown, else `pass`
  */
 export function overallResult(checks: readonly CheckResult[]): CheckStatus {

@@ -7,6 +7,7 @@ import { schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
 import { CacheKeys } from '@src/infra/cache';
 import { WebhookIntakeCounter } from '@src/modules/health';
+import { makeAccount } from '../../support/accounts';
 import { adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -104,14 +105,11 @@ describe('GET /admin/system/orders-health', () => {
     for (let i = 0; i < 9; i += 1) await done('completed');
     await done('rejected');
     await done('completed', { type: 'server', serviceId: world.server.serviceId });
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: 'buyer@example.com', name: 'Buyer', currency: 'USD' })
-      .returning({ id: s.customers.id });
+    const buyer = await makeAccount({ rank: 'retail', email: 'buyer@example.com', name: 'Buyer', currency: 'USD' });
     await insertOrderRow(db, {
       serviceId: world.auto.serviceId,
-      clientId: null,
-      customerId: customer!.id,
+      source: 'store',
+      accountId: buyer.id,
       status: 'pending',
       dispatchState: 'held',
       totalPrice: '20.0000',

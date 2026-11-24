@@ -1,6 +1,7 @@
-// Integration tests of the merchant portal's sign-in (feature 2b, routes POST /client/auth/login, /2fa, /logout, GET
-// /client/auth/me, PATCH /client/profile; MISMATCHES B124 to B126, B129, B130, B153) through HTTP on the real application:
-// the flow the portal runs, every refusal the contracts list, and the rule for merchants waiting for approval both ways.
+// Integration tests of the sign-in of an account of a merchant rank (feature 2b, routes POST /client/auth/login, /2fa, /logout, GET
+// /client/auth/me, PATCH /client/profile; MISMATCHES B124 to B126, B129, B130) through HTTP on the real application: the flow the
+// portal runs and every refusal the contracts list. The session is the one account session (decision 064): subject `account`, the
+// cookie `gsm_client_session`, the readable CSRF cookie of the merchant rank kind.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { asc, eq } from 'drizzle-orm';
 import { contractRegistry } from '@src/common/contract';
@@ -14,6 +15,7 @@ import {
   csrfTokenFor,
 } from '@src/modules/identity';
 import { type TestApp, createTestApp } from '../../support/app';
+import { makeAccount } from '../../support/accounts';
 import { clearIdentityCaches } from '../../support/auth';
 import { DAY, SECOND, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
@@ -72,33 +74,30 @@ describe('POST /client/auth/login', () => {
     expect(res.json()).toEqual({ next: 'done' });
     expect(res.headers['cache-control']).toBe('no-store');
 
-    const sessionCookie = res.cookies.find((cookie) => cookie.name === SESSION_COOKIE_NAMES.client)!;
+    const sessionCookie = res.cookies.find((cookie) => cookie.name === SESSION_COOKIE_NAMES.account)!;
     expect(sessionCookie).toMatchObject({ httpOnly: true, sameSite: 'Lax', path: '/' });
     expect(sessionCookie.maxAge).toBeGreaterThan(29 * 24 * 3600);
-    const csrfCookie = res.cookies.find((cookie) => cookie.name === CSRF_COOKIE_NAMES.client)!;
+    const csrfCookie = res.cookies.find((cookie) => cookie.name === CSRF_COOKIE_NAMES.merchant)!;
     expect(csrfCookie.httpOnly).toBeFalsy();
     const expectedCsrf = csrfTokenFor(t.config.security.csrfSecret, t.app.get(TokenService).hash(p.sessionToken!));
     expect(csrfCookie.value).toBe(expectedCsrf);
     expect(res.headers['x-csrf-token']).toBe(expectedCsrf);
 
     expect(await sessionsOf(merchant.id)).toMatchObject([
-      { subjectType: 'client', stage: 'active', ip: expect.any(String) },
+      { subjectType: 'account', stage: 'active', ip: expect.any(String) },
     ]);
     expect((await p.me()).statusCode).toBe(200);
-  });
-
-  it('lets a merchant waiting for approval sign in, and its status says so (B153)', async () => {
-    const merchant = await makeMerchant(t, { status: 'pending' });
-    const p = portal();
-    expect((await p.login(merchant.email)).json()).toEqual({ next: 'done' });
-    const me = await p.me();
-    expect(me.statusCode).toBe(200);
-    expect(me.json()).toMatchObject({ id: merchant.id, status: 'pending' });
+    // The readable CSRF cookie is the one of the merchant rank kind; the retail name and the old shop cookie are only cleared.
+    const cleared = res.cookies
+      .filter((cookie) => cookie.maxAge === 0)
+      .map((cookie) => cookie.name)
+      .sort();
+    expect(cleared).toEqual([CSRF_COOKIE_NAMES.retail, 'gsm_store_session'].sort());
   });
 
   it('gives an unknown email, a wrong password and a merchant with no password yet the same 401', async () => {
     const known = await makeMerchant(t);
-    const noPassword = await makeMerchant(t, { noPassword: true, status: 'pending' });
+    const noPassword = await makeMerchant(t, { noPassword: true });
     const answers = [
       await portal().login('nobody@example.com'),
       await portal().login(known.email, 'not-the-password'),
@@ -188,7 +187,7 @@ describe('the authenticator step', () => {
     const login = await p.login(merchant.email);
     expect(login.json()).toEqual({ next: 'totp' });
     const pendingToken = p.sessionToken!;
-    const cookie = login.cookies.find((c) => c.name === SESSION_COOKIE_NAMES.client)!;
+    const cookie = login.cookies.find((c) => c.name === SESSION_COOKIE_NAMES.account)!;
     expect(cookie.maxAge).toBeLessThanOrEqual(600);
     expect(await sessionsOf(merchant.id)).toMatchObject([{ stage: 'pending_totp' }]);
 
@@ -209,7 +208,7 @@ describe('the authenticator step', () => {
     expect(done.headers['x-csrf-token']).toBe(
       csrfTokenFor(t.config.security.csrfSecret, t.app.get(TokenService).hash(p.sessionToken!)),
     );
-    const fullCookie = done.cookies.find((c) => c.name === SESSION_COOKIE_NAMES.client)!;
+    const fullCookie = done.cookies.find((c) => c.name === SESSION_COOKIE_NAMES.account)!;
     expect(fullCookie.maxAge).toBeGreaterThan(29 * 24 * 3600);
 
     // The pending token died with the rotation (no fixation).
@@ -301,14 +300,6 @@ describe('the authenticator step', () => {
     expect((await sessionsOf(frozen.id)).every((session) => session.revokedAt !== null)).toBe(true);
   });
 
-  it('keeps a merchant that waits for approval on the code step like any other (B153)', async () => {
-    const merchant = await makeMerchant(t, { twofa: true, status: 'pending' });
-    const p = portal();
-    expect((await p.login(merchant.email)).json()).toEqual({ next: 'totp' });
-    expect((await p.code(await codeNow(merchant.secret))).statusCode).toBe(204);
-    expect((await p.me()).json()).toMatchObject({ status: 'pending', twofaEnabled: true });
-  });
-
   it('needs the CSRF token of the pending session', async () => {
     const merchant = await makeMerchant(t, { twofa: true });
     const p = portal();
@@ -321,7 +312,7 @@ describe('the authenticator step', () => {
 });
 
 describe('POST /client/auth/logout', () => {
-  it('ends the session, clears both cookies and answers 204', async () => {
+  it('ends the session, clears the session cookie, both CSRF names and the old shop cookie, and answers 204', async () => {
     const merchant = await makeMerchant(t);
     const p = portal();
     await p.login(merchant.email);
@@ -330,8 +321,10 @@ describe('POST /client/auth/logout', () => {
     expect(res.statusCode).toBe(204);
     expect(res.cookies.map((cookie) => [cookie.name, cookie.maxAge]).sort()).toEqual(
       [
-        [CSRF_COOKIE_NAMES.client, 0],
-        [SESSION_COOKIE_NAMES.client, 0],
+        [CSRF_COOKIE_NAMES.merchant, 0],
+        [CSRF_COOKIE_NAMES.retail, 0],
+        [SESSION_COOKIE_NAMES.account, 0],
+        ['gsm_store_session', 0],
       ].sort(),
     );
     const again = portal();
@@ -354,9 +347,8 @@ describe('POST /client/auth/logout', () => {
 });
 
 describe('GET /client/auth/me', () => {
-  it('describes the merchant, its group and its status, never a secret, and repeats the CSRF token', async () => {
+  it('describes the merchant as AccountMe (its rank and its status), never a secret, and repeats the CSRF token', async () => {
     const merchant = await makeMerchant(t, {
-      status: 'pending',
       company: 'Hassan Mobile',
       phone: '+962791234567',
       country: 'JO',
@@ -376,10 +368,14 @@ describe('GET /client/auth/me', () => {
       company: 'Hassan Mobile',
       phone: '+962791234567',
       country: 'JO',
-      status: 'pending',
+      status: 'active',
       emailVerifiedAt: '2026-10-30T08:00:00.000Z',
       twofaEnabled: false,
-      group: { id: defaultGroupId, name: 'Standard', discountPercent: '5.0000' },
+      // One shape for every rank (decision 064): the rank, with its kind, in place of the old group.
+      rank: { id: defaultGroupId, name: 'Standard', kind: 'merchant', discountPercent: '5.0000' },
+      hasPassword: true,
+      currency: null,
+      marketingOptIn: false,
       createdAt: merchant.row.createdAt.toISOString(),
       address: '',
       taxId: '',
@@ -388,15 +384,16 @@ describe('GET /client/auth/me', () => {
     expect(JSON.stringify(res.json())).not.toMatch(/passwordHash|totp|argon2/i);
   });
 
-  it('is 401 without a session and shows an approval at once', async () => {
+  it('is 401 without a session, and answers a retail account of the same sign-in 403 RANK_NOT_ALLOWED (never a sign-out)', async () => {
     expect((await portal().me({ cookies: false })).statusCode).toBe(401);
-    const merchant = await makeMerchant(t, { status: 'pending' });
+    const retail = await makeAccount(t, { rank: 'retail', password: MERCHANT_PASSWORD });
     const p = portal();
-    await p.login(merchant.email);
-    expect((await p.me()).json()).toMatchObject({ status: 'pending' });
-    const { db } = await testDb();
-    await db.update(s.clients).set({ status: 'active' }).where(eq(s.clients.id, merchant.id));
-    expect((await p.me()).json()).toMatchObject({ status: 'active' });
+    expect((await p.login(retail.email)).statusCode).toBe(200);
+    const refused = await p.me();
+    expect(refused.statusCode).toBe(403);
+    expect(problem(refused).code).toBe('RANK_NOT_ALLOWED');
+    // The refusal keeps the session: the retail account is still signed in.
+    expect((await sessionsOf(retail.id)).every((session) => session.revokedAt === null)).toBe(true);
   });
 
   it('ends the sessions of a suspended merchant: 403 ACCOUNT_SUSPENDED, then 401', async () => {
@@ -405,7 +402,7 @@ describe('GET /client/auth/me', () => {
     await p.login(merchant.email);
     const { db } = await testDb();
     await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, merchant.id));
-    await t.app.get(SessionService).invalidateSubject('client', merchant.id);
+    await t.app.get(SessionService).invalidateSubject('account', merchant.id);
     const res = await p.me();
     expect(res.statusCode).toBe(403);
     expect(problem(res).code).toBe('ACCOUNT_SUSPENDED');
@@ -533,54 +530,13 @@ describe('PATCH /client/profile', () => {
   });
 });
 
-describe('a merchant waiting for approval (user decision B153)', () => {
-  it('reaches its own account routes and no others, and a refusal never signs it out', async () => {
-    // A confirmed address (staff invited it and it accepted): the 2FA routes answer as they do for any merchant that may enrol.
-    const merchant = await makeMerchant(t, { status: 'pending', emailVerifiedAt: new Date() });
-    const p = portal();
-    await p.login(merchant.email);
-
-    // Every route of this feature that is open to it.
-    const open = [
-      await p.me(),
-      await p.profile({ company: 'Co' }),
-      await p.setupTwoFactor(),
-      await p.enableTwoFactor('000000'),
-      await p.disableTwoFactor('000000'),
-      await p.changePassword('wrong-current-password', 'a-long-new-password'),
-    ];
-    expect(open.map((res) => res.statusCode)).toEqual([200, 200, 200, 422, 409, 422]);
-    expect(open.some((res) => res.statusCode === 403)).toBe(false);
-
-    // A route that does not opt in (the sample merchant routes of the security tests, default deny) is refused.
-    const read = await p.call('GET', '/client/t/sec/session');
-    expect(read.statusCode).toBe(403);
-    expect(problem(read).code).toBe('ACCOUNT_PENDING_APPROVAL');
-    const write = await p.call('POST', '/client/t/sec/write');
-    expect(write.statusCode).toBe(403);
-    expect(problem(write).code).toBe('ACCOUNT_PENDING_APPROVAL');
-
-    // It stays signed in.
-    expect((await p.me()).statusCode).toBe(200);
-  });
-
-  it('opens those routes once staff approve the merchant and the cached views are dropped', async () => {
-    const merchant = await makeMerchant(t, { status: 'pending' });
-    const p = portal();
-    await p.login(merchant.email);
-    expect((await p.call('GET', '/client/t/sec/session')).statusCode).toBe(403);
-    const { db } = await testDb();
-    await db.update(s.clients).set({ status: 'active' }).where(eq(s.clients.id, merchant.id));
-    await t.app.get(SessionService).invalidateSubject('client', merchant.id);
-    expect((await p.call('GET', '/client/t/sec/session')).statusCode).toBe(200);
-    expect((await p.call('POST', '/client/t/sec/write')).statusCode).toBe(200);
-  });
-
-  it('is not asked of an approved merchant at all', async () => {
+describe('the sample merchant routes of the security tests (the rank gate, default deny)', () => {
+  it('are open to an active merchant, and there is no pending state any more (decision 064)', async () => {
     const merchant = await makeMerchant(t, { status: 'active' });
     const p = portal();
     await p.login(merchant.email);
     expect((await p.call('GET', '/client/t/sec/session')).statusCode).toBe(200);
+    expect((await p.call('POST', '/client/t/sec/write')).statusCode).toBe(200);
   });
 });
 
@@ -613,7 +569,7 @@ describe('the forced password change (feature 20: POST /client/auth/password/cha
     await makeSession(merchant.id);
     const { db } = await testDb();
     await db.insert(s.authTokens).values({
-      subjectType: 'client',
+      subjectType: 'account',
       subjectId: merchant.id,
       purpose: 'reset',
       tokenHash: 'a'.repeat(64),
@@ -714,7 +670,7 @@ describe('the forced password change (feature 20: POST /client/auth/password/cha
     await p.login(merchant.email, TEMPORARY);
     const { db } = await testDb();
     await db.update(s.clients).set({ mustChangePassword: false }).where(eq(s.clients.id, merchant.id));
-    await t.app.get(SessionService).invalidateSubject('client', merchant.id);
+    await t.app.get(SessionService).invalidateSubject('account', merchant.id);
     expect((await p.changeTemporaryPassword(CHOSEN)).statusCode).toBe(401);
   });
 
@@ -724,7 +680,7 @@ describe('the forced password change (feature 20: POST /client/auth/password/cha
     await p.login(merchant.email, TEMPORARY);
     const { db } = await testDb();
     await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, merchant.id));
-    await t.app.get(SessionService).invalidateSubject('client', merchant.id);
+    await t.app.get(SessionService).invalidateSubject('account', merchant.id);
     const res = await p.changeTemporaryPassword(CHOSEN);
     expect(res.statusCode).toBe(403);
     expect(problem(res).code).toBe('ACCOUNT_SUSPENDED');
@@ -766,7 +722,7 @@ describe('the forced password change (feature 20: POST /client/auth/password/cha
     // A reset link.
     const viaReset = await temporaryMerchant();
     await db.insert(s.authTokens).values({
-      subjectType: 'client',
+      subjectType: 'account',
       subjectId: viaReset.id,
       purpose: 'reset',
       tokenHash: t.app.get(TokenService).hash('reset-token-1'),
@@ -776,9 +732,9 @@ describe('the forced password change (feature 20: POST /client/auth/password/cha
     expect(await flagged(viaReset.id)).toBe(false);
 
     // An invitation link (a merchant with no password cannot also hold a temporary one, but the flag must clear regardless).
-    const viaInvite = await temporaryMerchant({ noPassword: true, status: 'pending' });
+    const viaInvite = await temporaryMerchant({ noPassword: true });
     await db.insert(s.authTokens).values({
-      subjectType: 'client',
+      subjectType: 'account',
       subjectId: viaInvite.id,
       purpose: 'invite',
       tokenHash: t.app.get(TokenService).hash('invite-token-1'),
@@ -808,7 +764,7 @@ describe('the forced password change (feature 20: POST /client/auth/password/cha
   /** A full session of the merchant (as an earlier sign-in on another device left it). */
   async function makeSession(clientId: number): Promise<void> {
     await t.app.get(SessionService).create({
-      subjectType: 'client',
+      subjectType: 'account',
       subjectId: clientId,
       stage: 'active',
       ip: '198.51.100.9',

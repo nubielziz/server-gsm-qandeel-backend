@@ -142,6 +142,9 @@
       "entityType": "merchant",
       "entityId": 5,
       "entityLabel": "Cairo GSM Lab, AT&T USA Premier",
+      "account": {
+        "id": 5
+      },
       "before": {
         "price": "group 15.90"
       },
@@ -282,6 +285,9 @@
       "entityType": "merchant",
       "entityId": 5,
       "entityLabel": "Cairo GSM Lab",
+      "account": {
+        "id": 5
+      },
       "before": {
         "plan": "Referral 3%"
       },
@@ -443,6 +449,9 @@
       "entityType": "merchant",
       "entityId": 19,
       "entityLabel": "Tunis Fix Point",
+      "account": {
+        "id": 19
+      },
       "before": {
         "status": "active"
       },

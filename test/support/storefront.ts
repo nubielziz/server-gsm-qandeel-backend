@@ -1,8 +1,9 @@
 // Helpers for the storefront tests (features 14a and 15): the anti-bot header, currencies, tax windows, a priced and listed service,
 // the legal documents a checkout needs and a world for the listing admin tests, plus direct inserts of listings, content pages,
-// help articles, legal versions, a storefront customer and a storefront order, straight into the test database.
+// help articles, legal versions, a storefront buyer and a storefront order, straight into the test database.
 import { type Database, schema as s } from '@src/infra/db';
 import { TURNSTILE_DUMMY_TOKEN, TURNSTILE_HEADER } from '@src/infra/turnstile';
+import { makeAccount } from './accounts';
 import { insertCategory, insertService } from './catalog';
 import { insertUsd } from './fixtures';
 import { insertOrderRow } from './orders';
@@ -281,22 +282,26 @@ export async function insertLegalRow(db: Database, values: Partial<typeof s.lega
   return row!;
 }
 
-/** Inserts a storefront customer and returns its id. */
+/** Inserts a storefront buyer (a retail account without a login, as a guest checkout makes it) and returns its id. */
 export async function insertCustomerRow(db: Database): Promise<number> {
-  const [row] = await db
-    .insert(s.customers)
-    .values({ email: `customer-${crypto.randomUUID().slice(0, 8)}@example.com`, name: 'A customer' })
-    .returning({ id: s.customers.id });
-  return row!.id;
+  const made = await makeAccount({
+    db,
+    rank: 'retail',
+    guest: true,
+    email: `customer-${crypto.randomUUID().slice(0, 8)}@example.com`,
+    name: 'A customer',
+    country: '',
+  });
+  return made.id;
 }
 
-/** Inserts a storefront order (a customer, source `store`) of a service and returns its id. */
+/** Inserts a storefront order (a retail account, source `store`) of a service and returns its id. */
 export async function insertStoreOrder(
   db: Database,
   serviceId: number,
-  customerId: number,
+  accountId: number,
   values: Partial<typeof s.orders.$inferInsert> = {},
 ): Promise<number> {
-  const order = await insertOrderRow(db, { serviceId, customerId, source: 'store', ...values });
+  const order = await insertOrderRow(db, { serviceId, accountId, source: 'store', ...values });
   return order.id;
 }

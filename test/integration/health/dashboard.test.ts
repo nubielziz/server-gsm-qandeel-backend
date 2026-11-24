@@ -1,14 +1,18 @@
 // Integration tests of `GET /admin/dashboard` (feature 9): the read model for every scope, the ranked attention list with its rules,
 // the supplier health mappings, USD conversion of money in other currencies, the storefront block and the sidebar counts
-// (resolutions identity-platform-8, -9, -10, catalog-1, b2c-10; MISMATCHES B87).
+// (resolutions identity-platform-8, -9, -10, catalog-1, b2c-10; MISMATCHES B87). The scopes follow the door of an order (`orders.source`,
+// decision 064), the best buyers are not in the payload (the Top accounts list reads `GET /admin/reports/top-clients`) and the negative
+// wallets are those of both wallet kinds.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { CacheKeys, CacheService } from '@src/infra/cache';
 import { schema as s } from '@src/infra/db';
+import { makeAccount } from '../../support/accounts';
 import { adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { DAY, HOUR, MINUTE, TestClock } from '../../support/clock';
+import { fundCustomer, pushNegative } from '../../support/customer-wallet';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertUsd } from '../../support/fixtures';
 import { insertOrderRow, ordersWorld } from '../../support/orders';
@@ -98,7 +102,7 @@ describe('the dashboard on an empty system', () => {
       firstReplySeconds: null,
       heldForReview: 0,
     });
-    expect(body.topCustomers).toEqual([]);
+    expect(body).not.toHaveProperty('topCustomers');
     expect(body.navCounts).toEqual({
       orders: { open: 0, pastSla: 0 },
       finance: { pendingDeposits: 0 },
@@ -112,7 +116,7 @@ describe('the dashboard on an empty system', () => {
     const api = await adminWith(t, ['dashboard:read']);
     const b2b = await dashboard(api, 'scope=b2b&days=1');
     expect(b2b.storefront).toBeNull();
-    expect(b2b.topCustomers).toBeNull();
+    expect(b2b).not.toHaveProperty('topCustomers');
     expect(b2b.revenueByChannel).toBeNull();
     const b2c = await dashboard(api, 'scope=b2c&days=14');
     expect(b2c.storefront).not.toBeNull();
@@ -305,18 +309,17 @@ describe('suppliers', () => {
 });
 
 describe("attention from the other modules' tables", () => {
-  it('raises a negative wallet, a service below its floor and a stale exchange rate, and nothing for a merchant that is still pending', async () => {
+  it('raises a negative wallet, a service below its floor and a stale exchange rate', async () => {
     const api = await adminWith(t, ['dashboard:read']);
     const { db } = await testDb();
     const world = await ordersWorld(db);
-    await db.update(s.clients).set({ status: 'pending' }).where(eq(s.clients.id, world.other.id));
     await db
       .update(s.ledgerAccounts)
       .set({ balance: '-12.5000' })
       .where(
         and(
           eq(s.ledgerAccounts.kind, 'client_wallet'),
-          eq(s.ledgerAccounts.ownerType, 'client'),
+          eq(s.ledgerAccounts.ownerType, 'account'),
           eq(s.ledgerAccounts.ownerId, world.merchant.id),
         ),
       );
@@ -328,7 +331,7 @@ describe("attention from the other modules' tables", () => {
       .insert(s.currencies)
       .values({ code: 'EUR', name: 'Euro', rateToBase: '0.9200', rateUpdatedAt: ago(3 * DAY) });
     const body = await dashboard(api);
-    // A merchant row that was never activated raises no item and no sidebar count: nothing waits for an approval any more.
+    // Nothing waits for an approval any more: no item and no sidebar count.
     expect(attention(body, 'merchants_pending')).toBeUndefined();
     expect(attention(body, 'services_below_floor')).toMatchObject({
       count: 1,
@@ -351,11 +354,51 @@ describe("attention from the other modules' tables", () => {
     });
   });
 
+  it('lists a store balance below zero beside the merchant wallets, by scope (both wallet kinds)', async () => {
+    const api = await adminWith(t, ['dashboard:read']);
+    const { db } = await testDb();
+    const world = await ordersWorld(db);
+    await db
+      .update(s.ledgerAccounts)
+      .set({ balance: '-12.5000' })
+      .where(
+        and(
+          eq(s.ledgerAccounts.kind, 'client_wallet'),
+          eq(s.ledgerAccounts.ownerType, 'account'),
+          eq(s.ledgerAccounts.ownerId, world.merchant.id),
+        ),
+      );
+    // A retail account whose balance a chargeback took below zero: 5 credited, 9 clawed back.
+    const shopper = await makeAccount({ rank: 'retail', name: 'Ada Shopper' });
+    await fundCustomer(db, shopper.id, '5.0000');
+    await pushNegative(db, shopper.id, '9.0000');
+    // Another retail account with money in its balance is not listed.
+    const saver = await makeAccount({ rank: 'retail' });
+    await fundCustomer(db, saver.id, '20.0000');
+
+    const merchant = { id: world.merchant.id, name: 'Cairo GSM Lab', balance: '-12.5000' };
+    const store = { id: shopper.id, name: 'Ada Shopper', balance: '-4.0000' };
+    // The wire key stays `clients`; each entry is an account, the lowest balance first.
+    expect(attention(await dashboard(api, 'scope=all&days=7'), 'wallets_negative')).toMatchObject({
+      count: 2,
+      clients: [merchant, store],
+    });
+    expect(attention(await dashboard(api, 'scope=b2b&days=7'), 'wallets_negative')).toMatchObject({
+      count: 1,
+      clients: [merchant],
+    });
+    expect(attention(await dashboard(api, 'scope=b2c&days=7'), 'wallets_negative')).toMatchObject({
+      count: 1,
+      clients: [store],
+    });
+  });
+
   it('converts a pending deposit in another currency to USD per row and counts it for the sidebar', async () => {
     const api = await adminWith(t, ['dashboard:read']);
     const { db } = await testDb();
     await insertUsd(db);
     await db.insert(s.currencies).values({ code: 'EUR', name: 'Euro', rateToBase: '0.9200' });
+    const holder = await makeAccount({ rank: 'merchant' });
     const [gateway] = await db
       .insert(s.paymentGateways)
       .values({ code: 'bank', driver: 'manual', name: 'Bank transfer', isManual: true })
@@ -363,6 +406,7 @@ describe("attention from the other modules' tables", () => {
     await db.insert(s.payments).values([
       {
         purpose: 'topup',
+        accountId: holder.id,
         gatewayId: gateway!.id,
         amount: '92.0000',
         currency: 'EUR',
@@ -372,6 +416,7 @@ describe("attention from the other modules' tables", () => {
       },
       {
         purpose: 'topup',
+        accountId: holder.id,
         gatewayId: gateway!.id,
         amount: '50.0000',
         currency: 'USD',
@@ -381,6 +426,7 @@ describe("attention from the other modules' tables", () => {
       },
       {
         purpose: 'topup',
+        accountId: holder.id,
         gatewayId: gateway!.id,
         amount: '30.0000',
         currency: 'USD',
@@ -401,17 +447,24 @@ describe("attention from the other modules' tables", () => {
 });
 
 describe('the storefront block', () => {
-  it('counts the funnel from checkout sessions (b2c-10) and ranks the top customers by spend including VAT', async () => {
+  it('counts the funnel from checkout sessions (b2c-10) and no longer lists the best buyers', async () => {
     const api = await adminWith(t, ['dashboard:read']);
     const { db } = await testDb();
     const world = await ordersWorld(db);
-    const [ada, bob] = await db
-      .insert(s.customers)
-      .values([
-        { email: 'ada@example.com', name: 'Ada', country: 'JO', currency: 'USD' },
-        { email: 'bob@example.com', name: 'Bob', country: 'EG', currency: 'USD' },
-      ])
-      .returning({ id: s.customers.id });
+    const ada = await makeAccount({
+      rank: 'retail',
+      name: 'Ada',
+      country: 'JO',
+      currency: 'USD',
+      email: 'ada@example.com',
+    });
+    const bob = await makeAccount({
+      rank: 'retail',
+      name: 'Bob',
+      country: 'EG',
+      currency: 'USD',
+      email: 'bob@example.com',
+    });
     const session = (n: number, over: Partial<typeof s.checkoutSessions.$inferInsert> = {}) => ({
       token: `tok-${n}`,
       email: 'ada@example.com',
@@ -424,19 +477,19 @@ describe('the storefront block', () => {
       createdAt: ago(DAY),
       ...over,
     });
-    const paidOrder = (customerId: number, status: 'completed' | 'pending', total: string) =>
+    const paidOrder = (accountId: number, status: 'completed' | 'pending', total: string) =>
       insertOrderRow(db, {
         serviceId: world.auto.serviceId,
-        clientId: null,
-        customerId,
+        source: 'store',
+        accountId,
         status,
         dispatchState: status === 'completed' ? 'done' : 'pending',
         totalPrice: total,
         taxAmount: '3.8000',
         createdAt: ago(DAY),
       });
-    const delivered = await paidOrder(ada!.id, 'completed', '20.0000');
-    const inFlight = await paidOrder(bob!.id, 'pending', '10.0000');
+    const delivered = await paidOrder(ada.id, 'completed', '20.0000');
+    const inFlight = await paidOrder(bob.id, 'pending', '10.0000');
     await db
       .insert(s.checkoutSessions)
       .values([
@@ -453,10 +506,62 @@ describe('the storefront block', () => {
       delivered: 1,
     });
     expect(body.storefront.averageOrder).toBe('23.8000');
-    expect(body.topCustomers).toEqual([
-      { id: ada!.id, name: 'Ada', country: 'JO', orders: 1, spend: '23.8000' },
-      { id: bob!.id, name: 'Bob', country: 'EG', orders: 1, spend: '13.8000' },
-    ]);
+    // The best buyers of every rank are one list of their own: `GET /admin/reports/top-clients`.
+    expect(body).not.toHaveProperty('topCustomers');
+  });
+});
+
+describe('the scopes follow the door of an order', () => {
+  it('counts merchant-door orders for b2b and shop-door orders for b2c, whatever rank the buyer has now', async () => {
+    const api = await adminWith(t, ['dashboard:read']);
+    const { db } = await testDb();
+    const world = await ordersWorld(db);
+    const shopper = await makeAccount({ rank: 'retail' });
+    const base = {
+      serviceId: world.auto.serviceId,
+      status: 'completed' as const,
+      dispatchState: 'done' as const,
+      totalCost: '1.0000',
+      createdAt: ago(DAY),
+      completedAt: ago(DAY - HOUR),
+    };
+    await insertOrderRow(db, { ...base, accountId: world.merchant.id, totalPrice: '20.0000' });
+    await insertOrderRow(db, { ...base, accountId: shopper.id, source: 'store', totalPrice: '7.0000' });
+    // A retail-rank account with an old hold-and-settle order (it was a merchant then): the door decides, not the rank.
+    await insertOrderRow(db, { ...base, accountId: shopper.id, source: 'portal', totalPrice: '3.0000' });
+    await insertOrderRow(db, {
+      ...base,
+      accountId: world.merchant.id,
+      status: 'pending',
+      dispatchState: 'manual',
+      createdAt: ago(5 * HOUR),
+      placedAt: ago(5 * HOUR),
+      totalPrice: '4.0000',
+    });
+    await insertOrderRow(db, {
+      ...base,
+      accountId: shopper.id,
+      source: 'store',
+      status: 'pending',
+      dispatchState: 'pending',
+      createdAt: ago(MINUTE),
+      placedAt: ago(MINUTE),
+      totalPrice: '5.0000',
+    });
+
+    const all = await dashboard(api, 'scope=all&days=7');
+    const b2b = await dashboard(api, 'scope=b2b&days=7');
+    const b2c = await dashboard(api, 'scope=b2c&days=7');
+    expect(all.stats.current.orders).toBe(5);
+    expect(b2b.stats.current).toMatchObject({ orders: 3, revenue: '23.0000' });
+    expect(b2c.stats.current).toMatchObject({ orders: 2, revenue: '7.0000' });
+    // The review queue and the open count follow the door too.
+    expect(b2b.queues[0]).toMatchObject({ open: 1, review: 1 });
+    expect(b2c.queues[0]).toMatchObject({ open: 1, review: 0 });
+    expect(attention(b2c, 'orders_review')).toBeUndefined();
+    expect(attention(b2b, 'orders_review')).toMatchObject({ count: 1 });
+    // The channel chart splits by the same door.
+    expect(all.revenueByChannel.totals.last7Days).toEqual({ b2b: '23.0000', b2c: '7.0000' });
   });
 });
 

@@ -276,6 +276,26 @@ describe('maintenance (scenario system-integrity)', () => {
     });
   }
 
+  it('never covers the sign-in routes every account shares, whatever the scope: the portal does not go down with the shop (decision 064)', async () => {
+    const signIn = [
+      '/client/auth/sign-in',
+      '/client/auth/login',
+      '/client/auth/2fa',
+      '/client/auth/logout',
+      '/client/auth/password/change',
+      '/client/auth/password/forgot',
+      '/client/auth/password/reset',
+      '/client/auth/verify-email',
+    ];
+    for (const scope of ['store', 'checkout', 'api_orders', 'all']) {
+      await setMaintenance(maintenanceOn(scope));
+      for (const url of signIn) {
+        const res = await post(url, freshIp(), {}, AUTH);
+        expect(res.statusCode, `${url} under ${scope}`).not.toBe(503);
+      }
+    }
+  });
+
   it('sends the message as detail, expectedEndAt next to it, and a Retry-After', async () => {
     const end = new Date(clock.nowMs() + 120 * SECOND).toISOString();
     await setMaintenance(maintenanceOn('checkout', { expectedEndAt: end }));

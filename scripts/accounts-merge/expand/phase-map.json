@@ -1,0 +1,410 @@
+{
+  "release": "expand",
+  "migrationSuffix": "_accounts_expand.sql",
+  "header": [
+    "The expand migration of one account type (backend decision 064): merchants and customers become one account, told apart by its rank.",
+    "Assembled by `bun scripts/accounts-merge/assemble.ts expand` from the statements drizzle-kit generated (marked",
+    "\"accounts-merge:generated\") and the hand-written phase files of scripts/accounts-merge/expand/phases; never edit it by hand.",
+    "All pending migrations run in one transaction (src/infra/db/migrate.ts): a stop of the preflight, or any failing statement, leaves the",
+    "database unchanged. Every phase is a no-op on an empty database."
+  ],
+  "phases": [
+    {
+      "phase": 0,
+      "name": "preflight",
+      "file": "00-preflight.sql",
+      "preflight": true
+    },
+    {
+      "phase": 1,
+      "name": "additive DDL and widening",
+      "file": "01-widen.sql",
+      "generatedFirst": true
+    },
+    {
+      "phase": 2,
+      "name": "id map",
+      "file": "02-map.sql"
+    },
+    {
+      "phase": 3,
+      "name": "copy",
+      "file": "03-copy.sql"
+    },
+    {
+      "phase": 4,
+      "name": "rewrite of mutable pairs",
+      "file": "04-rewrite.sql"
+    },
+    {
+      "phase": 5,
+      "name": "owner columns",
+      "file": "05-owners.sql"
+    },
+    {
+      "phase": 6,
+      "name": "ledger owners",
+      "file": "06-ledger.sql"
+    },
+    {
+      "phase": 7,
+      "name": "append-only words",
+      "file": null
+    },
+    {
+      "phase": 8,
+      "name": "accounts and ranks",
+      "file": "08-accounts.sql"
+    },
+    {
+      "phase": 9,
+      "name": "sessions and links",
+      "file": "09-sessions.sql"
+    },
+    {
+      "phase": 10,
+      "name": "freeze",
+      "file": "10-freeze.sql"
+    }
+  ],
+  "statements": {
+    "create-table account_legacy_ids": {
+      "phase": 1
+    },
+    "create-table account_rank_changes": {
+      "phase": 1
+    },
+    "create-table wallet_action_keys": {
+      "phase": 1
+    },
+    "drop-constraint alert_events.alert_events_subject_type_check": {
+      "phase": 4
+    },
+    "drop-constraint audit_logs.audit_logs_actor_type_check": {
+      "phase": 1
+    },
+    "drop-constraint auth_tokens.auth_tokens_subject_type_check": {
+      "phase": 4
+    },
+    "drop-constraint clients.clients_status_check": {
+      "phase": 8
+    },
+    "drop-constraint consent_records.consent_records_subject_type_check": {
+      "phase": 4
+    },
+    "drop-constraint ledger_accounts.ledger_accounts_owner_type_check": {
+      "phase": 6,
+      "before": true
+    },
+    "drop-constraint ledger_accounts.ledger_accounts_kind_owner_check": {
+      "phase": 6,
+      "before": true
+    },
+    "drop-constraint ledger_accounts.ledger_accounts_frozen_check": {
+      "phase": 6
+    },
+    "drop-constraint ledger_transactions.ledger_transactions_ref_type_check": {
+      "phase": 1
+    },
+    "drop-constraint ledger_transactions.ledger_transactions_created_by_type_check": {
+      "phase": 1
+    },
+    "drop-constraint notification_inbox.notification_inbox_recipient_type_check": {
+      "phase": 4
+    },
+    "drop-constraint notifications.notifications_recipient_type_check": {
+      "phase": 4
+    },
+    "drop-constraint order_events.order_events_actor_type_check": {
+      "phase": 1
+    },
+    "drop-constraint orders.orders_buyer_check": {
+      "phase": 5
+    },
+    "drop-constraint refunds.refunds_storefront_refs_check": {
+      "phase": 5
+    },
+    "drop-constraint refunds.refunds_requested_by_type_check": {
+      "phase": 6
+    },
+    "drop-constraint sessions.sessions_subject_type_check": {
+      "phase": 4
+    },
+    "drop-constraint support_tickets.support_tickets_requester_type_check": {
+      "phase": 4
+    },
+    "drop-constraint ticket_messages.ticket_messages_author_type_check": {
+      "phase": 4
+    },
+    "drop-index clients_email_uq": {
+      "phase": 1
+    },
+    "drop-not-null clients.username": {
+      "phase": 1
+    },
+    "set-default clients.status": {
+      "phase": 1
+    },
+    "drop-not-null clients.referral_code": {
+      "phase": 1
+    },
+    "drop-not-null data_requests.customer_id": {
+      "phase": 1
+    },
+    "add-column blocklist_entries.account_id": {
+      "phase": 1
+    },
+    "add-column checkout_sessions.account_id": {
+      "phase": 1
+    },
+    "add-column clients.has_account": {
+      "phase": 1
+    },
+    "add-column clients.currency": {
+      "phase": 1
+    },
+    "add-column clients.marketing_opt_in": {
+      "phase": 1
+    },
+    "add-column clients.anonymized_at": {
+      "phase": 1
+    },
+    "add-column clients.created_by": {
+      "phase": 1
+    },
+    "add-column data_requests.account_id": {
+      "phase": 1,
+      "nullable": true
+    },
+    "add-column disputes.account_id": {
+      "phase": 1,
+      "nullable": true
+    },
+    "add-column invoices.account_id": {
+      "phase": 1,
+      "nullable": true
+    },
+    "add-column invoices.wallet_kind": {
+      "phase": 1
+    },
+    "add-column orders.account_id": {
+      "phase": 1,
+      "nullable": true
+    },
+    "add-column payments.account_id": {
+      "phase": 1,
+      "nullable": true
+    },
+    "add-column refunds.account_id": {
+      "phase": 1
+    },
+    "add-column risk_assessments.account_id": {
+      "phase": 1
+    },
+    "add-constraint account_legacy_ids.account_legacy_ids_account_id_clients_id_fk": {
+      "phase": 1
+    },
+    "add-constraint account_rank_changes.account_rank_changes_account_id_clients_id_fk": {
+      "phase": 1
+    },
+    "add-constraint account_rank_changes.account_rank_changes_ledger_transaction_id_ledger_transactions_id_fk": {
+      "phase": 1
+    },
+    "add-constraint account_rank_changes.account_rank_changes_staff_id_staff_users_id_fk": {
+      "phase": 1
+    },
+    "add-constraint wallet_action_keys.wallet_action_keys_account_id_clients_id_fk": {
+      "phase": 1
+    },
+    "add-constraint wallet_action_keys.wallet_action_keys_staff_id_staff_users_id_fk": {
+      "phase": 1
+    },
+    "create-index account_legacy_ids.account_legacy_ids_account_idx": {
+      "phase": 1
+    },
+    "create-index account_rank_changes.account_rank_changes_account_idx": {
+      "phase": 1
+    },
+    "create-index account_rank_changes.account_rank_changes_ledger_transaction_id_idx": {
+      "phase": 1
+    },
+    "create-index account_rank_changes.account_rank_changes_staff_id_idx": {
+      "phase": 1
+    },
+    "create-index wallet_action_keys.wallet_action_keys_staff_idx": {
+      "phase": 1
+    },
+    "add-constraint blocklist_entries.blocklist_entries_account_id_clients_id_fk": {
+      "phase": 1
+    },
+    "add-constraint checkout_sessions.checkout_sessions_account_id_clients_id_fk": {
+      "phase": 1
+    },
+    "add-constraint clients.clients_currency_currencies_code_fk": {
+      "phase": 1
+    },
+    "add-constraint clients.clients_created_by_staff_users_id_fk": {
+      "phase": 1
+    },
+    "add-constraint data_requests.data_requests_account_id_clients_id_fk": {
+      "phase": 1
+    },
+    "add-constraint disputes.disputes_account_id_clients_id_fk": {
+      "phase": 1
+    },
+    "add-constraint invoices.invoices_account_id_clients_id_fk": {
+      "phase": 1
+    },
+    "add-constraint orders.orders_account_id_clients_id_fk": {
+      "phase": 1
+    },
+    "add-constraint payments.payments_account_id_clients_id_fk": {
+      "phase": 1
+    },
+    "add-constraint refunds.refunds_account_id_clients_id_fk": {
+      "phase": 1
+    },
+    "add-constraint risk_assessments.risk_assessments_account_id_clients_id_fk": {
+      "phase": 1
+    },
+    "create-index blocklist_entries.blocklist_entries_account_id_idx": {
+      "phase": 1
+    },
+    "create-index checkout_sessions.checkout_sessions_account_id_idx": {
+      "phase": 1
+    },
+    "create-index clients.clients_login_email_uq": {
+      "phase": 1
+    },
+    "create-index clients.clients_guest_email_uq": {
+      "phase": 1
+    },
+    "create-index clients.clients_currency_idx": {
+      "phase": 1
+    },
+    "create-index clients.clients_created_by_idx": {
+      "phase": 1
+    },
+    "create-index data_requests.data_requests_account_id_idx": {
+      "phase": 1
+    },
+    "create-index disputes.disputes_account_id_idx": {
+      "phase": 1
+    },
+    "create-index invoices.invoices_account_key_uq": {
+      "phase": 5
+    },
+    "create-index invoices.invoices_account_created_idx": {
+      "phase": 1
+    },
+    "create-index orders.orders_account_created_idx": {
+      "phase": 1
+    },
+    "create-index payments.payments_account_id_idx": {
+      "phase": 1
+    },
+    "create-index refunds.refunds_account_id_idx": {
+      "phase": 1
+    },
+    "create-index risk_assessments.risk_assessments_account_id_idx": {
+      "phase": 1
+    },
+    "add-constraint alert_events.alert_events_subject_type_check": {
+      "phase": 4
+    },
+    "add-constraint audit_logs.audit_logs_actor_type_current_check": {
+      "phase": 7,
+      "notValid": true
+    },
+    "add-constraint audit_logs.audit_logs_actor_type_check": {
+      "phase": 1
+    },
+    "add-constraint auth_tokens.auth_tokens_subject_type_check": {
+      "phase": 4
+    },
+    "add-constraint client_groups.client_groups_kind_check": {
+      "phase": 8
+    },
+    "add-constraint client_groups.client_groups_retail_no_credit_check": {
+      "phase": 8
+    },
+    "add-constraint clients.clients_guest_check": {
+      "phase": 8
+    },
+    "add-constraint clients.clients_anonymized_check": {
+      "phase": 8
+    },
+    "add-constraint clients.clients_status_check": {
+      "phase": 8
+    },
+    "add-constraint consent_records.consent_records_subject_type_check": {
+      "phase": 4
+    },
+    "add-constraint files.files_owner_type_check": {
+      "phase": 4
+    },
+    "add-constraint invoices.invoices_wallet_kind_check": {
+      "phase": 5
+    },
+    "add-constraint invoices.invoices_client_account_check": {
+      "phase": 5
+    },
+    "add-constraint ledger_accounts.ledger_accounts_owner_type_check": {
+      "phase": 6
+    },
+    "add-constraint ledger_accounts.ledger_accounts_kind_owner_check": {
+      "phase": 6
+    },
+    "add-constraint ledger_accounts.ledger_accounts_frozen_check": {
+      "phase": 6
+    },
+    "add-constraint ledger_transactions.ledger_transactions_ref_type_current_check": {
+      "phase": 7,
+      "notValid": true
+    },
+    "add-constraint ledger_transactions.ledger_transactions_created_by_type_current_check": {
+      "phase": 7,
+      "notValid": true
+    },
+    "add-constraint ledger_transactions.ledger_transactions_ref_type_check": {
+      "phase": 1
+    },
+    "add-constraint ledger_transactions.ledger_transactions_created_by_type_check": {
+      "phase": 1
+    },
+    "add-constraint notification_inbox.notification_inbox_recipient_type_check": {
+      "phase": 4
+    },
+    "add-constraint notifications.notifications_recipient_type_check": {
+      "phase": 4
+    },
+    "add-constraint order_events.order_events_actor_type_current_check": {
+      "phase": 7,
+      "notValid": true
+    },
+    "add-constraint order_events.order_events_actor_type_check": {
+      "phase": 1
+    },
+    "add-constraint orders.orders_hold_buyer_check": {
+      "phase": 5
+    },
+    "add-constraint orders.orders_door_check": {
+      "phase": 5
+    },
+    "add-constraint refunds.refunds_account_refs_check": {
+      "phase": 5
+    },
+    "add-constraint refunds.refunds_requested_by_type_check": {
+      "phase": 6
+    },
+    "add-constraint sessions.sessions_subject_type_check": {
+      "phase": 4
+    },
+    "add-constraint support_tickets.support_tickets_requester_type_check": {
+      "phase": 4
+    },
+    "add-constraint ticket_messages.ticket_messages_author_type_check": {
+      "phase": 4
+    }
+  }
+}

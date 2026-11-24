@@ -57,26 +57,29 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 | `GET /admin/permissions` | admin | staff-permission `roles:read` | 2 | `listPermissions` |
 | `GET /admin/sessions` | admin | staff-permission `sessions:read` | 2 | `listSessions` |
 | `DELETE /admin/sessions/:id` | admin | staff-permission `sessions:revoke` | 2 | `revokeSession` |
-| `GET /admin/clients` | admin | staff-permission `clients:*` | 2 | `listClients` |
-| `GET /admin/clients/:id` | admin | staff-permission `clients:*` | 2 | `getClient` |
-| `POST /admin/clients` | admin | staff-permission `clients:*` | 2 | `createClient` |
-| `PATCH /admin/clients/:id` | admin | staff-permission `clients:*` | 2 | `updateClient` |
-| `GET /admin/clients/:id/api-keys` | admin | staff-permission `api_keys:read` | 7 | `listClientApiKeys` |
+| `GET /admin/clients` | admin | staff-permission `clients:*` | 2 | `listAccounts` |
+| `GET /admin/clients/:id` | admin | staff-permission `clients:*` | 2 | `getAccount` |
+| `POST /admin/clients` | admin | staff-permission `clients:*` | 2 | `createAccount` |
+| `PATCH /admin/clients/:id` | admin | staff-permission `clients:*` | 2 | `updateAccount` |
+| `GET /admin/clients/:id/api-keys` | admin | staff-permission `api_keys:read` | 7 | `listAccountApiKeys` |
 | `DELETE /admin/api-keys/:id` | admin | staff-permission `api_keys:revoke` | 7 | `revokeApiKey` |
 | `GET /admin/kyc-submissions` | admin | staff-permission `kyc:read` | 8 |  |
 | `GET /admin/kyc-submissions/:id` | admin | staff-permission `kyc:read` | 8 |  |
 | `POST /admin/kyc-submissions/:id/decide` | admin | staff-permission `kyc:decide` | 8 |  |
-| `POST /admin/clients/:id/password` | admin | staff-permission `clients:security` | 20 | `setClientPassword` |
-| `POST /admin/clients/:id/reset-2fa` | admin | staff-permission `clients:security` | 20 | `resetClientTwoFactor` |
-| `POST /admin/clients/:id/sessions/revoke` | admin | staff-permission `clients:security` | 20 | `revokeClientSessions` |
-| `POST /admin/clients/:id/verify-email/resend` | admin | staff-permission `clients:security` | 20 | `resendClientVerification` |
-| `POST /admin/clients/:id/api-keys` | admin | staff-permission `api_keys:create` | 20 | `createClientApiKey` |
+| `POST /admin/clients/:id/password` | admin | staff-permission `clients:security` | 20 | `setAccountPassword` |
+| `POST /admin/clients/:id/reset-2fa` | admin | staff-permission `clients:security` | 20 | `resetAccountTwoFactor` |
+| `POST /admin/clients/:id/sessions/revoke` | admin | staff-permission `clients:security` | 20 | `revokeAccountSessions` |
+| `POST /admin/clients/:id/verify-email/resend` | admin | staff-permission `clients:security` | 20 | `resendAccountVerification` |
+| `POST /admin/clients/:id/api-keys` | admin | staff-permission `api_keys:create` | 20 | `createAccountApiKey` |
 | `PATCH /admin/api-keys/:id` | admin | staff-permission `api_keys:update` | 20 | `updateApiKey` |
 | `POST /client/auth/password/change` | client | merchant-session | 20 |  |
 | `POST /client/auth/verify-email/resend` | client | merchant-session | 20 |  |
 | `GET /admin/stream` | admin | staff-session | 27 |  |
 | `GET /client/stream` | client | merchant-session | 27 |  |
 | `GET /store/v1/me/stream` | store | customer-session | 27 |  |
+| `GET /admin/clients/counts` | admin | staff-permission `clients:read` | 48 | `getAccountCounts` |
+| `GET /admin/legacy-accounts/:type/:id` | admin | staff-permission `clients:read` | 48 | `findLegacyAccount` |
+| `POST /admin/clients/:id/account` | admin | staff-permission `clients:update` | 48 | `makeAccount` |
 
 ## POST /client/auth/register
 
@@ -439,7 +442,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## GET /admin/sessions
 
 - **Map**: Active sessions of staff members and merchants. (الجلسات الفعّالة للموظفين والتجار) · staff-permission `sessions:read` · stage 2 · tables sessions
-- **Frontend**: `listSessions` (src/features/access/api/sessions.ts:25) · params `query?: ListQuery` · returns `ListResult<Session>` · success 200 · assumed contract
+- **Frontend**: `listSessions` (src/features/access/api/sessions.ts:22) · params `query?: ListQuery` · returns `ListResult<Session>` · success 200 · assumed contract
 - **Query**: `_start`/`_end` pages of 25 (useSessions.ts:8-26), optional `subjectType=staff` or `subjectType=client`. No `_sort` is sent: server default (proposed lastSeenAt desc, then id desc).
 - **Response**: Only live sessions (revoked_at IS NULL AND expires_at > now() AND (stage <> 'active' OR last_seen_at > now() - the idle limit of the subject type), the one live-session predicate of the identity sessions repository (idle limits from SessionPolicy: settings sessions.staff_idle_minutes 30 and sessions.client_idle_minutes 10080, decision 018)) of staff (fully signed in) and merchants; exclude storefront customer sessions and pre-2FA sessions. `subject {id, name, email}` joined from staff_users/clients; `current: true` only on the session making the request (the mock marks the caller's first session, accessSessions.ts:11-23); lastSeenAt null reads "Unknown", expiresAt null "Never". x-total-count drives the pager.
 - **Errors**: 403 FORBIDDEN (caller lacks sessions:read)
@@ -449,7 +452,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## DELETE /admin/sessions/:id
 
 - **Map**: End a session. (إنهاء جلسة) · staff-permission `sessions:revoke` · stage 2 · tables sessions
-- **Frontend**: `revokeSession` (src/features/access/api/sessions.ts:35) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: `revokeSession` (src/features/access/api/sessions.ts:32) · params `id: number` · returns `void` · success 204 · assumed contract
 - **Request**: No body; any session id from the list (staff or merchant).
 - **Response**: 204; revoked_at=now (revokeAllOf still revokes every non-revoked row, idle-dead ones included); audit (entityType 'session'). Ending your own session signs you out (next request 401; EndSessionDialog.tsx warns).
 - **Errors**: 404 NOT_FOUND (unknown session, or one that is no longer live by the same predicate as GET /admin/sessions (an idle-dead session reads as already ended) (accessSessions.ts:26-32)); 403 FORBIDDEN (caller lacks sessions:revoke)
@@ -458,7 +461,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## GET /admin/clients
 
 - **Map**: Merchants: creation, group, status and blocking. (التجار: الإنشاء والفئة والحالة والحظر) · staff-permission `clients:*` · stage 2 · tables clients
-- **Frontend**: `listClients` (src/features/merchants/api/clients.ts:25) · params `query?: ListQuery` · returns `ListResult<Client>` · success 200 · assumed contract
+- **Frontend**: `listAccounts` (src/features/accounts/api/accounts.ts:40) · params `query?: ListQuery` · returns `ListResult<AccountRow>` · success 200 · assumed contract
 - **Query**: Paging _start/_end (25 per page). Tab counts: _start=0&_end=1 with only status (or nothing for All). Other features (orders, finance, commissions, services) read _start=0&_end=200&_sort=name&_order=asc; palette sends q with _end=5. _sort: name | status only (default name asc; merchants/lib/filters.ts:70). Filters (eq): status=active|pending|suspended, groupId=<id>. q: case-insensitive contains over name, email, company (mock also username, country: mocks/clientRoutes.ts:12). Refetched every 30 s.
 - **Response**: JSON array + x-total-count. Row = clients columns id, username, email, name, company, phone, country, groupId, status (active|pending|suspended), referralCode, emailVerifiedAt, createdAt, plus joins group {id, name, discountPercent} or null and referredBy {id, name} or null. Only for callers holding wallet:read: wallet {balance, reserved, creditLimit, available} (same meaning as GET /admin/clients/:id/wallet) and stats over a rolling 30 days of orders.created_at: orders (count), spend (sum total_price of non-rejected orders), profit (sum total_price - total_cost of completed), margin (profit/spend*100 as decimal string with 1 dp, null when spend is 0), successRate (completed/(completed+rejected)*100 as a JSON number, null when none finished), lastOrderAt (latest order created_at or null). Without wallet:read omit both (UI shows dashes). Build joins in one batched query per page. Never send password_hash, totp_secret_enc, telegram_chat_id or notification_prefs.
 - **Errors**: 403 FORBIDDEN (caller lacks clients:read)
@@ -468,7 +471,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## GET /admin/clients/:id
 
 - **Map**: Merchants: creation, group, status and blocking. (التجار: الإنشاء والفئة والحالة والحظر) · staff-permission `clients:*` · stage 2 · tables clients
-- **Frontend**: `getClient` (src/features/merchants/api/clients.ts:34) · params `id: number` · returns `Client` · success 200 · assumed contract
+- **Frontend**: `getAccount` (src/features/accounts/api/accounts.ts:60) · params `id: number` · returns `AccountRow` · success 200 · assumed contract
 - **Request**: :id is the numeric client id.
 - **Response**: Same Client shape as a list row (wallet and stats included when the caller has wallet:read). Re-read after every action on the merchant page.
 - **Errors**: 404 NOT_FOUND (no merchant with that id); 403 FORBIDDEN (caller lacks clients:read)
@@ -477,7 +480,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## POST /admin/clients
 
 - **Map**: Merchants: creation, group, status and blocking. (التجار: الإنشاء والفئة والحالة والحظر) · staff-permission `clients:*` · stage 2 · tables clients
-- **Frontend**: `createClient` (src/features/merchants/api/clients.ts:44) · params `body: CreateClientBody` · returns `Client` · success 201 · assumed contract
+- **Frontend**: `createAccount` (src/features/accounts/api/accounts.ts:72) · params `body: CreateAccountBody` · returns `CreateAccountResult` · success 201 · assumed contract
 - **Request**: Body {name, email (trimmed, lower-cased), country (ISO-2, upper-cased), groupId? (omitted when groups are unreadable: use the is_default group), creditLimit? (4-dp money string, may be "0.0000"), invite: true (always)}. Server: insert clients with status=pending, a generated unique username (Dhru username) and referral_code; in the same DB transaction open the merchant's ledger accounts through money's public `MerchantAccounts.open(tx, { clientId, currency: 'USD', creditLimit, overdraftAllowed })` (feature 3; raw inserts with ON CONFLICT DO NOTHING of client_wallet with overdraft_limit = creditLimit or '0.0000' and client_hold; no postTransaction; it also applies the credit rule below and returns the wallet view); issue the invite token in auth_tokens (purpose 'invite', subject_type 'client', hash only, expires after 1 hour like every one-time token, decisions 010/019) and write the outbox event `merchant.invited` (ids only, never the token); the emailed link is `<PORTAL_BASE_URL>/set-password?token=<token>` and the merchant consumes it with POST /client/auth/password/reset {token, password} (purposes reset and invite); a merchant who misses the hour uses POST /client/auth/password/forgot, which also works for a pending merchant with no password yet; audit_logs entry. No money event. Credit rule (user rule 2): creditLimit > 0 is refused when the chosen group (groupId, or the is_default group when omitted) has overdraft_allowed = false (see Errors).
 - **Response**: 201 with the new Client (same shape as GET; status pending, wallet {balance '0.0000', reserved '0.0000', creditLimit, available = creditLimit} returned by MerchantAccounts.open). The console toasts "Invitation sent" and refetches lists and counts.
 - **Errors**: 422 VALIDATION_FAILED (bad input; errors[].field in name | email | country | groupId | creditLimit (e.g. country not ISO-2, unknown group, group of kind b2c_retail, negative credit limit; creditLimit > 0 while the chosen group (groupId, or the is_default group when omitted) has overdraft_allowed = false answers errors[{field:'creditLimit', message:'This group does not allow credit.'}], user rule 2, raised by MerchantAccounts.open)); 409 EMAIL_TAKEN (a merchant already uses that email (detail e.g. "A merchant with x already exists."; no field needed)); 403 FORBIDDEN (caller lacks clients:create)
@@ -487,7 +490,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## PATCH /admin/clients/:id
 
 - **Map**: Merchants: creation, group, status and blocking. (التجار: الإنشاء والفئة والحالة والحظر) · staff-permission `clients:*` · stage 2 · tables clients
-- **Frontend**: `updateClient` (src/features/merchants/api/clients.ts:58) · params `id: number`, `body: UpdateClientBody` · returns `Client` · success 200 · assumed contract
+- **Frontend**: `updateAccount` (src/features/accounts/api/accounts.ts:85) · params `id: number`, `body: UpdateAccountBody` · returns `AccountRow` · success 200 · assumed contract
 - **Request**: Partial body, one action per call: approve {status:"active"} from pending; reactivate {status:"active"} from suspended; suspend {status:"suspended", reason} from active (reason trimmed, 3-140 chars, staff-only); group move {groupId} (refused with 422 on groupId when the target group has overdraft_allowed = false while the merchant's credit limit is above 0). Server enforces pending->active, active->suspended, suspended->active; writes audit_logs (field from/to, reason). Suspension refuses new orders on Dhru, v1 and portal while open orders keep processing and the wallet is untouched; a group move prices new orders only (open orders keep pricing_snapshot). No money event.
 - **Response**: 200 with the full updated Client.
 - **Errors**: 404 NOT_FOUND (no merchant with that id); 422 VALIDATION_FAILED (errors[].field reason (missing on suspend) | groupId (unknown, b2c_retail, or a group without overdraft_allowed while the merchant's wallet overdraft_limit is above 0: user rule 2) | status); 409 INVALID_TRANSITION (status change not allowed from the current status, or a policy refusal (tests use LAST_ACTIVE as an example)); 403 FORBIDDEN (caller lacks clients:update)
@@ -497,7 +500,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## GET /admin/clients/:id/api-keys
 
 - **Map**: API keys of a merchant. (مفاتيح API للتاجر) · staff-permission `api_keys:read` · stage 7 · tables api_keys
-- **Frontend**: `listClientApiKeys` (src/features/merchants/api/apiKeys.ts:19) · params `clientId: number` · returns `ApiKey[]` · success 200 · assumed contract
+- **Frontend**: `listAccountApiKeys` (src/features/accounts/api/apiKeys.ts:19) · params `accountId: number` · returns `ApiKey[]` · success 200 · assumed contract
 - **Response**: Plain JSON array (no paging, no x-total-count), newest first (id desc), every key incl. revoked and expired: id, clientId, name, prefix, scopes[], allowedIps[] (CIDR strings written like ip_rules.cidr: a host prefix /32 (IPv4) or /128 (IPv6) is dropped on read, so '203.0.113.55/32' is sent as '203.0.113.55' and ranges keep their prefix; the merchant write side (/client/api-keys, 7b) accepts a bare IP and stores /32 or /128; one shared formatter, moved to an identity helper), rateLimitPerMin, lastUsedAt, lastUsedIp ('' when the key was never used: the console type is a non-null string; the same rule applies wherever an ApiKey is serialized), expiresAt, revokedAt, createdAt. Never key_hash or the secret. The console derives Active/Revoked/Expired from revokedAt and expiresAt.
 - **Errors**: 404 NOT_FOUND (no merchant with that id); 403 FORBIDDEN (caller lacks api_keys:read)
 - **Mock**: src/features/merchants/mocks/apiKeyRoutes.ts (API keys from mocks/seed.ts keysOf (demo key + IPs per merchant plus extras).)
@@ -505,7 +508,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## DELETE /admin/api-keys/:id
 
 - **Map**: Revoke a merchant API key. (إلغاء مفتاح تاجر) · staff-permission `api_keys:revoke` · stage 7 · tables api_keys, audit_logs
-- **Frontend**: `revokeApiKey` (src/features/merchants/api/apiKeys.ts:29) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: `revokeApiKey` (src/features/accounts/api/apiKeys.ts:29) · params `id: number` · returns `void` · success 204 · assumed contract
 - **Request**: No body.
 - **Response**: 204 empty. Revoke = set revoked_at = now (row kept for orders.api_key_id and audit); effective at once (drop it from the key cache so Dhru/v1 calls fail); audit_logs entry.
 - **Errors**: 404 NOT_FOUND (no API key with that id); 409 ALREADY_REVOKED (the key already has revoked_at); 403 FORBIDDEN (caller lacks api_keys:revoke)
@@ -541,32 +544,32 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## POST /admin/clients/:id/password
 
 - **Map addition** (B-TBD merchant-admin-security, `scripts/map-additions/20.mjs`): Send a merchant a set-password or invitation link, or set a temporary password that must be changed at the next sign-in. (رابط تعيين كلمة مرور أو دعوة جديدة للتاجر، أو كلمة مؤقتة تُفرض تغييرها بأول دخول) · staff-permission `clients:security` · stage 20 · tables clients, auth_tokens, sessions, notifications, audit_logs · success 200
-- **Frontend**: `setClientPassword` (src/features/merchants/api/security.ts:14) · params `id: number`, `body: ClientPasswordBody` · returns `ClientPasswordResult`
+- **Frontend**: `setAccountPassword` (src/features/accounts/api/security.ts:14) · params `id: number`, `body: AccountPasswordBody` · returns `PasswordResult`
 
 ## POST /admin/clients/:id/reset-2fa
 
 - **Map addition** (B-TBD merchant-admin-security, `scripts/map-additions/20.mjs`): Turn off a merchant's two-factor sign-in and end their sessions. (إعادة ضبط 2FA لتاجر وإنهاء جلساته) · staff-permission `clients:security` · stage 20 · tables clients, sessions, audit_logs · success 204
-- **Frontend**: `resetClientTwoFactor` (src/features/merchants/api/security.ts:27) · params `id: number` · returns `void`
+- **Frontend**: `resetAccountTwoFactor` (src/features/accounts/api/security.ts:27) · params `id: number` · returns `void`
 
 ## POST /admin/clients/:id/sessions/revoke
 
 - **Map addition** (B-TBD merchant-admin-security, `scripts/map-additions/20.mjs`): Sign a merchant out of every device. (إنهاء كل جلسات تاجر) · staff-permission `clients:security` · stage 20 · tables sessions, audit_logs · success 204
-- **Frontend**: `revokeClientSessions` (src/features/merchants/api/security.ts:36) · params `id: number` · returns `void`
+- **Frontend**: `revokeAccountSessions` (src/features/accounts/api/security.ts:36) · params `id: number` · returns `void`
 
 ## POST /admin/clients/:id/verify-email/resend
 
 - **Map addition** (B-TBD merchant-verification-resend, `scripts/map-additions/20.mjs`): Send the merchant a new email verification link. (إعادة إرسال إيميل تفعيل البريد للتاجر) · staff-permission `clients:security` · stage 20 · tables clients, auth_tokens, notifications, audit_logs · success 204
-- **Frontend**: `resendClientVerification` (src/features/merchants/api/security.ts:45) · params `id: number` · returns `void`
+- **Frontend**: `resendAccountVerification` (src/features/accounts/api/security.ts:45) · params `id: number` · returns `void`
 
 ## POST /admin/clients/:id/api-keys
 
 - **Map addition** (B-TBD staff-api-keys, `scripts/map-additions/20.mjs`): Create an API key for a merchant; the key is shown once. (إنشاء مفتاح API لتاجر من اللوحة، يُعرض مرة واحدة) · staff-permission `api_keys:create` · stage 20 · tables api_keys, audit_logs · success 201
-- **Frontend**: `createClientApiKey` (src/features/merchants/api/apiKeys.ts:41) · params `clientId: number`, `body: CreateApiKeyBody` · returns `CreatedApiKey`
+- **Frontend**: `createAccountApiKey` (src/features/accounts/api/apiKeys.ts:41) · params `accountId: number`, `body: CreateApiKeyBody` · returns `CreatedApiKey`
 
 ## PATCH /admin/api-keys/:id
 
 - **Map addition** (B-TBD staff-api-keys, `scripts/map-additions/20.mjs`): Change a merchant key's per-minute limit and allowed addresses. (تعديل حدود مفتاح تاجر: المعدّل بالدقيقة والعناوين المسموحة) · staff-permission `api_keys:update` · stage 20 · tables api_keys, audit_logs · success 200
-- **Frontend**: `updateApiKey` (src/features/merchants/api/apiKeys.ts:58) · params `id: number`, `body: UpdateApiKeyBody` · returns `ApiKey`
+- **Frontend**: `updateApiKey` (src/features/accounts/api/apiKeys.ts:58) · params `id: number`, `body: UpdateApiKeyBody` · returns `ApiKey`
 
 ## POST /client/auth/password/change
 
@@ -592,4 +595,19 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 
 - **Map addition** (B216, `scripts/map-additions/27.mjs`): The customer's live event stream (server-sent events). (قناة الأحداث الحية للزبون (SSE)) · customer-session · stage 27 · tables sessions, notification_inbox, notification_campaigns · success 200
 - **Frontend**: none.
+
+## GET /admin/clients/counts
+
+- **Map addition** (B245, `scripts/map-additions/48-accounts.mjs`): The counts of accounts in one aggregate: all, retail, merchant, guests, by status and invitations pending. · staff-permission `clients:read` · stage 48 · tables clients · success 200
+- **Frontend**: `getAccountCounts` (src/features/accounts/api/accounts.ts:50) · params none · returns `AccountCounts`
+
+## GET /admin/legacy-accounts/:type/:id
+
+- **Map addition** (B245, `scripts/map-additions/48-accounts.mjs`): Find the account an old merchant or customer number belongs to now. · staff-permission `clients:read` · stage 48 · tables account_legacy_ids · success 200
+- **Frontend**: `findLegacyAccount` (src/features/accounts/api/accounts.ts:129) · params `type: LegacyAccountType`, `id: number` · returns `LegacyAccount`
+
+## POST /admin/clients/:id/account
+
+- **Map addition** (B245, `scripts/map-additions/48-accounts.mjs`): Make a login account of a guest: send a set-password link or set a temporary password. · staff-permission `clients:update` · stage 48 · tables clients, auth_tokens, notifications, audit_logs · success 200
+- **Frontend**: `makeAccount` (src/features/accounts/api/accounts.ts:96) · params `id: number`, `body: MakeAccountBody` · returns `PasswordResult`
 

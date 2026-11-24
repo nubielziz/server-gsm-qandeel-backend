@@ -28,7 +28,7 @@ export interface LockedAccount extends AccountRow {
   readonly balance: string;
   readonly overdraftLimit: string;
   readonly version: number;
-  /** When a customer wallet was put on hold; null when it is not frozen (always null on other kinds, feature 21). */
+  /** When a wallet (a `customer_wallet` or, since decision 064, a `client_wallet`) was put on hold; null when it is not frozen (always null on other kinds, feature 21). */
   readonly frozenAt: Date | null;
 }
 
@@ -54,7 +54,7 @@ function identityCondition(identity: AccountIdentity) {
 /**
  * Opens accounts that do not exist yet.
  *
- * Why: merchants' accounts are opened with the merchant (`MerchantAccounts.open`); this is the safety fallback of
+ * Why: the accounts of a merchant-rank account are opened with it (`MerchantAccounts.open`); this is the safety fallback of
  * decision 024 ("created inside the transaction that first needs them"), and it creates the system accounts of a fresh
  * database. `ON CONFLICT DO NOTHING` makes two racing posts open one account.
  *

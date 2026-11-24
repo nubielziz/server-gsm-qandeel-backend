@@ -19,19 +19,19 @@ export const HeldOrderSchema = z.object({
     .nullable()
     .describe('Named from the TAC catalogue; null when the order has no IMEI or the TAC is unknown.'),
   capturedAmount: zMoney.describe('USD, VAT included.'),
-  currency: z.string().describe('The currency the customer paid in.'),
+  currency: z.string().describe('The currency the buyer paid in.'),
   fxRate: zDecimal.describe('The rate locked by the checkout session.'),
   paymentMethod: z
     .enum(['card', 'wallet', 'crypto', 'balance'])
     .describe('`balance` for an order paid from the store balance (feature 21): a refund goes back to the balance.'),
   signals: z.array(z.string()).describe('The reasons, in words; the first one seeds the refund reason.'),
   customer: z.object({
-    id: zId,
+    id: zId.describe("The buyer's account number: an account of any rank, or the guest row of a guest checkout."),
     name: z.string(),
     email: z
       .string()
       .describe(
-        "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
+        "The buyer's address; masked (`ja•••@example.com`) unless the caller holds `clients:read` (decisions 047 and 064).",
       ),
     country: z.string(),
     history: z.object({
@@ -115,8 +115,9 @@ export const getRiskQueue = defineRoute({
     'Paid storefront orders the risk rules are holding (their newest assessment says `review`, nothing was sent to a supplier), ' +
     'oldest payment first, with no paging. `stats` counts the last 30 days (decided, approved, refunded, and the percent of storefront ' +
     'orders that were held). `recent` is the six latest decisions, newest first. `device` is read from the TAC catalogue: the ' +
-    'marketing name with the model in brackets when the entry has a marketing name, else brand and model. The console polls it ' +
-    'every 30 seconds; never cached.',
+    'marketing name with the model in brackets when the entry has a marketing name, else brand and model. The `customer` of a card ' +
+    'is the buyer account (its `id` is the account number, whatever the rank; a guest checkout names its guest row) and its history ' +
+    'counts that account’s shop orders only. The console polls it every 30 seconds; never cached.',
   tags: ['risk'],
   surface: 'admin',
   access: 'staff-permission',
@@ -169,8 +170,8 @@ export const refundHeldOrder = defineRoute({
   description:
     '`:id` is the order id. Rejects the order without contacting a supplier and returns the whole payment (the storefront refund ' +
     'ledger move), in one transaction with the assessment outcome, the order timeline, the audit row and the chosen blocklist ' +
-    'entries (manual entries of the caller; an entry that already exists is skipped, and none is linked to a customer). The ' +
-    'customer’s status is not changed: block the customer with `POST /admin/customers/:id/block`. `409 NOT_HELD` when the order ' +
+    'entries (manual entries of the caller; an entry that already exists is skipped, and none is linked to an account). The ' +
+    'account’s status is not changed: block the account with `POST /admin/clients/:id/block`. `409 NOT_HELD` when the order ' +
     'is not waiting for a decision any more. A payment the buyer disputed with the card network is not sent back (decision 048): while ' +
     'the dispute is open a refund request waits on the Refunds page instead; once the payment was charged back no refund or request ' +
     'is made and what the sale booked goes back against the chargeback loss. For a guest checkout (opened without a signed-in session) `blockEmail` ' +

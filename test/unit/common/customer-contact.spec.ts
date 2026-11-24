@@ -1,4 +1,5 @@
-// Unit tests of the customer contact mask (decision 047): equal to the console's mask wherever the console masks, stricter where it would not.
+// Unit tests of the account contact mask (decisions 047 and 064): equal to the console's mask wherever the console masks, stricter where
+// it would not. The same mask serves every account, whatever its rank.
 import { describe, expect, it } from 'bun:test';
 import { customerEmailIn, customerNameForStaff, maskCustomerEmail } from '@src/common/customer-contact';
 
@@ -37,13 +38,13 @@ describe('maskCustomerEmail', () => {
 });
 
 describe('customerEmailIn and customerNameForStaff', () => {
-  it('gives the address in full or masked, by what the caller may see', () => {
+  it('gives the address of an account of any rank in full or masked, by what the caller may see', () => {
     expect(customerEmailIn('full', 'jane@example.com')).toBe('jane@example.com');
     expect(customerEmailIn('masked', 'jane@example.com')).toBe('ja•••@example.com');
     expect(customerEmailIn('masked', '')).toBe('');
   });
 
-  it('labels a customer by the name, and by the masked address when the name is empty', () => {
+  it('labels an account by the name, and by the masked address when the name is empty', () => {
     expect(customerNameForStaff('Jane Doe', 'jane@example.com')).toBe('Jane Doe');
     expect(customerNameForStaff('', 'jane@example.com')).toBe('ja•••@example.com');
     expect(customerNameForStaff('', 'a@x.com')).toBe('•••@x.com');

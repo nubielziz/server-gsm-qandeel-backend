@@ -38,7 +38,7 @@ async function insertRow(values: Partial<typeof s.notifications.$inferInsert> = 
   const [row] = await db
     .insert(s.notifications)
     .values({
-      recipientType: 'customer',
+      recipientType: 'account',
       recipientId: customerId,
       channel: 'email',
       event: 'order.completed',
@@ -110,7 +110,7 @@ describe('the reconciler', () => {
   it('adds the send job again for an event row whose relayed job is missing, and leaves a live job alone', async () => {
     const clientId = await insertMerchant(db, { email: 'ops@zainmobilehub.example' });
     const lost = eventJob('wallet.low_balance', 'ledger_accounts', 1, {
-      clientId,
+      accountId: clientId,
       currency: 'USD',
       available: '10.0000',
       threshold: '50.0000',
@@ -158,12 +158,12 @@ describe('the reconciler', () => {
     const digest = await insertRow({
       event: 'service.price_changed',
       payload: { variables: { merchantName: 'Zain' }, items: [{ serviceId: 1 }], cycle: '2026-11-09' },
-      recipientType: 'client',
+      recipientType: 'account',
     });
     const today = await insertRow({
       event: 'service.price_changed',
       payload: { variables: { merchantName: 'Zain' }, items: [{ serviceId: 1 }], cycle: '2026-11-10' },
-      recipientType: 'client',
+      recipientType: 'account',
     });
     // The period of 2026-11-09 ended at 06:00 on the 10th: only 29 minutes ago.
     clock.advance(29 * MINUTE);

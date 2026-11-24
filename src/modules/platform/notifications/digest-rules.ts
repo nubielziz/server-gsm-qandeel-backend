@@ -51,16 +51,16 @@ export function digestSendDelay(cycle: DigestCycle, now: Date): number {
 }
 
 /**
- * Builds the dedupe key of one merchant's digest on one channel in one period.
+ * Builds the dedupe key of one merchant's digest on one channel in one period (a merchant's number is its account id; the key keeps its shape across the merge).
  *
  * @param event the event key (`service.price_changed`)
  * @param channel the channel (`email`)
- * @param clientId the merchant
+ * @param accountId the account of a merchant rank
  * @param cycle the period
  * @returns the key stored on the notification row
  */
-export function digestKey(event: string, channel: string, clientId: number, cycle: DigestCycle): string {
-  return `digest:${event}:${channel}:${clientId}:${cycle.day}`;
+export function digestKey(event: string, channel: string, accountId: number, cycle: DigestCycle): string {
+  return `digest:${event}:${channel}:${accountId}:${cycle.day}`;
 }
 
 /** One price change inside a digest. */

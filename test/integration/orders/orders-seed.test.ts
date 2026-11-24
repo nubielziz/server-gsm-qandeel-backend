@@ -46,12 +46,14 @@ describe.skipIf(!frontendPresent)('the orders seed', () => {
   it("writes the demo's 760 merchant orders by their demo ids (the 104 storefront orders are the storefront money seed's, feature 16)", async () => {
     const { db } = await testDb();
     const all = await db.select().from(s.orders).orderBy(s.orders.id);
-    const rows = all.filter((row) => row.clientId !== null);
+    // A merchant order is any order that was not paid first in the shop: the door is `source`, never a null column (decision 064).
+    const rows = all.filter((row) => row.source !== 'store');
     expect(rows).toHaveLength(760);
     expect(all).toHaveLength(864);
     expect(rows.map((row) => row.id)).toEqual([...new Set(rows.map((row) => row.id))].sort((a, b) => a - b));
     expect(rows.find((row) => row.id === 48100)).toMatchObject({
-      clientId: 3,
+      accountId: 3,
+      legacyClientId: 3,
       serviceId: 25,
       type: 'file',
       source: 'dhru',
@@ -69,10 +71,10 @@ describe.skipIf(!frontendPresent)('the orders seed', () => {
       supplierServiceId: null,
       supplierRef: null,
     });
-    expect(rows.every((row) => row.clientId !== null && row.customerId === null)).toBe(true);
+    expect(rows.every((row) => row.legacyClientId === row.accountId && row.retiredCustomerId === null)).toBe(true);
     expect(rows.every((row) => row.placedAt.getTime() === row.createdAt.getTime())).toBe(true);
     const counts = await db.execute<{ status: string; n: number }>(
-      sql`select status, count(*)::int as n from orders where client_id is not null group by 1 order by 1`,
+      sql`select status, count(*)::int as n from orders where source <> 'store' group by 1 order by 1`,
     );
     expect(counts.rows).toEqual([
       { status: 'completed', n: 680 },
@@ -114,7 +116,7 @@ describe.skipIf(!frontendPresent)('the orders seed', () => {
   it('gives the timeline of an order with its actors, and the pricing snapshot the mock builds', async () => {
     const shown = await staff.get('/admin/orders/48100');
     expect(shown.body).toMatchObject({
-      client: { id: 3, name: 'Phone Doctor FZE' },
+      account: { id: 3, name: 'Phone Doctor FZE', guest: false, rank: { kind: 'merchant' } },
       service: { id: 25, name: 'Xiaomi EDL Auth File', type: 'file', category: 'Files' },
       attempts: 1,
       pricingSnapshot: { source: 'base', price: '3.3100', floor: '2.5400', fx: 1, taxRate: 0 },
@@ -127,14 +129,17 @@ describe.skipIf(!frontendPresent)('the orders seed', () => {
     const events = (await staff.get('/admin/orders/48100/events')).body as Array<{
       type: string;
       actor: { type: string; name: string | null };
+      account: { id: number } | null;
       data: { message: string };
     }>;
     expect(events.map((event) => event.type)).toEqual(['created', 'hold', 'dispatch', 'ack', 'completed', 'settle']);
     expect(events[0]).toMatchObject({
-      actor: { type: 'client', name: 'Phone Doctor FZE' },
+      actor: { type: 'account', name: 'Phone Doctor FZE' },
+      account: { id: 3 },
       data: { message: 'Order received via Dhru API' },
     });
     expect(events[1]!.actor.type).toBe('system');
+    expect(events[1]!.account).toBeNull();
     expect(events[5]!.data).toMatchObject({
       message: 'Settled: revenue $3.31, cost $2.40',
       revenue: '3.3100',
@@ -146,7 +151,7 @@ describe.skipIf(!frontendPresent)('the orders seed', () => {
     const { db } = await testDb();
     const holds = await db.execute<{ owner: string; hold: string; open: string }>(sql`
       select a.owner_id as owner, a.balance as hold,
-             coalesce((select sum(o.total_price) from orders o where o.client_id = a.owner_id and o.status in ('pending','processing')), 0)::numeric(18,4)::text as open
+             coalesce((select sum(o.total_price) from orders o where o.account_id = a.owner_id and o.source <> 'store' and o.status in ('pending','processing')), 0)::numeric(18,4)::text as open
       from ledger_accounts a where a.kind = 'client_hold'`);
     expect(holds.rows).toHaveLength(20);
     for (const row of holds.rows) expect(row.hold).toBe(row.open);
@@ -190,16 +195,17 @@ describe.skipIf(!frontendPresent)('the orders seed', () => {
     expect((await ledgerTotals(db)).sum).toBe('0.0000');
   });
 
-  it("feeds the merchant list's 30-day figures from the seeded orders", async () => {
+  it("feeds the account list's 30-day figures from the seeded orders", async () => {
     const { db } = await testDb();
-    const list = await staff.get('/admin/clients?_end=100');
+    // The list holds every account of any rank now (decision 064), so the merchant is asked for by its id.
+    const list = await staff.get('/admin/clients?id=3');
     const phoneDoctor = list.body.find((client: { id: number }) => client.id === 3);
     const expected = await db.execute<{ orders: number; spend: string; completed: number; rejected: number }>(sql`
       select count(*)::int as orders,
              coalesce(sum(total_price) filter (where status <> 'rejected'), 0)::numeric(18,4)::text as spend,
              (count(*) filter (where status = 'completed'))::int as completed,
              (count(*) filter (where status = 'rejected'))::int as rejected
-      from orders where client_id = 3 and created_at >= now() - interval '30 days'`);
+      from orders where account_id = 3 and created_at >= now() - interval '30 days'`);
     const row = expected.rows[0]!;
     expect(phoneDoctor.stats.orders).toBe(row.orders);
     expect(phoneDoctor.stats.orders).toBeGreaterThan(0);
@@ -249,7 +255,7 @@ describe.skipIf(!frontendPresent)('the orders seed', () => {
     ]);
     const [{ n }] = (await db.select({ n: sql<number>`count(*)::int` }).from(s.orderEvents)) as [{ n: number }];
     expect(n).toBeGreaterThan(4000);
-    const fresh = await insertOrderRow(db, { clientId: 3, serviceId: 1, imei: '490154203237518' });
+    const fresh = await insertOrderRow(db, { accountId: 3, serviceId: 1, imei: '490154203237518' });
     expect(fresh.id).toBeGreaterThan(48859);
   });
 });

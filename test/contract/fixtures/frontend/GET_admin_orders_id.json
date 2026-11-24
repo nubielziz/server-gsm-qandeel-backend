@@ -18,11 +18,17 @@
       "slaMinutes": 15,
       "category": "Files"
     },
-    "client": {
+    "account": {
       "id": 3,
-      "name": "Phone Doctor FZE"
+      "name": "Phone Doctor FZE",
+      "email": "ops@phonedoctorfze.example",
+      "rank": {
+        "id": 3,
+        "name": "VIP",
+        "kind": "merchant"
+      },
+      "guest": false
     },
-    "customer": null,
     "imei": "SM-S911B",
     "quantity": 1,
     "inputs": {},

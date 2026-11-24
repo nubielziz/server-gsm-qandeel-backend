@@ -1,8 +1,9 @@
-// Constraints the map and the decisions imply (decision 027): the orders one-of check, case-insensitive unique emails,
-// enumeration CHECKs, partial unique keys and identity ids.
+// Constraints the map and the decisions imply (decision 027): the buyer and door checks of orders (decision 064), case-insensitive
+// unique emails (one partition for accounts with a login, one for guests), enumeration CHECKs, partial unique keys and identity ids.
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
+import { makeAccount } from '../../support/accounts';
 import { ORDER_DEFAULTS, insertOrder, insertOrderParents, insertUsd } from '../../support/fixtures';
 import { closeTestDb, pgErrorOf, resetDb, testDb } from '../../support/db';
 
@@ -10,31 +11,42 @@ beforeEach(resetDb);
 afterAll(closeTestDb);
 
 describe('orders', () => {
-  it('belong to exactly one buyer: a merchant or a customer', async () => {
+  it('belong to one account, and the old merchant column is set exactly for the doors that are not the shop', async () => {
     const { db } = await testDb();
     const parents = await insertOrderParents(db);
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: 'buyer@example.com' })
-      .returning({ id: s.customers.id });
+    const retail = await makeAccount({ rank: 'retail', db });
     const base = { ...ORDER_DEFAULTS, serviceId: parents.serviceId };
 
-    await db.insert(s.orders).values({ ...base, clientId: parents.clientId });
-    await db.insert(s.orders).values({ ...base, customerId: customer!.id });
+    await db.insert(s.orders).values({ ...base, accountId: parents.clientId, legacyClientId: parents.clientId });
+    await db.insert(s.orders).values({ ...base, source: 'store', accountId: retail.id });
 
-    const both = await pgErrorOf(
-      db.insert(s.orders).values({ ...base, clientId: parents.clientId, customerId: customer!.id }),
+    const storeWithMerchant = await pgErrorOf(
+      db.insert(s.orders).values({ ...base, source: 'store', accountId: retail.id, legacyClientId: parents.clientId }),
     );
-    expect(both.code).toBe('23514');
-    expect(both.constraint).toBe('orders_buyer_check');
-    const neither = await pgErrorOf(db.insert(s.orders).values(base));
-    expect(neither.constraint).toBe('orders_buyer_check');
+    expect(storeWithMerchant.code).toBe('23514');
+    expect(['orders_door_check', 'orders_hold_buyer_check']).toContain(storeWithMerchant.constraint ?? '');
+    const portalWithout = await pgErrorOf(db.insert(s.orders).values({ ...base, accountId: parents.clientId }));
+    expect(portalWithout.constraint).toBe('orders_door_check');
+    const otherMerchant = await pgErrorOf(
+      db.insert(s.orders).values({ ...base, accountId: retail.id, legacyClientId: parents.clientId }),
+    );
+    expect(otherMerchant.constraint).toBe('orders_hold_buyer_check');
+    const nobody = await pgErrorOf(
+      db.execute(sql`insert into orders (service_id, type, source, unit_price, total_price, currency)
+      values (${parents.serviceId}, 'imei', 'store', 1, 1, 'USD')`),
+    );
+    expect(nobody.code).toBe('23502');
   });
 
   it('refuse a quantity below one and a status outside the state machine', async () => {
     const { db } = await testDb();
     const parents = await insertOrderParents(db);
-    const base = { ...ORDER_DEFAULTS, ...parents };
+    const base = {
+      ...ORDER_DEFAULTS,
+      serviceId: parents.serviceId,
+      accountId: parents.clientId,
+      legacyClientId: parents.clientId,
+    };
     expect((await pgErrorOf(db.insert(s.orders).values({ ...base, quantity: 0 }))).constraint).toBe(
       'orders_quantity_check',
     );
@@ -45,11 +57,8 @@ describe('orders', () => {
   it('start pending and keep a tracking token unique only when present', async () => {
     const { db } = await testDb();
     const parents = await insertOrderParents(db);
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: 'buyer@example.com' })
-      .returning({ id: s.customers.id });
-    const base = { ...ORDER_DEFAULTS, serviceId: parents.serviceId, customerId: customer!.id };
+    const retail = await makeAccount({ rank: 'retail', db });
+    const base = { ...ORDER_DEFAULTS, source: 'store' as const, serviceId: parents.serviceId, accountId: retail.id };
     const [first] = await db
       .insert(s.orders)
       .values({ ...base, publicToken: 'abc' })
@@ -65,14 +74,20 @@ describe('orders', () => {
   it('keep a merchant idempotency key unique per merchant', async () => {
     const { db } = await testDb();
     const parents = await insertOrderParents(db);
-    const values = { ...ORDER_DEFAULTS, ...parents, idempotencyKey: 'idem-1' };
+    const values = {
+      ...ORDER_DEFAULTS,
+      serviceId: parents.serviceId,
+      accountId: parents.clientId,
+      legacyClientId: parents.clientId,
+      idempotencyKey: 'idem-1',
+    };
     await db.insert(s.orders).values(values);
     expect((await pgErrorOf(db.insert(s.orders).values(values))).constraint).toBe('orders_client_idempotency_uq');
   });
 });
 
 describe('unique keys', () => {
-  it('treat emails as case-insensitive for staff, merchants and customers', async () => {
+  it('treat emails as case-insensitive for staff, and once among accounts with a login and once among guests', async () => {
     const { db } = await testDb();
     const [role] = await db
       .insert(s.roles)
@@ -86,23 +101,18 @@ describe('unique keys', () => {
     expect(staff.constraint).toBe('staff_users_email_uq');
 
     await insertOrderParents(db);
-    const merchant = await pgErrorOf(
-      db
-        .insert(s.clients)
-        .values({ username: 'other', email: 'MERCHANT@example.com', name: 'M', groupId: 1, referralCode: 'R2' }),
-    );
-    expect(merchant.constraint).toBe('clients_email_uq');
-    const username = await pgErrorOf(
-      db
-        .insert(s.clients)
-        .values({ username: 'MERCHANT', email: 'x@example.com', name: 'M', groupId: 1, referralCode: 'R3' }),
-    );
+    const merchant = await pgErrorOf(makeAccount({ rank: 'merchant', db, email: 'MERCHANT@example.com' }));
+    expect(merchant.code).toBe('23505');
+    expect(merchant.constraint).toBe('clients_login_email_uq');
+    const username = await pgErrorOf(makeAccount({ rank: 'merchant', db, username: 'MERCHANT' }));
     expect(username.constraint).toBe('clients_username_uq');
 
-    await db.insert(s.customers).values({ email: 'Buyer@Example.com' });
-    expect((await pgErrorOf(db.insert(s.customers).values({ email: 'buyer@example.com' }))).constraint).toBe(
-      'customers_email_uq',
-    );
+    // A guest may share the address of an account with a login (a checkout typed with it), but two guests may not.
+    await makeAccount({ rank: 'retail', guest: true, db, email: 'Merchant@Example.com' });
+    const guest = await pgErrorOf(makeAccount({ rank: 'retail', guest: true, db, email: 'merchant@EXAMPLE.com' }));
+    expect(guest.constraint).toBe('clients_guest_email_uq');
+    const retail = await pgErrorOf(makeAccount({ rank: 'retail', db, email: 'merchant@example.COM' }));
+    expect(retail.constraint).toBe('clients_login_email_uq');
   });
 
   it('keep service codes unique ignoring case, and one default and one retail merchant group', async () => {
@@ -139,7 +149,9 @@ describe('unique keys', () => {
       .insert(s.paymentGateways)
       .values({ code: 'stripe', driver: 'stripe', name: 'Stripe' })
       .returning({ id: s.paymentGateways.id });
+    const buyer = await makeAccount({ rank: 'retail', db });
     const payment = {
+      accountId: buyer.id,
       purpose: 'order' as const,
       gatewayId: gateway!.id,
       amount: '10',

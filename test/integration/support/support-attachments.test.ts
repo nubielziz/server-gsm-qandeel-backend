@@ -12,6 +12,7 @@ import { SupportJobsModule } from '@src/modules/support';
 import { TicketAttachmentService } from '@src/modules/support/application/ticket-attachment.service';
 import { TicketThreadService } from '@src/modules/support/application/ticket-thread.service';
 import { type AdminApi, adminWith } from '../../support/admin-api';
+import { ensureRetailGroup } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { insertGateway, insertInvoiceRow, insertPendingPayment } from '../../support/billing';
@@ -50,7 +51,10 @@ beforeAll(async () => {
 beforeEach(async () => {
   clock.set(NOW);
   await resetDb();
-  await seedSupportTemplates((await testDb()).db);
+  const { db } = await testDb();
+  // the reset removed the one retail rank that the migrations insert; the console reads it to tell the requester's rank
+  await ensureRetailGroup(db);
+  await seedSupportTemplates(db);
   await clearIdentityCaches(t);
   await clearTicketChatLimits(t);
   await setSupportSetting(t, 'replyEmailDelayMinutes', 0);
@@ -70,7 +74,7 @@ async function customerTicket() {
   const ticket = await insertSupportTicket(db, { requesterId: customer.id, status: 'open' });
   // Written a minute before the clock's now, like a message of the past (the default would be the wall clock).
   await insertSupportMessage(db, ticket.id, {
-    authorType: 'customer',
+    authorType: 'account',
     authorId: customer.id,
     body: 'Hello.',
     createdAt: new Date(clock.nowMs() - 60_000),
@@ -108,7 +112,7 @@ const onTicket = (method: 'GET' | 'POST', token: string, path: string, payload?:
 
 /** Inserts a file row straight into the table (an upload the platform made, of any type and size). */
 async function fileRow(
-  ownerType: 'client' | 'staff' | 'customer',
+  ownerType: 'account' | 'staff',
   ownerId: number,
   values: Partial<typeof s.files.$inferInsert> = {},
 ) {
@@ -144,11 +148,11 @@ describe('the uploads', () => {
     expect(console.statusCode).toBe(201);
     const rows = await db.select().from(s.files).orderBy(s.files.id);
     expect(rows.map((row) => [row.ownerType, row.ownerId])).toEqual([
-      ['customer', customer.id],
+      ['account', customer.id],
       ['staff', staff.staffId],
     ]);
     // A requester's upload is stored under its ticket's own area, a staff upload under the shared one.
-    expect(rows[0]!.key.startsWith(`tickets-${ticket.id}/customer-${customer.id}/`)).toBe(true);
+    expect(rows[0]!.key.startsWith(`tickets-${ticket.id}/account-${customer.id}/`)).toBe(true);
     expect(rows[1]!.key.startsWith(`tickets/staff-${staff.staffId}/`)).toBe(true);
     const audits = await db.select().from(s.auditLogs);
     expect(audits).toHaveLength(1);
@@ -158,6 +162,22 @@ describe('the uploads', () => {
       entityId: ticket.id,
       after: { fileId: console.json().id, filename: 'screen.png', size: PNG.length },
     });
+  });
+
+  it('holds a requester’s link upload to the quota of its rank kind: a retail rank stops at 30 files in 24 hours, a merchant rank does not ', async () => {
+    const { db, customer, ticket } = await customerTicket();
+    const merchantId = await insertMerchant(db, { name: 'Zain Mobile Hub' });
+    const merchantTicket = await insertSupportTicket(db, { requesterId: merchantId, status: 'open' });
+    // Each account already holds 30 uploads of the last day, as the shop's and the portal's upload routes store them.
+    for (const owner of [customer.id, merchantId]) {
+      for (let n = 0; n < 30; n += 1) await fileRow('account', owner);
+    }
+    const retail = await pageUpload(ticket.token, 'one-more.pdf', 'application/pdf', PDF);
+    expect(retail.statusCode).toBe(422);
+    expect(errorOf(retail)).toMatchObject({ field: 'file', code: 'quota' });
+    const merchant = await pageUpload(merchantTicket.token!, 'one-more.pdf', 'application/pdf', PDF);
+    expect(merchant.statusCode).toBe(201);
+    expect(await db.select().from(s.files).where(eq(s.files.ownerId, merchantId))).toHaveLength(31);
   });
 
   it('refuses a ticket-link upload over 5 MiB that declares no length, before it is parsed (decision 053)', async () => {
@@ -288,22 +308,22 @@ describe('attaching files to a message', () => {
     const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub' });
     const rival = await insertMerchant(db, { name: 'Other Shop' });
     const merchantTicket = await insertSupportTicket(db, {
-      requesterType: 'client',
+      requesterType: 'account',
       requesterId: merchant,
       token: null,
     });
-    const writer = { via: 'account', type: 'client', id: merchant } as const;
+    const writer = { via: 'account', id: merchant } as const;
     const thread = t.app.get(TicketThreadService);
     for (const [file, code] of [
-      [await fileRow('client', rival), 'not_yours'],
-      [await fileRow('client', merchant, { size: 20 * MIB }), 'too_large'],
-      [await fileRow('client', merchant, { mime: 'application/zip', filename: 'firmware.zip' }), 'type'],
+      [await fileRow('account', rival), 'not_yours'],
+      [await fileRow('account', merchant, { size: 20 * MIB }), 'too_large'],
+      [await fileRow('account', merchant, { mime: 'application/zip', filename: 'firmware.zip' }), 'type'],
     ] as const) {
       const error = await rejectionOf(thread.write(merchantTicket.id, writer, { body: 'x', fileIds: [file.id] }));
       expect(error).toBeInstanceOf(AppError);
       expect((error as AppError).errors[0]).toMatchObject({ field: 'fileIds', code });
     }
-    const own = await fileRow('client', merchant);
+    const own = await fileRow('account', merchant);
     expect((await thread.write(merchantTicket.id, writer, { body: '', fileIds: [own.id] })).attachments).toHaveLength(
       1,
     );
@@ -317,11 +337,11 @@ describe('attaching files to a message', () => {
     const second = await insertSupportTicket(db, { requesterId: customer.id, status: 'open' });
     // The customer's own files that did not come through this ticket: a tax receipt (billing stores it under `receipts`), a bank
     // transfer receipt of `POST /store/v1/files` (under `files`) and an upload through their other ticket.
-    const receipt = await fileRow('customer', customer.id, {
-      key: `receipts/customer-${customer.id}/${crypto.randomUUID()}`,
+    const receipt = await fileRow('account', customer.id, {
+      key: `receipts/account-${customer.id}/${crypto.randomUUID()}`,
       filename: 'receipt-ORD-1001.pdf',
     });
-    const transfer = await fileRow('customer', customer.id);
+    const transfer = await fileRow('account', customer.id);
     const elsewhere = (await pageUpload(second.token!, 'other.pdf', 'application/pdf', PDF)).json().id;
     for (const id of [receipt.id, transfer.id, elsewhere]) {
       const res = await onTicket('POST', ticket.token, '/messages', { body: 'x', fileIds: [id] });
@@ -343,7 +363,7 @@ describe('attaching files to a message', () => {
     // A signed-in requester is not limited to one ticket's uploads (the owner alone decides, slice B2).
     const signedIn = await t.app
       .get(TicketThreadService)
-      .write(ticket.id, { via: 'account', type: 'customer', id: customer.id }, { body: '', fileIds: [transfer.id] });
+      .write(ticket.id, { via: 'account', id: customer.id }, { body: '', fileIds: [transfer.id] });
     expect(signedIn.attachments).toHaveLength(1);
   });
 });
@@ -395,7 +415,7 @@ describe('opening a file that is also an identity document or a payment proof (d
   it('leaves the audit row of the file route for staff, and none for an ordinary attachment', async () => {
     const { db, customer, ticket } = await customerTicket();
     const merchantId = await insertMerchant(db, { name: 'Zain Mobile Hub' });
-    const passport = await fileRow('client', merchantId, { filename: 'passport.pdf' });
+    const passport = await fileRow('account', merchantId, { filename: 'passport.pdf' });
     const [submission] = await db
       .insert(s.kycSubmissions)
       .values({ clientId: merchantId, fileIds: [passport.id] })
@@ -403,12 +423,12 @@ describe('opening a file that is also an identity document or a payment proof (d
     await insertUsd(db);
     const gatewayId = await insertGateway(t, db);
     const invoice = await insertInvoiceRow(db, merchantId);
-    const receipt = await fileRow('client', merchantId, { filename: 'receipt.pdf' });
+    const receipt = await fileRow('account', merchantId, { filename: 'receipt.pdf' });
     const payment = await insertPendingPayment(db, invoice, gatewayId, { receiptFileId: receipt.id });
-    const ordinary = await fileRow('customer', customer.id, { filename: 'screenshot.png', mime: 'image/png' });
+    const ordinary = await fileRow('account', customer.id, { filename: 'screenshot.png', mime: 'image/png' });
     // The requester attached all three to messages of the ticket (the files are rows of the table, whatever they are used for elsewhere).
     for (const file of [passport, receipt, ordinary]) {
-      await insertSupportMessage(db, ticket.id, { authorType: 'customer', authorId: customer.id, fileIds: [file.id] });
+      await insertSupportMessage(db, ticket.id, { authorType: 'account', authorId: customer.id, fileIds: [file.id] });
     }
     const open = (fileId: number) => staff.get(`/admin/support-tickets/${ticket.id}/files/${fileId}`);
 
@@ -419,7 +439,7 @@ describe('opening a file that is also an identity document or a payment proof (d
     expect((await open(passport.id)).status).toBe(302);
     const [identity] = await opened('opened an identity document of');
     expect(identity).toMatchObject({
-      entityType: 'merchant',
+      entityType: 'account',
       entityId: merchantId,
       entityLabel: 'Zain Mobile Hub',
       actorId: staff.staffId,
@@ -463,7 +483,7 @@ describe('the deletion', () => {
     for (const key of keys) expect(await storage.head(key)).not.toBeNull();
 
     const privacy = await adminWith(t, ['customers:privacy']);
-    expect((await privacy.post(`/admin/customers/${customer.id}/anonymize`)).status).toBe(204);
+    expect((await privacy.post(`/admin/clients/${customer.id}/anonymize`)).status).toBe(204);
     expect(
       await db
         .select()
@@ -494,8 +514,8 @@ describe('the retention', () => {
         status: 'resolved',
         resolvedAt: new Date(clock.nowMs() - resolvedDaysAgo * DAY),
       });
-      const file = await fileRow('customer', customer.id);
-      await insertSupportMessage(db, ticket.id, { authorType: 'customer', authorId: customer.id, fileIds: [file.id] });
+      const file = await fileRow('account', customer.id);
+      await insertSupportMessage(db, ticket.id, { authorType: 'account', authorId: customer.id, fileIds: [file.id] });
       return file.id;
     };
     const old = await ticketWith(181);
@@ -503,7 +523,7 @@ describe('the retention', () => {
     // A file another record still uses is kept: the same file on an open ticket.
     const shared = await ticketWith(200);
     const open = await insertSupportTicket(db, { requesterId: customer.id, status: 'open' });
-    await insertSupportMessage(db, open.id, { authorType: 'customer', authorId: customer.id, fileIds: [shared] });
+    await insertSupportMessage(db, open.id, { authorType: 'account', authorId: customer.id, fileIds: [shared] });
 
     await setSupportSetting(t, 'attachmentRetentionDays', 0);
     expect(await t.app.get(TicketAttachmentService).applyRetention()).toEqual({ days: 0, tickets: 0, files: 0 });
@@ -525,10 +545,10 @@ describe('the retention', () => {
       status: 'resolved',
       resolvedAt: new Date(clock.nowMs() - 200 * DAY),
     });
-    const logo = await fileRow('customer', customer.id);
-    const plain = await fileRow('customer', customer.id);
+    const logo = await fileRow('account', customer.id);
+    const plain = await fileRow('account', customer.id);
     await insertSupportMessage(db, ticket.id, {
-      authorType: 'customer',
+      authorType: 'account',
       authorId: customer.id,
       fileIds: [logo.id, plain.id],
     });

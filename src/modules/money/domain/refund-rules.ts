@@ -1,7 +1,9 @@
 // The pure rules of storefront refunds (feature 16): how much can still go back, how the money goes back (the gateway or by hand),
 // what a refund of a delivered or an undelivered order posts, and the fixed texts. No database.
 import { Money } from '../../../common/money';
-import type { OrderMethod, RefundMethod, RefundStatus } from '../db/schema';
+import type { LedgerRefType, OrderMethod, RefundMethod, RefundStatus } from '../db/schema';
+import { type AccountRef, type LedgerLine, creditLine, debitLine } from './ledger-lines';
+import type { WalletLedgerKind } from './wallet-kinds';
 
 /** The note a crypto refund carries: the gateway cannot reverse a coin payment, so staff pay it out (ANSWERS refunds Q4). */
 export const CRYPTO_REFUND_NOTE =
@@ -24,6 +26,13 @@ export const MANUAL_RETURN_REASON = 'Paid back by hand by staff';
  * already returned the money, so the refund's journal is reversed and the books show the money leaving once.
  */
 export const CHARGEBACK_NOT_SENT_NOTE = 'Not sent: the payment was charged back.';
+
+/**
+ * The detail of the `409 ANONYMIZED` answer to a refund of a balance payment of an erased account (decision 064): nobody can sign in to that
+ * account any more, so money credited to its wallet would be stranded there; the refund request stays waiting for staff to decline it.
+ */
+export const ERASED_BUYER_REFUND_DETAIL =
+  'This account was erased, so nothing can go back to its wallet. Pay the money back another way, then decline the refund.';
 
 /**
  * Tells whether a chargeback closes a refund unsent.
@@ -201,3 +210,57 @@ export const MIN_DECLINE_REASON_LENGTH = 10;
 
 /** The longest decline reason kept. */
 export const MAX_DECLINE_REASON_LENGTH = 500;
+
+/**
+ * What the refund-to-wallet builders return: spread it into the input of `postTransaction` and add the record id, the key, the memo and the actor.
+ *
+ * Why: like the map's builders, keeping `kind`, `refType` and `lines` together stops a caller from posting under the wrong reference type.
+ */
+export interface WalletRefundPosting {
+  /** `b2c_wallet_refund` for a balance payment of a shop order, `refund` for a completed order of a merchant door. */
+  readonly event: 'b2c_wallet_refund' | 'refund';
+  /** The console's word for it, `refund` (the ledger labels and filters need no new word). */
+  readonly kind: 'refund';
+  readonly refType: LedgerRefType;
+  readonly lines: readonly LedgerLine[];
+}
+
+const SYSTEM = (kind: AccountRef['kind']): AccountRef => ({ kind });
+
+/** The ledger account of an account's wallet of a kind (the store balance or the merchant wallet): owner `account` (decision 064), whatever the kind. */
+const walletAccount = (wallet: WalletLedgerKind, accountId: number): AccountRef => ({
+  kind: wallet,
+  ownerType: 'account',
+  ownerId: accountId,
+});
+
+/**
+ * Event `b2c_wallet_refund`: an order paid from the balance goes back to the wallet the account holds now.
+ *
+ * Why: decision 064: a refund always credits the account's live wallet or goes back through the gateway, and is never refused for a rank
+ * change. A balance payment was made from the store balance, so a refund after a crossing to the merchant rank credits the merchant wallet
+ * (`client_wallet`) instead; the split, the closing rule and the keys (`refund:<id>`, `order:<id>:refund`) are the same. Before delivery the
+ * net leaves `customer_funds`, after delivery `revenue`; the VAT share leaves `vat_payable` either way (plan 21 § 5.6.7, O10).
+ *
+ * @param input the live wallet kind (read under the account row lock), the account, the net and VAT paid back, and where the net comes from
+ * @returns Dr customer_funds (or revenue) net / Dr vat_payable vat / Cr the wallet net + vat; kind `refund`, reference type `order`
+ * @throws {RangeError} when an amount is negative
+ */
+export function b2cWalletRefundPosting(input: {
+  wallet: WalletLedgerKind;
+  accountId: number;
+  net: Money;
+  vat: Money;
+  from?: 'customer_funds' | 'revenue';
+}): WalletRefundPosting {
+  return {
+    event: 'b2c_wallet_refund',
+    kind: 'refund',
+    refType: 'order',
+    lines: [
+      ...debitLine(SYSTEM(input.from ?? 'customer_funds'), input.net),
+      ...debitLine(SYSTEM('vat_payable'), input.vat),
+      ...creditLine(walletAccount(input.wallet, input.accountId), input.net.add(input.vat)),
+    ],
+  };
+}

@@ -19,7 +19,7 @@ import {
   type PaymentCheck,
 } from '../infra/gateway-drivers/driver';
 import { driverFor } from '../infra/gateway-drivers/drivers';
-import { findWalletCustomer, loadBillingMerchants } from '../infra/foreign-directory.repository';
+import { loadBillingMerchants } from '../infra/foreign-directory.repository';
 import { findGateway } from '../infra/gateway.repository';
 import { findInvoice } from '../infra/invoice.repository';
 import { dueAutoCreditIds, findTopupPayment, lockTopupPayment, updatePayment } from '../infra/payment.repository';
@@ -55,7 +55,7 @@ interface GatewayAnswer {
  * Why: user rule 6: after the gateway confirmed the payment and `payments.auto_credit_delay_minutes` (or the gateway's hold hours)
  * passed, the job asks the gateway's API again and credits the wallet only if the payment is still confirmed and risk has not
  * flagged it; otherwise the payment goes to staff review. Risk is asked under the lock, just before the credit, through
- * {@link TopUpScreeningHooks} (RESOLUTIONS money-3: the blocklist's card and the merchant's email); a flagged payment gets
+ * {@link TopUpScreeningHooks} (RESOLUTIONS money-3: the blocklist's card and the account's email); a flagged payment gets
  * `review_required` and the reason as its note, and nothing is posted. The gateway call happens before the transaction (never
  * hold a row lock across a network call); the decision is taken under `SELECT ... FOR UPDATE` on the payment after re-checking
  * that it is still pending, so a staff decision racing the job changes nothing (the loser gets `PAYMENT_ALREADY_REVIEWED`) and
@@ -69,7 +69,8 @@ interface GatewayAnswer {
  *
  * With no risk screening registered every due top-up goes to staff review with `TOP_UP_SCREENING_UNAVAILABLE` (decision 050).
  *
- * Side effects: calls the gateway's API; credits wallets (see {@link PaymentCrediting}); writes `payments` and `audit_logs` rows.
+ * Side effects: calls the gateway's API; credits the live wallet of the payment's account (see {@link PaymentCrediting}); writes `payments` and
+ * `audit_logs` rows.
  */
 @Injectable()
 export class PaymentAutoCredit implements OnApplicationBootstrap {
@@ -236,16 +237,13 @@ export class PaymentAutoCredit implements OnApplicationBootstrap {
   }
 
   /**
-   * The email of the merchant or storefront customer (feature 21) that owns the payment's invoice, or `null` when it has neither.
+   * The email of the account (of either rank) that owns the payment's invoice, or `null` when the payment has no invoice or the account
+   * is gone.
    */
   private async ownerEmail(tx: DbExecutor, payment: Payment): Promise<string | null> {
     const invoice = payment.invoiceId === null ? undefined : await findInvoice(tx, payment.invoiceId);
     if (!invoice) return null;
-    if (invoice.clientId !== null) {
-      return (await loadBillingMerchants(tx, [invoice.clientId])).get(invoice.clientId)?.email ?? null;
-    }
-    if (invoice.customerId !== null) return (await findWalletCustomer(tx, invoice.customerId))?.email ?? null;
-    return null;
+    return (await loadBillingMerchants(tx, [invoice.accountId])).get(invoice.accountId)?.email ?? null;
   }
 
   /** Marks a payment `review_required` with the reason; staff then approve or reject it. */

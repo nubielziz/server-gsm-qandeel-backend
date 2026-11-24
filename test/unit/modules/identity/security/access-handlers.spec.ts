@@ -1,5 +1,6 @@
-// Unit tests of the access handler table (decision 018): every access kind has an entry, the placeholders fail closed (with
-// the Dhru wording on the Dhru surface), the session kinds pass the contract's stages on, and a kind can be replaced.
+// Unit tests of the access handler table (decision 018, decision 064): every access kind has an entry, the placeholders fail closed (with
+// the Dhru wording on the Dhru surface), the session kinds pass the contract's stages on, the one account handler applies the default-deny
+// rank gate, and a kind can be replaced.
 import { describe, expect, it } from 'bun:test';
 import type { ExecutionContext } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
@@ -38,7 +39,9 @@ function table() {
   const authenticator = {
     authenticate(subject: string, _request: FastifyRequest, options: { stages: readonly string[] }) {
       calls.push({ subject, stages: options.stages });
-      return Promise.resolve({ view: { id: 1 }, principal: { kind: 'staff', staffId: 9 } });
+      // An account view carries the rank the resolver read; the rank gate of the account handler passes it for the default contract.
+      const subjectView = subject === 'account' ? { rank: { id: 3, kind: 'merchant' } } : {};
+      return Promise.resolve({ view: { id: 1, subject: subjectView }, principal: { kind: 'staff', staffId: 9 } });
     },
   } as unknown as SessionAuthenticator;
   let metricsChecked = 0;
@@ -69,13 +72,18 @@ describe('AccessHandlers', () => {
       .authenticate(request, fakeContract({ sessionStages: stages }), context);
     expect(result).toMatchObject({ principal: { kind: 'staff', staffId: 9 }, session: { id: 1 } });
     await handlers.handlerFor('staff-permission').authenticate(request, fakeContract({}), context);
-    await handlers.handlerFor('merchant-session').authenticate(request, fakeContract({}), context);
-    await handlers.handlerFor('customer-session').authenticate(request, fakeContract({}), context);
+    await handlers
+      .handlerFor('merchant-session')
+      .authenticate(request, fakeContract({ access: 'merchant-session', rank: 'merchant' }), context);
+    await handlers
+      .handlerFor('customer-session')
+      .authenticate(request, fakeContract({ access: 'customer-session', rank: 'any' }), context);
+    // Both account access kinds authenticate the one subject `account` (decision 064): there is no customer subject any more.
     expect(calls).toEqual([
       { subject: 'staff', stages: [...stages] },
       { subject: 'staff', stages: ['active'] },
-      { subject: 'client', stages: ['active'] },
-      { subject: 'customer', stages: ['active'] },
+      { subject: 'account', stages: ['active'] },
+      { subject: 'account', stages: ['active'] },
     ]);
   });
 
@@ -158,19 +166,29 @@ describe('AccessHandlers', () => {
   });
 });
 
-describe('a merchant session of a merchant waiting for approval (B153)', () => {
-  /** A table whose authenticator finds a session of the given subject type and account state. */
-  function tableFor(subjectType: 'client' | 'staff' | 'customer', subject: { state: string; approved?: boolean }) {
+describe('the rank gate of the account handler (decision 064)', () => {
+  type RankKind = 'merchant' | 'retail';
+  /** A table whose authenticator finds a live account session of the given rank (`undefined`: a view without a rank), or refuses. */
+  function tableFor(rank: RankKind | undefined, refusal?: AppError) {
     const authenticator = {
       authenticate: () =>
-        Promise.resolve({ view: { id: 1, subjectType, subject }, principal: { kind: 'merchant', clientId: 5 } }),
+        refusal
+          ? Promise.reject(refusal)
+          : Promise.resolve({
+              view: {
+                id: 1,
+                subjectType: 'account',
+                subject: { state: 'ok', ...(rank ? { rank: { id: 3, kind: rank } } : {}) },
+              },
+              principal: { kind: 'account', accountId: 5, clientId: 5 },
+            }),
     } as unknown as SessionAuthenticator;
-    const metrics = { canActivate: () => true } as unknown as MetricsAccessGuard;
-    return new AccessHandlers(authenticator, metrics);
+    return new AccessHandlers(authenticator, { canActivate: () => true } as unknown as MetricsAccessGuard);
   }
-  const portal = (pendingMerchant?: 'allow' | 'deny') => fakeContract({ surface: 'client', pendingMerchant });
+  const route = (access: 'merchant-session' | 'customer-session', rank?: 'merchant' | 'retail' | 'any') =>
+    fakeContract({ surface: 'client', access, ...(rank ? { rank } : {}) });
   /** What a handler threw, synchronously or as a rejection (a handler may answer either way). */
-  async function refusalOf(run: () => unknown): Promise<unknown> {
+  async function refusalOfRun(run: () => unknown): Promise<unknown> {
     try {
       await run();
     } catch (error) {
@@ -178,44 +196,83 @@ describe('a merchant session of a merchant waiting for approval (B153)', () => {
     }
     return undefined;
   }
+  const call = (handlers: AccessHandlers, contract: AnyRouteContract) =>
+    handlers.handlerFor(contract.access).authenticate(request, contract, context);
 
-  it('is refused with 403 ACCOUNT_PENDING_APPROVAL on a route that does not opt in', async () => {
-    const handlers = tableFor('client', { state: 'ok', approved: false });
-    for (const contract of [portal(), portal('deny')]) {
-      const error = await refusalOf(() =>
-        handlers.handlerFor('merchant-session').authenticate(request, contract, context),
-      );
-      expect(error).toBeInstanceOf(AppError);
-      expect(error).toMatchObject({ code: 'ACCOUNT_PENDING_APPROVAL', status: 403 });
-    }
-  });
-
-  it('passes on a route that opts in, and an approved merchant passes everywhere', async () => {
-    const waiting = tableFor('client', { state: 'ok', approved: false });
-    expect(await waiting.handlerFor('merchant-session').authenticate(request, portal('allow'), context)).toMatchObject({
-      session: { id: 1 },
-    });
-    const approved = tableFor('client', { state: 'ok', approved: true });
-    expect(await approved.handlerFor('merchant-session').authenticate(request, portal(), context)).toMatchObject({
-      session: { id: 1 },
+  it('refuses a retail session on a merchant route with 403 RANK_NOT_ALLOWED', async () => {
+    const error = await refusalOfRun(() => call(tableFor('retail'), route('merchant-session', 'merchant')));
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({
+      code: 'RANK_NOT_ALLOWED',
+      status: 403,
+      detail: 'This is available to merchant accounts.',
     });
   });
 
-  it('fails closed for a cached view that has no approval flag', async () => {
-    const stale = tableFor('client', { state: 'ok' });
-    const error = await refusalOf(() => stale.handlerFor('merchant-session').authenticate(request, portal(), context));
-    expect(error).toMatchObject({ code: 'ACCOUNT_PENDING_APPROVAL' });
+  it('refuses a merchant session on a retail route with 403 RANK_NOT_ALLOWED', async () => {
+    const error = await refusalOfRun(() => call(tableFor('merchant'), route('customer-session', 'retail')));
+    expect(error).toMatchObject({
+      code: 'RANK_NOT_ALLOWED',
+      status: 403,
+      detail: 'This is available to shop accounts.',
+    });
   });
 
-  it('is a rule about merchants only: staff and customer sessions never meet it', async () => {
-    for (const [kind, subjectType] of [
-      ['staff-session', 'staff'],
-      ['customer-session', 'customer'],
-    ] as const) {
-      const handlers = tableFor(subjectType, { state: 'ok' });
-      expect(await handlers.handlerFor(kind).authenticate(request, portal(), context), kind).toMatchObject({
-        session: { id: 1 },
-      });
+  it('serves the rank of the route', async () => {
+    expect(await call(tableFor('merchant'), route('merchant-session', 'merchant'))).toMatchObject({
+      session: { id: 1 },
+    });
+    expect(await call(tableFor('retail'), route('customer-session', 'retail'))).toMatchObject({ session: { id: 1 } });
+  });
+
+  it('refuses a view without a rank on every route that names one (fail closed)', async () => {
+    for (const contract of [route('merchant-session', 'merchant'), route('customer-session', 'retail')]) {
+      const error = await refusalOfRun(() => call(tableFor(undefined), contract));
+      expect(error, contract.access).toMatchObject({ code: 'RANK_NOT_ALLOWED', status: 403 });
     }
+  });
+
+  it('lets every rank through a route marked rank: any, and nothing else does', async () => {
+    for (const kind of ['merchant', 'retail'] as const) {
+      expect(await call(tableFor(kind), route('merchant-session', 'any')), kind).toMatchObject({ session: { id: 1 } });
+      expect(await call(tableFor(kind), route('customer-session', 'any')), kind).toMatchObject({ session: { id: 1 } });
+    }
+  });
+
+  it('falls back to the default rank of the access kind when a contract carries no rank (never to open)', async () => {
+    const merchantRoute = fakeContract({ surface: 'client', access: 'merchant-session' });
+    const retailRoute = fakeContract({ surface: 'store', access: 'customer-session' });
+    expect(await call(tableFor('merchant'), merchantRoute)).toMatchObject({ session: { id: 1 } });
+    expect(await refusalOfRun(() => call(tableFor('retail'), merchantRoute))).toMatchObject({
+      code: 'RANK_NOT_ALLOWED',
+    });
+    expect(await call(tableFor('retail'), retailRoute)).toMatchObject({ session: { id: 1 } });
+    expect(await refusalOfRun(() => call(tableFor('merchant'), retailRoute))).toMatchObject({
+      code: 'RANK_NOT_ALLOWED',
+    });
+  });
+
+  it('judges the session before the rank: a pending step or a suspension is answered first', async () => {
+    const unauthorized = new AppError('UNAUTHORIZED');
+    const suspended = new AppError('ACCOUNT_SUSPENDED');
+    for (const refusal of [unauthorized, suspended]) {
+      // A retail view on a merchant route would be a rank refusal; the authenticator's refusal wins.
+      const error = await refusalOfRun(() => call(tableFor('retail', refusal), route('merchant-session', 'merchant')));
+      expect(error).toBe(refusal);
+    }
+  });
+
+  it('does not apply to staff: a staff session has no rank and passes a route without one', async () => {
+    const authenticator = {
+      authenticate: () => Promise.resolve({ view: { id: 1, subject: {} }, principal: { kind: 'staff', staffId: 9 } }),
+    } as unknown as SessionAuthenticator;
+    const handlers = new AccessHandlers(authenticator, { canActivate: () => true } as unknown as MetricsAccessGuard);
+    const staffRoute = fakeContract({ surface: 'admin', access: 'staff-permission', rank: null });
+    expect(await call(handlers, staffRoute)).toMatchObject({ principal: { kind: 'staff' } });
+  });
+
+  it('ignores pendingMerchant: the contract field no longer decides anything', async () => {
+    const contract = { ...route('merchant-session', 'merchant'), pendingMerchant: 'deny' } as AnyRouteContract;
+    expect(await call(tableFor('merchant'), contract)).toMatchObject({ session: { id: 1 } });
   });
 });

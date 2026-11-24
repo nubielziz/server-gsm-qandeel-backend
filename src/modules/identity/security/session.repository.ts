@@ -63,7 +63,7 @@ export async function revokeLiveSession(db: DbExecutor, id: number, now: Date): 
  * Revokes every live session of a subject, optionally keeping one.
  *
  * @param db the database or a transaction
- * @param subjectType staff, client or customer
+ * @param subjectType staff or account
  * @param subjectId the account id
  * @param now the revocation time
  * @param exceptId a session to keep (the caller's own, after a password change)
@@ -96,7 +96,7 @@ export async function revokeLiveSessionsOf(
  * Why: when an account changes (suspension, role, password) the cached views of its sessions must be deleted.
  *
  * @param db the database or a transaction
- * @param subjectType staff, client or customer
+ * @param subjectType staff or account
  * @param subjectId the account id
  * @returns the hashes of the sessions that are not revoked
  */
@@ -173,7 +173,7 @@ export type IdleLimits = Readonly<Record<SubjectType, number>>;
  * The one "live session" predicate (RESOLUTIONS identity-platform-6): not revoked, not past its absolute end, and, for a full
  * session, used within the idle limit of its subject type. A pending sign-in step has no idle limit, only its short lifetime.
  *
- * Why: `GET /admin/sessions`, `StaffMember.activeSessions` and a merchant's `security.activeSessions` (which enable "Sign out all
+ * Why: `GET /admin/sessions`, `StaffMember.activeSessions` and an account's `security.activeSessions` (which enable "Sign out all
  * devices") and the `DELETE /admin/sessions/:id` 404 must agree on what "active" means, so the rule is written once. `now` is the injected clock's time (decision 031), never the database's `now()`. `revokeAllOf` is not
  * limited by it: it still revokes every non-revoked row, idle-dead ones included.
  *
@@ -188,7 +188,6 @@ export function liveSessionCondition(now: Date, idle: IdleLimits): SQL {
     and (${sessions.stage} <> 'active'
       or ${sessions.lastSeenAt} > case ${sessions.subjectType}
         when 'staff' then ${cutoff(idle.staff)}::timestamptz
-        when 'client' then ${cutoff(idle.client)}::timestamptz
-        else ${cutoff(idle.customer)}::timestamptz
+        else ${cutoff(idle.account)}::timestamptz
       end))`;
 }

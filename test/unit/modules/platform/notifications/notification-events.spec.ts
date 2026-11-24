@@ -213,6 +213,7 @@ describe('the flags of decision 047', () => {
         'staff:staff.password_reset',
         'customer:support.reply',
         'customer:support.ticket_received',
+        'merchant:support.ticket_received',
       ].sort(),
     );
     // The merchant's reply link is a portal page by id, and the retail message links a console page.
@@ -246,6 +247,7 @@ describe('the flags of decision 047', () => {
     // Ticket mails stay switchable.
     for (const [key, audience] of [
       ['support.ticket_received', 'customer'],
+      ['support.ticket_received', 'merchant'],
       ['support.reply', 'customer'],
     ] as const) {
       expect(registry.get(key, audience)?.security, key).toBeUndefined();

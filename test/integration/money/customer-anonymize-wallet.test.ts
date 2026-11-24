@@ -47,7 +47,8 @@ async function topUpInvoice(customerId: number, number: string, withPendingPayme
     .insert(s.invoices)
     .values({
       number,
-      customerId,
+      accountId: customerId,
+      walletKind: 'customer_wallet',
       kind: 'topup',
       amount: '20',
       netAmount: '20',
@@ -59,7 +60,7 @@ async function topUpInvoice(customerId: number, number: string, withPendingPayme
   if (withPendingPayment) {
     await db.insert(s.payments).values({
       invoiceId: invoice!.id,
-      customerId,
+      accountId: customerId,
       purpose: 'topup',
       gatewayId: gateway!.id,
       amount: '20',
@@ -71,9 +72,9 @@ async function topUpInvoice(customerId: number, number: string, withPendingPayme
   return invoice!.id;
 }
 
-const anonymize = (id: number) => staff.post(`/admin/customers/${id}/anonymize`);
+const anonymize = (id: number) => staff.post(`/admin/clients/${id}/anonymize`);
 
-describe('POST /admin/customers/:id/anonymize with a store balance', () => {
+describe('POST /admin/clients/:id/anonymize with a store balance', () => {
   it('is refused while the balance is not zero, and goes through once it is brought to zero', async () => {
     const customer = await makeCustomer(t);
     const { db } = await testDb();
@@ -84,7 +85,7 @@ describe('POST /admin/customers/:id/anonymize with a store balance', () => {
     expect(refused.body.detail).toContain('15.0000 USD');
     expect((await customerRow(customer.id)).status).toBe('active');
     await staff.post(
-      `/admin/customers/${customer.id}/wallet/adjust`,
+      `/admin/clients/${customer.id}/wallet/adjust`,
       { amount: '15.0000', direction: 'debit', reason: 'Closing the balance' },
       { 'idempotency-key': 'close' },
     );
@@ -111,25 +112,26 @@ describe('POST /admin/customers/:id/anonymize with a store balance', () => {
   });
 });
 
-describe('GET /admin/customers/:id/export with a store balance', () => {
+describe('GET /admin/clients/:id/export with a store balance', () => {
   it('holds the balance and its lines with the staff reason hidden', async () => {
     const customer = await makeCustomer(t);
     const { db } = await testDb();
     await fundCustomer(db, customer.id, '40', clock.now());
     await staff.post(
-      `/admin/customers/${customer.id}/wallet/adjust`,
+      `/admin/clients/${customer.id}/wallet/adjust`,
       { amount: '4.0000', direction: 'debit', reason: 'Secret staff note' },
       { 'idempotency-key': 'x' },
     );
     const res = await t.app.inject({
       method: 'GET',
-      url: `/admin/customers/${customer.id}/export`,
+      url: `/admin/clients/${customer.id}/export`,
       headers: { ...staff.session.headers, 'sec-fetch-site': 'same-origin' },
       remoteAddress: '127.0.0.1',
     });
     expect(res.statusCode).toBe(200);
     const file = res.json();
-    expect(file.format).toBe(3);
+    // Format 4 (decision 064): one account type, with the rank in the profile.
+    expect(file.format).toBe(4);
     expect(file.wallet).toMatchObject({ currency: 'USD', balance: '36.0000' });
     expect(file.wallet.entries).toEqual([
       expect.objectContaining({ kind: 'deposit', amount: '40.0000', balanceAfter: '40.0000' }),

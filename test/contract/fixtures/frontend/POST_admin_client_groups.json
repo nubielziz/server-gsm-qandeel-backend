@@ -5,6 +5,7 @@
   },
   "body": {
     "kind": "b2b",
+    "rankKind": "merchant",
     "discountPercent": "1.0000",
     "isDefault": false,
     "depositLimit": "10.0000",
@@ -13,6 +14,6 @@
     "createdAt": "2026-10-31T12:00:00.000Z",
     "name": "Harvest sample",
     "id": 5,
-    "merchantCount": 0
+    "accountCount": 0
   }
 }

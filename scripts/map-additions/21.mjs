@@ -133,7 +133,7 @@ export const rows = [
     '/admin/customer-wallets',
     'قائمة أرصدة الزبائن: السالب والمجمّد',
     'wallet:read',
-    ['ledger_accounts', 'customers'],
+    ['ledger_accounts', 'clients'],
     'Customer balances, with negative and held ones.',
   ),
 ];

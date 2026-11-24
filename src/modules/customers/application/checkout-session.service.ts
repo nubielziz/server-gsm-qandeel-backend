@@ -1,5 +1,5 @@
-// CheckoutSessionService: opens a storefront checkout (price, tax and exchange rate locked, a guest customer by email) and reads it
-// back (feature 14a, scenario b2c-paid steps 2 and 3). Paying the session and creating the order are feature 16 (`CheckoutPayService`,
+// CheckoutSessionService: opens a storefront checkout (price, tax and exchange rate locked; the retail account itself, or the guest row of
+// the typed email) and reads it back (feature 14a, scenario b2c-paid steps 2 and 3; decision 064). Paying the session and creating the order are feature 16 (`CheckoutPayService`,
 // `CheckoutCaptureService`); a paid session shows the tracking token of its order.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
@@ -9,12 +9,13 @@ import { Money } from '../../../common/money';
 import { DbService, type DbExecutor } from '../../../infra/db';
 import { CapabilityTokenVault, EncryptionService } from '../../../infra/crypto';
 import { StorefrontServices, type SellableField } from '../../catalog';
+import { AccountDirectory, type AccountRecord, canAct } from '../../identity';
 import { CustomerWallets, StorefrontMoney } from '../../money';
 import { OrderReadService, inputProblems, isValidImei, normalizeImei, quantityProblem } from '../../orders';
 import { Blocklist } from '../../risk';
 import { StorefrontPolicies, StorefrontQuotes, inCurrency } from '../../storefront';
 import type { openCheckoutSession } from '../contracts/checkout.contracts';
-import type { CheckoutSession, Customer } from '../db/schema';
+import type { CheckoutSession } from '../db/schema';
 import {
   CHECKOUT_IMEI_AAD,
   CHECKOUT_SESSION_TTL_MINUTES,
@@ -26,9 +27,8 @@ import {
   maskImei,
   requiredConsents,
 } from '../domain/checkout';
-import { findCheckoutSession, insertCheckoutSession, insertGuestCustomer } from '../infra/checkout.repository';
+import { findCheckoutSession, insertCheckoutSession } from '../infra/checkout.repository';
 import { listSessionConsents } from '../infra/consent.repository';
-import { findCustomerByEmail, findCustomerById } from '../infra/customer.repository';
 import { regionNotSupported } from './customer-errors';
 import { CustomerProfileRules } from './customer-profile-rules';
 
@@ -47,8 +47,8 @@ export interface OpenCheckoutRequest {
   readonly imei?: string | undefined;
   readonly inputs?: Readonly<Record<string, string>> | undefined;
   readonly utm?: Readonly<Record<string, string | undefined>> | undefined;
-  /** The customer the request is signed in as (a full session whose CSRF token was checked), or nothing for a guest. */
-  readonly customerId?: number | undefined;
+  /** The retail account the request is signed in as (a full session whose CSRF token was checked), or nothing for a guest. */
+  readonly accountId?: number | undefined;
   /** The visitor's address (decision 018's trusted proxy address). */
   readonly ip: string;
   /** The visitor's country the trusted proxy header reported (decision 050), or null. */
@@ -64,12 +64,24 @@ const notAvailable = () =>
   });
 
 /**
- * The one refusal of a buyer who may not order: a suspended or blocked customer, or a blocklisted email, domain or IMEI.
+ * The one refusal of a buyer who may not order: an account or guest row that may not act (suspended, blocked, erased), or a blocklisted
+ * email, domain or IMEI.
  *
- * Why: the buyer is told to write to support, never which of these it is (scenario b2c-account step 8, RULES risk 5).
+ * Why: the buyer is told to write to support, never which of these it is (scenario b2c-account step 8, RULES risk 5: a visitor who
+ * types the address of a suspended account learns nothing from the answer, and no guest row is made for it).
  */
 function cannotOrder(): AppError {
   return new AppError('ACCOUNT_SUSPENDED', { detail: 'This account cannot start a new order. Contact support.' });
+}
+
+/**
+ * The refusal of an account of a merchant rank at the shop's checkout.
+ *
+ * Why: decision 064: a merchant orders from its price list; the shop never opens a checkout for it, signed in or not (a merchant's email
+ * typed signed out gets a guest row of its own, which attaches to nothing of the merchant).
+ */
+function merchantAtRetailDoor(): AppError {
+  return new AppError('RANK_NOT_ALLOWED', { detail: 'Your account orders from its price list.' });
 }
 
 /**
@@ -77,9 +89,13 @@ function cannotOrder(): AppError {
  *
  * Why: scenario b2c-paid steps 2 and 3 and the map's `POST /store/v1/checkout-sessions`: the session locks the price (the retail
  * price of the one resolver, never under the floor), the tax rate of the buyer's country and the exchange rate, so what is paid
- * is what was shown. A guest becomes a `customers` row by email; a suspended or blocked customer cannot open a session (scenario
- * b2c-account step 8). A signed-in customer opens the checkout as the account: the email must be the account's own, the shop's
- * `guestCheckout` switch does not apply and the session belongs to that customer. The IMEI is stored only as AES-GCM text
+ * is what was shown. Decision 064: a signed-in retail account opens the checkout as itself (its row is held `FOR KEY
+ * SHARE`, so a rank change either waits for this open or is seen by it; the email must be the account's own, the shop's `guestCheckout`
+ * switch does not apply); a signed-in merchant rank is refused (`RANK_NOT_ALLOWED`) and nothing is written. Signed out, the buyer is the
+ * guest row of the typed email, never the login account of that email whatever its rank: a login row that may not act (suspended,
+ * blocked, erased) is refused like a blocklist hit and no guest row is made; otherwise the guest row is made or reused
+ * (`AccountDirectory.findOrCreateGuest`, one winner when two checkouts race). A guest row that may not act cannot open a session either
+ * (scenario b2c-account step 8). The IMEI is stored only as AES-GCM text
  * (decision 019). The checkout token is stored as a keyed hash and an encrypted copy (decision 054). Expiry is judged on the injected
  * clock. Decision 050: while the shop has a tax window in force, a country without one is refused as the customer profile refuses it; a
  * signed-in buyer is not matched by a blocklist entry limited to guest checkouts; and the visitor's country the proxy header reported is
@@ -87,7 +103,8 @@ function cannotOrder(): AppError {
  * region is the buyer's own statement, like the country. A service field keyed `imei` is judged (pattern and required) on the typed IMEI, never on a
  * value sent under `inputs.imei`, and what is stored under that key is the typed IMEI, as on the other order surfaces.
  *
- * Side effects: inserts a guest `customers` row when the email is new and one `checkout_sessions` row (with `ip_country`), in one transaction.
+ * Side effects: one transaction: may insert a guest row of `clients` (through `AccountDirectory`) when the email is new, holds the signed-in
+ * account's row `FOR KEY SHARE`, and inserts one `checkout_sessions` row (with `account_id` and `ip_country`).
  */
 @Injectable()
 export class CheckoutSessionService {
@@ -102,6 +119,7 @@ export class CheckoutSessionService {
     private readonly encryption: EncryptionService,
     private readonly vault: CapabilityTokenVault,
     private readonly wallets: CustomerWallets,
+    private readonly accounts: AccountDirectory,
     private readonly countryRules: CustomerProfileRules,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
@@ -109,12 +127,14 @@ export class CheckoutSessionService {
   /**
    * Opens a checkout.
    *
-   * @param request the service, the buyer's email and country, the signed-in customer if any, and the visitor's address
+   * @param request the service, the buyer's email and country, the signed-in retail account if any, and the visitor's address
    * @returns the new session as the buyer reads it
    * @throws {AppError} `UNAUTHORIZED` when the shop requires an account and nobody is signed in (or the signed-in account is
-   *   gone); `VALIDATION_FAILED` for a service that cannot be sold or ordered online, a quantity or order field that does not
-   *   fit, a currency that is not offered, or (signed in) an email that is not the account's; `INVALID_IMEI` for a bad IMEI;
-   *   `ACCOUNT_SUSPENDED` for a suspended or blocked customer, or a blocklisted email, email domain or IMEI (one message for all);
+   *   gone); `RANK_NOT_ALLOWED` (403) when the signed-in account holds a merchant rank (nothing is written); `VALIDATION_FAILED`
+   *   for a service that cannot be sold or ordered online, a quantity or order field that does not fit, a currency that is not offered,
+   *   or (signed in) an email that is not the account's; `INVALID_IMEI` for a bad IMEI;
+   *   `ACCOUNT_SUSPENDED` for an account or guest row that may not act, a suspended, blocked or erased login row of the typed
+   *   address (signed out), or a blocklisted email, email domain or IMEI (one message for all);
    *   `VALIDATION_FAILED` on `country` (`unsupported`) for a country without a tax window while the shop has one; `VALIDATION_FAILED` on
    *   `region` (`unsupported`) for a missing region, or one without a window in force, while the country has a regional window in force
    */
@@ -122,8 +142,8 @@ export class CheckoutSessionService {
     const row = await this.db.runInTransaction(async ({ tx }) => {
       const switches = await this.policies.switches(tx);
       const account =
-        request.customerId === undefined ? undefined : await this.accountFor(tx, request.customerId, request.email);
-      // The guest-checkout switch is about buyers without an account: a signed-in customer is not a guest.
+        request.accountId === undefined ? undefined : await this.accountFor(tx, request.accountId, request.email);
+      // The guest-checkout switch is about buyers without an account: a signed-in account is not a guest.
       if (account === undefined && !switches.guestCheckout) {
         throw new AppError('UNAUTHORIZED', { detail: 'Sign in to check out.' });
       }
@@ -167,15 +187,15 @@ export class CheckoutSessionService {
       problems.push(...inputProblems(fields.map(placementField), fieldInputs));
       if (problems.length > 0) throw new AppError('VALIDATION_FAILED', { errors: problems });
 
-      // RULES risk 5: a blocklisted email, email domain or IMEI cannot open a checkout. It gets the answer a blocked customer gets, so the
+      // RULES risk 5: a blocklisted email, email domain or IMEI cannot open a checkout. It gets the answer a blocked account gets, so the
       // buyer never learns which entry matched (and no guest row is made for it).
       // A signed-in buyer is not matched by an entry limited to guest checkouts (decision 050).
       const probe = { email: request.email, imei: imei ?? null, guest: account === undefined };
       if ((await this.blocklist.match(tx, probe)).length > 0) {
         throw cannotOrder();
       }
-      const customer = account ?? (await this.guestFor(tx, request.email, request.country));
-      if (customer.status !== 'active') throw cannotOrder();
+      const buyer = account ?? (await this.guestFor(tx, request.email, request.country));
+      if (!canAct(buyer.status)) throw cannotOrder();
 
       const amounts = this.quotes.amounts(context, priced.unitNet, quantity);
       const now = this.clock.now();
@@ -185,7 +205,7 @@ export class CheckoutSessionService {
         token: null,
         tokenHash: issued.hash,
         tokenEnc: issued.enc,
-        customerId: customer.id,
+        accountId: buyer.id,
         email: request.email,
         serviceId: service.id,
         imeiEnc: imei === undefined ? null : this.encryption.encrypt(imei, CHECKOUT_IMEI_AAD),
@@ -206,7 +226,7 @@ export class CheckoutSessionService {
         userAgent: request.userAgent.slice(0, MAX_USER_AGENT_LENGTH),
         status: 'open',
         // Plan 21 P9: only a checkout the account itself opened may be paid from its store balance (a guest checkout typed with the
-        // account's email, or a prepared link sent to the customer, never can).
+        // account's email, or a prepared link sent to the buyer, never can).
         openedSignedIn: account !== undefined,
         // Business times come from the injected clock, not the column default (decision 031).
         expiresAt: new Date(now.getTime() + CHECKOUT_SESSION_TTL_MINUTES * MINUTE_MS),
@@ -303,12 +323,15 @@ export class CheckoutSessionService {
    * The account the signed-in request opens the checkout for.
    *
    * Why: the receipt, the tracking link and the order belong to the account, so the typed email must be the account's own (any
-   * case); a buyer who wants another address signs out and checks out as a guest.
+   * case); a buyer who wants another address signs out and checks out as a guest. The row is held `FOR KEY SHARE` and its rank read after
+   * the lock (decision 064): a rank change to the merchant kind takes the row `FOR UPDATE`, so it either waits for this open (and then
+   * sees the session as the `open_checkout` blocker) or has already committed, and then this open refuses.
    */
-  private async accountFor(tx: DbExecutor, customerId: number, email: string): Promise<Customer> {
-    const account = await findCustomerById(tx, customerId);
-    // The session outlived the account (anonymized or deleted meanwhile).
+  private async accountFor(tx: DbExecutor, accountId: number, email: string): Promise<AccountRecord> {
+    const account = await this.accounts.lockForKeyShare(tx, accountId);
+    // The session outlived the account (deleted meanwhile).
     if (!account) throw new AppError('UNAUTHORIZED');
+    if (account.rankKind !== 'retail') throw merchantAtRetailDoor();
     if (account.email.toLowerCase() !== email.toLowerCase()) {
       const message = 'Use the email of your account, or sign out to check out as a guest.';
       throw new AppError('VALIDATION_FAILED', {
@@ -319,23 +342,17 @@ export class CheckoutSessionService {
     return account;
   }
 
-  /** The customer of an email: the existing one, or a new guest (one winner when two checkouts race). */
-  private async guestFor(tx: DbExecutor, email: string, country: string): Promise<Customer> {
-    const existing = await findCustomerByEmail(tx, email);
-    if (existing) return existing;
-    const now = this.clock.now();
-    const created = await insertGuestCustomer(tx, {
-      email,
-      country,
-      hasAccount: false,
-      status: 'active',
-      createdAt: now,
-      updatedAt: now,
-    });
-    if (created) return created;
-    const raced = await findCustomerByEmail(tx, email);
-    if (!raced) throw new Error('A guest customer was neither created nor found.');
-    return raced;
+  /**
+   * The guest row of an email: the existing one, or a new one (one winner when two checkouts race).
+   *
+   * Why: decision 064: a login row of the address that may not act is refused first, with the answer of a blocklist hit and
+   * without a guest row; any other login row is left alone: the buyer is the guest row of the address, never the login account.
+   */
+  private async guestFor(tx: DbExecutor, email: string, country: string): Promise<AccountRecord> {
+    const login = await this.accounts.findLoginByEmail(tx, email);
+    if (login !== undefined && !canAct(login.status)) throw cannotOrder();
+    const { account } = await this.accounts.findOrCreateGuest(tx, { email, country });
+    return account;
   }
 }
 

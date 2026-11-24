@@ -1,13 +1,18 @@
-// ApiKeyDirectory: finds a merchant API key by the key a caller presents, through the cache (decisions 018, 019, 022, 055), records its
-// use at most once a minute, and drops the cached view when the key or its merchant changes.
-import { Injectable, Logger } from '@nestjs/common';
+// ApiKeyDirectory: finds an API key by the key a caller presents, through the cache (decisions 018, 019, 022, 055), records its
+// use at most once a minute, drops the cached view when the key or its account changes, and revokes the keys of an account that leaves the
+// merchant kind (decision 064).
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../../../common/clock';
 import { LogThrottle } from '../../../../../common/log-throttle';
 import { CacheKeys, CacheService } from '../../../../../infra/cache';
 import { TokenService } from '../../../../../infra/crypto';
-import { DbService, type TransactionContext } from '../../../../../infra/db';
+import { DbService, type Transaction, type TransactionContext } from '../../../../../infra/db';
 import { RATE_LIMITERS } from '../../../../../infra/rate-limit';
-import { findApiKeyByHash, liveKeyHashesOf, touchApiKey } from './api-key.repository';
-import type { ApiKeyView } from './api-key.rules';
+import { RankGroupReads } from '../../../../catalog/ports/rank-group-reads';
+import { revokeLiveKeysOfClient } from '../../../infra/api-key-manage.repository';
+import { ApiKeyRevocation } from '../../../ports/api-key-revocation';
+import { findApiKeyByHash, keyHashesOf, touchApiKey } from './api-key.repository';
+import { type ApiKeyView, apiKeyViewOf } from './api-key.rules';
 
 /** How long a key lookup stays in the cache (like a session lookup, decision 018). */
 export const API_KEY_CACHE_TTL_SECONDS = 60;
@@ -47,20 +52,23 @@ const VIEW_CACHE = {
 const KEY_SHAPE = /^[\x21-\x7e]{16,256}$/;
 
 /**
- * Looks merchant API keys up.
+ * Looks API keys up, and revokes the keys of an account that stops being a merchant.
  *
  * Why: Dhru authenticates every request with a key (decision 018), so the lookup must not cost a query each time. The
- * cached view also carries the merchant's status; the features that change a key or a merchant call `invalidate` /
- * `invalidateClient` after their commit, so a revoke or a suspension applies on the next request. A cached view is used only when it
- * belongs to the presented key (decision 055).
+ * cached view also carries the account's status and the kind of its rank (read through the catalog's `RankGroupReads`, never from the
+ * ranks table); the features that change a key or an account call `invalidate` / `invalidateClient` after their commit, so a revoke, a
+ * suspension or a move to the retail rank applies on the next request. A cached view is used only when it belongs to the presented key
+ * (decision 055). `revokeLiveKeysOf` is the seam the rank change and the erasure use (`ApiKeyRevocation`): it never takes the advisory
+ * lock `api-keys:<accountId>`, because both key creations take that lock before the account row and the caller already holds the row.
  *
  * Side effects: reads `api_keys` and `clients`; reads and deletes `gsm:{env}:identity:api-key:{keyHash}:v2` (an invalidation is retried
- * and reported when Redis fails, decision 055); writes `api_keys.last_used_at` / `last_used_ip`.
+ * and reported when Redis fails, decision 055); writes `api_keys.last_used_at` / `last_used_ip`; `revokeLiveKeysOf` writes
+ * `api_keys.revoked_at`.
  *
  * @see docs/cache-keys.md
  */
 @Injectable()
-export class ApiKeyDirectory {
+export class ApiKeyDirectory implements ApiKeyRevocation {
   private readonly logger = new Logger(ApiKeyDirectory.name);
   private readonly throttle = new LogThrottle(60_000);
 
@@ -69,6 +77,8 @@ export class ApiKeyDirectory {
     private readonly cache: CacheService,
     private readonly keys: CacheKeys,
     private readonly tokens: TokenService,
+    private readonly ranks: RankGroupReads,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
@@ -120,7 +130,7 @@ export class ApiKeyDirectory {
     const hash = this.hashOf(key);
     if (hash === undefined) return undefined;
     const cacheKey = this.keys.apiKey(hash);
-    const load = () => findApiKeyByHash(this.db.db, hash);
+    const load = () => this.loadView(hash);
     const view = cachedOnly
       ? await this.cache.getIfCached(cacheKey, API_KEY_CACHE_TTL_SECONDS, load, VIEW_CACHE)
       : await this.cache.getOrLoad(cacheKey, API_KEY_CACHE_TTL_SECONDS, load, VIEW_CACHE);
@@ -134,6 +144,20 @@ export class ApiKeyDirectory {
       return undefined;
     }
     return view;
+  }
+
+  /**
+   * Reads a key and its account from the database and adds the kind of the account's rank.
+   *
+   * Why: a rank that cannot be read (its group is gone) gives retail rights, so the key is refused: the check fails closed (decision 064).
+   *
+   * @param keyHash the keyed hash of the key
+   * @returns the view, or `undefined` for an unknown key
+   */
+  private async loadView(keyHash: string): Promise<ApiKeyView | undefined> {
+    const stored = await findApiKeyByHash(this.db.db, keyHash);
+    if (!stored) return undefined;
+    return apiKeyViewOf(stored, await this.ranks.kindOf(this.db.db, stored.client.groupId));
   }
 
   /**
@@ -157,12 +181,7 @@ export class ApiKeyDirectory {
     // Written over the old view, never deleted first, so a concurrent cache-only lookup still finds it. Best effort, like a lookup: a
     // failed load deletes the key and the next lookup loads it.
     await this.cache
-      .reload(
-        this.keys.apiKey(view.keyHash),
-        API_KEY_CACHE_TTL_SECONDS,
-        () => findApiKeyByHash(this.db.db, view.keyHash),
-        VIEW_CACHE,
-      )
+      .reload(this.keys.apiKey(view.keyHash), API_KEY_CACHE_TTL_SECONDS, () => this.loadView(view.keyHash), VIEW_CACHE)
       .catch(() => undefined);
     return written;
   }
@@ -189,19 +208,40 @@ export class ApiKeyDirectory {
   }
 
   /**
-   * Forgets the cached views of every key of a merchant.
+   * Forgets the cached views of every key of an account.
    *
-   * Why: the view holds the merchant's status, so suspending, reactivating or approving a merchant must clear it, or the old
-   * status would be served for up to a minute.
+   * Why: the view holds the account's status, name and rank kind, so suspending, reactivating, renaming or moving an account to the
+   * retail rank must clear it, or the old status would be served for up to a minute. The keys are listed revoked ones included, so the
+   * call also works after `revokeLiveKeysOf` in the same transaction, whichever of the two a caller runs first.
    *
-   * Side effects: reads the merchant's key hashes, then deletes their cache keys (after the commit when `work` is given). Never throws
+   * Side effects: reads the account's key hashes, then deletes their cache keys (after the commit when `work` is given). Never throws
    * for Redis: a failed delete is retried and reported (decision 055).
    *
-   * @param clientId the merchant id
+   * @param clientId the account id (`api_keys.client_id` already names the account)
    * @param work the caller's transaction context, if it has one
    */
   async invalidateClient(clientId: number, work?: Pick<TransactionContext, 'afterCommit' | 'tx'>): Promise<void> {
-    const hashes = await liveKeyHashesOf(work?.tx ?? this.db.db, clientId);
+    const hashes = await keyHashesOf(work?.tx ?? this.db.db, clientId);
     await this.invalidate(hashes, work);
+  }
+
+  /**
+   * Revokes every live key of an account.
+   *
+   * Why: API keys, the Dhru interface included, work only for an account of a merchant rank. A rank change that leaves the merchant kind
+   * and an erasure revoke the keys in their own transaction; a later change back never restores one (decision 064).
+   * Called with the account row already held, so it updates the key rows directly and never takes `api-keys:<accountId>`: a key creation
+   * that waited behind the caller then reads the new rank from its locked read and refuses, and no key is born on a retail account.
+   *
+   * Side effects: sets `api_keys.revoked_at` of the account's keys that were not revoked (an expired key included). The caller drops the
+   * cached views after its commit with {@link ApiKeyDirectory.invalidateClient}.
+   *
+   * @param tx the caller's transaction (it holds the account row)
+   * @param accountId the account
+   * @returns how many keys were revoked
+   * @see ApiKeyRevocation
+   */
+  async revokeLiveKeysOf(tx: Transaction, accountId: number): Promise<number> {
+    return revokeLiveKeysOfClient(tx, accountId, this.clock.now());
   }
 }

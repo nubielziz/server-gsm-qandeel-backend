@@ -56,7 +56,7 @@ async function world() {
 
 /** The portal's catalog as a merchant reads it: the names in the order of the answer. */
 async function portalNames(merchant: number, query = ''): Promise<string[]> {
-  const session = await openSession(t, { type: 'client', id: merchant });
+  const session = await openSession(t, { type: 'account', id: merchant });
   const res = await t.app.inject({ method: 'GET', url: `/client/services${query}`, headers: session.headers });
   expect(res.statusCode).toBe(200);
   return res.json<Array<{ name: string }>>().map((row) => row.name);
@@ -290,7 +290,7 @@ describe('the lists merchants and API clients read follow the order', () => {
         { id: zulu, sort: 3 },
       ],
     });
-    const session = await openSession(t, { type: 'client', id: merchant });
+    const session = await openSession(t, { type: 'account', id: merchant });
     const res = await t.app.inject({
       method: 'GET',
       url: '/client/prices/export',

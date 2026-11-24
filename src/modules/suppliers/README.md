@@ -1,6 +1,6 @@
 # Suppliers module (`suppliers`)
 
-Map domain C. The suppliers we buy from: supplier accounts, their service catalogs, the links from our services to supplier services, the Dhru supplier client, the dispatch, poll and sync jobs, and the log of every supplier call.
+Map domain C. The suppliers we buy from (the orders it moves belong to an account of either door, decision 064; the supplier flows never read the buyer's rank): supplier accounts, their service catalogs, the links from our services to supplier services, the Dhru supplier client, the dispatch, poll and sync jobs, and the log of every supplier call.
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 

@@ -1,5 +1,6 @@
 // The dashboard read model (`GET /admin/dashboard`): stats, the ranked attention list, queues by type, supplier health, two charts, the
-// storefront block, top customers and the sidebar counts, built from one clock reading and cached 15 s per (scope, days).
+// storefront block and the sidebar counts, built from one clock reading and cached 15 s per (scope, days). The scopes follow the door of
+// an order (`orders.source`); the best buyers are not in this payload, the Top accounts list reads `GET /admin/reports/top-clients`.
 import { Inject, Injectable } from '@nestjs/common';
 import { Decimal } from 'decimal.js';
 import { CLOCK, type Clock } from '../../../common/clock';
@@ -67,8 +68,8 @@ export class DashboardService {
   /**
    * The dashboard payload.
    *
-   * @param scope `all`, `b2b` or `b2c`
-   * @param days the period of the stat strip, the top lists and the attention facts
+   * @param scope `all`, `b2b` (the merchant doors) or `b2c` (the shop's door)
+   * @param days the period of the stat strip and the attention facts
    * @returns the read model
    * @throws {AppError} `DATABASE_UNAVAILABLE` when Postgres is down
    */
@@ -112,11 +113,11 @@ export class DashboardService {
       pastSlaDetail(db, now, scope),
       b2b ? reviewQueues(db) : Promise.resolve(new Map<string, number>()),
       servicesBelowFloor(db, now),
-      moneyFacts(db, now),
+      moneyFacts(db, now, scope),
       ordersByType(db, now, scope),
       scope === 'all' ? revenueByChannel(db, now) : Promise.resolve(null),
       withStorefront ? storefrontFunnel(db, now, 30) : Promise.resolve(null),
-      withStorefront ? storefrontExtras(db, now, month, from) : Promise.resolve(null),
+      withStorefront ? storefrontExtras(db, now, month) : Promise.resolve(null),
       orderCounts(db, now),
     ]);
 
@@ -200,7 +201,8 @@ export class DashboardService {
         oldestAt: facts.depositsPending.oldestAt.toISOString(),
       });
     }
-    if (b2b && facts.walletsNegative.count > 0) {
+    // Both wallet kinds, by the scope (the read keeps the merchant wallets for `b2b`, the store balances for `b2c`); `clients` keeps its wire name and lists accounts.
+    if (facts.walletsNegative.count > 0) {
       items.push({
         id: 'wallets_negative',
         severity: ATTENTION_SEVERITY.wallets_negative,
@@ -330,7 +332,6 @@ export class DashboardService {
               heldForReview: facts.held.count,
             }
           : null,
-      topCustomers: extras ? extras.topCustomers : null,
       navCounts: {
         orders: counts,
         finance: { pendingDeposits: facts.depositsPending.count },

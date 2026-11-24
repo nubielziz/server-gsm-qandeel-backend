@@ -1,5 +1,6 @@
-// CustomerWalletMails: the customer emails of the store balance (feature 21, plan § 5.8): top-up credited or rejected, balance adjusted, put on
-// hold, order refunded to the balance. Each one is written through the notification delivery in the transaction of the change it reports.
+// CustomerWalletMails: the emails of the store balance of an account (feature 21, plan § 5.8, decision 064): top-up credited or rejected,
+// balance adjusted, put on hold, order refunded to the balance. Each one is written through the notification delivery in the transaction of
+// the change it reports. The recipient is the account `('account', id)`; the `customerId` key of every input holds that account id.
 import { Injectable } from '@nestjs/common';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
@@ -16,7 +17,7 @@ import {
   WALLET_TOPUP_REJECTED_EVENT,
 } from './customer-wallet-notifications';
 
-/** What a mail calls a customer who gave no name: "Hi there,". */
+/** What a mail calls an account that gave no name: "Hi there,". */
 const NAMELESS = 'there';
 
 /** A USD amount as the wallet emails show it (`50.00 USD`). */
@@ -25,11 +26,12 @@ function usd(amount: string | Money): string {
 }
 
 /**
- * Writes the emails a storefront customer gets about their store balance.
+ * Writes the emails an account gets about its store balance.
  *
- * Why: plan 21 § 5.8: the customer is told whenever money reaches, leaves or is held on the balance. Every method calls
- * `NotificationService.enqueue` on the caller's transaction, so the message exists if and only if the change was committed; the dedupe key
- * makes a repeated call (a webhook or job retry) write one message. An anonymized customer or one without an email gets nothing.
+ * Why: plan 21 § 5.8: the account holder is told whenever money reaches, leaves or is held on the balance; these are the texts of the
+ * wallet kind, whatever the rank is by the time the mail is read (decision 064). Every method calls `NotificationService.enqueue` on
+ * the caller's transaction, so the message exists if and only if the change was committed; the dedupe key makes a repeated call (a
+ * webhook or job retry) write one message. An anonymized account gets nothing.
  *
  * Side effects: each method inserts one `notifications` row and one `notification.send` outbox row (or none, see above).
  *
@@ -43,7 +45,7 @@ export class CustomerWalletMails {
    * `wallet.topup_credited`: a top-up reached the balance.
    *
    * @param tx the credit's transaction
-   * @param input the customer, the payment, the net credited and the balance after it
+   * @param input the account, the payment, the net credited and the balance after it
    */
   async topUpCredited(
     tx: DbExecutor,
@@ -66,7 +68,7 @@ export class CustomerWalletMails {
    * `wallet.topup_rejected`: staff rejected a top-up.
    *
    * @param tx the rejection's transaction
-   * @param input the customer, the payment, what was paid and the reason staff wrote
+   * @param input the account, the payment, what was paid and the reason staff wrote
    */
   async topUpRejected(
     tx: DbExecutor,
@@ -89,7 +91,7 @@ export class CustomerWalletMails {
    * `wallet.adjusted`: staff changed the balance by hand.
    *
    * @param tx the adjustment's transaction
-   * @param input the customer, the journal, the signed change and the balance after it
+   * @param input the account, the journal, the signed change and the balance after it
    */
   async adjusted(
     tx: DbExecutor,
@@ -112,7 +114,7 @@ export class CustomerWalletMails {
    * `wallet.frozen`: paying from the balance was put on hold.
    *
    * @param tx the freeze's transaction
-   * @param input the customer and the freeze time (the dedupe key: one message per freeze)
+   * @param input the account and the freeze time (the dedupe key: one message per freeze)
    */
   async frozen(tx: DbExecutor, input: { customerId: number; frozenAt: Date }): Promise<void> {
     await this.send(
@@ -128,7 +130,7 @@ export class CustomerWalletMails {
    * `wallet.order_refunded`: an order paid from the balance was refunded to it.
    *
    * @param tx the refund's transaction
-   * @param input the customer, the order, the USD returned, the service name and what makes the refund unique (`order:<id>` or `refund:<id>`)
+   * @param input the account, the order, the USD returned, the service name and what makes the refund unique (`order:<id>` or `refund:<id>`)
    */
   async orderRefunded(
     tx: DbExecutor,
@@ -147,7 +149,7 @@ export class CustomerWalletMails {
     );
   }
 
-  /** Writes one email to a customer (the name is filled in here). */
+  /** Writes one email to an account (the name is filled in here); `customerId` is the account id. */
   private async send(
     tx: DbExecutor,
     customerId: number,
@@ -155,15 +157,17 @@ export class CustomerWalletMails {
     dedupeKey: string,
     variables: Record<string, string>,
   ): Promise<void> {
-    const customer = await findWalletCustomer(tx, customerId);
-    if (!customer || customer.status === 'anonymized') return;
+    const account = await findWalletCustomer(tx, customerId);
+    if (!account || account.status === 'anonymized') return;
     await this.notifications.enqueue(
       { tx },
       {
         event,
-        recipient: { type: 'customer', id: customerId },
+        recipient: { type: 'account', id: customerId },
         channel: 'email',
-        variables: { customerName: customer.name.trim() || NAMELESS, ...variables },
+        // Every mail here is about the store balance (`customer_wallet`): the customer text, whatever the account's rank is now.
+        audience: 'customer',
+        variables: { customerName: account.name.trim() || NAMELESS, ...variables },
         dedupeKey,
       },
     );

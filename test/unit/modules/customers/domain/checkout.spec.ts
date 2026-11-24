@@ -3,6 +3,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   consentState,
   effectiveStatus,
+  isLiveCheckout,
   isShopAddress,
   maskEmail,
   maskImei,
@@ -29,6 +30,21 @@ describe('effectiveStatus', () => {
   it('never turns a paid or expired session into anything else', () => {
     expect(effectiveStatus('paid', expires, at('2027-01-01T00:00:00.000Z'))).toBe('paid');
     expect(effectiveStatus('expired', expires, at('2026-11-07T12:00:00.000Z'))).toBe('expired');
+  });
+});
+
+describe('isLiveCheckout (the guest claim and the open_checkout blocker read a session as in flight)', () => {
+  const expires = at('2026-11-07T12:30:00.000Z');
+  it('is true only for an open session that has not run out', () => {
+    expect(isLiveCheckout({ status: 'open', expiresAt: expires }, at('2026-11-07T12:29:59.999Z'))).toBe(true);
+    // The end is exclusive, as for effectiveStatus: at the very moment it runs out the session is history.
+    expect(isLiveCheckout({ status: 'open', expiresAt: expires }, at('2026-11-07T12:30:00.000Z'))).toBe(false);
+    expect(isLiveCheckout({ status: 'open', expiresAt: expires }, at('2026-11-08T00:00:00.000Z'))).toBe(false);
+  });
+
+  it('is false for a paid or an expired session, whatever the clock says', () => {
+    expect(isLiveCheckout({ status: 'paid', expiresAt: expires }, at('2026-11-07T12:00:00.000Z'))).toBe(false);
+    expect(isLiveCheckout({ status: 'expired', expiresAt: expires }, at('2026-11-07T12:00:00.000Z'))).toBe(false);
   });
 });
 

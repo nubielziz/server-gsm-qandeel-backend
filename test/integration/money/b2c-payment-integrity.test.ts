@@ -289,7 +289,8 @@ describe('a confirmation that cannot pay its checkout is held and sent back', ()
     expect(refunds[0]).toMatchObject({
       paymentId: payment.id,
       orderId: null,
-      customerId: null,
+      // an orderless return names its payment's account
+      accountId: (await paymentRow(payment.id)).accountId,
       amount: '1.0000',
       currency: 'GBP',
       method: 'original',

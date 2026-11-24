@@ -1,6 +1,7 @@
 // Integration tests of the money integrity check (feature 12b, scenario system-integrity): GET /admin/system/integrity, POST
-// /admin/system/integrity/run, the four checks on a real ledger and the worker job that runs them (MISMATCHES B99; resolutions health-commissions-9,
-// -16, -17; ANSWERS system-health Q35, Q36). The check only reads: every test asserts that nothing was corrected.
+// /admin/system/integrity/run, the five checks on a real ledger (the map's four and `wallets_follow_rank`, decision 064) and the worker job that
+// runs them (MISMATCHES B99; resolutions health-commissions-9, -16, -17; ANSWERS system-health Q35, Q36). The check only reads: every test asserts
+// that nothing was corrected.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import type { Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
@@ -10,11 +11,13 @@ import { QueuesService } from '@src/infra/queues';
 import { RedisService } from '@src/infra/redis';
 import { AlertNotifier, HealthJobsModule, INTEGRITY_JOB, LedgerIntegrityProcessor } from '@src/modules/health';
 import { order, postTransaction } from '@src/modules/money';
+import { ensureRetailGroup, makeAccount } from '../../support/accounts';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { insertRule, noticeOfCall, pick } from '../../support/alerts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { DAY, HOUR, MINUTE, TestClock } from '../../support/clock';
+import { fundCustomer } from '../../support/customer-wallet';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertWalletMerchant, ledgerTotals } from '../../support/money';
 import { insertOrderRow, ordersWorld, type OrdersWorld } from '../../support/orders';
@@ -64,7 +67,7 @@ const checkOf = (body: { checks: Array<{ key: string }> }, key: string) =>
   body.checks.find((check) => check.key === key) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- test bodies are untyped JSON
 
 describe('GET /admin/system/integrity before any run', () => {
-  it('answers four unknown checks in the map order and a null last run, not an error', async () => {
+  it('answers five unknown checks in order and a null last run, not an error', async () => {
     const res = await reader.get('/admin/system/integrity');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -101,6 +104,14 @@ describe('GET /admin/system/integrity before any run', () => {
         {
           key: 'payments_without_entry',
           label: 'Every confirmed payment has an entry',
+          status: 'unknown',
+          count: 0,
+          difference: null,
+          findings: [],
+        },
+        {
+          key: 'wallets_follow_rank',
+          label: 'Every wallet follows the rank of its account',
           status: 'unknown',
           count: 0,
           difference: null,
@@ -185,7 +196,7 @@ describe('POST /admin/system/integrity/run', () => {
 });
 
 describe('the run on a clean ledger', () => {
-  it('passes the four checks: counters at the top of the result, the checks under one key, lastSuccessAt set', async () => {
+  it('passes the five checks: counters at the top of the result, the checks under one key, lastSuccessAt set', async () => {
     const before = await ledgerTotals((await testDb()).db);
     const started = await manager.post('/admin/system/integrity/run');
     clock.advance(3_000);
@@ -199,6 +210,7 @@ describe('the run on a clean ledger', () => {
       accountDifferences: 0,
       stuckHolds: 0,
       paymentsWithoutEntry: 0,
+      walletsOffRank: 0,
       entriesChecked: before.entries,
       transactionsChecked: before.transactions,
     });
@@ -228,6 +240,7 @@ describe('the run on a clean ledger', () => {
       ['accounts_match_lines', 'pass', 0, '0.0000'],
       ['stuck_holds', 'pass', 0, null],
       ['payments_without_entry', 'pass', 0, '0.0000'],
+      ['wallets_follow_rank', 'pass', 0, '0.0000'],
     ]);
     // Nothing was written to the ledger.
     expect(await ledgerTotals((await testDb()).db)).toEqual(before);
@@ -287,8 +300,10 @@ describe('scenario system-integrity: a merchant wallet that does not match its l
     ]);
     expect(new Date(accounts.findings[0].lastEntryAt).getTime()).toBe(new Date(lastEntry).getTime());
     expect(
-      ['entries_balanced', 'stuck_holds', 'payments_without_entry'].map((key) => checkOf(body, key).status),
-    ).toEqual(['pass', 'pass', 'pass']);
+      ['entries_balanced', 'stuck_holds', 'payments_without_entry', 'wallets_follow_rank'].map(
+        (key) => checkOf(body, key).status,
+      ),
+    ).toEqual(['pass', 'pass', 'pass', 'pass']);
     expect(body.lastSuccessAt).toBeNull();
 
     const [run] = await runs();
@@ -355,7 +370,7 @@ describe('scenario system-integrity: a merchant wallet that does not match its l
   });
 });
 
-describe('the other three checks', () => {
+describe('the other checks', () => {
   /** Inserts an unbalanced entry the way a bypassed trigger would leave it: one line, no counterpart. */
   async function insertUnbalancedEntry() {
     const { pool, db } = await testDb();
@@ -413,12 +428,20 @@ describe('the other three checks', () => {
     expect((await runs())[0]!.result).toMatchObject({ unbalancedEntries: 1, mismatchCount: 1, failedChecks: 1 });
   });
 
-  /** Holds the price of an order on the merchant's wallet at a moment, as the order engine does at placement. */
-  async function heldOrder(at: Date, status: 'pending' | 'processing' | 'completed' = 'pending') {
+  /**
+   * Holds the price of an order on the merchant's wallet at a moment, as the order engine does at placement. `source` is the door of the
+   * order (a hold-and-settle door by default).
+   */
+  async function heldOrder(
+    at: Date,
+    status: 'pending' | 'processing' | 'completed' = 'pending',
+    source: 'portal' | 'store' = 'portal',
+  ) {
     const { db } = await testDb();
     const row = await insertOrderRow(db, {
       serviceId: world.auto.serviceId,
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
+      source,
       status,
       dispatchState: 'pending',
       totalPrice: '5.0000',
@@ -463,6 +486,22 @@ describe('the other three checks', () => {
     expect((await runs())[0]!.result).toMatchObject({ stuckHolds: 1, mismatchCount: 0, failedChecks: 1 });
   });
 
+  it('stuck_holds: the door of the order decides, not the rank the account holds now', async () => {
+    const { db } = await testDb();
+    const stuck = await heldOrder(new Date(clock.nowMs() - 30 * HOUR), 'processing');
+    // An order of the shop's door (paid first) holds no wallet money: even with a hold line on its id it is not listed.
+    await heldOrder(new Date(clock.nowMs() - 31 * HOUR), 'processing', 'store');
+    // The account moved to the retail rank after it placed the hold-and-settle order: the old hold is still a stuck hold.
+    await db
+      .update(s.clients)
+      .set({ groupId: await ensureRetailGroup(db) })
+      .where(eq(s.clients.id, world.merchant.id));
+    await runJob();
+    const holds = checkOf(await report(), 'stuck_holds');
+    expect(holds).toMatchObject({ status: 'fail', count: 1 });
+    expect(holds.findings.map((finding: { id: number }) => finding.id)).toEqual([stuck]);
+  });
+
   it('stuck_holds: an order whose hold was released or settled after it is not stuck, even while it is still open', async () => {
     const { db } = await testDb();
     const id = await heldOrder(new Date(clock.nowMs() - 30 * HOUR));
@@ -502,6 +541,7 @@ describe('the other three checks', () => {
         .insert(s.payments)
         .values({
           purpose: 'topup',
+          accountId: world.merchant.id,
           gatewayId: gateway!.id,
           amount: '100.0000',
           currency: 'USD',
@@ -534,6 +574,108 @@ describe('the other three checks', () => {
       },
     ]);
     expect((await runs())[0]!.result).toMatchObject({ paymentsWithoutEntry: 1, mismatchCount: 1 });
+  });
+});
+
+describe('wallets_follow_rank: the wallet kind follows the rank of its account (decision 064)', () => {
+  const wallets = async () => checkOf(await report(), 'wallets_follow_rank');
+
+  it('passes for a merchant wallet and a store balance that sit on the rank they belong to', async () => {
+    const { db } = await testDb();
+    const shopper = await makeAccount({ rank: 'retail' });
+    await fundCustomer(db, shopper.id, '25.0000');
+    await runJob();
+    expect(await wallets()).toMatchObject({ status: 'pass', count: 0, difference: '0.0000', findings: [] });
+  });
+
+  it('finds money on a wallet of the kind the rank does not use, with its owner and amount, and counts it as a mismatch', async () => {
+    const { db } = await testDb();
+    // The merchant went to the retail rank without its wallet being emptied; a merchant-rank account holds a store balance.
+    await db
+      .update(s.clients)
+      .set({ groupId: await ensureRetailGroup(db) })
+      .where(eq(s.clients.id, world.merchant.id));
+    const holder = await makeAccount({ rank: 'merchant', name: 'Mixed Holder' });
+    await fundCustomer(db, holder.id, '12.5000');
+    const before = await ledgerTotals(db);
+    await runJob();
+    const body = await report();
+    const check = checkOf(body, 'wallets_follow_rank');
+    expect(body.result).toBe('fail');
+    expect(check).toMatchObject({ status: 'fail', count: 2, difference: '112.5000' });
+    expect(check.findings).toEqual([
+      {
+        kind: 'account',
+        id: expect.any(Number),
+        ref: `client_wallet:${world.merchant.id}`,
+        label: 'Wallet · Cairo GSM Lab · not the wallet of its rank',
+        difference: '100.0000',
+        ageSeconds: null,
+        lastEntryAt: null,
+      },
+      {
+        kind: 'account',
+        id: expect.any(Number),
+        ref: `customer_wallet:${holder.id}`,
+        label: 'Customer wallet · Mixed Holder · not the wallet of its rank',
+        difference: '12.5000',
+        ageSeconds: null,
+        lastEntryAt: null,
+      },
+    ]);
+    // The other four checks have nothing to say, and the run counts the two as a mismatch (money sits where it should not).
+    expect(
+      ['entries_balanced', 'accounts_match_lines', 'stuck_holds', 'payments_without_entry'].map(
+        (key) => checkOf(body, key).status,
+      ),
+    ).toEqual(['pass', 'pass', 'pass', 'pass']);
+    expect((await runs())[0]!.result).toMatchObject({ walletsOffRank: 2, mismatchCount: 2, failedChecks: 1 });
+    // Read only: nothing was moved.
+    expect(await ledgerTotals(db)).toEqual(before);
+  });
+
+  it('finds a frozen wallet of the other kind and a credit limit on a rank without credit', async () => {
+    const { db } = await testDb();
+    // An emptied merchant wallet that is still on hold, after its account went to the retail rank.
+    await db
+      .update(s.clients)
+      .set({ groupId: await ensureRetailGroup(db) })
+      .where(eq(s.clients.id, world.merchant.id));
+    await db.execute(
+      sql`update ledger_accounts set balance = 0, frozen_at = now(), frozen_reason = 'test' where kind = 'client_wallet' and owner_id = ${world.merchant.id}`,
+    );
+    // A merchant wallet with a credit limit although its rank allows no credit.
+    await db.execute(
+      sql`update ledger_accounts set overdraft_limit = 40 where kind = 'client_wallet' and owner_id = ${world.other.id}`,
+    );
+    await runJob();
+    const check = await wallets();
+    expect(check).toMatchObject({ status: 'fail', count: 2, difference: '40.0000' });
+    expect(
+      check.findings.map((finding: { ref: string; label: string; difference: string }) => [
+        finding.ref,
+        finding.label,
+        finding.difference,
+      ]),
+    ).toEqual([
+      [`client_wallet:${world.merchant.id}`, 'Wallet · Cairo GSM Lab · not the wallet of its rank', '0.0000'],
+      [`client_wallet:${world.other.id}`, 'Wallet · Erbil Mobile Parts · credit on a rank without credit', '40.0000'],
+    ]);
+  });
+
+  it('finds a ledger account with no account behind it', async () => {
+    const { db } = await testDb();
+    await db
+      .insert(s.ledgerAccounts)
+      .values({ kind: 'client_wallet', ownerType: 'account', ownerId: 424242, currency: 'USD' });
+    await runJob();
+    const check = await wallets();
+    expect(check).toMatchObject({ status: 'fail', count: 1 });
+    expect(check.findings[0]).toMatchObject({
+      kind: 'account',
+      ref: 'client_wallet:424242',
+      label: 'Wallet · #424242 · no account behind it',
+    });
   });
 });
 

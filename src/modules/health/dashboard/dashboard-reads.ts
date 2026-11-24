@@ -1,10 +1,14 @@
 // Read-only queries behind the dashboard, in one file: the orders figures, the supplier rows, and the counts and sums over the tables
-// of the modules that have no reader yet (payments, refunds, disputes, tickets, merchants, wallets, currencies).
+// of the modules that have no reader yet (payments, refunds, disputes, tickets, accounts, wallets, currencies).
 //
 // DEVIATION to resolve when those modules export readers: decision 016 wants these reads through the owning module's public service.
-// Orders export the SQL fragments `pastSlaPredicate` and `queueSql` (used here, so the age-only past-SLA rule of B92 stays in one place);
-// the catalog exports `belowFloorSql` (user rule 9); the customers module exports `storefrontFunnel`. Everything else is read with plain
-// selects, like the foreign-reads files of the other modules. Replace the bodies when readers exist; nothing outside this file knows.
+// Orders export the SQL fragments `pastSlaPredicate`, `queueSql` and `prepaidOrderSql` (used here, so the age-only past-SLA rule of B92 and
+// the door of an order stay in one place each); the catalog exports `belowFloorSql` (user rule 9); the customers module exports
+// `storefrontFunnel`. Everything else is read with plain selects, like the foreign-reads files of the other modules. Replace the bodies
+// when readers exist; nothing outside this file knows.
+//
+// The door of an order is `orders.source` (decision 064): `store` is the shop's prepaid door, every other value a merchant door, so the
+// scopes `b2b` and `b2c` never infer the kind of buyer from a null column.
 // Money: orders are stored in USD; payments, refunds and disputes are converted per row at the checkout's locked rate or the current
 // `rate_to_base` and summed once (decision 011, resolution identity-platform-8).
 import { type SQL, sql } from 'drizzle-orm';
@@ -22,9 +26,28 @@ const money = (expression: SQL): SQL<string> => sql<string>`coalesce(${expressio
 const idOf = (value: number | string | null | undefined): number | null =>
   value === null || value === undefined ? null : Number(value);
 
-/** The condition that keeps the orders of a scope (`all` keeps everything). */
-function inScope(scope: Scope): SQL {
-  return scope === 'b2b' ? sql`${o.clientId} is not null` : scope === 'b2c' ? sql`${o.clientId} is null` : sql`true`;
+/**
+ * The condition that keeps the orders of a scope (`all` keeps everything): `b2c` is the shop's door (`orders.source = 'store'`), `b2b`
+ * every other door.
+ *
+ * @param scope the channel
+ * @returns a boolean SQL expression over the `orders` table
+ */
+async function inScope(scope: Scope): Promise<SQL> {
+  if (scope === 'all') return sql`true`;
+  const { prepaidOrderSql } = await orders();
+  const shop = prepaidOrderSql(sql`${o.source}`);
+  return scope === 'b2c' ? shop : sql`not (${shop})`;
+}
+
+/** The orders of the merchant doors, as a condition over `orders`. */
+async function merchantDoor(): Promise<SQL> {
+  return inScope('b2b');
+}
+
+/** The orders of the shop's door, as a condition over `orders`. */
+async function shopDoor(): Promise<SQL> {
+  return inScope('b2c');
 }
 
 /** The figures of one period (`PeriodStats`), money as 4-decimal strings. */
@@ -46,6 +69,7 @@ export interface PeriodRow {
  * @returns revenue and profit of the completed orders, the count of all, the success rate and the median turnaround
  */
 export async function periodStats(db: DbExecutor, from: Date, to: Date, scope: Scope): Promise<PeriodRow> {
+  const scoped = await inScope(scope);
   const [row] = await db
     .select({
       orders: sql<number>`count(*)::int`,
@@ -58,7 +82,7 @@ export async function periodStats(db: DbExecutor, from: Date, to: Date, scope: S
       >`percentile_cont(0.5) within group (order by extract(epoch from (${o.completedAt} - ${o.createdAt}))) filter (where ${o.status} = 'completed' and ${o.completedAt} is not null)`,
     })
     .from(o)
-    .where(sql`${o.createdAt} >= ${from} and ${o.createdAt} < ${to} and ${inScope(scope)}`);
+    .where(sql`${o.createdAt} >= ${from} and ${o.createdAt} < ${to} and ${scoped}`);
   const finished = (row?.completed ?? 0) + (row?.rejected ?? 0);
   return {
     revenue: row?.revenue ?? '0.0000',
@@ -91,6 +115,7 @@ export interface QueueRow {
  */
 export async function queuesByType(db: DbExecutor, now: Date, scope: Scope): Promise<QueueRow[]> {
   const { pastSlaPredicate, queueSql } = await orders();
+  const scoped = await inScope(scope);
   const rows = await db
     .select({
       type: o.type,
@@ -102,7 +127,7 @@ export async function queuesByType(db: DbExecutor, now: Date, scope: Scope): Pro
     .from(o)
     .innerJoin(s.services, sql`${s.services.id} = ${o.serviceId}`)
     .where(
-      sql`(${o.status} in ('pending', 'processing') or (${o.status} = 'completed' and ${o.verificationStatus} = 'requested')) and ${inScope(scope)}`,
+      sql`(${o.status} in ('pending', 'processing') or (${o.status} = 'completed' and ${o.verificationStatus} = 'requested')) and ${scoped}`,
     )
     .groupBy(o.type);
   return rows.map((row) => ({
@@ -132,6 +157,7 @@ export interface PastSlaDetail {
  */
 export async function pastSlaDetail(db: DbExecutor, now: Date, scope: Scope): Promise<PastSlaDetail> {
   const { pastSlaPredicate } = await orders();
+  const scoped = await inScope(scope);
   const [row] = await db
     .select({
       count: sql<number>`count(*)::int`,
@@ -141,7 +167,7 @@ export async function pastSlaDetail(db: DbExecutor, now: Date, scope: Scope): Pr
     })
     .from(o)
     .innerJoin(s.services, sql`${s.services.id} = ${o.serviceId}`)
-    .where(sql`${pastSlaPredicate(now)} and ${inScope(scope)}`);
+    .where(sql`${pastSlaPredicate(now)} and ${scoped}`);
   const target = (row?.targetMinutes ?? 0) * 60;
   const placed = row?.oldestPlaced ? new Date(row.oldestPlaced).getTime() : now.getTime();
   return {
@@ -153,20 +179,21 @@ export async function pastSlaDetail(db: DbExecutor, now: Date, scope: Scope): Pr
 }
 
 /**
- * How many merchant orders wait in each review queue.
+ * How many merchant-door orders wait in each review queue.
  *
  * Why: RULES dashboard 3: `orders_review` is about merchant orders only. A storefront order held by risk is the `orders_held` item, so
  * counting it here too would raise the same orders twice. The caller does not ask for it in the `b2c` scope.
  *
  * @param db the database
- * @returns the count per derived queue (`manual`, `needs_attention`, `review`, `verification`) over orders with a merchant
+ * @returns the count per derived queue (`manual`, `needs_attention`, `review`, `verification`) over orders of the merchant doors
  */
 export async function reviewQueues(db: DbExecutor): Promise<Map<string, number>> {
   const { queueSql } = await orders();
+  const merchant = await merchantDoor();
   const rows = await db
     .select({ queue: sql<string>`${queueSql}`, n: sql<number>`count(*)::int` })
     .from(o)
-    .where(sql`${queueSql} in ('manual', 'needs_attention', 'review', 'verification') and ${o.clientId} is not null`)
+    .where(sql`${queueSql} in ('manual', 'needs_attention', 'review', 'verification') and ${merchant}`)
     .groupBy(queueSql);
   return new Map(rows.map((row) => [row.queue, row.n]));
 }
@@ -287,13 +314,24 @@ export interface MoneyFacts {
  * Why: identity-platform-8: every amount in USD, converted per row (`amount / coalesce(checkout fx_rate, currency rate_to_base)`) and
  * rounded once. Tables that are still empty (billing, support and refunds are built later) give zeros and no item.
  *
+ * The negative wallets are those of both wallet kinds (decision 064: a merchant's credit in use, and a store balance a chargeback took below
+ * zero), by the kind of wallet the scope names: `b2b` the merchant wallets, `b2c` the store balances, `all` both. The held orders are the
+ * shop's door.
+ *
  * @param db the database
  * @param now the clock's time
+ * @param scope the channel (it decides which negative wallets are counted)
  * @returns the facts
  */
-export async function moneyFacts(db: DbExecutor, now: Date): Promise<MoneyFacts> {
+export async function moneyFacts(db: DbExecutor, now: Date, scope: Scope = 'all'): Promise<MoneyFacts> {
   const soon = new Date(now.getTime() + DISPUTE_DUE_SOON_MS);
   const { isRateStale } = await moneyApi();
+  const shop = await shopDoor();
+  const walletKinds = {
+    all: sql`('client_wallet', 'customer_wallet')`,
+    b2b: sql`('client_wallet')`,
+    b2c: sql`('customer_wallet')`,
+  }[scope];
   const one = async <T>(query: SQL): Promise<T> => (await db.execute<T & Record<string, unknown>>(query)).rows[0] as T;
   const rate = sql`coalesce(cs.fx_rate, cur.rate_to_base)`;
   const [deposits, wallets, held, dispute, late, ticketsOpen, refunds, failed, fx] = await Promise.all([
@@ -304,11 +342,11 @@ export async function moneyFacts(db: DbExecutor, now: Date): Promise<MoneyFacts>
       where p.purpose = 'topup' and p.status = 'pending'`),
     db.execute<{ id: number; name: string; balance: string; n: number }>(sql`
       select c.id, c.name, a.balance::text as balance, count(*) over ()::int as n
-      from ledger_accounts a join clients c on c.id = a.owner_id
-      where a.kind = 'client_wallet' and a.balance < 0 order by a.balance, c.id limit 5`),
+      from ledger_accounts a join clients c on a.owner_type = 'account' and c.id = a.owner_id
+      where a.kind in ${walletKinds} and a.balance < 0 order by a.balance, c.id limit 5`),
     one<{ n: number; captured: string; oldest: Date | null }>(sql`
       select count(*)::int as n, coalesce(sum(total_price + tax_amount), 0)::numeric(20,4)::text as captured, min(placed_at) as oldest
-      from orders where client_id is null and dispatch_state = 'held' and status in ('pending', 'processing')`),
+      from orders where ${shop} and dispatch_state = 'held' and status in ('pending', 'processing')`),
     one<{ n: number; soon: number; id: number | null; due: Date | null; amount: string; fee: string }>(sql`
       with open_disputes as (
         select d.id, d.evidence_due_at, d.amount / ${rate} as usd_amount, d.fee / ${rate} as usd_fee
@@ -333,11 +371,12 @@ export async function moneyFacts(db: DbExecutor, now: Date): Promise<MoneyFacts>
       from refunds r join currencies cur on cur.code = r.currency
       left join orders po on po.id = r.order_id left join checkout_sessions cs on cs.id = po.checkout_session_id
       where r.status = 'requested'`),
-    // The item links to the Refunds page, which lists customer refunds only; a failed automatic return of a held payment is a finding of
-    // the integrity check instead (decision 048).
+    // The item links to the Refunds page, which lists the refunds of orders (a refund names its payment's account and, unless it is the
+    // return of a held payment, its order); a failed automatic return of a held payment has no order and is a finding of the integrity
+    // check instead (decision 048).
     one<{ n: number; id: number | null; reason: string | null }>(sql`
       select count(*)::int as n, (array_agg(id order by created_at, id))[1] as id, (array_agg(reason order by created_at, id))[1] as reason
-      from refunds where status = 'failed' and customer_id is not null`),
+      from refunds where status = 'failed' and account_id is not null and order_id is not null`),
     // Active currencies only (a switched-off one needs no refresh); money's rule decides which are stale.
     db.execute<{ code: string; updated: Date; held: Date | null }>(sql`
       select code, rate_updated_at as updated, rate_held_at as held from currencies where is_active order by rate_updated_at, code`),
@@ -405,13 +444,14 @@ export async function ordersByType(
 }> {
   const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - 29 * DAY_MS);
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
+  const scoped = await inScope(scope);
   const [days, months] = await Promise.all([
     db.execute<{ bucket: string; type: string; n: number }>(sql`
       select to_char(created_at at time zone 'UTC', 'YYYY-MM-DD') as bucket, type, count(*)::int as n from orders
-      where created_at >= ${dayStart} and ${inScope(scope)} group by 1, 2`),
+      where created_at >= ${dayStart} and ${scoped} group by 1, 2`),
     db.execute<{ bucket: string; type: string; n: number }>(sql`
       select to_char(created_at at time zone 'UTC', 'YYYY-MM') as bucket, type, count(*)::int as n from orders
-      where created_at >= ${monthStart} and ${inScope(scope)} group by 1, 2`),
+      where created_at >= ${monthStart} and ${scoped} group by 1, 2`),
   ]);
   const fold = (rows: Array<{ bucket: string; type: string; n: number }>, keys: string[]) =>
     keys.map((key) => ({
@@ -436,7 +476,9 @@ export async function ordersByType(
 }
 
 /**
- * Completed revenue before VAT by UTC day of completion, merchants against the storefront, over 30 days.
+ * Completed revenue before VAT by UTC day of completion, merchant doors against the shop's door, over 30 days.
+ *
+ * Why: the door is `orders.source` (decision 064): `store` is the shop, every other value is a merchant door, whatever rank the buyer has now.
  *
  * @param db the database
  * @param now the clock's time
@@ -447,10 +489,11 @@ export async function revenueByChannel(
   now: Date,
 ): Promise<Array<{ date: string; b2b: string; b2c: string }>> {
   const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - 29 * DAY_MS);
+  const [merchant, shop] = [await merchantDoor(), await shopDoor()];
   const rows = await db.execute<{ day: string; b2b: string; b2c: string }>(sql`
     select to_char(completed_at at time zone 'UTC', 'YYYY-MM-DD') as day,
-      coalesce(sum(total_price) filter (where client_id is not null), 0)::numeric(20,4)::text as b2b,
-      coalesce(sum(total_price) filter (where client_id is null), 0)::numeric(20,4)::text as b2c
+      coalesce(sum(total_price) filter (where ${merchant}), 0)::numeric(20,4)::text as b2b,
+      coalesce(sum(total_price) filter (where ${shop}), 0)::numeric(20,4)::text as b2c
     from orders where status = 'completed' and completed_at >= ${dayStart} group by 1`);
   const byDay = new Map(rows.rows.map((row) => [row.day, row]));
   return Array.from({ length: 30 }, (_, i) => {
@@ -465,25 +508,22 @@ export interface StorefrontExtras {
   readonly refundRate: number | null;
   readonly disputeRate: number | null;
   readonly firstReplySeconds: number | null;
-  readonly topCustomers: Array<{ id: number; name: string; country: string; orders: number; spend: string }>;
 }
 
 /**
- * The storefront figures that are not the funnel: average order, refund and dispute rates, support speed, top customers.
+ * The storefront figures that are not the funnel: average order, refund and dispute rates and support speed.
+ *
+ * Why: the storefront block of the dashboard. The best buyers are not here any more: the one Top accounts list of every rank is
+ * `GET /admin/reports/top-clients` (decision 064). A refund counts when it names an account and an order (the refund of an order; the
+ * return of a held payment has no order), and a ticket when its requester is an account with a retail rank (the shop's own).
  *
  * @param db the database
  * @param now the clock's time
- * @param from the start of the window (the storefront block is always 30 days; the top customers follow the dashboard's period)
- * @param topFrom the start of the top customers' window
+ * @param from the start of the window (the storefront block is always 30 days)
  * @returns the figures, `null` where there is nothing to divide by
  */
-export async function storefrontExtras(
-  db: DbExecutor,
-  now: Date,
-  from: Date,
-  topFrom: Date,
-): Promise<StorefrontExtras> {
-  const [paid, refunds, disputes, tickets, top] = await Promise.all([
+export async function storefrontExtras(db: DbExecutor, now: Date, from: Date): Promise<StorefrontExtras> {
+  const [paid, refunds, disputes, tickets] = await Promise.all([
     db.execute<{ avg: string | null; n: number; total: string }>(sql`
       select round(avg(cs.gross_amount / cs.fx_rate), 4)::text as avg, count(*)::int as n,
         coalesce(sum(cs.gross_amount / cs.fx_rate), 0)::text as total
@@ -492,18 +532,18 @@ export async function storefrontExtras(
       select coalesce(sum(r.amount / coalesce(cs.fx_rate, cur.rate_to_base)), 0)::text as refunded
       from refunds r join currencies cur on cur.code = r.currency
       left join orders po on po.id = r.order_id left join checkout_sessions cs on cs.id = po.checkout_session_id
-      where r.status = 'completed' and r.customer_id is not null and r.created_at >= ${from} and r.created_at < ${now}`),
+      where r.status = 'completed' and r.account_id is not null and r.order_id is not null
+        and r.created_at >= ${from} and r.created_at < ${now}`),
     db.execute<{ n: number }>(
       sql`select count(*)::int as n from disputes where created_at >= ${from} and created_at < ${now}`,
     ),
+    // A retail rank is every rank whose group is not the merchant kind (`rankKindOf`: only `b2b` gives merchant rights).
     db.execute<{ median: number | null }>(sql`
-      select percentile_cont(0.5) within group (order by extract(epoch from (first_response_at - created_at))) as median
-      from support_tickets where requester_type = 'customer' and created_at >= ${from} and created_at < ${now}`),
-    db.execute<{ id: number; name: string; country: string | null; orders: number; spend: string }>(sql`
-      select c.id, c.name, c.country, count(*)::int as orders, sum(o.total_price + o.tax_amount)::numeric(20,4)::text as spend
-      from orders o join customers c on c.id = o.customer_id
-      where o.status <> 'rejected' and o.created_at >= ${topFrom} and o.created_at < ${now}
-      group by c.id, c.name, c.country order by sum(o.total_price + o.tax_amount) desc, c.id limit 5`),
+      select percentile_cont(0.5) within group (order by extract(epoch from (t.first_response_at - t.created_at))) as median
+      from support_tickets t
+      join clients c on c.id = t.requester_id
+      join client_groups g on g.id = c.group_id
+      where t.requester_type = 'account' and g.kind <> 'b2b' and t.created_at >= ${from} and t.created_at < ${now}`),
   ]);
   const paidRow = paid.rows[0];
   const paidCount = paidRow?.n ?? 0;
@@ -517,13 +557,6 @@ export async function storefrontExtras(
     disputeRate: paidCount === 0 ? null : Math.round(((disputes.rows[0]?.n ?? 0) / paidCount) * 10_000) / 100,
     firstReplySeconds:
       ticketRow?.median === null || ticketRow?.median === undefined ? null : Math.round(Number(ticketRow.median)),
-    topCustomers: top.rows.map((row) => ({
-      id: Number(row.id),
-      name: row.name,
-      country: row.country ?? '',
-      orders: row.orders,
-      spend: row.spend,
-    })),
   };
 }
 

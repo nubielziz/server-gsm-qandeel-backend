@@ -4,8 +4,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../../common/clock';
 import type { DbExecutor } from '../../../../infra/db';
-import type { NotificationRecipientType } from '../../db/schema';
-import { type Recipient, audienceOf, recipientOf } from '../notification-foreign-reads';
+import type { NotificationAudience, NotificationRecipientType } from '../../db/schema';
+import { type Recipient, recipientOf, withAudience } from '../notification-foreign-reads';
 import { InboxDoorbell } from './inbox-doorbell';
 import { InboxTextRegistry } from './inbox-texts';
 import { insertEventItem } from './inbox.repository';
@@ -19,13 +19,18 @@ export interface EventItemInput {
   readonly variables?: Readonly<Record<string, string>>;
   /** Names the occurrence (`outbox-<id>`, `campaign-test-<id>-<n>`), so a repeat makes no second item; omit for none. */
   readonly occurrence?: string;
+  /**
+   * The audience whose in-app text the item uses, when it is not the audience of the recipient's rank today (the door of an order, the kind
+   * of a wallet: see `NotificationInput.audience`). The audience is part of the occurrence key, so the item is read back with its own text.
+   */
+  readonly audience?: NotificationAudience;
 }
 
 /**
  * Tells whether a recipient may get in-app items.
  *
- * Why: an inbox exists for an active staff member, an active or pending merchant and an active customer with an account
- * (`Recipient.inboxEligible`, plan 9.5); a guest, a suspended person or a gone one gets no item.
+ * Why: an inbox exists for an active staff member and an active account that can sign in, of either rank (`Recipient.inboxEligible`, plan
+ * 9.5); a guest row, a suspended or blocked person or a gone one gets no item.
  *
  * @param recipient the recipient read for the item
  * @returns true when an item is worth writing
@@ -60,11 +65,14 @@ export class NotificationInbox {
    * @returns the new item's id, or `undefined` when nothing was written
    */
   async addForEvent(tx: DbExecutor, input: EventItemInput): Promise<number | undefined> {
-    const audience = audienceOf(input.recipient.type);
+    // An event with no text for the audience makes no item: the cheap check comes first when the caller named the audience.
+    if (input.audience !== undefined && !this.texts.get(input.audience, input.event)) return undefined;
+    const found = await recipientOf(tx, input.recipient.type, input.recipient.id);
+    if (!found || !canReadInbox(found)) return undefined;
+    const recipient = withAudience(found, input.audience);
+    const audience = recipient.audience;
     const text = this.texts.get(audience, input.event);
     if (!text) return undefined;
-    const recipient = await recipientOf(tx, input.recipient.type, input.recipient.id);
-    if (!recipient || !canReadInbox(recipient)) return undefined;
     const id = await insertEventItem(
       tx,
       {

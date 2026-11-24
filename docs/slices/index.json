@@ -5,20 +5,21 @@
       "module": "identity",
       "name": "Identity & access",
       "domain": "A",
-      "rows": 56,
-      "endpoints": 70,
+      "rows": 59,
+      "endpoints": 73,
       "bySurface": {
         "client": 24,
-        "admin": 45,
+        "admin": 48,
         "store": 1
       },
-      "frontendCalled": 41,
+      "frontendCalled": 44,
       "stages": [
         2,
         7,
         8,
         20,
-        27
+        27,
+        48
       ],
       "tables": 8,
       "scenarios": [
@@ -77,18 +78,18 @@
       "module": "money",
       "name": "Money (ledger, wallets, invoices, payments, refunds, disputes, tax, currencies)",
       "domain": "E",
-      "rows": 59,
-      "endpoints": 75,
+      "rows": 62,
+      "endpoints": 78,
       "bySurface": {
         "dhru": 1,
         "v1": 2,
         "client": 7,
-        "admin": 53,
+        "admin": 56,
         "hooks": 2,
         "events": 2,
         "store": 8
       },
-      "frontendCalled": 52,
+      "frontendCalled": 50,
       "stages": [
         3,
         7,
@@ -98,7 +99,8 @@
         16,
         21,
         32,
-        38
+        38,
+        48
       ],
       "tables": 11,
       "scenarios": [
@@ -248,14 +250,14 @@
       "module": "customers",
       "name": "Storefront customers & checkout (B2C)",
       "domain": "I",
-      "rows": 28,
-      "endpoints": 31,
+      "rows": 35,
+      "endpoints": 38,
       "bySurface": {
-        "store": 15,
-        "admin": 15,
+        "store": 18,
+        "admin": 19,
         "client": 1
       },
-      "frontendCalled": 13,
+      "frontendCalled": 5,
       "stages": [
         14,
         16,
@@ -263,7 +265,8 @@
         19,
         21,
         23,
-        24
+        24,
+        48
       ],
       "tables": 4,
       "scenarios": [

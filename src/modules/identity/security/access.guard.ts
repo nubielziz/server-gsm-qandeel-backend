@@ -17,9 +17,9 @@ import { PermissionGuard } from './permission.guard';
  * Authenticates and authorises every request from the route's contract.
  *
  * Why: security must not depend on each controller remembering a decorator. The contract of a route says how it
- * authenticates (`access`), which sign-in stages it accepts (`sessionStages`), whether it needs a permission and what its
- * CSRF protection is; this guard enforces all of it for every route, in the order of decision 018: authentication (with the
- * account state), CSRF, permission, then the anti-bot check of a `turnstile` route (decision 034, last so that a refused
+ * authenticates (`access`), which sign-in stages it accepts (`sessionStages`), which rank it serves (`rank`), whether it needs a
+ * permission and what its CSRF protection is; this guard enforces all of it for every route, in the order of decision 018:
+ * authentication (with the account state and, for an account route, the rank gate of decision 064), CSRF, permission, then the anti-bot check of a `turnstile` route (decision 034, last so that a refused
  * caller never costs an outbound call); validation, the handler and the audit follow in the route's own pipes and interceptors.
  *
  * A route without a contract is refused (fail closed); the documentation routes (`DOCUMENTATION_ROUTES`) are the exception and
@@ -43,8 +43,9 @@ export class AccessGuard implements CanActivate {
    *
    * @param context the request being handled
    * @returns true when the request may proceed to validation and the handler
-   * @throws {AppError} the refusal: `UNAUTHORIZED` (401), `ACCOUNT_SUSPENDED` (403), `IP_NOT_ALLOWED` (403, an API key's own
-   *   address list), `CSRF_FAILED` (403), `FORBIDDEN` (403); `RATE_LIMITED` (429, an API key's limit); `NOT_FOUND` (404) and
+   * @throws {AppError} the refusal: `UNAUTHORIZED` (401), `ACCOUNT_SUSPENDED` (403), `RANK_NOT_ALLOWED` (403, an account of another
+   *   rank than the route serves, decision 064), `IP_NOT_ALLOWED` (403, an API key's own address list), `CSRF_FAILED` (403),
+   *   `FORBIDDEN` (403); `RATE_LIMITED` (429, an API key's limit); `NOT_FOUND` (404) and
    *   `TOKEN_INVALID` (410) for a capability token that opens nothing; `WEBHOOK_SIGNATURE_INVALID` (400);
    *   `TURNSTILE_FAILED` (403) for a storefront write whose anti-bot token is missing or bad; `INTERNAL_ERROR` (500) for a
    *   route that has no contract

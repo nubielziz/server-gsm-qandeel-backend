@@ -28,7 +28,7 @@ const clock = new TestClock('2026-11-08T09:00:00.000Z');
 let t: TestApp;
 let staff: AdminApi;
 const TRACKING_TOKEN = 'T7kq2Zp9Xw4Ld1Hn6Rb3Yc';
-let customerId = 0;
+let accountId = 0;
 let orderId = 0;
 let templateBody = '';
 let ticketId = 0;
@@ -44,11 +44,11 @@ beforeAll(async () => {
   const { db } = await testDb();
   await seedSupportTemplates(db);
   await insertCurrency(db, { code: 'USD' });
-  const customer = await insertCustomer(db, { name: 'Victor Hale', email: 'victor@mail.example' });
-  customerId = customer.id;
+  const buyer = await insertCustomer(db, { name: 'Victor Hale', email: 'victor@mail.example' });
+  accountId = buyer.id;
   const order = await insertOrderRow(db, {
     serviceId: await insertService(db, await insertCategory(db)),
-    customerId,
+    accountId,
     source: 'store',
     publicToken: TRACKING_TOKEN,
   });
@@ -124,8 +124,8 @@ describe('scenario b2c-ticket: a support ticket about a delay', () => {
       status: 'new',
       priority: 'normal',
       category: 'delay',
-      requesterType: 'customer',
-      requesterId: customerId,
+      requesterType: 'account',
+      requesterId: accountId,
       orderId,
       assigneeId: null,
       firstResponseAt: null,
@@ -135,7 +135,7 @@ describe('scenario b2c-ticket: a support ticket about a delay', () => {
     expect(row.slaDueAt?.toISOString()).toBe('2026-11-08T17:00:00.000Z');
     const thread = await messages();
     expect(thread).toHaveLength(1);
-    expect(thread[0]).toMatchObject({ authorType: 'customer', authorId: customerId, isInternal: false });
+    expect(thread[0]).toMatchObject({ authorType: 'account', authorId: accountId, isInternal: false });
     // The receipt is an outbox event written with the ticket (ids only: the link holds the ticket token, so the job builds it).
     const events = await ticketMailEvents((await testDb()).db);
     expect(events.map((event) => [event.aggregateType, event.aggregateId, event.payload['kind']])).toEqual([
@@ -161,7 +161,12 @@ describe('scenario b2c-ticket: a support ticket about a delay', () => {
     });
     expect(mailbox(t).sent[0]!.text).toContain(`/support/tickets/${token}`);
     const [notification] = await notificationRows((await testDb()).db);
-    expect(notification).toMatchObject({ event: 'support.ticket_received', status: 'sent', recipientId: customerId });
+    expect(notification).toMatchObject({
+      event: 'support.ticket_received',
+      status: 'sent',
+      recipientType: 'account',
+      recipientId: accountId,
+    });
     expect(JSON.stringify(notification!.payload)).not.toContain(token);
   });
 

@@ -13,9 +13,9 @@
     },
     "status": "invited",
     "twofaEnabled": false,
-    "mustChangePassword": false,
-    "passwordChangedAt": null,
-    "resetSentAt": "2026-10-31T12:00:00.000Z",
+    "mustChangePassword": true,
+    "passwordChangedAt": "2026-10-31T12:00:00.000Z",
+    "resetSentAt": null,
     "lastLoginAt": null,
     "lastLoginIp": null,
     "activeSessions": 0,
@@ -26,6 +26,7 @@
     },
     "suspendedAt": null,
     "suspendedReason": null,
-    "suspendedBy": null
+    "suspendedBy": null,
+    "temporaryPassword": "D6pxdPmyxRmXK7"
   }
 }

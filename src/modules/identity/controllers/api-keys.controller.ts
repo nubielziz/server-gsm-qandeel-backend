@@ -1,5 +1,5 @@
-// HTTP controllers of the API key routes (map domain A, stage 7): the merchant's own keys under /client/api-keys (B155) and the
-// staff's view and revocation under /admin. Thin; the rules live in MerchantApiKeyService and ApiKeyAdminService.
+// HTTP controllers of the API key routes (map domain A, stage 7): the own keys of an account of a merchant rank under /client/api-keys
+// (B155) and the staff's view and revocation under /admin. Thin; the rules live in MerchantApiKeyService and ApiKeyAdminService.
 import { Body, Controller, Header, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
 import { ApiKeyAdminService } from '../application/api-key-admin.service';
@@ -14,8 +14,9 @@ import {
   portalRevokeApiKey,
   portalUpdateApiKey,
 } from '../contracts/api-keys.contracts';
-import { CurrentMerchant, CurrentStaff } from '../security/access-state';
-import type { MerchantPrincipal, StaffPrincipal } from '../security/principal';
+import { type AccountPrincipal, CurrentAccount } from '../ports/account-principal';
+import { CurrentStaff } from '../security/access-state';
+import type { StaffPrincipal } from '../security/principal';
 
 /**
  * The merchant portal's API key routes.
@@ -42,7 +43,7 @@ export class MerchantApiKeysController {
    */
   @Route(portalListApiKeys)
   list(
-    @CurrentMerchant() merchant: MerchantPrincipal,
+    @CurrentAccount() merchant: AccountPrincipal,
     @Query() query: QueryOf<typeof portalListApiKeys>,
   ): Promise<ResultOf<typeof portalListApiKeys>> {
     return this.keys.list(merchant, { offset: query.range.start, limit: query.range.limit, sort: query.sort });
@@ -59,7 +60,7 @@ export class MerchantApiKeysController {
   @Route(portalCreateApiKey)
   @Header('Cache-Control', 'no-store')
   create(
-    @CurrentMerchant() merchant: MerchantPrincipal,
+    @CurrentAccount() merchant: AccountPrincipal,
     @Body() body: BodyOf<typeof portalCreateApiKey>,
   ): Promise<ResultOf<typeof portalCreateApiKey>> {
     return this.keys.create(merchant, body);
@@ -76,7 +77,7 @@ export class MerchantApiKeysController {
    */
   @Route(portalUpdateApiKey)
   update(
-    @CurrentMerchant() merchant: MerchantPrincipal,
+    @CurrentAccount() merchant: AccountPrincipal,
     @Param() params: ParamsOf<typeof portalUpdateApiKey>,
     @Body() body: BodyOf<typeof portalUpdateApiKey>,
   ): Promise<ResultOf<typeof portalUpdateApiKey>> {
@@ -93,7 +94,7 @@ export class MerchantApiKeysController {
    */
   @Route(portalRevokeApiKey)
   revoke(
-    @CurrentMerchant() merchant: MerchantPrincipal,
+    @CurrentAccount() merchant: AccountPrincipal,
     @Param() params: ParamsOf<typeof portalRevokeApiKey>,
   ): Promise<void> {
     return this.keys.revoke(merchant, params.id);

@@ -1,5 +1,6 @@
 // Route contracts of the live event streams (decision 037; routes beyond the map, scripts/map-additions/27.mjs): one SSE route per
-// signed-in surface. The events are documented in docs/contract/realtime-events.md.
+// signed-in surface. The events are documented in docs/contract/realtime-events.md. An account's stream is one stream of the person (decision
+// 064): the merchant route serves the merchant ranks, the store route the retail rank, and both name the viewer `account`.
 import { z } from 'zod';
 import { defineRoute } from '../../../common/contract';
 
@@ -19,7 +20,7 @@ const zStreamHeaders = z.object({
 });
 
 const DESCRIPTION =
-  'A server-sent event stream (`text/event-stream`) of the signed-in person: `ready` first, `hb` every 15 seconds, ' +
+  'A server-sent event stream (`text/event-stream`) of the signed-in person (a staff member or an account): `ready` first, `hb` every 15 seconds, ' +
   '`notification.created`, `notification.read`, `unread.changed`, `resync` and `bye`; the data of every event is one line of ' +
   'JSON (docs/contract/realtime-events.md). A reconnect sends the last event id back (`Last-Event-ID`, or `cursor`) and gets ' +
   'what it missed, at most 50 items, else `resync`. At most 3 streams per session and 30 per address (429 for the next one), ' +
@@ -48,7 +49,7 @@ export const adminStream = defineRoute({
   errors: ['UNAUTHORIZED', 'CSRF_FAILED', 'VALIDATION_FAILED', 'RATE_LIMITED', 'UNAVAILABLE'],
 });
 
-/** `GET /client/stream`: the live events of the signed-in merchant (also while still pending approval). */
+/** `GET /client/stream`: the live events of the signed-in merchant. */
 export const clientStream = defineRoute({
   ...STREAM,
   key: 'GET /client/stream',
@@ -60,7 +61,7 @@ export const clientStream = defineRoute({
   errors: ['UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'CSRF_FAILED', 'VALIDATION_FAILED', 'RATE_LIMITED', 'UNAVAILABLE'],
 });
 
-/** `GET /store/v1/me/stream`: the live events of the signed-in customer. */
+/** `GET /store/v1/me/stream`: the live events of the signed-in retail account. */
 export const customerStream = defineRoute({
   ...STREAM,
   key: 'GET /store/v1/me/stream',

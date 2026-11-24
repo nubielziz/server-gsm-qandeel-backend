@@ -5,9 +5,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { and, eq, inArray } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
+import { openAccountSession } from '../../support/account-sessions';
+import { makeAccount } from '../../support/accounts';
 import { adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
-import { clearIdentityCaches, insertMerchant } from '../../support/auth';
+import { clearIdentityCaches } from '../../support/auth';
 import {
   FakeGateway,
   GatewayTestModule,
@@ -22,6 +24,7 @@ import { pgErrorInfo } from '@src/infra/db';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertWalletMerchant } from '../../support/money';
 import { portalFor } from '../../support/portal-orders';
+import { PORTAL_ORIGIN } from '../../support/merchant-portal';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
 const fake = new FakeGateway();
@@ -140,9 +143,25 @@ describe('GET /client/payment-methods', () => {
     expect(JSON.stringify(res.body)).not.toMatch(/secret|config|webhook|allowedGroupIds/i);
   });
 
-  it('refuses a merchant that waits for approval', async () => {
-    const pending = await portalFor(t, await insertMerchant(db, { status: 'pending' }));
-    expect((await pending.call('GET', '/client/payment-methods')).body.code).toBe('ACCOUNT_PENDING_APPROVAL');
+  it('refuses an account of the retail rank on every billing route (decision 064)', async () => {
+    const retail = await makeAccount({ rank: 'retail' });
+    const session = await openAccountSession(t, retail.id);
+    const call = (method: 'GET' | 'POST', url: string, payload?: unknown) =>
+      t.app.inject({
+        method,
+        url,
+        headers: { ...(method === 'GET' ? session.headers : session.mutationHeaders), origin: PORTAL_ORIGIN },
+        ...(payload === undefined ? {} : { payload: payload as never }),
+      });
+    for (const res of [
+      await call('GET', '/client/payment-methods'),
+      await call('GET', '/client/invoices'),
+      await call('POST', '/client/invoices', { amount: '100', gatewayId: 1 }),
+    ]) {
+      expect(res.statusCode).toBe(403);
+      expect(res.json().code).toBe('RANK_NOT_ALLOWED');
+    }
+    expect(await db.select().from(s.invoices)).toHaveLength(0);
   });
 });
 
@@ -169,7 +188,9 @@ describe('POST /client/invoices', () => {
     });
     expect(res.body.paymentUrl).toBeUndefined();
     const [row] = await db.select().from(s.invoices).where(eq(s.invoices.id, res.body.invoice.id));
-    expect(row).toMatchObject({ clientId: id, taxCountry: 'JO' });
+    // The owner is the account; the wallet kind says which wallet it fills; the old column repeats the account while it lasts.
+    expect(row).toMatchObject({ accountId: id, walletKind: 'client_wallet', legacyClientId: id, taxCountry: 'JO' });
+    expect(row!.idempotencyKey).toBeNull();
     expect(row!.number).toBe(`INV-2026-${String(row!.id).padStart(4, '0')}`);
     // A portal write writes no audit row (B121) and no ledger entry.
     expect(await db.select().from(s.auditLogs)).toHaveLength(0);
@@ -190,6 +211,9 @@ describe('POST /client/invoices', () => {
     const form = new URLSearchParams(request!.body);
     expect(form.get('client_reference_id')).toBe(res.body.invoice.number);
     expect(form.get('line_items[0][price_data][unit_amount]')).toBe('10000');
+    // The buyer comes back to the wallet page of the account area (PORTAL_BASE_URL is that area's address, decision 064).
+    expect(form.get('success_url')).toBe(`${t.config.http.portalBaseUrl}/wallet`);
+    expect(form.get('success_url')).toBe('http://localhost:5175/account/wallet');
     const detail = await portal.call('GET', `/client/invoices/${res.body.invoice.id}`);
     expect(detail.body.paymentUrl).toBe(res.body.paymentUrl);
   });
@@ -577,18 +601,16 @@ describe('POST /client/invoices/:id/receipt', () => {
 });
 
 describe('GET /client/invoices', () => {
-  it('lists only the merchant own invoices without receipts, with filters, sorts and the exact total', async () => {
+  it('lists only the account own invoices without receipts or store top-ups, with filters, sorts and the exact total', async () => {
     const { portal, id } = await merchant();
     const other = await merchant();
     const gatewayId = await bank();
     const a = await insertInvoiceRow(db, id, { amount: '100.0000', gatewayId });
     await insertInvoiceRow(db, id, { amount: '300.0000', status: 'paid', paidAt: clock.now(), kind: 'manual' });
     await insertInvoiceRow(db, other.id, { amount: '999.0000' });
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: 'c@example.com' })
-      .returning({ id: s.customers.id });
-    await insertInvoiceRow(db, id, { kind: 'receipt', customerId: customer!.id, amount: '5.0000' });
+    // A receipt, and a store top-up the account made when it was a retail account, are not in the merchant's list.
+    await insertInvoiceRow(db, id, { kind: 'receipt', amount: '5.0000' });
+    await insertInvoiceRow(db, id, { walletKind: 'customer_wallet', amount: '7.0000', status: 'paid' });
     const all = await portal.call('GET', '/client/invoices?_sort=total&_order=desc');
     expect(all.status).toBe(200);
     expect(all.total).toBe(2);
@@ -608,12 +630,15 @@ describe('GET /client/invoices', () => {
     const theirs = await insertInvoiceRow(db, other.id, { gatewayId });
     await insertPendingPayment(db, theirs, gatewayId);
     expect((await portal.call('GET', `/client/invoices/${theirs.id}`)).status).toBe(404);
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: 'c@example.com' })
-      .returning({ id: s.customers.id });
-    const receipt = await insertInvoiceRow(db, id, { kind: 'receipt', customerId: customer!.id });
+    const receipt = await insertInvoiceRow(db, id, { kind: 'receipt' });
     expect((await portal.call('GET', `/client/invoices/${receipt.id}`)).status).toBe(404);
+    // A store top-up the account made as a retail account is not a merchant invoice: neither read nor receipt reaches it.
+    const store = await insertInvoiceRow(db, id, { walletKind: 'customer_wallet', gatewayId });
+    expect((await portal.call('GET', `/client/invoices/${store.id}`)).status).toBe(404);
+    expect(
+      (await portal.call('POST', `/client/invoices/${store.id}/receipt`, { fileId: await insertProofFile(db, id) }))
+        .status,
+    ).toBe(404);
     expect((await portal.call('GET', '/client/invoices/99999')).status).toBe(404);
   });
 });

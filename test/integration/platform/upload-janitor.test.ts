@@ -67,7 +67,7 @@ async function storedFile(overrides: Partial<typeof s.files.$inferInsert> = {}) 
       mime: 'application/pdf',
       size: object.size,
       sha256: object.sha256,
-      ownerType: 'client',
+      ownerType: 'account',
       ownerId: 1,
       createdAt: clock.now(),
       updatedAt: clock.now(),
@@ -117,7 +117,7 @@ describe('the upload janitor', () => {
     await insertOrderRow(db, { serviceId, clientId: merchant.id, inputFileId: used.order.id });
     const ticket = await insertSupportTicket(db, { requesterId: customer.id });
     await insertSupportMessage(db, ticket.id, {
-      authorType: 'customer',
+      authorType: 'account',
       authorId: customer.id,
       fileIds: [used.ticket.id],
     });
@@ -127,6 +127,7 @@ describe('the upload janitor', () => {
     const payment = await insertPendingPayment(db, invoice, gatewayId, { receiptFileId: used.payment.id });
     await db.insert(s.disputes).values({
       paymentId: payment.id,
+      accountId: customer.id,
       gatewayDisputeId: 'dp_evidence',
       reasonCode: 'fraudulent',
       amount: '10.0000',
@@ -177,7 +178,7 @@ describe('the upload janitor', () => {
         mime: 'application/pdf',
         size: 1,
         sha256: 'a'.repeat(64),
-        ownerType: 'client',
+        ownerType: 'account' as const,
         ownerId: 1,
         createdAt: clock.now(),
         updatedAt: clock.now(),

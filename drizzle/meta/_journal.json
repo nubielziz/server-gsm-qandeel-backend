@@ -463,6 +463,20 @@
       "when": 1795480462211,
       "tag": "0065_retired_features",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1795491496004,
+      "tag": "0066_accounts_expand",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1795492360644,
+      "tag": "0067_account_permissions",
+      "breakpoints": true
     }
   ]
 }

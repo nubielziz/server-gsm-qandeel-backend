@@ -1,12 +1,9 @@
-// HTTP controller of the merchant portal's sign-in routes (map domain A, /client/auth/*, stage 2). Thin: it reads the request,
-// calls the use case and sets the cookies and headers; the rules live in the application services.
+// HTTP controller of the sign-in routes `/client/auth/*` (map domain A, stage 2; decision 064). Thin: it reads the request, calls the use
+// case through its port and sets the cookies and headers; the rules live in the application services behind the ports.
 import { Body, Controller, Header, Req, Res } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { type BodyOf, type ResultOf, Route } from '../../../common/contract';
-import { type MerchantMe, MerchantAccountService } from '../application/merchant-account.service';
-import { MerchantEmailVerificationService } from '../application/merchant-email-verification.service';
-import { MerchantPasswordService } from '../application/merchant-password.service';
-import { MerchantSignInService } from '../application/merchant-sign-in.service';
+import { MerchantAccountService } from '../application/merchant-account.service';
 import { requestMetaOf } from '../application/request-meta';
 import {
   merchantForgotPassword,
@@ -19,29 +16,16 @@ import {
   merchantVerifyEmail,
   merchantVerifyTwoFactor,
 } from '../contracts/merchant-auth.contracts';
-import { CurrentMerchant } from '../security/access-state';
+import { AccountEmailVerification, AccountSignIn } from '../ports/account-auth';
+import { CurrentAccount, type AccountPrincipal } from '../ports/account-principal';
 import { CSRF_HEADER, CsrfService } from '../security/csrf';
-import type { MerchantPrincipal } from '../security/principal';
-import { SessionCookies } from '../security/session-cookies';
 
 /**
- * Serialises a merchant for the wire.
+ * The sign-in routes of the `/client/auth` family.
  *
- * Why: the use cases return `Date`s; the contract's `IsoDateTime` is text.
- *
- * @param me the merchant as the account service describes it
- * @returns the body of `Me`
- */
-export function wireMe(me: MerchantMe): ResultOf<typeof merchantMe> {
-  return { ...me, emailVerifiedAt: me.emailVerifiedAt?.toISOString() ?? null, createdAt: me.createdAt.toISOString() };
-}
-
-/**
- * The merchant portal's sign-in routes.
- *
- * Why: the portal verifies the email, signs in (with an optional authenticator code), recovers a forgotten password
- * and shows the merchant's own account (B121 to B129). Every answer carries `Cache-Control: no-store`: these responses hold
- * cookies, tokens or personal data.
+ * Why: one sign-in, one code step, one sign-out, one forced password change and one set of password links serve every account (decision
+ * 064); the portal and the shop call these routes. The controller calls the ports (`AccountSignIn`, `AccountEmailVerification`), never the
+ * services behind them. Every answer carries `Cache-Control: no-store`: these responses hold cookies, tokens or personal data.
  *
  * @route POST /client/auth/verify-email
  * @route POST /client/auth/login
@@ -56,11 +40,9 @@ export function wireMe(me: MerchantMe): ResultOf<typeof merchantMe> {
 @Controller()
 export class MerchantAuthController {
   constructor(
-    private readonly emailVerification: MerchantEmailVerificationService,
-    private readonly signIn: MerchantSignInService,
-    private readonly passwords: MerchantPasswordService,
+    private readonly emailVerification: AccountEmailVerification,
+    private readonly signIn: AccountSignIn,
     private readonly account: MerchantAccountService,
-    private readonly cookies: SessionCookies,
     private readonly csrf: CsrfService,
   ) {}
 
@@ -68,17 +50,17 @@ export class MerchantAuthController {
    * Verifies the email address with the emailed token.
    *
    * @param body the token
-   * @param request the request (a merchant session cookie on it is read)
+   * @param request the request (a session cookie on it is read)
    * @route POST /client/auth/verify-email
    */
   @Route(merchantVerifyEmail)
   @Header('Cache-Control', 'no-store')
   async verifyEmail(@Body() body: BodyOf<typeof merchantVerifyEmail>, @Req() request: FastifyRequest): Promise<void> {
-    await this.emailVerification.verifyEmail(body.token, request, requestMetaOf(request));
+    await this.emailVerification.verify(body.token, request, requestMetaOf(request));
   }
 
   /**
-   * Signs in with email and password.
+   * Signs in with email and password (the alias of `POST /client/auth/sign-in` that answers the next step only).
    *
    * @param body the credentials
    * @param request the request (a stale session cookie on it is ended)
@@ -93,19 +75,14 @@ export class MerchantAuthController {
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof merchantLogin>> {
-    const { next, session } = await this.signIn.login(
-      body,
-      requestMetaOf(request),
-      this.cookies.readToken(request, 'client'),
-    );
-    this.cookies.set(reply, 'client', session.token, session.session.expiresAt);
+    const { next } = await this.signIn.signIn(body, request, reply);
     return { next };
   }
 
   /**
    * Completes the sign-in with an authenticator code.
    *
-   * @param merchant the pending session's merchant
+   * @param account the pending session's account
    * @param body the code
    * @param request the request
    * @param reply the reply, to set the full session's cookies and the CSRF header
@@ -114,36 +91,34 @@ export class MerchantAuthController {
   @Route(merchantVerifyTwoFactor)
   @Header('Cache-Control', 'no-store')
   async verifyTwoFactor(
-    @CurrentMerchant() merchant: MerchantPrincipal,
+    @CurrentAccount() account: AccountPrincipal,
     @Body() body: BodyOf<typeof merchantVerifyTwoFactor>,
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<void> {
-    const issued = await this.signIn.verifyTwoFactor(merchant, body.code, requestMetaOf(request));
-    this.cookies.set(reply, 'client', issued.token, issued.session.expiresAt);
+    await this.signIn.finishCodeStep(account, body.code, request, reply);
   }
 
   /**
    * Signs out.
    *
-   * @param merchant the session's merchant
-   * @param reply the reply, to clear both cookies
+   * @param account the session's account
+   * @param reply the reply, to clear the cookies
    * @route POST /client/auth/logout
    */
   @Route(merchantLogout)
   @Header('Cache-Control', 'no-store')
   async logout(
-    @CurrentMerchant() merchant: MerchantPrincipal,
+    @CurrentAccount() account: AccountPrincipal,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<void> {
-    await this.signIn.logout(merchant);
-    this.cookies.clear(reply, 'client');
+    await this.signIn.signOut(account, reply);
   }
 
   /**
    * Replaces a temporary password during the sign-in and continues it.
    *
-   * @param merchant the `pending_password` session's merchant
+   * @param account the `pending_password` session's account
    * @param body the new password
    * @param request the request
    * @param reply the reply, to set the rotated session's cookies and the CSRF header
@@ -153,30 +128,26 @@ export class MerchantAuthController {
   @Route(merchantChangeTemporaryPassword)
   @Header('Cache-Control', 'no-store')
   async changeTemporaryPassword(
-    @CurrentMerchant() merchant: MerchantPrincipal,
+    @CurrentAccount() account: AccountPrincipal,
     @Body() body: BodyOf<typeof merchantChangeTemporaryPassword>,
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof merchantChangeTemporaryPassword>> {
-    const { next, session } = await this.passwords.changeForced(merchant, body.password, requestMetaOf(request));
-    this.cookies.set(reply, 'client', session.token, session.session.expiresAt);
+    const { next } = await this.signIn.changeForcedPassword(account, body.password, request, reply);
     return { next };
   }
 
   /**
-   * Sends the signed-in merchant a new verification email.
+   * Sends the signed-in account a new verification email.
    *
-   * @param merchant the session's merchant
+   * @param account the session's account
    * @param request the request
    * @route POST /client/auth/verify-email/resend
    */
   @Route(merchantResendVerification)
   @Header('Cache-Control', 'no-store')
-  async resendVerification(
-    @CurrentMerchant() merchant: MerchantPrincipal,
-    @Req() request: FastifyRequest,
-  ): Promise<void> {
-    await this.emailVerification.resendVerification(merchant, requestMetaOf(request));
+  async resendVerification(@CurrentAccount() account: AccountPrincipal, @Req() request: FastifyRequest): Promise<void> {
+    await this.emailVerification.resend(account, requestMetaOf(request));
   }
 
   /**
@@ -192,7 +163,7 @@ export class MerchantAuthController {
     @Body() body: BodyOf<typeof merchantForgotPassword>,
     @Req() request: FastifyRequest,
   ): Promise<void> {
-    await this.passwords.forgot(body.email, requestMetaOf(request));
+    await this.signIn.forgotPassword(body.email, requestMetaOf(request));
   }
 
   /**
@@ -208,26 +179,26 @@ export class MerchantAuthController {
     @Body() body: BodyOf<typeof merchantResetPassword>,
     @Req() request: FastifyRequest,
   ): Promise<void> {
-    await this.passwords.reset(body, requestMetaOf(request));
+    await this.signIn.resetPassword(body, requestMetaOf(request));
   }
 
   /**
-   * Describes the signed-in merchant.
+   * Describes the signed-in account.
    *
-   * @param merchant the full session's merchant
+   * @param account the full session's account
    * @param reply the reply, to repeat the CSRF token in `X-CSRF-Token`
-   * @returns the merchant, its status and its group
+   * @returns the account and its rank (`AccountMe`)
    * @route GET /client/auth/me
    */
   @Route(merchantMe)
   @Header('Cache-Control', 'no-store')
   async me(
-    @CurrentMerchant() merchant: MerchantPrincipal,
+    @CurrentAccount() account: AccountPrincipal,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof merchantMe>> {
-    const me = await this.account.me(merchant);
+    const me = await this.account.me(account);
     // After a reload a cross-site portal can only recover the token from a response header.
-    void reply.header(CSRF_HEADER, this.csrf.tokenFor(merchant.session.tokenHash));
-    return wireMe(me);
+    void reply.header(CSRF_HEADER, this.csrf.tokenFor(account.session.tokenHash));
+    return me;
   }
 }

@@ -8,7 +8,7 @@ codes internally. Client-only codes of the console (NETWORK_ERROR, INVALID_RESPO
 emitted. **Session-ending codes** (401 UNAUTHORIZED, 403 ACCOUNT_SUSPENDED, 403 IP_NOT_ALLOWED) are only ever about
 the caller. Titles are fixed English sentences written with the catalog in Phase 2.
 
-118 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
+122 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
 console shows through their title and detail.
 
 | Code | Status | Meaning | Routes | Frontend |
@@ -23,6 +23,7 @@ console shows through their title and detail.
 | CSRF_FAILED | 403 | A mutation with a session but a missing or mismatched X-CSRF-Token. | `POST /admin/auth/2fa`, `POST /admin/auth/2fa/setup`, `POST /admin/auth/logout` | yes |
 | FORBIDDEN | 403 | Signed in but the role lacks the permission; detail should name it ("You need the x:y permission"). | `GET /admin/staff`, `GET /admin/staff/:id`, `POST /admin/staff` +234 | yes |
 | IP_NOT_ALLOWED | 403 | The caller's IP is blocked (scope admin\|all) or not allowlisted while the console restriction is on; decided before authentication on every /admin route incl. login. Never use it for IP-rule validation errors. | `POST /admin/auth/login`, `GET /admin/auth/me` | yes |
+| RANK_NOT_ALLOWED | 403 | The account has a rank that this route does not serve (a merchant route needs a merchant rank, a shop route the retail rank); it never signs the caller out. | any |  |
 | TURNSTILE_FAILED | 403 | The anti-bot check (Turnstile) failed or is missing: a storefront write or a public merchant sign-in form. | any |  |
 | NOT_FOUND | 404 | No record with this id (also unknown routes). | `GET /admin/staff/:id`, `PATCH /admin/staff/:id`, `POST /admin/staff/:id/password` +142 | yes |
 | ACCOUNT_EXISTS | 409 | POST /admin/customers/:id/account for a customer who already has an account. | `POST /admin/customers/:id/account` | yes |
@@ -84,6 +85,8 @@ console shows through their title and detail.
 | PAYMENT_AUTO_CREDIT_PENDING | 409 | the gateway is automatic and review_required is false: the payment is credited by the auto-credit job (detail 'PAY-<id> is credited automatically after the gateway check.') | `POST /admin/payments/:id/approve`, `POST /admin/payments/:id/reject` |  |
 | PRICE_CHANGED | 409 | The charged price is more than the tolerance above the price the merchant was last listed (B117); the Dhru surface answers "Price changed. Please refresh the service list and order again.". | any |  |
 | PRICE_EXISTS | 409 | POST /admin/client-prices for a merchant/service that already has one. | `POST /admin/client-prices` | yes |
+| RANK_CHANGE_BLOCKED | 409 | POST /admin/clients/:id/rank refused: a blocker is open (errors[] names each one); nothing was changed. | any |  |
+| RANK_CHANGED | 409 | POST /admin/orders/:id/reopen refused: the account is no longer a merchant rank, so the hold cannot be reopened; refund the order instead. | any |  |
 | RECONCILE_RUNNING | 409 | a run is already in progress (FinancePage.test.tsx:240-262 uses code CONFLICT) | `POST /admin/ledger/reconcile` |  |
 | REFUND_NOT_FAILED | 409 | POST /admin/refunds/:id/retry on a refund that did not fail. | `POST /admin/refunds/:id/retry` | yes |
 | REFUND_NOT_PENDING | 409 | Approve/decline on a refund no longer waiting. | `POST /admin/refunds/:id/approve`, `POST /admin/refunds/:id/decline` | yes |
@@ -110,7 +113,8 @@ console shows through their title and detail.
 | USE_REFUNDS | 409 | Order refund action on a storefront order (refunds go through /admin/refunds). | `POST /admin/orders/:id/refund`, `POST /admin/orders/:id/reject` | yes |
 | VERSION_EXISTS | 409 | POST /admin/legal-documents with a version already present. | `POST /admin/legal-documents` | yes |
 | WALLET_DISABLED | 409 | A customer top-up or balance payment refused: the store balance is switched off (setting wallet.customer.enabled; feature 21). | any |  |
-| WALLET_FROZEN | 409 | Paying from the customer store balance (or a card top-up) refused: the wallet is on hold (staff freeze or a top-up dispute; feature 21). | any |  |
+| WALLET_FROZEN | 409 | A new hold or a payment from the wallet, or a card top-up, is refused: the wallet is on hold (staff freeze or a top-up dispute). | any |  |
+| ROUTE_RETIRED | 410 | The route stays registered but was retired with the one account type; use the account routes. | any |  |
 | TOKEN_INVALID | 410 | Invite/reset token unknown, expired, already used or superseded. | `POST /admin/auth/password/set` | yes |
 | PAYLOAD_TOO_LARGE | 413 | The request body is over the route limit. | any |  |
 | UNSUPPORTED_MEDIA_TYPE | 415 | The request body type is not accepted by the route. | any |  |

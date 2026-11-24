@@ -1,4 +1,4 @@
-// RefundViews: turns stored refunds into the rows the console's Refunds page reads (feature 16): the customer, the order and the payment as
+// RefundViews: turns stored refunds into the rows the console's Refunds page reads (feature 16): the buyer account, the order and the payment as
 // joined summaries, the amounts in USD, and the revenue and VAT parts of the posted journal.
 import { Injectable } from '@nestjs/common';
 import type { ResultOf } from '../../../common/contract';
@@ -8,7 +8,7 @@ import type { DbExecutor } from '../../../infra/db';
 import type { Refund } from '../db/schema';
 import { storedOrderMethod, wireUsd } from '../domain/b2c-money';
 import { ledgerPartsOf, ledgerTxIdsByKeys, loadOrderFacts, loadSessionMoney } from '../infra/b2c-reads.repository';
-import { loadActorNames, loadBillingCustomers, ownerKey } from '../infra/foreign-directory.repository';
+import { loadActorNames, loadBillingMerchants, ownerKey } from '../infra/foreign-directory.repository';
 import { loadOrderPayments } from '../infra/order-payment.repository';
 import type { getRefund } from '../contracts/refunds.contracts';
 
@@ -18,7 +18,7 @@ export type WireRefund = ResultOf<typeof getRefund>;
 /**
  * Builds the wire rows of refunds.
  *
- * Why: RESOLUTIONS money-4 and money-12: the row joins the customer, the order (delivered when it completed, its supplier cost) and the
+ * Why: RESOLUTIONS money-4 and money-12: the row joins the buyer account (the wire key stays `customer`: decision 064), the order (delivered when it completed, its supplier cost) and the
  * payment (method, brand, USD amount, the VAT of the whole payment from its own journal), shows `note` as null when empty, and reads
  * `netAmount` and `taxAmount` from the refund's posted journal. Money is USD at the checkout's locked rate (B111); a refund whose
  * journal exists shows the journal's gateway amount, so a refund that closed a payment shows exactly what was posted.
@@ -44,9 +44,9 @@ export class RefundViews {
     );
     const orders = await loadOrderFacts(db, orderIds);
     const sessions = await loadSessionMoney(db, orderIds);
-    const customers = await loadBillingCustomers(
+    const accounts = await loadBillingMerchants(
       db,
-      refunds.flatMap((refund) => (refund.customerId === null ? [] : [refund.customerId])),
+      refunds.flatMap((refund) => (refund.accountId === null ? [] : [refund.accountId])),
     );
     const journalIds = await ledgerTxIdsByKeys(
       db,
@@ -76,7 +76,7 @@ export class RefundViews {
       const posted = refund.ledgerTxId === null ? undefined : parts.get(refund.ledgerTxId);
       const paymentJournal =
         payment === undefined ? undefined : parts.get(journalIds.get(`payment:${payment.id}:capture`) ?? 0);
-      const customer = refund.customerId === null ? undefined : customers.get(refund.customerId);
+      const account = refund.accountId === null ? undefined : accounts.get(refund.accountId);
       const requestedName =
         refund.requestedByType === 'staff' && refund.requestedById !== null
           ? (names.get(ownerKey('staff', refund.requestedById)) ?? null)
@@ -106,8 +106,8 @@ export class RefundViews {
           refund.approvedBy === null
             ? null
             : { id: refund.approvedBy, name: names.get(ownerKey('staff', refund.approvedBy)) ?? '' },
-        // Decision 047, rule B: a customer without a name is labelled by the masked address, for every caller.
-        customer: customer ? { id: customer.id, name: customerNameForStaff(customer.name, customer.email) } : null,
+        // Decision 047, rule B: an account without a name is labelled by the masked address, for every caller.
+        customer: account ? { id: account.id, name: customerNameForStaff(account.name, account.email) } : null,
         order: {
           id: refund.orderId ?? 0,
           deliveredAt: order?.status === 'completed' && order.completedAt ? order.completedAt.toISOString() : null,

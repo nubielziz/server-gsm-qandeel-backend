@@ -6,6 +6,7 @@ import {
   CRYPTO_REFUND_NOTE,
   MANUAL_REFUND_NOTE,
   NOTHING_LEFT_MESSAGE,
+  b2cWalletRefundPosting,
   checkApproval,
   closesAtChargeback,
   REFUND_RESEND_WINDOW_MS,
@@ -182,5 +183,65 @@ describe('resendNeedsGatewayCheck', () => {
   it('is true after that: the gateway may have forgotten the key and could refund again', () => {
     expect(resendNeedsGatewayCheck(sent, after(REFUND_RESEND_WINDOW_MS + 1))).toBe(true);
     expect(resendNeedsGatewayCheck(sent, after(25 * 60 * 60_000))).toBe(true);
+  });
+});
+
+/** The lines of a posting as `debit`/`credit` words: kind, owner and the amount on its side. */
+const linesOf = (
+  lines: ReadonlyArray<{
+    account: { kind: string; ownerType?: string; ownerId?: number };
+    debit: Money;
+    credit: Money;
+  }>,
+) =>
+  lines.map((line) => ({
+    account:
+      line.account.ownerType === undefined
+        ? line.account.kind
+        : `${line.account.kind}:${line.account.ownerType}:${line.account.ownerId}`,
+    debit: line.debit.toWire(),
+    credit: line.credit.toWire(),
+  }));
+
+describe('b2cWalletRefundPosting (decision 064)', () => {
+  const input = { accountId: 7, net: m('3.99'), vat: m('0.80') };
+
+  it('credits the store balance of the account when that is its live wallet, from customer funds before delivery', () => {
+    const posting = b2cWalletRefundPosting({ wallet: 'customer_wallet', ...input });
+    expect(posting).toMatchObject({ event: 'b2c_wallet_refund', kind: 'refund', refType: 'order' });
+    expect(linesOf(posting.lines)).toEqual([
+      { account: 'customer_funds', debit: '3.9900', credit: '0.0000' },
+      { account: 'vat_payable', debit: '0.8000', credit: '0.0000' },
+      { account: 'customer_wallet:account:7', debit: '0.0000', credit: '4.7900' },
+    ]);
+  });
+
+  it('credits the merchant wallet when the account holds a merchant rank now, from revenue after delivery', () => {
+    const posting = b2cWalletRefundPosting({ wallet: 'client_wallet', ...input, from: 'revenue' });
+    expect(linesOf(posting.lines)).toEqual([
+      { account: 'revenue', debit: '3.9900', credit: '0.0000' },
+      { account: 'vat_payable', debit: '0.8000', credit: '0.0000' },
+      { account: 'client_wallet:account:7', debit: '0.0000', credit: '4.7900' },
+    ]);
+  });
+
+  it('always posts balanced lines and names the owner with the one word account, never the inactive wallet', () => {
+    for (const wallet of ['client_wallet', 'customer_wallet'] as const) {
+      const posting = b2cWalletRefundPosting({ wallet, ...input });
+      const debit = posting.lines.reduce((sum, line) => sum.add(line.debit), Money.zero());
+      const credit = posting.lines.reduce((sum, line) => sum.add(line.credit), Money.zero());
+      expect(debit.toWire()).toBe(credit.toWire());
+      const walletLines = posting.lines.filter((line) => line.account.kind.endsWith('_wallet'));
+      expect(walletLines.map((line) => line.account.kind)).toEqual([wallet]);
+      expect(walletLines.every((line) => line.account.ownerType === 'account')).toBe(true);
+    }
+  });
+
+  it('leaves out a zero VAT line, and refuses a negative amount', () => {
+    const noVat = b2cWalletRefundPosting({ wallet: 'customer_wallet', accountId: 7, net: m('2'), vat: m('0') });
+    expect(noVat.lines.map((line) => line.account.kind)).toEqual(['customer_funds', 'customer_wallet']);
+    expect(() =>
+      b2cWalletRefundPosting({ wallet: 'customer_wallet', accountId: 7, net: m('-1'), vat: m('0') }),
+    ).toThrow(RangeError);
   });
 });

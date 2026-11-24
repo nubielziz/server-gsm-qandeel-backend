@@ -1,6 +1,6 @@
-// CustomerWalletPayments: the money side of paying a storefront checkout from the customer's store balance (feature 21, plan § 5.6.6). The
-// customers module orchestrates the checkout and calls it inside its transaction; this service records the payment, posts `b2c_wallet_pay`
-// and issues the receipt.
+// CustomerWalletPayments: the money side of paying a storefront checkout from the account's store balance (feature 21, plan § 5.6.6,
+// decision 064). The customers module orchestrates the checkout and calls it inside its transaction; this service records the payment, posts
+// `b2c_wallet_pay` and issues the receipt.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
@@ -46,7 +46,8 @@ export type BalancePaymentReplay =
       readonly kind: 'balance';
       readonly payment: BalancePaymentView;
       readonly orderId: number;
-      readonly customerId: number;
+      /** The account that paid. */
+      readonly accountId: number;
     }
   | { readonly kind: 'other' };
 
@@ -55,8 +56,8 @@ export interface BalancePaymentInput {
   readonly sessionId: number;
   /** The `Idempotency-Key` of the call. */
   readonly key: string;
-  /** The signed-in customer (from the session cookie, never from the checkout row alone). */
-  readonly customerId: number;
+  /** The signed-in account of the retail rank (from the session cookie, never from the checkout row alone). */
+  readonly accountId: number;
   /** The order the placement just inserted. */
   readonly order: CapturedOrder;
   /** What the checkout locked. */
@@ -64,14 +65,15 @@ export interface BalancePaymentInput {
 }
 
 /**
- * Records payments from the customer's store balance.
+ * Records payments from the account's store balance.
  *
  * Why: plan 21 § 5.6.6 (R4, R10, K1, K4): the balance pays a checkout the way a card capture does, in one transaction with the order. The
  * payment row (`method_type 'balance'`, no gateway, `captured`, the checkout's currency and gross so every refund path works unchanged) is
- * unique per checkout and per `Idempotency-Key`; the journal `b2c_wallet_pay` (Dr customer_wallet / Cr customer_funds / Cr vat_payable, key
- * `payment:<id>:capture`) is guarded under the wallet's row lock: a balance can never go below zero, so parallel payments never overspend.
- * A frozen wallet is refused from the state read under that same lock. The money then sits in `customer_funds` like after a card capture,
- * so delivery, reopen and refunds do not change.
+ * unique per checkout and per `Idempotency-Key`, and carries the buyer's `account_id`; the journal `b2c_wallet_pay` (Dr customer_wallet /
+ * Cr customer_funds / Cr vat_payable, key `payment:<id>:capture`) is guarded under the wallet's row lock and posted by `('account', id)`:
+ * a balance can never go below zero, so parallel payments never overspend. A frozen wallet is refused from the state read under that same
+ * lock. The money then sits in `customer_funds` like after a card capture, so delivery, reopen and refunds do not change. The caller has
+ * read the account's rank kind under the account row lock (decision 064): only a retail account pays from the store balance.
  *
  * Side effects (on the caller's transaction): one `payments` row, one ledger transaction, one receipt `invoices` row and its
  * `receipt.render` outbox row.
@@ -101,13 +103,11 @@ export class CustomerWalletPayments {
   ): Promise<BalancePaymentReplay | undefined> {
     const prior = await findPaymentByKey(tx, sessionId, key);
     if (!prior) return undefined;
-    if (prior.methodType !== 'balance' || prior.orderId === null || prior.customerId === null) {
-      return { kind: 'other' };
-    }
+    if (prior.methodType !== 'balance' || prior.orderId === null) return { kind: 'other' };
     return {
       kind: 'balance',
       orderId: prior.orderId,
-      customerId: prior.customerId,
+      accountId: prior.accountId,
       payment: {
         id: prior.id,
         reference: paymentRef(prior.id),
@@ -121,7 +121,7 @@ export class CustomerWalletPayments {
   }
 
   /**
-   * Pays an order that was just placed from the customer's store balance.
+   * Pays an order that was just placed from the account's store balance.
    *
    * Why: called from the placement's `onInserted`, so any refusal rolls the order, its stock claim and its assessment back with it. The
    * payment keeps the session's currency and gross (every refund path computes "what is left" in the payment currency); the balance moves
@@ -131,14 +131,14 @@ export class CustomerWalletPayments {
    * receipt and queues its PDF, all on `tx`.
    *
    * @param tx the checkout's transaction
-   * @param input the checkout, the key, the customer, the order and what the session locked
+   * @param input the checkout, the key, the account, the order and what the session locked
    * @returns the payment as the route answers it
    * @throws {AppError} `INSUFFICIENT_FUNDS` (402) when the balance does not cover the gross; `WALLET_FROZEN` (409) when the wallet is on hold
    */
   async record(tx: DbExecutor, input: BalancePaymentInput): Promise<BalancePaymentView> {
     const { order, session } = input;
-    if (order.customerId !== input.customerId) {
-      throw new Error(`Order ${order.id} belongs to customer ${order.customerId}, not ${input.customerId}.`);
+    if (order.accountId !== input.accountId) {
+      throw new Error(`Order ${order.id} belongs to account ${order.accountId}, not ${input.accountId}.`);
     }
     const now = this.clock.now();
     const net = Money.of(order.totalPrice);
@@ -149,7 +149,7 @@ export class CustomerWalletPayments {
     await insertOrderPayment(tx, {
       id,
       purpose: 'order',
-      customerId: input.customerId,
+      accountId: input.accountId,
       orderId: order.id,
       checkoutSessionId: input.sessionId,
       idempotencyKey: input.key,
@@ -166,7 +166,7 @@ export class CustomerWalletPayments {
       updatedAt: now,
     });
 
-    const pay = b2cWalletPay({ customerId: input.customerId, net, vat });
+    const pay = b2cWalletPay({ customerId: input.accountId, net, vat });
     const posted = await this.poster.post(tx, {
       kind: pay.kind,
       refType: pay.refType,
@@ -175,7 +175,7 @@ export class CustomerWalletPayments {
       currency: 'USD',
       lines: pay.lines,
       memo: `Payment PAY-${id} for SF-${order.id}`,
-      createdBy: { type: 'customer', id: input.customerId },
+      createdBy: { type: 'account', id: input.accountId },
     });
     // The hold is read under the wallet's row lock the posting took (plan § 5.5): a freeze that committed before this payment is seen.
     if (posted.touched.some((account) => account.kind === 'customer_wallet' && account.frozen)) {

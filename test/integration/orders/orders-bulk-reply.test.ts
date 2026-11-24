@@ -75,13 +75,12 @@ describe('POST /admin/orders/bulk-reply/preview', () => {
     ].join('\r\n');
     const res = await staff.post('/admin/orders/bulk-reply/preview', { text });
     expect(res.status).toBe(200);
-    // A matched line names the buyer and the service of the order it completes; other lines name none.
+    // A matched line names the buyer account and the service of the order it completes; other lines name none.
     const target = {
-      client: { id: merchant.id, name: 'Cairo GSM Lab' },
-      customer: null,
+      account: { id: merchant.id, name: 'Cairo GSM Lab' },
       service: { id: auto.serviceId, name: 'AT&T USA Premier Unlock' },
     };
-    const none = { client: null, customer: null, service: null };
+    const none = { account: null, service: null };
     expect(res.body.lines).toEqual([
       {
         line: 1,
@@ -147,18 +146,23 @@ describe('POST /admin/orders/bulk-reply/preview', () => {
   it('ignores the whitespace inside an input on both sides and never matches an empty input', async () => {
     const { db, merchant, manual } = world;
     await insertOrderRow(db, {
-      clientId: merchant.id,
+      accountId: merchant.id,
       serviceId: manual.serviceId,
       imei: 'SN 566A 15082',
       dispatchState: 'manual',
     });
     const blank = await insertOrderRow(db, {
-      clientId: merchant.id,
+      accountId: merchant.id,
       serviceId: manual.serviceId,
       imei: null,
       dispatchState: 'manual',
     });
-    await insertOrderRow(db, { clientId: merchant.id, serviceId: manual.serviceId, imei: '', dispatchState: 'manual' });
+    await insertOrderRow(db, {
+      accountId: merchant.id,
+      serviceId: manual.serviceId,
+      imei: '',
+      dispatchState: 'manual',
+    });
     const res = await staff.post('/admin/orders/bulk-reply/preview', { text: 'SN566A15082 done\n   done' });
     expect(res.body.lines.map((line: { status: string }) => line.status)).toEqual(['matched', 'invalid']);
     expect(res.body.lines.map((line: { orderId: number | null }) => line.orderId)[1]).toBeNull();
@@ -200,7 +204,7 @@ describe('POST /admin/orders/bulk-reply/preview: a line completes only the order
     return res.body.lines[0];
   }
 
-  const ambiguous = { status: 'ambiguous', orderId: null, client: null, customer: null, service: null };
+  const ambiguous = { status: 'ambiguous', orderId: null, account: null, service: null };
 
   it('is ambiguous when an order of the same merchant for another service was cancelled', async () => {
     const { db, merchant, manual } = world;
@@ -245,10 +249,11 @@ describe('POST /admin/orders/bulk-reply/preview: a line completes only the order
     const { db, merchant, other, manual } = world;
     const now = clock.now().getTime();
     const openOf = async (imei: string) =>
-      (await insertOrderRow(db, { clientId: other.id, serviceId: manual.serviceId, imei, dispatchState: 'manual' })).id;
+      (await insertOrderRow(db, { accountId: other.id, serviceId: manual.serviceId, imei, dispatchState: 'manual' }))
+        .id;
     const closed = (imei: string, status: 'rejected' | 'completed', ageMs: number) =>
       insertOrderRow(db, {
-        clientId: merchant.id,
+        accountId: merchant.id,
         serviceId: manual.serviceId,
         imei,
         status,
@@ -265,7 +270,7 @@ describe('POST /admin/orders/bulk-reply/preview: a line completes only the order
     const res = await staff.post('/admin/orders/bulk-reply/preview', {
       text: [`${IMEIS[0]} a`, `${IMEIS[1]} b`, `${IMEIS[2]} c`].join('\n'),
     });
-    const target = { client: { id: other.id, name: 'Erbil Mobile Parts' }, customer: null };
+    const target = { account: { id: other.id, name: 'Erbil Mobile Parts' } };
     expect(res.body.lines).toEqual([
       expect.objectContaining(ambiguous),
       expect.objectContaining({ status: 'matched', orderId: old, ...target }),
@@ -273,13 +278,12 @@ describe('POST /admin/orders/bulk-reply/preview: a line completes only the order
     ]);
   });
 
-  it('treats a storefront order like the order of any other buyer, and names its customer', async () => {
+  it('treats a storefront order like the order of any other buyer account, and names that account', async () => {
     const { db, merchant, manual } = world;
     const customer = await insertCustomer(db, { name: 'Sam Buyer' });
     const storefront = (imei: string, values: Partial<typeof s.orders.$inferInsert> = {}) =>
       insertOrderRow(db, {
-        clientId: null,
-        customerId: customer.id,
+        accountId: customer.id,
         serviceId: manual.serviceId,
         source: 'store',
         imei,
@@ -290,8 +294,7 @@ describe('POST /admin/orders/bulk-reply/preview: a line completes only the order
     expect(await lineOf(`${IMEIS[3]} R`)).toMatchObject({
       status: 'matched',
       orderId: alone.id,
-      client: null,
-      customer: { id: customer.id, name: 'Sam Buyer' },
+      account: { id: customer.id, name: 'Sam Buyer' },
       service: { id: manual.serviceId, name: 'Manual unlock' },
     });
 
@@ -302,7 +305,7 @@ describe('POST /admin/orders/bulk-reply/preview: a line completes only the order
       completedAt: new Date(clock.now().getTime() - 2 * DAY),
     });
     await insertOrderRow(db, {
-      clientId: merchant.id,
+      accountId: merchant.id,
       serviceId: manual.serviceId,
       imei: IMEIS[4],
       dispatchState: 'manual',
@@ -322,8 +325,7 @@ describe('POST /admin/orders/bulk-reply/preview: a line completes only the order
       code: 'RESULT',
       orderId: again,
       status: 'matched',
-      client: { id: merchant.id, name: 'Cairo GSM Lab' },
-      customer: null,
+      account: { id: merchant.id, name: 'Cairo GSM Lab' },
       service: { id: manual.serviceId, name: 'Manual unlock' },
     });
   });
@@ -358,7 +360,7 @@ describe('POST /admin/orders/bulk-reply/apply', () => {
     const open = await place(auto.serviceId, IMEIS[0]);
     const closed = await place(auto.serviceId, IMEIS[1]);
     await staff.post(`/admin/orders/${closed}/reject`, { reason: 'No' });
-    const held = await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId, dispatchState: 'held' });
+    const held = await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId, dispatchState: 'held' });
     const res = await staff.post('/admin/orders/bulk-reply/apply', {
       items: [
         { orderId: closed, code: 'x' },

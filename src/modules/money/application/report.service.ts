@@ -1,18 +1,21 @@
-// ReportService: the four JSON reports of `/admin/reports/*` (stage 11): profit, wallet exposure, supplier performance and top merchants.
-// Read-only and never cached (money figures are never cached, decision 022). A report that reads more than once (exposure totals and rows,
-// supplier orders and calls, ranked merchants and their balances) does it in one read-only REPEATABLE READ transaction, so its parts
-// describe the same moment. The fifth report, the client statement PDF, is in client-statement.service.ts.
+// ReportService: the four JSON reports of `/admin/reports/*` (stage 11): profit, wallet exposure, supplier performance and top accounts.
+// Read-only and never cached (money figures are never cached, decision 022). A report that reads more than once (exposure totals, store
+// balances and rows, supplier orders and calls, ranked accounts and their balances) does it in one read-only REPEATABLE READ transaction,
+// so its parts describe the same moment. The fifth report, the client statement PDF, is in client-statement.service.ts.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService, REPORT_STATEMENT_TIMEOUT_MS } from '../../../infra/db';
+import { type RankKind, rankKindOf } from '../../identity';
 import {
   type ProfitGroup,
   type ProfitRowFigures,
+  type TopScope,
   dayWindow,
   defaultProfitRange,
   isOrderedRange,
+  liveWalletBalance,
   overdraftUsed,
   profitRows,
   rejectionRate,
@@ -22,9 +25,10 @@ import {
   exposureTotals,
   largestWallets,
   profitSums,
+  storeBalanceTotals,
   supplierCallFigures,
   supplierOrderFigures,
-  topClientFigures,
+  topAccountFigures,
   walletBalances,
 } from '../infra/report.repository';
 
@@ -61,6 +65,7 @@ export interface ProfitReport {
 /** `GET /admin/reports/wallet-exposure`. */
 export interface ExposureReport {
   readonly currency: string;
+  /** The merchant-rank wallets (credit in use, held for open orders). */
   readonly totals: {
     readonly clients: number;
     readonly balance: string;
@@ -68,6 +73,13 @@ export interface ExposureReport {
     readonly overdraftLimit: string;
     readonly overdraftUsed: string;
     readonly inOverdraft: number;
+  };
+  /** The store balances (retail-rank wallets); a sibling of `totals`, never part of it. */
+  readonly storeBalances: {
+    readonly accounts: number;
+    readonly balance: string;
+    readonly negative: number;
+    readonly frozen: number;
   };
   readonly rows: Array<{
     readonly clientId: number;
@@ -94,14 +106,18 @@ export interface SupplierReportRow {
   readonly timeoutCalls: number;
 }
 
-/** One merchant of `GET /admin/reports/top-clients`. */
+/** One account of `GET /admin/reports/top-clients`. */
 export interface TopClientRow {
   readonly id: number;
   readonly name: string;
   readonly country: string;
+  readonly rank: { readonly id: number; readonly name: string; readonly kind: RankKind };
+  /** False for a guest row (a checkout without a login). */
+  readonly hasAccount: boolean;
   readonly orders: number;
   readonly spend: string;
   readonly profit: string;
+  /** The balance of the account's live wallet (negative while credit is used); zero for a guest. */
   readonly walletBalance: string;
 }
 
@@ -109,11 +125,11 @@ export interface TopClientRow {
  * Builds the money reports.
  *
  * Why: the console's Reports tab (profit by day, service, supplier or merchant; wallet exposure), the Suppliers page (spend, rejection
- * rate and speed) and the dashboard (top merchants, wallet exposure). The server adds everything up; the console shows the figures.
+ * rate and speed) and the dashboard (top accounts, wallet exposure). The server adds everything up; the console shows the figures.
  * Days are UTC days (no business time-zone setting exists yet) and every window ends at the clock's time (decision 031). The reports
- * with several queries run them in one read-only repeatable-read transaction: the exposure totals and rows, the supplier orders and
- * calls, and the ranked merchants with their balances are read from one snapshot, so the figures cannot disagree with each other
- * because a posting or an order landed between two queries. The profit report is a single query, which is one snapshot already.
+ * with several queries run them in one read-only repeatable-read transaction: the exposure totals, store balances and rows, the supplier
+ * orders and calls, and the ranked accounts with their balances are read from one snapshot, so the figures cannot disagree with each
+ * other because a posting or an order landed between two queries. The profit report is a single query, which is one snapshot already.
  *
  * Side effects: none (reads only).
  */
@@ -157,14 +173,18 @@ export class ReportService {
   }
 
   /**
-   * What the merchants' wallets hold and owe.
+   * What the merchants' wallets hold and owe, and what the store balances hold.
    *
-   * @returns the totals over every merchant with a wallet and the 50 largest wallets
+   * Why: `totals` and `rows` are the credit exposure of accounts with a merchant rank; `storeBalances` is the money the shop owes to
+   * accounts with a retail rank (never credit), so the two never mix (decision 064).
+   *
+   * @returns the totals over every merchant-rank wallet, the store balance totals and the 50 largest merchant wallets
    */
   async walletExposure(): Promise<ExposureReport> {
-    const { totals, wallets } = await this.db.runInTransaction(
+    const { totals, store, wallets } = await this.db.runInTransaction(
       async ({ tx }) => ({
         totals: await exposureTotals(tx),
+        store: await storeBalanceTotals(tx),
         wallets: await largestWallets(tx, EXPOSURE_ROW_LIMIT),
       }),
       SNAPSHOT,
@@ -172,6 +192,7 @@ export class ReportService {
     return {
       currency: CURRENCY,
       totals,
+      storeBalances: store,
       rows: wallets.map((wallet) => ({
         ...wallet,
         overdraftUsed: overdraftUsed(Money.of(wallet.balance)).toWire(),
@@ -210,16 +231,17 @@ export class ReportService {
   }
 
   /**
-   * The merchants that spent the most over the last days.
+   * The accounts that spent the most over the last days.
    *
    * @param days the window in days (the last `days x 24` hours)
-   * @param limit how many merchants to return
-   * @returns the ranked merchants with their wallet balance
+   * @param limit how many accounts to return
+   * @param scope which doors count: `all`, `b2b` (merchant doors) or `b2c` (the shop)
+   * @returns the ranked accounts of every rank (guests included, anonymized left out) with the balance of their live wallet
    */
-  async topClients(days: number, limit: number): Promise<TopClientRow[]> {
+  async topClients(days: number, limit: number, scope: TopScope): Promise<TopClientRow[]> {
     const since = new Date(this.clock.nowMs() - days * DAY_MS);
     const { ranked, balances } = await this.db.runInTransaction(async ({ tx }) => {
-      const top = await topClientFigures(tx, since, limit);
+      const top = await topAccountFigures(tx, since, limit, scope);
       return {
         ranked: top,
         balances: await walletBalances(
@@ -228,6 +250,13 @@ export class ReportService {
         ),
       };
     }, SNAPSHOT);
-    return ranked.map((row) => ({ ...row, walletBalance: balances.get(row.id) ?? Money.zero().toWire() }));
+    return ranked.map(({ rankId, rankName, rankGroupKind, ...row }) => {
+      const kind = rankKindOf(rankGroupKind);
+      return {
+        ...row,
+        rank: { id: rankId, name: rankName, kind },
+        walletBalance: liveWalletBalance(kind, row.hasAccount, balances.get(row.id)),
+      };
+    });
   }
 }

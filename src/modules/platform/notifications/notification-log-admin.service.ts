@@ -47,8 +47,8 @@ type PayloadView = 'none' | 'full' | 'hidden';
  * Why: RULES settings 11 and M172: staff see what the system sent and why a message failed, never a whole address: the server masks
  * the recipient (`r***@example.com`, `@1***`) from the recipient's current row before the answer leaves the API. The list omits the
  * payload; the single read has it, with its values shown only to holders of `notifications:*` (decision 054). A row that names the
- * address it went to shows that address masked (decision 047), and a customer's address is searched only for callers who may read
- * customers.
+ * address it went to shows that address masked (decision 047), and an account's address is searched only for callers who may read
+ * accounts.
  *
  * Side effects: none (read only).
  */
@@ -59,8 +59,8 @@ export class NotificationLogAdminService {
   /**
    * Lists the log.
    *
-   * @param query the parsed list request; `q` matches a customer recipient's whole address only when `contact` is `full` (decision 047)
-   * @param contact what the caller may see of customers' addresses (identity's `customerContactOf`)
+   * @param query the parsed list request; `q` matches an account recipient's whole address only when `contact` is `full` (decision 047)
+   * @param contact what the caller may see of accounts' addresses (identity's `customerContactOf`)
    * @returns the page (without payloads) and the exact total for the filter
    */
   async list(

@@ -19,11 +19,11 @@ export const TICKET_CHANNELS = ['email', 'telegram', 'web', 'chat'] as const;
 export type TicketChannel = (typeof TICKET_CHANNELS)[number];
 
 /**
- * Who opened a ticket: a merchant or a storefront customer.
+ * Who opened a ticket: an account (a merchant or a retail account, told apart by its rank, or the guest row of an email).
  *
- * Why: the console's ticket wire enum.
+ * Why: the console's ticket wire enum; decision 064 rewrote the words `client` and `customer` to `account` (ticket rows are mutable).
  */
-export const TICKET_REQUESTER_TYPES = ['client', 'customer'] as const;
+export const TICKET_REQUESTER_TYPES = ['account'] as const;
 
 /** One value of {@link TICKET_REQUESTER_TYPES}. */
 export type TicketRequesterType = (typeof TICKET_REQUESTER_TYPES)[number];
@@ -68,11 +68,12 @@ export const TICKET_STATUSES = ['new', 'open', 'pending_customer', 'resolved'] a
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
 
 /**
- * Who wrote a ticket message.
+ * Who wrote a ticket message: a staff member, an account or the system.
  *
- * Why: the console's ticket message wire enum.
+ * Why: the console's ticket message wire enum; decision 064 rewrote `client` and `customer` to `account` (message rows have no trigger, so
+ * they are rewritten in place).
  */
-export const TICKET_AUTHOR_TYPES = ['staff', 'client', 'customer', 'system'] as const;
+export const TICKET_AUTHOR_TYPES = ['staff', 'account', 'system'] as const;
 
 /** One value of {@link TICKET_AUTHOR_TYPES}. */
 export type TicketAuthorType = (typeof TICKET_AUTHOR_TYPES)[number];
@@ -103,7 +104,7 @@ export const supportTickets = pgTable(
     subject: text().notNull(),
     channel: text().$type<TicketChannel>().notNull().default('web'),
     requesterType: text().$type<TicketRequesterType>().notNull(),
-    /** polymorphic: customers or clients by requester_type */
+    /** an account id (clients) */
     requesterId: bigId().notNull(),
     orderId: fk((): AnyPgColumn => orders.id),
     category: text().$type<TicketCategory>().notNull().default('other'),
@@ -209,7 +210,7 @@ export const ticketMessages = pgTable(
     id: pk(),
     ticketId: fk((): AnyPgColumn => supportTickets.id, 'cascade').notNull(),
     authorType: text().$type<TicketAuthorType>().notNull(),
-    /** customers, clients or staff_users by author_type; null for the system */
+    /** staff_users or clients (an account id) by author_type; null for the system */
     authorId: bigId(),
     body: text().notNull(),
     /** an internal note: never shown to the requester */

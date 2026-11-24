@@ -126,7 +126,7 @@ describe('POST /webhooks/disputes/:gateway: dispute.created', () => {
       fee: '12.0000',
     });
     expect(row.evidenceDueAt.toISOString()).toBe('2026-11-14T12:00:00.000Z');
-    expect(row.customerId).toBe((await orderRow(db, paid.orderId)).customerId);
+    expect(row.accountId).toBe((await orderRow(db, paid.orderId)).accountId);
     expect((await paymentRow(paid.paymentId)).status).toBe('disputed');
     expect((await eventsOf(db, paid.orderId)).at(-1)).toMatchObject({
       type: 'dispute',
@@ -356,12 +356,12 @@ describe('GET /admin/disputes and /admin/disputes/:id', () => {
     // payment 1 + consents 2 + contact 1 = 4.
     expect(weak.strength).toBe('weak');
 
-    const customerId = (await orderRow(db, paid.orderId)).customerId!;
+    const accountId = (await orderRow(db, paid.orderId)).accountId;
     await db.insert(s.supportTickets).values({
       number: 'TCK-9001',
       subject: 'Where is my unlock?',
-      requesterType: 'customer',
-      requesterId: customerId,
+      requesterType: 'account',
+      requesterId: accountId,
       orderId: paid.orderId,
       createdAt: clock.now(),
       updatedAt: clock.now(),
@@ -374,14 +374,14 @@ describe('GET /admin/disputes and /admin/disputes/:id', () => {
   it('leaves a ticket whose address is not confirmed out of the pack, and counts it once the address is confirmed (decision 053)', async () => {
     const paid = await order({ email: 'typed@mail.example' });
     const { row } = await open(paid);
-    const customerId = (await orderRow(db, paid.orderId)).customerId!;
+    const accountId = (await orderRow(db, paid.orderId)).accountId;
     const [ticket] = await db
       .insert(s.supportTickets)
       .values({
         number: 'TCK-9002',
         subject: 'Typed on the contact form',
-        requesterType: 'customer',
-        requesterId: customerId,
+        requesterType: 'account',
+        requesterId: accountId,
         orderId: paid.orderId,
         requesterProvenAt: null,
         createdAt: clock.now(),
@@ -418,9 +418,9 @@ describe('GET /admin/disputes and /admin/disputes/:id', () => {
     expect(await ids('/admin/disputes?status=won')).toEqual([done.row.id]);
     expect(await ids('/admin/disputes?_sort=id&_order=desc')).toEqual([done.row.id, second.row.id, first.row.id]);
     expect(await ids('/admin/disputes?q=product_not')).toEqual([second.row.id]);
-    // Decision 047: the address is searched only by a caller who may read customers.
+    // Decision 047: the address is searched only by a caller who may read accounts (clients:read).
     expect(await ids('/admin/disputes?q=b@mail')).toEqual([]);
-    const customersReader = await adminWith(t, ['disputes:read', 'customers:read']);
+    const customersReader = await adminWith(t, ['disputes:read', 'clients:read']);
     expect((await customersReader.get('/admin/disputes?q=b@mail')).body.map((row: { id: number }) => row.id)).toEqual([
       second.row.id,
     ]);
@@ -493,10 +493,10 @@ describe('POST /admin/disputes/:id/evidence', () => {
     expect((await paymentRow(paid.paymentId)).status).toBe('disputed');
   });
 
-  it('masks the address in the name and in the evidence line staff read, sends it in full to the gateway, and searches it only for callers with customers:read (decision 047)', async () => {
+  it('masks the address in the name and in the evidence line staff read, sends it in full to the gateway, and searches it only for callers with clients:read (decision 047)', async () => {
     const paid = await order({ deliver: true, email: 'ann.buyer@mail.example' });
     const { row, gatewayId } = await open(paid);
-    const reader = await adminWith(t, ['disputes:read', 'customers:read']);
+    const reader = await adminWith(t, ['disputes:read', 'clients:read']);
     for (const api of [staff, reader]) {
       const one = (await api.get(`/admin/disputes/${row.id}`)).body;
       // The name and the delivery line of the pack staff read show the masked address, for every caller.
@@ -621,7 +621,7 @@ describe('POST /admin/disputes/:id/accept and the lost event', () => {
     expect(res.body.fee).toBe(feeUsd.toFixed(4));
     expect((await paymentRow(paid.paymentId)).status).toBe('chargeback');
     expect((await orderRow(db, paid.orderId)).status).toBe('completed');
-    const [customer] = await db.select().from(s.customers).where(eq(s.customers.id, stored.customerId!));
+    const [customer] = await db.select().from(s.clients).where(eq(s.clients.id, stored.accountId));
     expect(customer!.status).toBe('active');
     expect((await eventsOf(db, paid.orderId)).at(-1)).toMatchObject({
       type: 'dispute',
@@ -703,14 +703,14 @@ describe('POST /admin/disputes/:id/accept and the lost event', () => {
     await db.insert(s.refunds).values({
       paymentId: refunded.paymentId,
       orderId: refunded.orderId,
-      customerId: (await orderRow(db, refunded.orderId)).customerId!,
+      accountId: (await orderRow(db, refunded.orderId)).accountId,
       amount: '1.0000',
       currency: 'GBP',
       reason: 'Part refund',
       method: 'original',
       status: 'completed',
-      requestedByType: 'customer',
-      requestedById: (await orderRow(db, refunded.orderId)).customerId!,
+      requestedByType: 'account',
+      requestedById: (await orderRow(db, refunded.orderId)).accountId,
       completedAt: clock.now(),
     });
     const other = await open(refunded);

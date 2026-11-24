@@ -1,6 +1,8 @@
 // Pure figures of the reports (stage 11, routes /admin/reports/*): the day window of a date range, the defaults of the profit report, the
 // rejection rate, the ranking of profit rows. SQL does the adding up; these functions decide what is counted and how it is shown.
 import { Money } from '../../../common/money';
+import type { RankKind } from '../../identity';
+import { type WalletLedgerKind, walletKindOfRank } from './wallet-kinds';
 
 /** What the profit report can be split by. */
 export const PROFIT_GROUPS = ['day', 'service', 'supplier', 'client'] as const;
@@ -155,4 +157,34 @@ export function roundSeconds(seconds: number | null): number | null {
  */
 export function overdraftUsed(balance: Money): Money {
   return balance.isNegative() ? balance.neg() : Money.zero();
+}
+
+/** Which orders the top accounts list counts: every door, the shop's prepaid door (`b2c`) or the merchant doors (`b2b`). */
+export const TOP_SCOPES = ['all', 'b2b', 'b2c'] as const;
+
+/** One value of {@link TOP_SCOPES}. */
+export type TopScope = (typeof TOP_SCOPES)[number];
+
+/** The balances an account has in the two spendable wallet kinds, as the database prints them; a kind it never had is absent. */
+export type WalletBalances = Partial<Record<WalletLedgerKind, string>>;
+
+/**
+ * The balance of the wallet an account uses now.
+ *
+ * Why: the top accounts list shows one wallet balance per row, and which wallet that is follows the rank kind (a merchant rank uses
+ * `client_wallet`, any other `customer_wallet`); the wallet of the other kind, which an account keeps after a rank change, holds zero and
+ * is never what the list shows. A guest row has no wallet at all.
+ *
+ * @param rankKind the kind of the account's rank
+ * @param hasAccount whether the row is an account with a login (false for a guest)
+ * @param balances what the account has in each wallet kind, or `undefined` when it has no wallet
+ * @returns the live wallet's balance (negative while credit is used), zero for a guest or an account without that wallet
+ */
+export function liveWalletBalance(
+  rankKind: RankKind,
+  hasAccount: boolean,
+  balances: WalletBalances | undefined,
+): string {
+  if (!hasAccount) return Money.zero().toWire();
+  return balances?.[walletKindOfRank(rankKind)] ?? Money.zero().toWire();
 }

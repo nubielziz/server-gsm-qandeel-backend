@@ -73,12 +73,12 @@ const PLACE_ERRORS = [
   'UNAUTHORIZED',
   'FORBIDDEN',
   'ACCOUNT_SUSPENDED',
-  'ACCOUNT_PENDING_APPROVAL',
   'IP_NOT_ALLOWED',
   'RATE_LIMITED',
   'MAINTENANCE',
   'NOT_FOUND',
   'INSUFFICIENT_FUNDS',
+  'WALLET_FROZEN',
   'SERVICE_DISABLED',
   'PRICE_CHANGED',
   'DUPLICATE_ORDER',
@@ -89,7 +89,6 @@ const PLACE_ERRORS = [
 const GET_ERRORS = [
   'UNAUTHORIZED',
   'ACCOUNT_SUSPENDED',
-  'ACCOUNT_PENDING_APPROVAL',
   'IP_NOT_ALLOWED',
   'RATE_LIMITED',
   'NOT_FOUND',
@@ -137,7 +136,7 @@ export const dhruGetImeiOrder = defineDhruAction({
   summary: 'Order status and result',
   description:
     '`STATUS` 0 new, 1 in process, 3 rejected (refunded), 4 completed; `CODE` is the result of a completed order or the reason of a ' +
-    "rejected one. Another merchant's order, like an unknown id, is an error.",
+    "rejected one. Another account's order, and the account's own store order, like an unknown id, are an error.",
   params: GetOrderParams,
   success: StatusSchema,
   errors: [...GET_ERRORS],
@@ -219,15 +218,7 @@ export const dhruEndpoint = defineRoute({
   bodyType: 'form',
   body: DhruRequest,
   success: { status: 200, schema: z.record(z.string(), z.unknown()) },
-  errors: [
-    'UNAUTHORIZED',
-    'FORBIDDEN',
-    'ACCOUNT_SUSPENDED',
-    'ACCOUNT_PENDING_APPROVAL',
-    'IP_NOT_ALLOWED',
-    'RATE_LIMITED',
-    'MAINTENANCE',
-  ],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED', 'RATE_LIMITED', 'MAINTENANCE'],
   examples: {
     request: {
       username: 'zain-mobile-hub',

@@ -47,7 +47,7 @@ describe('GET /admin/legal-documents', () => {
     const customer = await insertCustomerRow(db);
     await db.insert(s.consentRecords).values([
       {
-        subjectType: 'customer',
+        subjectType: 'account',
         subjectId: customer,
         legalDocumentId: current.id,
         purpose: 'terms',
@@ -55,7 +55,7 @@ describe('GET /admin/legal-documents', () => {
         ip: '203.0.113.9',
       },
       {
-        subjectType: 'customer',
+        subjectType: 'account',
         subjectId: customer,
         legalDocumentId: current.id,
         purpose: 'terms',
@@ -63,7 +63,7 @@ describe('GET /admin/legal-documents', () => {
         ip: '203.0.113.9',
       },
       {
-        subjectType: 'customer',
+        subjectType: 'account',
         subjectId: customer,
         legalDocumentId: earlier.id,
         purpose: 'terms',
@@ -316,7 +316,7 @@ describe('a version kept for the record in another language (decision 039, secti
     const customer = await insertCustomerRow(db);
     await db.insert(s.consentRecords).values([
       {
-        subjectType: 'customer',
+        subjectType: 'account',
         subjectId: customer,
         legalDocumentId: retired.id,
         purpose: 'terms',
@@ -324,7 +324,7 @@ describe('a version kept for the record in another language (decision 039, secti
         ip: '203.0.113.9',
       },
       {
-        subjectType: 'customer',
+        subjectType: 'account',
         subjectId: customer,
         legalDocumentId: retired.id,
         purpose: 'terms',

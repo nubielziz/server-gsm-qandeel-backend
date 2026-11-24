@@ -8,11 +8,12 @@
     "number": "T-4202",
     "subject": "Phone still locked after unlock (SF-20471)",
     "channel": "web",
-    "requesterType": "customer",
-    "requesterId": 28,
+    "requesterType": "account",
+    "requesterId": 128,
     "requester": {
       "name": "Victor Silva",
-      "email": "victor.silva@webmail.example"
+      "email": "victor.silva@webmail.example",
+      "rankKind": "retail"
     },
     "orderId": 20471,
     "category": "failed_unlock",

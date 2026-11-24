@@ -8,6 +8,7 @@ import { Money } from '@src/common/money';
 import { schema as s } from '@src/infra/db';
 import {
   type PostTransactionInput,
+  adjust,
   b2cWalletPay,
   b2cWalletRefund,
   customerAdjust,
@@ -66,7 +67,7 @@ describe('postTransaction on a customer wallet', () => {
     );
     const wallet = credited.touched.find((account) => account.kind === 'customer_wallet');
     expect(wallet).toMatchObject({
-      ownerType: 'customer',
+      ownerType: 'account',
       ownerId: customer.id,
       before: '50.0000',
       after: '60.0000',
@@ -120,7 +121,7 @@ describe('the clawback override and the deferred freeze trigger', () => {
   const clawback = (customerId: number, key: string) =>
     input(
       topupChargeback({
-        owner: { type: 'customer', id: customerId },
+        owner: { accountId: customerId, kind: 'customer_wallet' },
         net: m('48.50'),
         fee: m('1.50'),
         disputeFee: m('15'),
@@ -225,31 +226,37 @@ describe('concurrency on a customer wallet', () => {
     expect((await ledgerTotals(db)).sum).toBe('0.0000');
   });
 
-  it('keeps merchant and customer adjust keys apart for the same id', async () => {
+  it('keeps the adjust keys of a merchant account and a store account apart: one account table, one key form', async () => {
     const { db } = await testDb();
     await insertUsd(db);
     const merchant = await insertWalletMerchant(db);
     const customer = await insertCustomer(db, { hasAccount: true });
-    // Both ids are 1 in a fresh database; the keys of the two routes still differ.
-    expect(merchant.id).toBe(customer.id);
+    // A merchant and a shopper are rows of one table, so their ids never meet and `adjust:<accountId>:<key>` is unique for both.
+    expect(merchant.id).not.toBe(customer.id);
     await post(
       input(
         customerAdjust({ customerId: customer.id, amount: m('5'), direction: 'credit' }),
         customer.id,
-        `adjust:customer:${customer.id}:K`,
+        `adjust:${customer.id}:K`,
       ),
     );
     const second = await post(
       input(
-        customerAdjust({ customerId: customer.id, amount: m('5'), direction: 'credit' }),
-        customer.id,
+        adjust({ clientId: merchant.id, amount: m('5'), direction: 'credit' }),
+        merchant.id,
         `adjust:${merchant.id}:K`,
       ),
     );
     expect(second.replayed).toBe(false);
     const [count] = await db
-      .execute<{ n: number }>(sql`select count(*)::int as n from ledger_transactions where ref_type = 'customer'`)
+      .execute<{ n: number }>(sql`select count(*)::int as n from ledger_transactions where ref_type = 'account'`)
       .then((r) => r.rows);
     expect(count!.n).toBe(2);
+    const [old] = await db
+      .execute<{ n: number }>(
+        sql`select count(*)::int as n from ledger_transactions where ref_type in ('customer', 'client')`,
+      )
+      .then((r) => r.rows);
+    expect(old!.n).toBe(0);
   });
 });

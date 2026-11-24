@@ -3,6 +3,7 @@
 // is not an Owner cannot add, take over the sign-in of, or move into such a role, an account, nor give such a permission to a role
 // somebody holds; an Owner can, and that account then counts as a person of its own.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { type AdminApi, adminWith } from '../../support/admin-api';
@@ -91,11 +92,13 @@ const HELD_ROLE_DETAIL =
   'Only an owner can give a role that staff members hold the right to adjust wallets, set credit limits, approve payments or ' +
   'issue invoices.';
 const credit = (amount: string) => ({ amount, direction: 'credit', reason: 'Goodwill' });
+/** A new `Idempotency-Key`: every staff wallet write needs one, and each adjustment here is a new dialog. */
+const newKey = () => ({ 'idempotency-key': `adjust-${randomUUID()}` });
 
 /** Credits the merchant up to the caller's daily limit, then shows that the next credit needs an Owner. */
 async function creditToLimit(api: AdminApi, url: string): Promise<void> {
-  expect((await api.post(url, credit('10000.0000'))).status).toBe(200);
-  const capped = await api.post(url, credit('10000.0000'));
+  expect((await api.post(url, credit('10000.0000'), newKey())).status).toBe(200);
+  const capped = await api.post(url, credit('10000.0000'), newKey());
   expect(capped.status).toBe(409);
   expect(capped.body.code).toBe('APPROVAL_REQUIRED');
 }
@@ -113,8 +116,8 @@ describe('the daily limit of manual credits counts per person', () => {
     const url = `/admin/clients/${merchant.id}/wallet/adjust`;
     const body = (amount: string) => ({ amount, direction: 'credit', reason: 'Goodwill' });
 
-    expect((await member.post(url, body('10000.0000'))).status).toBe(200);
-    const capped = await member.post(url, body('10000.0000'));
+    expect((await member.post(url, body('10000.0000'), newKey())).status).toBe(200);
+    const capped = await member.post(url, body('10000.0000'), newKey());
     expect(capped.status).toBe(409);
     expect(capped.body.code).toBe('APPROVAL_REQUIRED');
 
@@ -124,7 +127,7 @@ describe('the daily limit of manual credits counts per person', () => {
 
     const owner = await adminWith(t, ['*'], { name: 'Owner' });
     const colleague = await addedByOwner(owner, member.roleId);
-    const credited = await colleague.console.call('POST', url, body('10000.0000'));
+    const credited = await colleague.console.call('POST', url, body('10000.0000'), { headers: newKey() });
     expect(credited.statusCode).toBe(200);
     expect(credited.json().wallet.balance).toBe('20000.0000');
   });
@@ -163,7 +166,7 @@ describe('the daily limit of manual credits counts per person', () => {
     expect(moved.body.code).toBe('FORBIDDEN');
     expect(moved.body.detail).toBe(GIVE_ROLE_DETAIL);
     expect(await roleOf(second.id)).toBe(readers);
-    expect((await second.console.call('POST', url, credit('10000.0000'))).statusCode).toBe(403);
+    expect((await second.console.call('POST', url, credit('10000.0000'), { headers: newKey() })).statusCode).toBe(403);
     expect(await balanceOf(member, merchant.id)).toBe('10000.0000');
   });
 
@@ -186,7 +189,7 @@ describe('the daily limit of manual credits counts per person', () => {
     expect(moved.body.detail).toBe(GIVE_ROLE_DETAIL);
     expect(await roleOf(colleague)).toBe(readers);
     const signed = await signedIn('colleague@example.com', temporary.body.temporaryPassword as string);
-    expect((await signed.call('POST', url, credit('10000.0000'))).statusCode).toBe(403);
+    expect((await signed.call('POST', url, credit('10000.0000'), { headers: newKey() })).statusCode).toBe(403);
     expect(await balanceOf(member, merchant.id)).toBe('10000.0000');
   });
 
@@ -219,7 +222,7 @@ describe('the daily limit of manual credits counts per person', () => {
       .from(s.roles)
       .where(eq(s.roles.id, role.body.id as number));
     expect(row!.permissions).toEqual(['wallet:read']);
-    expect((await second.console.call('POST', url, credit('10000.0000'))).statusCode).toBe(403);
+    expect((await second.console.call('POST', url, credit('10000.0000'), { headers: newKey() })).statusCode).toBe(403);
     expect(await balanceOf(member, merchant.id)).toBe('10000.0000');
   });
 });

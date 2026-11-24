@@ -7,6 +7,7 @@ import { schema as s } from '@src/infra/db';
 import { UnrecoverableError } from '@src/infra/queues';
 import { DeliveryError, OutboxService } from '@src/modules/platform';
 import { TICKET_MAIL_EVENT, TicketMailProcessor } from '@src/modules/support';
+import { ensureRetailGroup } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
@@ -34,6 +35,8 @@ beforeAll(async () => {
 beforeEach(async () => {
   await resetDb();
   const { db } = await testDb();
+  // the reset removed the one retail rank that the migrations insert; the console reads it to tell the requester's rank
+  await ensureRetailGroup(db);
   await seedSupportTemplates(db);
   mailbox(t).reset();
   telegramOutbox(t).reset();
@@ -85,7 +88,8 @@ describe('the ticket message job', () => {
       dedupeKey: `outbox-${job.eventId}:email`,
     });
     // Decision 053: the receipt repeats nothing a visitor typed, so it carries the number alone (the link is a secret, not a variable).
-    expect(row!.payload).toEqual({ variables: { ticketNumber: ticket.number } });
+    // The row keeps the audience its text was made for (decision 064: one account, two texts).
+    expect(row!.payload).toEqual({ audience: 'customer', variables: { ticketNumber: ticket.number } });
     expect(mail!.text).toContain('Hello,');
     expect(mail!.text).not.toContain('Victor');
     expect(mail!.text).not.toContain('Where is my unlock?');
@@ -104,13 +108,13 @@ describe('the ticket message job', () => {
     expect((await notificationRows((await testDb()).db))[0]).toMatchObject({ status: 'sent', attempts: 2 });
   });
 
-  it('skips a message for a customer who was anonymized since, and a ticket that is gone', async () => {
+  it('skips a message for an account that was anonymized since, and a ticket that is gone', async () => {
     const { db, customer, ticket } = await customerTicket();
     const job = await writeEvent(ticket.id, { kind: 'received' });
     await db
-      .update(s.customers)
-      .set({ status: 'anonymized', email: 'deleted-1@redacted.invalid' })
-      .where(eq(s.customers.id, customer.id));
+      .update(s.clients)
+      .set({ status: 'anonymized', anonymizedAt: new Date(), email: 'deleted-1@redacted.invalid' })
+      .where(eq(s.clients.id, customer.id));
     expect(await run(job)).toEqual({ sent: false, skipped: 'recipient_gone' });
     const missing = await writeEvent(999_999, { kind: 'received' });
     expect(await run(missing)).toEqual({ sent: false, skipped: 'ticket_gone' });
@@ -143,7 +147,7 @@ describe('the ticket message job', () => {
       body: 'other ticket',
     });
     const customerMessage = await insertSupportMessage(db, ticket.id, {
-      authorType: 'customer',
+      authorType: 'account',
       authorId: ticket.requesterId,
       body: 'mine',
     });
@@ -166,7 +170,7 @@ describe('the ticket message job', () => {
   it('skips a reply event that was written for the retired Telegram channel, and sends no receipt for a merchant', async () => {
     const { db } = await testDb();
     const merchant = await insertClient(db, { telegramChatId: '555001' });
-    const ticket = await insertSupportTicket(db, { requesterType: 'client', requesterId: merchant.id, token: null });
+    const ticket = await insertSupportTicket(db, { requesterType: 'account', requesterId: merchant.id, token: null });
     const staffId = (
       await db
         .insert(s.roles)
@@ -191,6 +195,48 @@ describe('the ticket message job', () => {
       sent: false,
       skipped: 'recipient_gone',
     });
+  });
+
+  it('words a mail by the rank kind of its requester: the receipt of a merchant rank carries the ticket link, its reply the portal link (decision 064)', async () => {
+    const { db } = await testDb();
+    const merchant = await insertClient(db, { name: 'Zain Mobile Hub', email: 'zain@mail.example' });
+    // A ticket typed on the public form with the merchant's address: it has a link token, and the address is not proven yet.
+    const typed = await insertSupportTicket(db, {
+      requesterId: merchant.id,
+      subject: 'Invoice question',
+      requesterProvenAt: null,
+    });
+    expect(await run(await writeEvent(typed.id, { kind: 'received' }))).toEqual({ sent: true });
+    const [receipt] = mailbox(t).sent;
+    expect(receipt).toMatchObject({ to: 'zain@mail.example', subject: `We got your message (${typed.number})` });
+    expect(receipt!.text).toContain(`http://localhost:5175/support/tickets/${typed.token}`);
+    expect(await notificationRows(db)).toEqual([
+      expect.objectContaining({ event: 'support.ticket_received', recipientType: 'account', recipientId: merchant.id }),
+    ]);
+
+    // A reply on a ticket opened in the portal (no link token) is the merchant text with the portal link and the merchant's name.
+    const portal = await insertSupportTicket(db, { requesterId: merchant.id, subject: 'Statement', token: null });
+    const staffId = (
+      await db
+        .insert(s.roles)
+        .values({ name: 'R', permissions: ['support:*'] })
+        .returning({ id: s.roles.id })
+    )[0]!.id;
+    const [staff] = await db
+      .insert(s.staffUsers)
+      .values({ email: 's@example.com', name: 'Lina S.', roleId: staffId, status: 'active' })
+      .returning();
+    const reply = await insertSupportMessage(db, portal.id, {
+      authorType: 'staff',
+      authorId: staff!.id,
+      body: 'It is in your portal.',
+    });
+    expect(await run(await writeEvent(portal.id, { kind: 'reply', messageId: reply.id, channel: 'email' }))).toEqual({
+      sent: true,
+    });
+    const portalMail = mailbox(t).sent[1]!;
+    expect(portalMail.text).toContain('Hi Zain Mobile Hub,');
+    expect(portalMail.text).toContain(`http://localhost:5175/account/support/${portal.id}`);
   });
 
   it('rejects a malformed event for good, so the queue does not retry it', async () => {

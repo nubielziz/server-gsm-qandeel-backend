@@ -1,11 +1,15 @@
-// Unit tests of the audience spec (feature 23, plan section 5.1): the documented shapes parse, empty or unknown parts are refused, the
-// cross-field rules hold, and a spec splits into one selection per targeted type in the fan-out's order.
+// Unit tests of the audience spec (feature 23, plan section 5.1; decision 064): the documented shapes parse, empty or unknown parts are
+// refused (a person is `staff` or `account`, never `client` or `customer`), the cross-field rules hold, and a spec splits into one selection per
+// targeted group (staff, merchant ranks, retail) in the fan-out's order.
 import { describe, expect, it } from 'bun:test';
 import {
+  AUDIENCE_KIND_ORDER,
   MAX_PEOPLE,
   MAX_SEGMENT_IDS,
   audienceProblems,
+  kindOfAudience,
   parseStoredAudience,
+  recipientTypeOfKind,
   selectionsOf,
   zAudienceSpec,
 } from '@src/modules/platform/notifications/campaigns/audience-spec';
@@ -17,7 +21,7 @@ describe('zAudienceSpec', () => {
       { staff: { roleIds: [1, 2] } },
       { merchants: { statuses: ['active', 'pending'], groupIds: [3], countries: ['JO', 'GB'] } },
       { customers: { hasAccount: false, countries: ['JO'] } },
-      { include: [{ type: 'client', id: 4 }], exclude: [{ type: 'customer', id: 9 }] },
+      { include: [{ type: 'account', id: 4 }], exclude: [{ type: 'staff', id: 9 }] },
     ]) {
       expect(zAudienceSpec.safeParse(spec).success, JSON.stringify(spec)).toBe(true);
     }
@@ -34,6 +38,11 @@ describe('zAudienceSpec', () => {
       { staff: { roleIds: Array.from({ length: MAX_SEGMENT_IDS + 1 }, (_, i) => i + 1) } },
       { include: Array.from({ length: MAX_PEOPLE + 1 }, (_, i) => ({ type: 'staff', id: i + 1 })) },
       { include: [{ type: 'admin', id: 1 }] },
+      // The old words of the merchant and customer days are refused: a person is a staff member or an account (decision 064).
+      { include: [{ type: 'client', id: 4 }] },
+      { include: [{ type: 'customer', id: 4 }] },
+      { exclude: [{ type: 'client', id: 4 }], staff: {} },
+      { exclude: [{ type: 'customer', id: 4 }], staff: {} },
     ]) {
       expect(zAudienceSpec.safeParse(spec).success, JSON.stringify(spec).slice(0, 80)).toBe(false);
     }
@@ -46,6 +55,17 @@ describe('zAudienceSpec', () => {
     expect(parseStoredAudience({ customers: { locales: ['en'] } })).toBeUndefined();
     expect(parseStoredAudience(null)).toBeUndefined();
   });
+
+  it('reads a stored merchant status filter of pending as active (the status no longer exists)', () => {
+    expect(parseStoredAudience({ merchants: { statuses: ['pending'] } })).toEqual({
+      merchants: { statuses: ['active'] },
+    });
+    expect(parseStoredAudience({ merchants: { statuses: ['active', 'pending'], groupIds: [3] } })).toEqual({
+      merchants: { statuses: ['active'], groupIds: [3] },
+    });
+    // A spec with no status filter is left as it is.
+    expect(parseStoredAudience({ merchants: { groupIds: [3] } })).toEqual({ merchants: { groupIds: [3] } });
+  });
 });
 
 describe('audienceProblems', () => {
@@ -57,17 +77,17 @@ describe('audienceProblems', () => {
 
   it('refuses a person listed twice', () => {
     const twice = [
-      { type: 'client' as const, id: 1 },
-      { type: 'client' as const, id: 1 },
+      { type: 'account' as const, id: 1 },
+      { type: 'account' as const, id: 1 },
     ];
     expect(audienceProblems({ include: twice })[0]).toMatchObject({ field: 'audience.include' });
     expect(audienceProblems({ staff: {}, exclude: twice })[0]).toMatchObject({ field: 'audience.exclude' });
-    // The same id of two types is two people.
+    // The same id of two types is two people: staff member 1 and account 1.
     expect(
       audienceProblems({
         include: [
-          { type: 'client', id: 1 },
-          { type: 'customer', id: 1 },
+          { type: 'staff', id: 1 },
+          { type: 'account', id: 1 },
         ],
       }),
     ).toEqual([]);
@@ -80,28 +100,48 @@ describe('audienceProblems', () => {
 });
 
 describe('selectionsOf', () => {
-  it('splits a spec per type, staff then merchants then customers, with their include and exclude ids', () => {
+  it('splits a spec per group, staff then merchant ranks then retail, with their include and exclude ids', () => {
     expect(
       selectionsOf({
         customers: { hasAccount: true },
         staff: {},
         include: [
-          { type: 'client', id: 5 },
-          { type: 'customer', id: 7 },
+          { type: 'account', id: 5 },
+          { type: 'account', id: 7 },
         ],
         exclude: [
           { type: 'staff', id: 1 },
-          { type: 'client', id: 6 },
+          { type: 'account', id: 6 },
         ],
       }),
     ).toEqual([
-      { type: 'staff', segment: {}, include: [], exclude: [1] },
-      { type: 'client', segment: undefined, include: [5], exclude: [6] },
-      { type: 'customer', segment: { hasAccount: true }, include: [7], exclude: [] },
+      { kind: 'staff', type: 'staff', segment: {}, include: [], exclude: [1] },
+      // A person added by hand may hold either rank, so its id is asked of both account groups; each keeps only its own rank.
+      { kind: 'merchant', type: 'account', segment: undefined, include: [5, 7], exclude: [6] },
+      { kind: 'retail', type: 'account', segment: { hasAccount: true }, include: [5, 7], exclude: [6] },
     ]);
   });
 
-  it('leaves out a type that only appears in exclude', () => {
-    expect(selectionsOf({ staff: {}, exclude: [{ type: 'customer', id: 1 }] }).map((s) => s.type)).toEqual(['staff']);
+  it('stores the rows of both account groups under the one type account', () => {
+    expect(AUDIENCE_KIND_ORDER).toEqual(['staff', 'merchant', 'retail']);
+    expect(AUDIENCE_KIND_ORDER.map(recipientTypeOfKind)).toEqual(['staff', 'account', 'account']);
+  });
+
+  it('targets the merchant group by its segment alone, with no person added', () => {
+    expect(selectionsOf({ merchants: { groupIds: [3] } })).toEqual([
+      { kind: 'merchant', type: 'account', segment: { groupIds: [3] }, include: [], exclude: [] },
+    ]);
+  });
+
+  it('leaves out a group that only appears in exclude', () => {
+    expect(selectionsOf({ staff: {}, exclude: [{ type: 'account', id: 1 }] }).map((s) => s.kind)).toEqual(['staff']);
+  });
+});
+
+describe('kindOfAudience', () => {
+  it('maps a text family to the group of people it is for', () => {
+    expect(kindOfAudience('staff')).toBe('staff');
+    expect(kindOfAudience('merchant')).toBe('merchant');
+    expect(kindOfAudience('customer')).toBe('retail');
   });
 });

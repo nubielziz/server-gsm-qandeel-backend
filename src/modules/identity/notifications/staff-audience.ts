@@ -48,7 +48,7 @@ export function staffAudienceSql(query: AudienceQuery): SQL {
  */
 @Injectable()
 export class StaffAudience implements AudienceProvider {
-  readonly type = 'staff' as const;
+  readonly kind = 'staff' as const;
 
   /**
    * Counts the audience.

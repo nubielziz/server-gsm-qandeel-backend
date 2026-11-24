@@ -7,12 +7,13 @@ export const unsubscribeMarketing = defineRoute({
   key: 'POST /store/v1/marketing/unsubscribe/:token',
   summary: 'Stop marketing email',
   description:
-    'The link at the bottom of a marketing email. Switches marketing off for the customer the token names: `marketing_opt_in` becomes ' +
+    'The link at the bottom of a marketing email. Switches marketing off for the account the token names: `marketing_opt_in` becomes ' +
     'false and a consent record (`granted: false`, the caller’s address and user agent) is added, so the next campaign and the sending of ' +
-    'a message already queued leave the customer out. Repeating it changes nothing. Public by design: it has no session and no ' +
+    'a message already queued leave the account out. Repeating it changes nothing. Public by design: it has no session and no ' +
     'anti-bot token, because mailbox providers call it themselves (RFC 8058 one-click: a form body `List-Unsubscribe=One-Click`) and ' +
-    'the site’s page calls it with no body. The token is a keyed MAC over the customer id: it can switch marketing off, never on. ' +
-    'A customer who is unknown or erased answers `204` too (nothing to say, nothing to leak); a token that does not verify is `410`.',
+    'the site’s page calls it with no body. The token is a keyed MAC over the account id: it can switch marketing off, never on. A link ' +
+    'sent before the accounts were merged names an old customer number, which is looked up in the legacy id map (never read as an account id). ' +
+    'An account that is unknown or erased, and an old number the map does not know, answer `204` too (nothing to say, nothing to leak); a token that does not verify is `410`.',
   tags: ['account'],
   surface: 'store',
   access: 'public',

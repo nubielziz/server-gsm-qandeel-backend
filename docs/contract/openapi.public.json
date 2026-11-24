@@ -111,7 +111,6 @@
                     "x-gsm-errors": [
                       "UNAUTHORIZED",
                       "ACCOUNT_SUSPENDED",
-                      "ACCOUNT_PENDING_APPROVAL",
                       "IP_NOT_ALLOWED",
                       "RATE_LIMITED"
                     ]
@@ -368,7 +367,6 @@
                     "x-gsm-errors": [
                       "UNAUTHORIZED",
                       "ACCOUNT_SUSPENDED",
-                      "ACCOUNT_PENDING_APPROVAL",
                       "IP_NOT_ALLOWED",
                       "RATE_LIMITED"
                     ]
@@ -458,12 +456,12 @@
                       "UNAUTHORIZED",
                       "FORBIDDEN",
                       "ACCOUNT_SUSPENDED",
-                      "ACCOUNT_PENDING_APPROVAL",
                       "IP_NOT_ALLOWED",
                       "RATE_LIMITED",
                       "MAINTENANCE",
                       "NOT_FOUND",
                       "INSUFFICIENT_FUNDS",
+                      "WALLET_FROZEN",
                       "SERVICE_DISABLED",
                       "PRICE_CHANGED",
                       "DUPLICATE_ORDER",
@@ -559,12 +557,12 @@
                       "UNAUTHORIZED",
                       "FORBIDDEN",
                       "ACCOUNT_SUSPENDED",
-                      "ACCOUNT_PENDING_APPROVAL",
                       "IP_NOT_ALLOWED",
                       "RATE_LIMITED",
                       "MAINTENANCE",
                       "NOT_FOUND",
                       "INSUFFICIENT_FUNDS",
+                      "WALLET_FROZEN",
                       "SERVICE_DISABLED",
                       "PRICE_CHANGED",
                       "DUPLICATE_ORDER",
@@ -575,7 +573,7 @@
                   {
                     "type": "object",
                     "title": "getimeiorder",
-                    "description": "Order status and result. `STATUS` 0 new, 1 in process, 3 rejected (refunded), 4 completed; `CODE` is the result of a completed order or the reason of a rejected one. Another merchant's order, like an unknown id, is an error.",
+                    "description": "Order status and result. `STATUS` 0 new, 1 in process, 3 rejected (refunded), 4 completed; `CODE` is the result of a completed order or the reason of a rejected one. Another account's order, and the account's own store order, like an unknown id, are an error.",
                     "required": [
                       "username",
                       "apiaccesskey",
@@ -657,7 +655,6 @@
                     "x-gsm-errors": [
                       "UNAUTHORIZED",
                       "ACCOUNT_SUSPENDED",
-                      "ACCOUNT_PENDING_APPROVAL",
                       "IP_NOT_ALLOWED",
                       "RATE_LIMITED",
                       "NOT_FOUND",
@@ -752,7 +749,6 @@
                     "x-gsm-errors": [
                       "UNAUTHORIZED",
                       "ACCOUNT_SUSPENDED",
-                      "ACCOUNT_PENDING_APPROVAL",
                       "IP_NOT_ALLOWED",
                       "RATE_LIMITED",
                       "NOT_FOUND",
@@ -848,12 +844,12 @@
                       "UNAUTHORIZED",
                       "FORBIDDEN",
                       "ACCOUNT_SUSPENDED",
-                      "ACCOUNT_PENDING_APPROVAL",
                       "IP_NOT_ALLOWED",
                       "RATE_LIMITED",
                       "MAINTENANCE",
                       "NOT_FOUND",
                       "INSUFFICIENT_FUNDS",
+                      "WALLET_FROZEN",
                       "SERVICE_DISABLED",
                       "PRICE_CHANGED",
                       "DUPLICATE_ORDER",
@@ -952,7 +948,6 @@
                     "x-gsm-errors": [
                       "UNAUTHORIZED",
                       "ACCOUNT_SUSPENDED",
-                      "ACCOUNT_PENDING_APPROVAL",
                       "IP_NOT_ALLOWED",
                       "RATE_LIMITED",
                       "NOT_FOUND",

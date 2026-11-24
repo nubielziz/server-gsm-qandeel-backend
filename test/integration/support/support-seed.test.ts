@@ -9,6 +9,7 @@ import { demoStatePath, demoRows, loadDemoState } from '../../../scripts/seed/de
 import { seedIdentity } from '../../../scripts/seed/identity';
 import { seedSupport } from '../../../scripts/seed/support';
 import { type AdminApi, adminWith } from '../../support/admin-api';
+import { ensureRetailGroup } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TEST_DATABASE_URL, closeTestDb, resetDb, testDb } from '../../support/db';
@@ -65,18 +66,18 @@ describe.skipIf(!frontendPresent)('the support seed', () => {
       number: 'T-4202',
       subject: 'Phone still locked after unlock (SF-20471)',
       channel: 'web',
-      requesterType: 'customer',
-      requesterId: 28,
+      requesterType: 'account',
+      requesterId: 128,
       category: 'failed_unlock',
       priority: 'high',
       status: 'open',
       assigneeId: 2,
       csatScore: null,
     });
-    // A customer ticket gets a token nobody can guess; a merchant's ticket has none.
+    // A ticket of a retail account gets a token nobody can guess; one of a merchant rank has none.
     expect(ticket!.token).toMatch(/^[A-Za-z0-9_-]{22}$/);
     const [merchantTicket] = await db.select().from(s.supportTickets).where(eq(s.supportTickets.id, 4214));
-    expect(merchantTicket).toMatchObject({ requesterType: 'client', requesterId: 2, token: null });
+    expect(merchantTicket).toMatchObject({ requesterType: 'account', requesterId: 2, token: null });
     // The next ticket takes the next number.
     const next = await db.execute<{ id: string }>(
       sql`select nextval(pg_get_serial_sequence('support_tickets', 'id')) as id`,
@@ -87,11 +88,20 @@ describe.skipIf(!frontendPresent)('the support seed', () => {
   it('shows through the inbox what the mock shows: the statuses in the console’s words, the threads, the late ones, the templates', async () => {
     await seed();
     const { db } = await testDb();
-    // Customers are seeded by feature 14b: the demo's customer 28 is made here to see the join.
+    // The shop accounts are seeded with the customers of feature 14b: the demo's customer 28 is the retail account 128 (the numbers of the
+    // console's mocks), made here to see the join.
     await db
-      .insert(s.customers)
+      .insert(s.clients)
       .overridingSystemValue()
-      .values({ id: 28, email: 'victor@mail.example', name: 'Victor Hale' });
+      .values({
+        id: 128,
+        email: 'victor@mail.example',
+        name: 'Victor Hale',
+        groupId: await ensureRetailGroup(db),
+        hasAccount: false,
+        status: 'active',
+        referralCode: 'REF-128',
+      });
     staff = await adminWith(t, ['support:*'], { name: 'Rami K.' });
 
     const demo = await loadDemoState();
@@ -105,8 +115,8 @@ describe.skipIf(!frontendPresent)('the support seed', () => {
     expect(detail.body).toMatchObject({
       number: 'T-4202',
       status: 'open',
-      // Decision 047: the support role of this test does not hold customers:read, so the address comes masked.
-      requester: { name: 'Victor Hale', email: 'vi•••@mail.example' },
+      // Decision 047: the support role of this test does not hold clients:read, so the address comes masked.
+      requester: { name: 'Victor Hale', email: 'vi•••@mail.example', rankKind: 'retail' },
       assignee: { id: 2, name: 'Lina S.' },
       replyChannels: ['email'],
     });
@@ -116,9 +126,9 @@ describe.skipIf(!frontendPresent)('the support seed', () => {
         message.authorName,
       ]),
     ).toEqual([
-      ['customer', 'Victor Hale'],
+      ['account', 'Victor Hale'],
       ['staff', 'Lina S.'],
-      ['customer', 'Victor Hale'],
+      ['account', 'Victor Hale'],
     ]);
     // The customer spoke last on this open ticket, so its reply is awaited.
     expect(detail.body.slaDueAt).not.toBeNull();

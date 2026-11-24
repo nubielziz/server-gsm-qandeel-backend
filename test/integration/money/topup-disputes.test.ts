@@ -68,15 +68,18 @@ beforeEach(async () => {
 
 let invoiceCounter = 0;
 
-/** A top-up invoice of 50 USD (fee 1.50) for a customer or a merchant, confirmed by the gateway and, unless told otherwise, credited. */
+/** A top-up invoice of 50 USD (fee 1.50) for a store account or a merchant account, confirmed by the gateway and, unless told otherwise, credited. */
 async function topUp(owner: { customerId?: number; clientId?: number }, options: { credit?: boolean } = {}) {
   invoiceCounter += 1;
+  const accountId = (owner.customerId ?? owner.clientId)!;
+  const merchant = owner.clientId !== undefined;
   const [invoice] = await db
     .insert(s.invoices)
     .values({
       number: `INV-2026-${String(invoiceCounter).padStart(4, '0')}`,
-      customerId: owner.customerId ?? null,
-      clientId: owner.clientId ?? null,
+      accountId,
+      walletKind: merchant ? 'client_wallet' : 'customer_wallet',
+      legacyClientId: merchant ? accountId : null,
       kind: 'topup',
       amount: '50.0000',
       fee: '1.5000',
@@ -159,7 +162,7 @@ describe('a dispute of a customer top-up', () => {
     expect(row).toMatchObject({
       paymentId: payment.id,
       orderId: null,
-      customerId: customer.id,
+      accountId: customer.id,
       status: 'needs_response',
     });
     const [stored] = await db.select().from(s.payments).where(eq(s.payments.id, payment.id));
@@ -168,7 +171,7 @@ describe('a dispute of a customer top-up', () => {
     expect(wallet).toMatchObject({ balance: '48.5000', frozenReason: `Dispute DP-${row!.id} on PAY-${payment.id}` });
     expect(wallet!.frozenAt).not.toBeNull();
     const [audit] = await db.select().from(s.auditLogs).where(eq(s.auditLogs.action, 'froze wallet of'));
-    expect(audit).toMatchObject({ entityType: 'customer', entityId: customer.id, actorType: 'system' });
+    expect(audit).toMatchObject({ entityType: 'account', entityId: customer.id, actorType: 'system' });
     expect(await db.select().from(s.notifications).where(eq(s.notifications.event, 'wallet.frozen'))).toHaveLength(1);
 
     // Staff see it on the deposit and the wallet, never in /admin/disputes; the hold cannot be lifted while it is open.
@@ -181,9 +184,9 @@ describe('a dispute of a customer top-up', () => {
     });
     expect((await staff.get('/admin/disputes')).body).toEqual([]);
     expect((await staff.get(`/admin/disputes/${row!.id}`)).status).toBe(404);
-    expect((await staff.get(`/admin/customers/${customer.id}/wallet`)).body.openDisputes).toBe(1);
+    expect((await staff.get(`/admin/clients/${customer.id}/wallet`)).body.openDisputes).toBe(1);
     const unfreeze = await staff.post(
-      `/admin/customers/${customer.id}/wallet/unfreeze`,
+      `/admin/clients/${customer.id}/wallet/unfreeze`,
       { reason: 'Checked the dispute' },
       { 'idempotency-key': crypto.randomUUID() },
     );
@@ -197,7 +200,7 @@ describe('a dispute of a customer top-up', () => {
     expect(
       (
         await staff.post(
-          `/admin/customers/${customer.id}/wallet/adjust`,
+          `/admin/clients/${customer.id}/wallet/adjust`,
           { amount: '40.0000', direction: 'debit', reason: 'Spent on an order' },
           { 'idempotency-key': crypto.randomUUID() },
         )
@@ -229,7 +232,7 @@ describe('a dispute of a customer top-up', () => {
 
     // Below zero stays frozen until staff collect it (an audited credit adjustment), then the hold can be lifted.
     const refused = await staff.post(
-      `/admin/customers/${customer.id}/wallet/unfreeze`,
+      `/admin/clients/${customer.id}/wallet/unfreeze`,
       { reason: 'Collected' },
       { 'idempotency-key': crypto.randomUUID() },
     );
@@ -266,7 +269,7 @@ describe('a dispute of a customer top-up', () => {
     expect(await db.select().from(s.ledgerTransactions).where(eq(s.ledgerTransactions.kind, 'chargeback'))).toEqual([]);
     expect((await customerWalletRow(db, customer.id))!.frozenAt).not.toBeNull();
     const unfreeze = await staff.post(
-      `/admin/customers/${customer.id}/wallet/unfreeze`,
+      `/admin/clients/${customer.id}/wallet/unfreeze`,
       { reason: 'Dispute won' },
       { 'idempotency-key': crypto.randomUUID() },
     );
@@ -296,13 +299,25 @@ describe('a dispute of a customer top-up', () => {
 });
 
 describe('a dispute of a merchant top-up', () => {
-  it('created records it (no hold); lost takes the credit back from the merchant wallet, below zero if need be', async () => {
+  it('created records it and puts the merchant wallet on hold; lost takes the credit back from it, below zero if need be', async () => {
     const merchant = await insertWalletMerchant(db, { name: 'Zain Mobile Hub' });
     const { payment, reference } = await topUp({ clientId: merchant.id });
     expect((await walletOf(db, merchant.id)).wallet).toBe('48.5000');
     await send(dispute(reference));
     const [opened] = await disputeRows();
-    expect(opened).toMatchObject({ paymentId: payment.id, orderId: null, customerId: null });
+    expect(opened).toMatchObject({ paymentId: payment.id, orderId: null, accountId: merchant.id });
+    // A dispute opened on a card top-up freezes the live wallet whatever its kind (decision 064): the next order is refused.
+    const [merchantWallet] = await db
+      .select({ frozenAt: s.ledgerAccounts.frozenAt })
+      .from(s.ledgerAccounts)
+      .where(
+        and(
+          eq(s.ledgerAccounts.kind, 'client_wallet'),
+          eq(s.ledgerAccounts.ownerType, 'account'),
+          eq(s.ledgerAccounts.ownerId, merchant.id),
+        ),
+      );
+    expect(merchantWallet!.frozenAt).not.toBeNull();
     expect((await staff.get('/admin/payments')).body[0].dispute).toMatchObject({ status: 'needs_response' });
 
     await send(dispute(reference, { type: 'lost' }));

@@ -25,6 +25,7 @@ import {
   EDITABLE_STATUSES,
   contentProblems,
   linkProblems,
+  notificationSettingsUrl,
 } from './campaign-rules';
 import {
   type CampaignSortField,
@@ -371,7 +372,7 @@ export class CampaignAdminService {
               },
             }
           : audience === 'merchant'
-            ? { preferencesUrl: `${storeBaseUrl}/merchant/settings/notifications` }
+            ? { preferencesUrl: notificationSettingsUrl(storeBaseUrl) }
             : {}),
       },
     );

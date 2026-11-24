@@ -4,12 +4,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { TokenService } from '@src/infra/crypto';
 import { Blocklist } from '@src/modules/risk';
+import { ensureRetailGroup } from '../../support/accounts';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
+import { insertTaxRates } from '../../support/customers';
+import { insertUsd } from '../../support/fixtures';
 import { auditRows, blocklistRows, insertBlock } from '../../support/risk';
-import { makeCustomer } from '../../support/store';
 
 let t: TestApp;
 let staff: AdminApi;
@@ -161,12 +163,18 @@ describe('POST /admin/blocklist', () => {
     expect(await blocklistRows((await testDb()).db)).toEqual([]);
   });
 
-  it('blocks the email for the customer routes too: an entry made here is refused by the customer edit of feature 14b', async () => {
-    const customer = await makeCustomer(t);
+  it('blocks the email for the account routes too: an entry made here is refused by the staff create of an account (decision 064)', async () => {
+    const { db } = await testDb();
+    await insertUsd(db);
+    await ensureRetailGroup(db);
+    await insertTaxRates(db, ['GB', 'DE']);
     await staff.post('/admin/blocklist', { kind: 'email', value: 'Blocked@Example.com', reason: 'Chargeback lost' });
-    // Decision 047: the email of an account also needs customers:password.
-    const editor = await adminWith(t, ['customers:update', 'customers:password']);
-    const res = await editor.patch(`/admin/customers/${customer.id}`, { email: 'blocked@example.com' });
+    const creator = await adminWith(t, ['clients:read', 'clients:create']);
+    const res = await creator.post('/admin/clients', {
+      name: 'Blocked Person',
+      email: 'blocked@example.com',
+      country: 'DE',
+    });
     expect(res.status).toBe(422);
     expect(res.body.errors[0]).toMatchObject({ field: 'email', message: 'This email is blocked.' });
   });

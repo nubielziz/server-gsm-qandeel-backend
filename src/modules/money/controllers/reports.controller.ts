@@ -16,7 +16,7 @@ import {
 
 /** What the supplier report uses when the console sends no `days`. */
 const DEFAULT_SUPPLIER_DAYS = 7;
-/** What the top merchants report uses when the console sends no `days` or `limit`. */
+/** What the top accounts report uses when the console sends no `days`, `limit` or `scope`. */
 const DEFAULT_TOP_DAYS = 7;
 const DEFAULT_TOP_LIMIT = 6;
 
@@ -24,7 +24,7 @@ const DEFAULT_TOP_LIMIT = 6;
  * The report routes.
  *
  * Why: the console's Finance Reports tab (profit, wallet exposure), the Suppliers page (supplier report), the dashboard (top
- * merchants, wallet exposure) and the merchant page (the official statement PDF).
+ * accounts, wallet exposure) and the account page (the official statement PDF).
  *
  * @route GET /admin/reports/profit
  * @route GET /admin/reports/wallet-exposure
@@ -52,9 +52,9 @@ export class ReportsController {
   }
 
   /**
-   * Wallet balances, credit in use and reserved amounts.
+   * Wallet balances, credit in use, reserved amounts and store balances.
    *
-   * @returns the totals and the largest wallets
+   * @returns the merchant totals, the store balance totals and the largest merchant wallets
    * @route GET /admin/reports/wallet-exposure
    */
   @Route(getWalletExposure)
@@ -75,15 +75,19 @@ export class ReportsController {
   }
 
   /**
-   * Top merchants by spend and profit.
+   * Top accounts by spend and profit.
    *
-   * @param query the window in days and how many merchants
-   * @returns the ranked merchants
+   * @param query the window in days, how many accounts and which doors count
+   * @returns the ranked accounts
    * @route GET /admin/reports/top-clients
    */
   @Route(getTopClients)
   topClients(@Query() query: QueryOf<typeof getTopClients>): Promise<ResultOf<typeof getTopClients>> {
-    return this.reports.topClients(query.days ?? DEFAULT_TOP_DAYS, query.limit ?? DEFAULT_TOP_LIMIT);
+    return this.reports.topClients(
+      query.days ?? DEFAULT_TOP_DAYS,
+      query.limit ?? DEFAULT_TOP_LIMIT,
+      query.scope ?? 'all',
+    );
   }
 
   /**

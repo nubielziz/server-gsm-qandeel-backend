@@ -16,13 +16,14 @@ const COLUMNS = {
   evidenceDueAt: disputes.evidenceDueAt,
   status: disputes.status,
   reasonCode: disputes.reasonCode,
-  'customer.name': s.customers.name,
-  'customer.email': s.customers.email,
+  // The buyer of the order payment, an account of any rank (decision 064); the wire calls it `customer`.
+  'customer.name': s.clients.name,
+  'customer.email': s.clients.email,
 };
 
 /**
  * Only disputes of order payments: a top-up dispute (feature 21) has no order, no evidence pack and its own screens (the deposit and the
- * customer's Wallet tab), so `/admin/disputes*` never serves one (plan 21 § 5.6.9, P4).
+ * account's Wallet tab), so `/admin/disputes*` never serves one (plan 21 § 5.6.9, P4).
  */
 const OF_ORDER_PAYMENT = sql`exists (select 1 from payments p where p.id = ${disputes.paymentId} and p.purpose = 'order')`;
 
@@ -33,7 +34,7 @@ const OF_ORDER_PAYMENT = sql`exists (select 1 from payments p where p.id = ${dis
  * first), then the others by deadline; any other sort stays plain.
  *
  * @param db the database or a transaction
- * @param query the parsed list request (`q` searches the id, the reason code and the customer name)
+ * @param query the parsed list request (`q` searches the id, the reason code and the buyer's name)
  * @returns the page of disputes and the number matching the filters
  */
 export async function listDisputeRows(
@@ -50,7 +51,7 @@ export async function listDisputeRows(
     db
       .select({ dispute: disputes })
       .from(disputes)
-      .leftJoin(s.customers, eq(s.customers.id, disputes.customerId))
+      .leftJoin(s.clients, eq(s.clients.id, disputes.accountId))
       .where(where)
       .orderBy(...open, ...listOrderBy(query.sort, COLUMNS, disputes.id))
       .limit(query.range.limit)
@@ -58,7 +59,7 @@ export async function listDisputeRows(
     db
       .select({ total: sql<number>`count(*)::int` })
       .from(disputes)
-      .leftJoin(s.customers, eq(s.customers.id, disputes.customerId))
+      .leftJoin(s.clients, eq(s.clients.id, disputes.accountId))
       .where(where),
   ]);
   return { rows: rows.map((row) => row.dispute), total: counted?.total ?? 0 };

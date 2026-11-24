@@ -1,10 +1,11 @@
-// Integration tests of user rule 2 when a group move and a credit-limit raise of one merchant are sent at the same moment: the two
-// requests wait for each other, so the merchant never ends in a group without credit while holding a credit limit, and exactly one of the
-// two is refused with `422`.
+// Integration tests of user rule 2 when a rank change and a credit-limit raise of one merchant account are sent at the same moment: the two
+// requests wait for each other, so the account never ends in a rank without credit while holding a credit limit, and exactly one of the
+// two is refused (`409 RANK_CHANGE_BLOCKED` for the rank change, `422` for the raise). A rank is changed only by `POST /admin/clients/:id/rank`
+// (decision 064); `PATCH /admin/clients/:id` takes no group any more.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
-import { adminWith } from '../../support/admin-api';
+import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
@@ -27,13 +28,16 @@ beforeEach(async () => {
   await clearIdentityCaches(t);
 });
 
+/** An Idempotency-Key header: the rank route and the credit-limit route both require one (decision 064). */
+const newKey = () => ({ 'idempotency-key': crypto.randomUUID() });
+
 /** A merchant in a group with credit, and a group without credit to move it to. */
 async function merchantAndStrictGroup(round: number) {
   const { db } = await testDb();
   const merchant = await insertWalletMerchant(db, { name: `Merchant ${round}`, overdraftAllowed: true });
   const [strict] = await db
     .insert(s.clientGroups)
-    .values({ name: `No credit ${round}`, overdraftAllowed: false })
+    .values({ name: `No credit ${round}`, kind: 'b2b', overdraftAllowed: false })
     .returning({ id: s.clientGroups.id });
   return { merchant, strictId: strict!.id };
 }
@@ -46,7 +50,7 @@ async function stateOf(clientId: number) {
     .from(s.ledgerAccounts)
     .where(
       and(
-        eq(s.ledgerAccounts.ownerType, 'client'),
+        eq(s.ledgerAccounts.ownerType, 'account'),
         eq(s.ledgerAccounts.ownerId, clientId),
         eq(s.ledgerAccounts.kind, 'client_wallet'),
       ),
@@ -54,25 +58,38 @@ async function stateOf(clientId: number) {
   return { groupId: client!.groupId, limit: wallet!.limit };
 }
 
-describe('a group move and a credit-limit raise of one merchant (user rule 2)', () => {
+describe('a rank change and a credit-limit raise of one merchant account (user rule 2)', () => {
+  /** The rank route: the Owner role itself, a body with the group only, a key. */
+  const moveTo = (owner: AdminApi, clientId: number, groupId: number) =>
+    owner.post(`/admin/clients/${clientId}/rank`, { groupId }, newKey());
+  const raiseTo = (setter: AdminApi, clientId: number) =>
+    setter.call('PATCH', `/admin/clients/${clientId}/credit-limit`, { creditLimit: '500.0000' }, newKey());
+
   it('refuses the second of the two when they come one after the other, in either order', async () => {
-    const mover = await adminWith(t, ['clients:update', 'groups:update', 'clients:read']);
+    const owner = await adminWith(t, ['*']);
     const setter = await adminWith(t, ['wallet:credit_limit']);
     const first = await merchantAndStrictGroup(1);
-    expect(
-      (await setter.patch(`/admin/clients/${first.merchant.id}/credit-limit`, { creditLimit: '500.0000' })).status,
-    ).toBe(200);
-    const move = await mover.patch(`/admin/clients/${first.merchant.id}`, { groupId: first.strictId });
-    expect(move.status).toBe(422);
-    expect(move.body.errors[0].field).toBe('groupId');
+    expect((await raiseTo(setter, first.merchant.id)).status).toBe(200);
+    const move = await moveTo(owner, first.merchant.id, first.strictId);
+    expect(move.status).toBe(409);
+    expect(move.body.code).toBe('RANK_CHANGE_BLOCKED');
+    expect(move.body.errors[0]).toMatchObject({ field: 'groupId', code: 'credit_limit' });
     const second = await merchantAndStrictGroup(2);
-    expect((await mover.patch(`/admin/clients/${second.merchant.id}`, { groupId: second.strictId })).status).toBe(200);
-    const raise = await setter.patch(`/admin/clients/${second.merchant.id}/credit-limit`, { creditLimit: '500.0000' });
+    expect((await moveTo(owner, second.merchant.id, second.strictId)).status).toBe(200);
+    const raise = await raiseTo(setter, second.merchant.id);
     expect(raise.status).toBe(422);
     expect(raise.body.errors[0].field).toBe('creditLimit');
   });
 
-  it('waits for a change that holds the merchant row (a group move) and then judges the new group', async () => {
+  it('no longer changes a group through the account update: a group in the body is 422', async () => {
+    const editor = await adminWith(t, ['clients:update', 'clients:read']);
+    const { merchant, strictId } = await merchantAndStrictGroup(1);
+    const res = await editor.patch(`/admin/clients/${merchant.id}`, { groupId: strictId });
+    expect(res.status).toBe(422);
+    expect(res.body.errors[0]).toMatchObject({ field: 'groupId', code: 'use_rank_route' });
+  });
+
+  it('waits for a change that holds the account row (a rank change) and then judges the new rank', async () => {
     const { pool } = await testDb();
     const { merchant, strictId } = await merchantAndStrictGroup(1);
     const setter = await adminWith(t, ['wallet:credit_limit']);
@@ -83,12 +100,10 @@ describe('a group move and a credit-limit raise of one merchant (user rule 2)', 
       await other.query('select id from clients where id = $1 for update', [merchant.id]);
       await other.query('update clients set group_id = $1 where id = $2', [strictId, merchant.id]);
       let answered = false;
-      const raise = setter
-        .patch(`/admin/clients/${merchant.id}/credit-limit`, { creditLimit: '500.0000' })
-        .then((res) => {
-          answered = true;
-          return res;
-        });
+      const raise = raiseTo(setter, merchant.id).then((res) => {
+        answered = true;
+        return res;
+      });
       await Bun.sleep(300);
       expect(answered).toBe(false);
       await other.query('commit');
@@ -102,19 +117,17 @@ describe('a group move and a credit-limit raise of one merchant (user rule 2)', 
   });
 
   it('lets exactly one of the two through when they come at the same moment', async () => {
-    const mover = await adminWith(t, ['clients:update', 'groups:update', 'clients:read']);
+    const owner = await adminWith(t, ['*']);
     const setter = await adminWith(t, ['wallet:credit_limit']);
     const outcomes: string[] = [];
     for (let round = 0; round < 25; round++) {
       const { merchant, strictId } = await merchantAndStrictGroup(round);
-      const [move, raise] = await Promise.all([
-        mover.patch(`/admin/clients/${merchant.id}`, { groupId: strictId }),
-        setter.patch(`/admin/clients/${merchant.id}/credit-limit`, { creditLimit: '500.0000' }),
-      ]);
+      const [move, raise] = await Promise.all([moveTo(owner, merchant.id, strictId), raiseTo(setter, merchant.id)]);
       const state = await stateOf(merchant.id);
-      const statuses = [move.status, raise.status].sort().join(' ');
+      // The rank change wins (200) and the raise is refused (422), or the raise wins (200) and the rank change is refused (409).
+      const statuses = `${move.status} ${raise.status}`;
       outcomes.push(statuses);
-      expect(statuses, `round ${round}`).toBe('200 422');
+      expect(['200 422', '409 200'], `round ${round}`).toContain(statuses);
       // Whichever came second was refused: a merchant in the group without credit holds no limit.
       if (state.groupId === strictId) expect(state.limit, `round ${round}`).toBe('0.0000');
       else expect(state.limit, `round ${round}`).toBe('500.0000');

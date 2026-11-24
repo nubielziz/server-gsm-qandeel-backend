@@ -2,6 +2,7 @@
 // every transition, and the timeline writes and reads. The read model with its joins is order-read.repository.ts.
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
+import { isPrepaidOrder } from '../domain/door';
 import {
   type NewOrder,
   type NewOrderEvent,
@@ -49,17 +50,26 @@ export async function statusesOf(
     .orderBy(asc(orders.id));
 }
 
+/** What a caller gives `insertOrder`: the new order without the columns the door writes itself. */
+export type NewOrderValues = Omit<NewOrder, 'legacyClientId' | 'retiredCustomerId'>;
+
 /**
  * Inserts an order and returns the stored row.
  *
- * Why: `placed_at` and `created_at` are never given: both take the same transaction time (decision 025, orders-suppliers-1).
+ * Why: `placed_at` and `created_at` are never given: both take the same transaction time (decision 025, orders-suppliers-1). The buyer is
+ * `account_id`; the door is `source`. During the expand release `client_id` is still written for every order held from a wallet (any
+ * door but `store`), as the same value, because the old image reads it; a shop order leaves it empty (`orders_door_check`). Writing it here
+ * keeps that rule in one place, so no caller can break the check. `customer_id` is retired and never written.
  *
  * @param db the transaction
- * @param row the new order (without the two timestamps)
+ * @param row the new order (without the two timestamps and without the retired buyer columns)
  * @returns the stored order with its generated id (the Dhru REFERENCEID)
  */
-export async function insertOrder(db: DbExecutor, row: NewOrder): Promise<Order> {
-  const [created] = await db.insert(orders).values(row).returning();
+export async function insertOrder(db: DbExecutor, row: NewOrderValues): Promise<Order> {
+  const [created] = await db
+    .insert(orders)
+    .values({ ...row, ...(isPrepaidOrder(row) ? {} : { legacyClientId: row.accountId }) })
+    .returning();
   return created!;
 }
 
@@ -358,28 +368,31 @@ export interface CustomerOrderInputs {
 }
 
 /**
- * Rewrites the stored inputs of every order a customer placed, for a privacy action.
+ * Rewrites the stored inputs of every order an account placed, for a privacy action.
  *
- * Why: anonymizing a customer keeps the order (the accounting needs it) but not the device number (MISMATCHES B50, RESOLUTIONS b2c-4).
+ * Why: anonymizing an account keeps the order (the accounting needs it) but not the device number (MISMATCHES B50, RESOLUTIONS b2c-4).
  * The orders table is the orders module's, so the customers module asks here and says how to rewrite each row; the orders module does not
- * know what counts as personal. A row the function leaves as it is, is not written (its `updated_at` stays).
+ * know what counts as personal. Only the account's shop orders (the `store` door) are rewritten, as for the customers before the accounts
+ * were merged: an order held from a wallet carries the device numbers of the merchant's own buyers, which are not the account holder's data
+ * (the block reads the same set). The buyer is one column (`account_id`, decision 064). A row the function leaves as it is, is not written
+ * (its `updated_at` stays).
  *
  * @param tx the anonymization's transaction
- * @param customerId the customer
+ * @param accountId the account
  * @param now the clock's time, written as `updated_at` on a changed row
  * @param rewrite makes the new main input and inputs from the stored ones
  * @returns how many orders changed
  */
 export async function rewriteCustomerOrderInputs(
   tx: DbExecutor,
-  customerId: number,
+  accountId: number,
   now: Date,
   rewrite: (current: CustomerOrderInputs) => CustomerOrderInputs,
 ): Promise<number> {
   const rows = await tx
     .select({ id: orders.id, imei: orders.imei, inputs: orders.inputs })
     .from(orders)
-    .where(eq(orders.customerId, customerId))
+    .where(and(eq(orders.accountId, accountId), eq(orders.source, 'store')))
     .for('update');
   let changed = 0;
   for (const row of rows) {

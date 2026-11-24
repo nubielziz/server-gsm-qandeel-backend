@@ -4,21 +4,22 @@
   "domain": "A",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 56,
-    "endpoints": 70,
+    "rows": 59,
+    "endpoints": 73,
     "bySurface": {
       "client": 24,
-      "admin": 45,
+      "admin": 48,
       "store": 1
     },
-    "frontendCalled": 41
+    "frontendCalled": 44
   },
   "stages": [
     2,
     7,
     8,
     20,
-    27
+    27,
+    48
   ],
   "ownedTables": [
     {
@@ -1848,7 +1849,7 @@
       "description": "Active sessions of staff members and merchants.",
       "frontend": {
         "file": "src/features/access/api/sessions.ts",
-        "line": 23,
+        "line": 20,
         "fn": "listSessions"
       }
     },
@@ -1881,7 +1882,7 @@
       "description": "End a session.",
       "frontend": {
         "file": "src/features/access/api/sessions.ts",
-        "line": 33,
+        "line": 30,
         "fn": "revokeSession"
       }
     },
@@ -1913,9 +1914,9 @@
       "module": "identity",
       "description": "Merchants: creation, group, status and blocking.",
       "frontend": {
-        "file": "src/features/merchants/api/clients.ts",
-        "line": 23,
-        "fn": "listClients"
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 38,
+        "fn": "listAccounts"
       }
     },
     {
@@ -1946,9 +1947,9 @@
       "module": "identity",
       "description": "Merchants: creation, group, status and blocking.",
       "frontend": {
-        "file": "src/features/merchants/api/clients.ts",
-        "line": 32,
-        "fn": "getClient"
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 58,
+        "fn": "getAccount"
       }
     },
     {
@@ -1979,9 +1980,9 @@
       "module": "identity",
       "description": "Merchants: creation, group, status and blocking.",
       "frontend": {
-        "file": "src/features/merchants/api/clients.ts",
-        "line": 42,
-        "fn": "createClient"
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 70,
+        "fn": "createAccount"
       }
     },
     {
@@ -2012,9 +2013,9 @@
       "module": "identity",
       "description": "Merchants: creation, group, status and blocking.",
       "frontend": {
-        "file": "src/features/merchants/api/clients.ts",
-        "line": 56,
-        "fn": "updateClient"
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 83,
+        "fn": "updateAccount"
       }
     },
     {
@@ -2045,9 +2046,9 @@
       "module": "identity",
       "description": "API keys of a merchant.",
       "frontend": {
-        "file": "src/features/merchants/api/apiKeys.ts",
+        "file": "src/features/accounts/api/apiKeys.ts",
         "line": 17,
-        "fn": "listClientApiKeys"
+        "fn": "listAccountApiKeys"
       }
     },
     {
@@ -2079,7 +2080,7 @@
       "module": "identity",
       "description": "Revoke a merchant API key.",
       "frontend": {
-        "file": "src/features/merchants/api/apiKeys.ts",
+        "file": "src/features/accounts/api/apiKeys.ts",
         "line": 27,
         "fn": "revokeApiKey"
       }
@@ -2204,9 +2205,9 @@
       "module": "identity",
       "description": "Send a merchant a set-password or invitation link, or set a temporary password that must be changed at the next sign-in.",
       "frontend": {
-        "file": "src/features/merchants/api/security.ts",
+        "file": "src/features/accounts/api/security.ts",
         "line": 12,
-        "fn": "setClientPassword"
+        "fn": "setAccountPassword"
       },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
@@ -2244,9 +2245,9 @@
       "module": "identity",
       "description": "Turn off a merchant's two-factor sign-in and end their sessions.",
       "frontend": {
-        "file": "src/features/merchants/api/security.ts",
+        "file": "src/features/accounts/api/security.ts",
         "line": 25,
-        "fn": "resetClientTwoFactor"
+        "fn": "resetAccountTwoFactor"
       },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
@@ -2283,9 +2284,9 @@
       "module": "identity",
       "description": "Sign a merchant out of every device.",
       "frontend": {
-        "file": "src/features/merchants/api/security.ts",
+        "file": "src/features/accounts/api/security.ts",
         "line": 34,
-        "fn": "revokeClientSessions"
+        "fn": "revokeAccountSessions"
       },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
@@ -2324,9 +2325,9 @@
       "module": "identity",
       "description": "Send the merchant a new email verification link.",
       "frontend": {
-        "file": "src/features/merchants/api/security.ts",
+        "file": "src/features/accounts/api/security.ts",
         "line": 43,
-        "fn": "resendClientVerification"
+        "fn": "resendAccountVerification"
       },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
@@ -2363,9 +2364,9 @@
       "module": "identity",
       "description": "Create an API key for a merchant; the key is shown once.",
       "frontend": {
-        "file": "src/features/merchants/api/apiKeys.ts",
+        "file": "src/features/accounts/api/apiKeys.ts",
         "line": 39,
-        "fn": "createClientApiKey"
+        "fn": "createAccountApiKey"
       },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
@@ -2402,7 +2403,7 @@
       "module": "identity",
       "description": "Change a merchant key's per-minute limit and allowed addresses.",
       "frontend": {
-        "file": "src/features/merchants/api/apiKeys.ts",
+        "file": "src/features/accounts/api/apiKeys.ts",
         "line": 56,
         "fn": "updateApiKey"
       },
@@ -2586,6 +2587,123 @@
       "addition": {
         "file": "scripts/map-additions/27.mjs",
         "spec": "B216"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/clients/counts",
+      "method": "GET",
+      "path": "/admin/clients/counts",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "The counts of accounts in one aggregate: all, retail, merchant, guests, by status and invitations pending.",
+      "access": "staff-permission",
+      "permission": "clients:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:read",
+      "stage": 48,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/clients/counts",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/clients/counts"
+      },
+      "module": "identity",
+      "description": "The counts of accounts in one aggregate: all, retail, merchant, guests, by status and invitations pending.",
+      "frontend": {
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 48,
+        "fn": "getAccountCounts"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/legacy-accounts/:type/:id",
+      "method": "GET",
+      "path": "/admin/legacy-accounts/:type/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Find the account an old merchant or customer number belongs to now.",
+      "access": "staff-permission",
+      "permission": "clients:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:read",
+      "stage": 48,
+      "tables": [
+        "account_legacy_ids"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/legacy-accounts/:type/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/legacy-accounts/:type/:id"
+      },
+      "module": "identity",
+      "description": "Find the account an old merchant or customer number belongs to now.",
+      "frontend": {
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 127,
+        "fn": "findLegacyAccount"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/clients/:id/account",
+      "method": "POST",
+      "path": "/admin/clients/:id/account",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Make a login account of a guest: send a set-password link or set a temporary password.",
+      "access": "staff-permission",
+      "permission": "clients:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:update",
+      "stage": 48,
+      "tables": [
+        "clients",
+        "auth_tokens",
+        "notifications",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/account",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/account"
+      },
+      "module": "identity",
+      "description": "Make a login account of a guest: send a set-password link or set a temporary password.",
+      "frontend": {
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 94,
+        "fn": "makeAccount"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
       },
       "successStatus": 200
     }

@@ -339,7 +339,7 @@ describe('a chargeback closes the refunds the gateway has not paid (decision 048
       .values({
         paymentId: paid.paymentId,
         orderId: paid.orderId,
-        customerId: acknowledged!.customerId,
+        accountId: acknowledged!.accountId,
         amount: '1.0000',
         currency: acknowledged!.currency,
         reason: 'Asked by the buyer',

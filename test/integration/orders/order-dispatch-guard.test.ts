@@ -32,7 +32,7 @@ beforeEach(async () => {
 
 const SENT = new Date('2026-11-20T10:00:00.000Z');
 const order = (values: Partial<typeof s.orders.$inferInsert> = {}) =>
-  insertOrderRow(db, { serviceId: world.auto.serviceId, clientId: world.merchant.id, ...values });
+  insertOrderRow(db, { serviceId: world.auto.serviceId, accountId: world.merchant.id, ...values });
 const from = (state: Partial<Parameters<typeof updateOrderGuarded>[2]> = {}) => ({
   status: 'pending' as const,
   dispatchState: 'pending' as const,

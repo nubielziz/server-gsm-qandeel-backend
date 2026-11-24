@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock,
 import { and, eq, isNull } from 'drizzle-orm';
 import { PasswordHasher } from '@src/infra/crypto';
 import { DbService, schema as s } from '@src/infra/db';
-import { MERCHANT_MAIL_EVENTS, MerchantAuthTokens, SessionService } from '@src/modules/identity';
+import { AccountAuthTokens, MERCHANT_MAIL_EVENTS, MerchantAuthTokens, SessionService } from '@src/modules/identity';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
@@ -78,7 +78,8 @@ async function unconfirmed(email: string) {
     password: EARLIER_PASSWORD,
   });
   await t.app.get(DbService).runInTransaction(async (work) => {
-    await t.app.get(MerchantAuthTokens).issue(work, { clientId: merchant.id, purpose: 'verify_email' });
+    // The account seam: the link capture of the test records what it issues.
+    await t.app.get(AccountAuthTokens).issue(work, { accountId: merchant.id, purpose: 'verify_email' });
   });
   const link = emailedLinks().find((l) => l.kind === 'email_verification');
   expect(link).toBeDefined();
@@ -95,7 +96,9 @@ async function liveSessionsOf(clientId: number) {
   return db
     .select({ id: s.sessions.id })
     .from(s.sessions)
-    .where(and(eq(s.sessions.subjectType, 'client'), eq(s.sessions.subjectId, clientId), isNull(s.sessions.revokedAt)));
+    .where(
+      and(eq(s.sessions.subjectType, 'account'), eq(s.sessions.subjectId, clientId), isNull(s.sessions.revokedAt)),
+    );
 }
 
 /** A point a request waits at until the test lets it go on. */
@@ -192,10 +195,10 @@ describe('POST /client/auth/verify-email: the address and the password holder pr
     expect((await clientRow(link.clientId)).passwordHash).not.toBeNull();
   });
 
-  it('on the address of a shop customer, a verification without a session keeps the customer sign-in and leaves the merchant without a password', async () => {
+  it('on an address a guest row of the shop also holds, a verification without a session touches the merchant only and leaves it without a password', async () => {
     const email = 'shop.owner@example.com';
-    const customerPassword = 'owner-shop-password-1';
-    await makeCustomer(t, { email, password: customerPassword });
+    // One login per address (decision 064): the shop buyer of this address is a guest row, which has no sign-in of its own.
+    const guest = await makeCustomer(t, { email, guest: true });
     const oneForm = (password: string) =>
       portal().call(
         'POST',
@@ -211,10 +214,9 @@ describe('POST /client/auth/verify-email: the address and the password holder pr
     // The owner of the mailbox presses the button of the mail, in a browser without a merchant session.
     expect((await portal().verifyEmail(link.token)).statusCode).toBe(204);
 
-    // The shop sign-in of the owner still answers as the customer.
-    const shop = await oneForm(customerPassword);
-    expect(shop.statusCode).toBe(200);
-    expect(shop.json()).toMatchObject({ kind: 'customer' });
+    // The guest row has no login: nothing of it changes, and it gets no password link.
+    expect(await clientRow(guest.id)).toMatchObject({ hasAccount: false, emailVerifiedAt: null, passwordHash: null });
+    expect(passwordLinksOf(guest.id)).toEqual([]);
 
     // The holder's session ended and its password is gone: no sign-in, no second factor to enrol.
     expect((await holder.setupTwoFactor()).statusCode).toBe(401);
@@ -232,8 +234,8 @@ describe('POST /client/auth/verify-email: the address and the password holder pr
 
   it('after staff changed the address of a merchant with two-step sign-in, a verification without a session also ends that second factor', async () => {
     const email = 'new.address.owner@example.com';
-    const customerPassword = 'owner-shop-password-2';
-    await makeCustomer(t, { email, password: customerPassword });
+    // One login per address (decision 064): the shop buyer of the new address is a guest row.
+    const guest = await makeCustomer(t, { email, guest: true });
     const holder = await makeMerchant(t, { twofa: true, emailVerifiedAt: new Date('2026-10-01T00:00:00.000Z') });
     const staff = await adminWith(t, ['*'], { ip: '203.0.113.50' });
     expect((await staff.patch(`/admin/clients/${holder.id}`, { email })).status).toBe(200);
@@ -248,9 +250,7 @@ describe('POST /client/auth/verify-email: the address and the password holder pr
       totpSecretEnc: null,
       totpLastStep: null,
     });
-    const shop = await oneFormSignIn(email, customerPassword);
-    expect(shop.statusCode).toBe(200);
-    expect(shop.json()).toMatchObject({ kind: 'customer' });
+    expect(await clientRow(guest.id)).toMatchObject({ hasAccount: false, emailVerifiedAt: null, passwordHash: null });
 
     // The mailed link sets the password, and the sign-in with it asks for no second step.
     const [setLink] = passwordLinksOf(holder.id);
@@ -384,7 +384,7 @@ describe('POST /client/auth/verify-email next to a password change or a sign-in 
     const create = sessions.create.bind(sessions);
     const held = gate();
     spyOn(sessions, 'create').mockImplementation(async (input, work) => {
-      if (input.subjectType === 'client') {
+      if (input.subjectType === 'account') {
         held.enter();
         await held.opened;
       }
@@ -433,7 +433,7 @@ describe('POST /client/auth/verify-email next to a password change or a sign-in 
   });
 
   it('counts a session that is still at the code step as no session', async () => {
-    const merchant = await makeMerchant(t, { status: 'pending', twofa: true, emailVerifiedAt: null });
+    const merchant = await makeMerchant(t, { twofa: true, emailVerifiedAt: null });
     const browser = portal();
     expect((await browser.login(merchant.email)).json()).toEqual({ next: 'totp' });
     const issued = await t.app
@@ -514,7 +514,7 @@ describe('a sign-in opens its session only while the stored hash holds the passw
 });
 
 describe('two-step sign-in is enrolled only on a merchant that holds a password', () => {
-  it('refuses setup and enable with 401 once the password is gone, and turns nothing on', async () => {
+  it('refuses setup and enable with 409 CONFLICT once the password is gone, and turns nothing on', async () => {
     const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
     const browser = portal();
     expect((await browser.login(merchant.email)).json()).toEqual({ next: 'done' });
@@ -525,10 +525,13 @@ describe('two-step sign-in is enrolled only on a merchant that holds a password'
     const { db } = await testDb();
     await db.update(s.clients).set({ passwordHash: null }).where(eq(s.clients.id, merchant.id));
 
+    // Not 401, which would sign the caller out: the session stays, the account must choose a password first (decision 064).
     const enabled = await browser.enableTwoFactor(await codeFor(secret, clock.nowMs()));
-    expect(enabled.statusCode).toBe(401);
-    expect(problem(enabled).code).toBe('UNAUTHORIZED');
-    expect((await browser.setupTwoFactor()).statusCode).toBe(401);
+    expect(enabled.statusCode).toBe(409);
+    expect(problem(enabled)).toMatchObject({ code: 'CONFLICT', detail: 'Choose a password first.' });
+    const setupAgain = await browser.setupTwoFactor();
+    expect(setupAgain.statusCode).toBe(409);
+    expect(problem(setupAgain).code).toBe('CONFLICT');
     expect(await clientRow(merchant.id)).toMatchObject({ twofaEnabled: false });
   });
 });

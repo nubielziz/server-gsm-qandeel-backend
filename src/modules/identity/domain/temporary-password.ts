@@ -1,4 +1,4 @@
-// Temporary passwords for staff, merchants and customers (routes like POST /admin/staff and POST /admin/staff/:id/password): generated
+// Temporary passwords for staff and accounts of any rank (routes like POST /admin/staff and POST /admin/staff/:id/password): generated
 // by the server, shown once, from an alphabet without look-alike characters, valid for 72 hours (decision 052). Pure: the random
 // source and the time are parameters, so it is unit-tested.
 import { checkPasswordPolicy } from './password-policy';

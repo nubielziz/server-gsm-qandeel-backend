@@ -1,34 +1,12 @@
-// Unit tests of the status rules of suspension and sign-in.
+// Unit tests of the suspension reasons the retired customer route still names (decision 064: the status rules of sign-in are identity's).
 import { describe, expect, it } from 'bun:test';
-import {
-  SUSPEND_REASONS,
-  canSignIn,
-  sessionStateOf,
-  suspendedReasonText,
-} from '@src/modules/customers/domain/customer-status';
+import { MAX_SUSPEND_NOTE_LENGTH, SUSPEND_REASONS } from '@src/modules/customers/domain/customer-status';
 
-describe('suspendedReasonText', () => {
-  it('is the reason alone, or "reason: note" when there is a note', () => {
-    expect(suspendedReasonText('Other', undefined)).toBe('Other');
-    expect(suspendedReasonText('Other', '')).toBe('Other');
-    expect(suspendedReasonText('Account may be compromised', 'Customer called')).toBe(
-      'Account may be compromised: Customer called',
-    );
-  });
-
-  it('offers exactly the five reasons of the console', () => {
+describe('the suspension reasons', () => {
+  it('are exactly the five reasons of the console, with a note of at most 200 characters', () => {
     expect(SUSPEND_REASONS).toHaveLength(5);
     expect(SUSPEND_REASONS).toContain('Waiting for proof of identity or payment');
-  });
-});
-
-describe('canSignIn and sessionStateOf', () => {
-  it('lets only an active customer in, and maps blocked like suspended and anonymized like gone', () => {
-    expect(canSignIn('active')).toBe(true);
-    for (const status of ['suspended', 'blocked', 'anonymized'] as const) expect(canSignIn(status)).toBe(false);
-    expect(sessionStateOf('active')).toBe('ok');
-    expect(sessionStateOf('suspended')).toBe('suspended');
-    expect(sessionStateOf('blocked')).toBe('suspended');
-    expect(sessionStateOf('anonymized')).toBe('gone');
+    expect(SUSPEND_REASONS.at(-1)).toBe('Other');
+    expect(MAX_SUSPEND_NOTE_LENGTH).toBe(200);
   });
 });

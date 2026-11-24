@@ -507,9 +507,9 @@
       "module": "catalog",
       "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
-        "file": "src/features/merchants/api/groups.ts",
+        "file": "src/features/accounts/api/ranks.ts",
         "line": 22,
-        "fn": "listClientGroups"
+        "fn": "listRanks"
       }
     },
     {
@@ -540,9 +540,9 @@
       "module": "catalog",
       "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
-        "file": "src/features/merchants/api/groups.ts",
+        "file": "src/features/accounts/api/ranks.ts",
         "line": 31,
-        "fn": "getClientGroup"
+        "fn": "getRank"
       }
     },
     {
@@ -573,9 +573,9 @@
       "module": "catalog",
       "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
-        "file": "src/features/merchants/api/groups.ts",
+        "file": "src/features/accounts/api/ranks.ts",
         "line": 40,
-        "fn": "createClientGroup"
+        "fn": "createRank"
       }
     },
     {
@@ -606,9 +606,9 @@
       "module": "catalog",
       "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
-        "file": "src/features/merchants/api/groups.ts",
+        "file": "src/features/accounts/api/ranks.ts",
         "line": 50,
-        "fn": "updateClientGroup"
+        "fn": "updateRank"
       }
     },
     {
@@ -639,9 +639,9 @@
       "module": "catalog",
       "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
-        "file": "src/features/merchants/api/groups.ts",
+        "file": "src/features/accounts/api/ranks.ts",
         "line": 59,
-        "fn": "deleteClientGroup"
+        "fn": "deleteRank"
       }
     },
     {
@@ -1101,9 +1101,9 @@
       "module": "catalog",
       "description": "A special price for a merchant on a service.",
       "frontend": {
-        "file": "src/features/merchants/api/prices.ts",
-        "line": 21,
-        "fn": "listClientPrices"
+        "file": "src/features/accounts/api/prices.ts",
+        "line": 22,
+        "fn": "listAccountPrices"
       }
     },
     {
@@ -1134,9 +1134,9 @@
       "module": "catalog",
       "description": "A special price for a merchant on a service.",
       "frontend": {
-        "file": "src/features/merchants/api/prices.ts",
-        "line": 31,
-        "fn": "createClientPrice"
+        "file": "src/features/accounts/api/prices.ts",
+        "line": 32,
+        "fn": "createAccountPrice"
       }
     },
     {
@@ -1167,9 +1167,9 @@
       "module": "catalog",
       "description": "A special price for a merchant on a service.",
       "frontend": {
-        "file": "src/features/merchants/api/prices.ts",
-        "line": 40,
-        "fn": "updateClientPrice"
+        "file": "src/features/accounts/api/prices.ts",
+        "line": 41,
+        "fn": "updateAccountPrice"
       }
     },
     {
@@ -1200,9 +1200,9 @@
       "module": "catalog",
       "description": "A special price for a merchant on a service.",
       "frontend": {
-        "file": "src/features/merchants/api/prices.ts",
-        "line": 49,
-        "fn": "deleteClientPrice"
+        "file": "src/features/accounts/api/prices.ts",
+        "line": 54,
+        "fn": "deleteAccountPrice"
       }
     },
     {

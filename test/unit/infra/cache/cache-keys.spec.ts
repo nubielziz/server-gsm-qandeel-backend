@@ -21,7 +21,9 @@ describe('CacheKeys builders', () => {
 
   it('build the identity and platform keys of the security stack', () => {
     const hash = 'a'.repeat(64);
-    expect<string>(keys.session(hash)).toBe(`gsm:test:identity:session:${hash}`);
+    expect<string>(keys.session(hash)).toBe(`gsm:test:identity:session:${hash}:v2`);
+    // Decision 064: the view of an account session gained the rank, so a view cached under the name of before is never read.
+    expect<string>(keys.session(hash)).not.toBe(`gsm:test:identity:session:${hash}`);
     expect<string>(keys.rolePermissions(12)).toBe('gsm:test:identity:role:12');
     expect<string>(keys.settings()).toBe('gsm:test:platform:settings:all');
     expect(familyOf(keys.session(hash))).toBe('identity:session');
@@ -31,11 +33,12 @@ describe('CacheKeys builders', () => {
 
   it('build the keys of the machine guards (API keys and the webhook replay filter)', () => {
     const hash = 'b'.repeat(64);
-    expect<string>(keys.apiKey(hash)).toBe(`gsm:test:identity:api-key:${hash}:v2`);
+    expect<string>(keys.apiKey(hash)).toBe(`gsm:test:identity:api-key:${hash}:v3`);
     expect<string>(keys.webhookEvent('stripe', hash)).toBe(`gsm:test:identity:webhook-event:stripe:${hash}`);
     expect(familyOf(keys.apiKey(hash))).toBe('identity:api-key');
-    // Decision 062: a view cached under the name of before (no version) is never the name of a new one.
+    // Decisions 062 and 064: a view cached under a name of before (no version, or :v2) is never the name of a new one.
     expect<string>(keys.apiKey(hash)).not.toBe(`gsm:test:identity:api-key:${hash}`);
+    expect<string>(keys.apiKey(hash)).not.toBe(`gsm:test:identity:api-key:${hash}:v2`);
     expect(keys.apiKey(hash).startsWith(keys.prefix('identity', 'api-key'))).toBe(true);
     expect(familyOf(keys.webhookEvent('stripe', hash))).toBe('identity:webhook-event');
     expect(() => keys.apiKey('has:colon')).toThrow(/must match/);

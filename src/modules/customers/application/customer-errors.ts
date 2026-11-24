@@ -2,19 +2,6 @@
 import { AppError } from '../../../common/errors';
 
 /**
- * A refused password: `422 WEAK_PASSWORD` on a field.
- *
- * Why: the staff password policy applies to customers too; the console-style `errors[]` item names the request key.
- *
- * @param message what is wrong with the password
- * @param field the request key (`password` on set, `newPassword` on change)
- * @returns the error to throw
- */
-export function weakPassword(message: string, field: string): AppError {
-  return new AppError('WEAK_PASSWORD', { detail: message, errors: [{ field, code: 'WEAK_PASSWORD', message }] });
-}
-
-/**
  * A refused email: `422 VALIDATION_FAILED` on `email` with no code of its own.
  *
  * Why: RESOLUTIONS b2c-16: a blocklisted email is `422` with `errors[{field:'email', message:'This email is blocked.'}]`.
@@ -62,10 +49,26 @@ export function regionNotSupported(): AppError {
 }
 
 /**
- * `404 NOT_FOUND` for a customer id that matches nothing.
+ * `404 NOT_FOUND` for an account id that matches nothing.
  *
  * @returns the error to throw
  */
-export function customerNotFound(): AppError {
-  return new AppError('NOT_FOUND', { detail: 'No customer has this id.' });
+export function accountNotFound(): AppError {
+  return new AppError('NOT_FOUND', { detail: 'No account has this id.' });
+}
+
+/**
+ * `410 ROUTE_RETIRED`: the address of a customer route that the one account type retired (decision 064).
+ *
+ * Why: a customer is an account of the retail rank now, so every `/admin/customers` route has an account route that does the same for
+ * every rank. The old address stays registered during the expand release and answers this, so a client that still calls it learns what
+ * to call instead; it changes nothing. The contract release deletes the handler.
+ *
+ * @param replacement the account route to use, for the detail (for example `GET /admin/clients`)
+ * @returns the error to throw
+ */
+export function routeRetired(replacement: string): AppError {
+  return new AppError('ROUTE_RETIRED', {
+    detail: `Customers are accounts of the retail rank now. Use ${replacement}.`,
+  });
 }

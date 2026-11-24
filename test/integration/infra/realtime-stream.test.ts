@@ -53,7 +53,7 @@ interface Viewer {
 /** A signed-in customer (a new session of `existing` when given). */
 async function customer(app: TestApp = t, existing?: number): Promise<Viewer> {
   const id = existing ?? (await makeCustomer(app)).id;
-  const session = await openSession(app, { type: 'customer', id });
+  const session = await openSession(app, { type: 'account', id });
   return {
     id,
     sessionId: session.sessionId,
@@ -250,18 +250,18 @@ describe('session doorbells', () => {
     const two = await customer(t, one.id);
     const a = await started(await stream('/store/v1/me/stream', one.headers));
     const b = await started(await stream('/store/v1/me/stream', two.headers));
-    expect(await t.app.get(SessionService).revokeAllOf('customer', one.id)).toBe(2);
+    expect(await t.app.get(SessionService).revokeAllOf('account', one.id)).toBe(2);
     for (const s of [a, b]) {
       expect(await s.next('bye')).toMatchObject({ data: { reason: 'session_ended' } });
       await s.ended;
     }
   });
 
-  it("a customer block ends the customer's streams, and the reconnect is refused", async () => {
+  it("a block of a retail account ends the account's streams, and the reconnect is refused", async () => {
     const viewer = await customer();
     const s = await started(await stream('/store/v1/me/stream', viewer.headers));
-    const staff = await adminWith(t, ['customers:block']);
-    const blocked = await staff.post(`/admin/customers/${viewer.id}/block`, { blocked: true, reason: 'Other' });
+    const staff = await adminWith(t, ['clients:block']);
+    const blocked = await staff.post(`/admin/clients/${viewer.id}/block`, { blocked: true, reason: 'Other' });
     expect(blocked.status).toBe(204);
     expect(await s.next('bye')).toMatchObject({ data: { reason: 'session_ended' } });
     await s.ended;
@@ -368,7 +368,7 @@ describe('the logs and metrics of a stream', () => {
       level: 'log',
       line: {
         route: '/store/v1/me/stream',
-        viewer: `customer:${viewer.id}`,
+        viewer: `account:${viewer.id}`,
         sessionId: viewer.sessionId,
         reason: 'client_closed',
         frames: 2,
@@ -436,7 +436,7 @@ describe('a second app (system timers)', () => {
   let other: TestApp;
   let otherBase: string;
   let closed = false;
-  /** A source whose every doorbell renders a 30 KB frame for one customer: enough to fill a client that does not read. */
+  /** A source whose every doorbell renders a 30 KB frame for one account: enough to fill a client that does not read. */
   const big: RealtimeSource = {
     topic: 'test-big',
     cursorKey: 'z',
@@ -447,7 +447,7 @@ describe('a second app (system timers)', () => {
     resolve: (doorbell): Promise<Delivery[]> =>
       Promise.resolve([
         {
-          keys: [`u:customer:${String(doorbell['customerId'])}`],
+          keys: [`u:account:${String(doorbell['accountId'])}`],
           frame: { event: 'test.big', data: 'x'.repeat(30_000) },
         },
       ]),
@@ -472,7 +472,7 @@ describe('a second app (system timers)', () => {
     const publisher = other.app.get(RealtimePublisher);
     // 300 frames of 30 KB: 9 MB, far more than the kernel buffers and the 256 KB the hub lets wait.
     for (let i = 0; i < 300 && hubOf(other).size > 0; i++)
-      await publisher.publish('test-big', 'fill', { customerId: viewer.id });
+      await publisher.publish('test-big', 'fill', { accountId: viewer.id });
     await eventually(() => (hubOf(other).size === 0 ? true : undefined), 15_000);
     const scrape = await metrics(other);
     expect(metricValue(scrape, 'realtime_drops_total', { reason: 'slow_consumer' })).toBe(1);

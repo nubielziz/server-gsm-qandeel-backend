@@ -1,34 +1,59 @@
-// The merchant mails of the identity module: the outbox event types, their `notifications` queue routes and the worker processors. Loaded by
-// the API (it writes the events) and by the worker (src/worker.module.ts: it handles them).
+// The account mails of the identity module (decision 064; the file keeps its first name): the outbox event types of both ranks' links
+// (verification, reset, invitation and, for the retail rank, the sign-in link), their `notifications` queue routes, the job that rotates
+// a link and sends it, the worker processors and the one-time link tokens. Loaded by the API (it writes the events) and by the worker
+// (src/worker.module.ts: it handles them).
 import { Module } from '@nestjs/common';
 import { NotificationDeliveryModule } from '../platform';
-import { IdentityMailEventsModule } from './identity-mail-events.module';
+import { AccountsModule } from './accounts.module';
+import { AccountAuthTokenService } from './application/account-auth-tokens';
+import { AccountMailJobs } from './application/mail/account-mail-jobs';
+import { AccountMailOutboxService } from './application/mail/account-mail-outbox';
 import { MerchantLifecycleMails } from './application/mail/merchant-lifecycle-mails';
-import { MerchantMailJobs } from './application/mail/merchant-mail-jobs';
 import { MerchantMailOutbox } from './application/mail/merchant-mail-outbox';
+import { IdentityMailEventsModule } from './identity-mail-events.module';
 import {
-  EmailVerificationMailProcessor,
+  CustomerEmailVerificationMailProcessor,
+  CustomerInvitedMailProcessor,
+  CustomerPasswordResetMailProcessor,
+  MagicLinkMailProcessor,
+  MerchantEmailVerificationMailProcessor,
   MerchantInvitedMailProcessor,
-  PasswordResetMailProcessor,
-} from './jobs/merchant-mail.processors';
+  MerchantPasswordResetMailProcessor,
+} from './jobs/account-mail.processors';
+import { AccountAuthTokens } from './ports/account-auth-tokens';
+import { AccountMailOutbox } from './ports/account-mail-outbox';
 
 /**
- * Provides the merchant mail events, their processors and the job that rotates a link and sends it.
+ * Provides the account mail events, their seven processors, the job that rotates a link and sends it, and the account link tokens.
  *
- * Why: brief 2b and feature 12a. The API and the worker must both register the event types (the worker's relay only knows the routes
- * registered in its own process), so both load this module; only the worker turns the processors into BullMQ workers. The mail is sent
- * by the platform's notification delivery (`NotificationService.sendNow`): templates, the mail transport, retries and the log row.
+ * Why: brief 2b, features 12a and 14b, decision 064: one set of link mails serves every rank. The API and the worker must both register
+ * the event types (the worker's relay only knows the routes registered in its own process: `AccountMailOutboxService` registers them at
+ * module init), so both load this module; only the worker turns the processors into BullMQ workers. The mail is sent by the platform's
+ * notification delivery (`NotificationService.sendNow`): templates, the mail transport, retries and the log row. It imports
+ * `AccountsModule` (the mails read the account), which also makes the account records global in the worker.
+ *
+ * Port bindings: `AccountAuthTokens` is `AccountAuthTokenService` and `AccountMailOutbox` is `AccountMailOutboxService`, so a test spy on
+ * the port sees every call of the services that inject it. The class `AccountAuthTokenService` is exported too: the link sign-in and the
+ * link-token resolver need its lookups. `MerchantMailOutbox` stays for the callers of its old event names until the contract release.
  */
 @Module({
-  imports: [NotificationDeliveryModule, IdentityMailEventsModule],
+  imports: [NotificationDeliveryModule, IdentityMailEventsModule, AccountsModule],
   providers: [
     MerchantMailOutbox,
     MerchantLifecycleMails,
-    MerchantMailJobs,
-    EmailVerificationMailProcessor,
-    PasswordResetMailProcessor,
+    AccountAuthTokenService,
+    { provide: AccountAuthTokens, useExisting: AccountAuthTokenService },
+    AccountMailOutboxService,
+    { provide: AccountMailOutbox, useExisting: AccountMailOutboxService },
+    AccountMailJobs,
+    MerchantEmailVerificationMailProcessor,
+    MerchantPasswordResetMailProcessor,
     MerchantInvitedMailProcessor,
+    MagicLinkMailProcessor,
+    CustomerPasswordResetMailProcessor,
+    CustomerInvitedMailProcessor,
+    CustomerEmailVerificationMailProcessor,
   ],
-  exports: [MerchantMailOutbox, MerchantLifecycleMails],
+  exports: [MerchantMailOutbox, MerchantLifecycleMails, AccountAuthTokenService, AccountAuthTokens, AccountMailOutbox],
 })
 export class MerchantMailModule {}

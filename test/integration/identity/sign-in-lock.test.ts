@@ -1,22 +1,24 @@
 // Integration tests of decision 052, rule two: password sign-in attempts are counted per email across networks before the password is
 // checked, and after ten failures the next attempt locks the email for 15 minutes for every network the account has not signed in from
-// (staff on the console; merchants and customers share one shop lock). A correct password takes back only its own count. A new password
-// from an emailed link or one staff set ends the lock; a merchant's own change does not. While a lock runs, the attempts a network the
-// account used is still allowed share one budget per network (five in 15 minutes).
+// (staff on the console; accounts of every rank share one shop lock, whichever of the three sign-in routes they use). A correct password
+// takes back only its own count. A new password from an emailed link or one staff set ends the lock; an account's own change does not.
+// While a lock runs, the attempts a network the account used is still allowed share one budget per network (five in 15 minutes).
+// The email is the one of the login row: a guest row with the same email does not change what is counted or locked.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import type { LightMyRequestResponse } from 'fastify';
 import { CacheKeys } from '@src/infra/cache';
-import { DbService } from '@src/infra/db';
+import { DbService, schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
 import { SessionService, StaffAuthTokens } from '@src/modules/identity';
 import type { SubjectType } from '@src/modules/identity/db/schema';
 import { SignInFailures } from '@src/modules/identity/infra/sign-in-failures';
 import { adminWith } from '../../support/admin-api';
+import { makeAccount } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { MINUTE, SECOND, TestClock } from '../../support/clock';
-import { closeTestDb, resetDb } from '../../support/db';
+import { closeTestDb, resetDb, testDb } from '../../support/db';
 import {
   MERCHANT_PASSWORD,
   MerchantPortal,
@@ -168,7 +170,7 @@ describe('the console (staff)', () => {
   });
 });
 
-describe('the shop (merchants and customers)', () => {
+describe('the shop (accounts of every rank)', () => {
   it('locks a merchant email on POST /client/auth/login, and the lock holds on the one sign-in form and the store login', async () => {
     const merchant = await makeMerchant(t);
     await lockOut(merchantLogin, merchant.email);
@@ -180,7 +182,7 @@ describe('the shop (merchants and customers)', () => {
   it('lets a merchant sign in from a network of a past session while its email is locked', async () => {
     const merchant = await makeMerchant(t);
     const home = freshClientPrefix();
-    await pastSignIn('client', merchant.id, `${home}::1`);
+    await pastSignIn('account', merchant.id, `${home}::1`);
     await lockOut(smartSignIn, merchant.email);
     expect((await merchantLogin(`${home}::abcd`, merchant.email, MERCHANT_PASSWORD)).json()).toEqual({ next: 'done' });
     expectLocked(await merchantLogin(stranger(), merchant.email, MERCHANT_PASSWORD));
@@ -195,16 +197,17 @@ describe('the shop (merchants and customers)', () => {
     const own = await storeLogin(`${home}::2`, customer.email, CUSTOMER_PASSWORD);
     expect(own.statusCode, own.body).toBe(200);
     // The same through the one sign-in form.
-    expect((await smartSignIn(`${home}::3`, customer.email, CUSTOMER_PASSWORD)).json()).toEqual({
+    expect((await smartSignIn(`${home}::3`, customer.email, CUSTOMER_PASSWORD)).json()).toMatchObject({
       kind: 'customer',
       next: 'done',
+      rank: { kind: 'retail' },
     });
     expectLocked(await smartSignIn(stranger(), customer.email, CUSTOMER_PASSWORD));
   });
 
   it('treats an address in the IPv4 /24 of a past sign-in as familiar, and one in the next /24 as a stranger', async () => {
     const customer = await makeCustomer(t);
-    await pastSignIn('customer', customer.id, '198.51.100.7');
+    await pastSignIn('account', customer.id, '198.51.100.7');
     await lockOut(storeLogin, customer.email);
     expect((await storeLogin('198.51.100.200', customer.email, CUSTOMER_PASSWORD)).statusCode).toBe(200);
     expectLocked(await storeLogin('198.51.101.7', customer.email, CUSTOMER_PASSWORD));
@@ -245,7 +248,7 @@ describe('the shop (merchants and customers)', () => {
   it('keeps the shop lock when the merchant finishes a forced password change', async () => {
     const merchant = await makeMerchant(t);
     const home = freshClientPrefix();
-    await pastSignIn('client', merchant.id, `${home}::1`);
+    await pastSignIn('account', merchant.id, `${home}::1`);
     const staff = await adminWith(t, ['clients:read', 'clients:update', 'clients:security']);
     const set = await staff.post(`/admin/clients/${merchant.id}/password`, { mode: 'temporary_password' });
     expect(set.status, JSON.stringify(set.body)).toBe(200);
@@ -267,8 +270,9 @@ describe('the shop (merchants and customers)', () => {
   it('ends a customer lock when staff set a temporary password', async () => {
     const customer = await makeCustomer(t);
     await lockOut(storeLogin, customer.email);
-    const staff = await adminWith(t, ['customers:read', 'customers:password']);
-    const res = await staff.post(`/admin/customers/${customer.id}/password`, {
+    // One family of permissions and one route for every account (decision 064): the old customers route answers 410.
+    const staff = await adminWith(t, ['clients:read', 'clients:update', 'clients:security']);
+    const res = await staff.post(`/admin/clients/${customer.id}/password`, {
       mode: 'temporary_password',
       revokeSessions: false,
     });
@@ -326,7 +330,7 @@ describe('the attempts a familiar network is still allowed while the email is lo
 
   it('on the shop, the store login and the one sign-in form draw on the same budget', async () => {
     const customer = await makeCustomer(t);
-    await pastSignIn('customer', customer.id, at(HOME, 7));
+    await pastSignIn('account', customer.id, at(HOME, 7));
     await lockFromStrangers(storeLogin, customer.email);
 
     for (let host = 11; host <= 13; host++) {
@@ -390,16 +394,16 @@ describe('a locked email answers alike for every email', () => {
     expect(withoutRequestId(answers[1]!)).toEqual(withoutRequestId(answers[0]!));
   });
 
-  it('on the shop: a merchant, a customer, both and nobody get the same answer', async () => {
+  it('on the shop: a merchant, a retail account, a login row with a guest row of its email and nobody get the same answer', async () => {
     const merchantOnly = await makeMerchant(t, { emailVerifiedAt: new Date() });
     const customerOnly = await makeCustomer(t);
-    const both = uniqueEmail('both');
-    await makeMerchant(t, { email: both, emailVerifiedAt: new Date() });
-    await makeCustomer(t, { email: both });
+    const withGuest = uniqueEmail('with-guest');
+    await makeCustomer(t, { email: withGuest });
+    await makeAccount(t, { rank: 'retail', guest: true, email: withGuest });
     const kinds = [
       [merchantOnly.email, MERCHANT_PASSWORD],
       [customerOnly.email, CUSTOMER_PASSWORD],
-      [both, MERCHANT_PASSWORD],
+      [withGuest, CUSTOMER_PASSWORD],
       [uniqueEmail('nobody'), MERCHANT_PASSWORD],
     ] as const;
     const answers: LightMyRequestResponse[] = [];
@@ -412,49 +416,42 @@ describe('a locked email answers alike for every email', () => {
   });
 });
 
-describe("a merchant with a password on a customer's email (no mailbox proven)", () => {
-  const SQUATTER_PASSWORD = 'the-squatters-own-passphrase';
-
-  /** A customer with a password, and a pending merchant on the same email whose email was never verified (a row written before decision 062). */
-  async function sharedEmail(): Promise<string> {
+describe('a login row and a guest row with one email', () => {
+  /** A retail account with a password, and a guest row (an order without an account) that holds the same email. */
+  async function loginAndGuest(): Promise<{ email: string; loginId: number; guestId: number }> {
     const email = uniqueEmail('shared');
-    await makeCustomer(t, { email });
-    await makeMerchant(t, { email, status: 'pending', emailVerifiedAt: null, password: SQUATTER_PASSWORD });
-    return email;
+    const login = await makeCustomer(t, { email });
+    const guest = await makeAccount(t, { rank: 'retail', guest: true, email });
+    return { email, loginId: login.id, guestId: guest.id };
   }
 
-  it('cannot cancel the failures counted against the customer by signing in as the merchant', async () => {
-    const email = await sharedEmail();
-    for (let i = 0; i < 9; i++)
+  it('counts the failures against the one email: the tenth wrong password locks it for the login row, on every route', async () => {
+    const { email } = await loginAndGuest();
+    for (let i = 0; i < 10; i++)
       expect((await storeLogin(stranger(), email, WRONG)).statusCode, `failure ${i + 1}`).toBe(401);
-    expect((await merchantLogin(stranger(), email, SQUATTER_PASSWORD)).json()).toEqual({ next: 'done' });
-    expect((await storeLogin(stranger(), email, WRONG)).statusCode).toBe(401);
     expectLocked(await storeLogin(stranger(), email, CUSTOMER_PASSWORD));
     expectLocked(await smartSignIn(stranger(), email, CUSTOMER_PASSWORD));
+    expectLocked(await merchantLogin(stranger(), email, CUSTOMER_PASSWORD));
   });
 
-  it("gets at most ten guesses at the customer's password, however often the merchant signs in between", async () => {
-    const email = await sharedEmail();
+  it('signs the login row in, never the guest row of the same email', async () => {
+    const { email, loginId, guestId } = await loginAndGuest();
+    expect((await storeLogin(stranger(), email, CUSTOMER_PASSWORD)).statusCode).toBe(200);
+    const { db } = await testDb();
+    const rows = await db.select().from(s.sessions);
+    expect(rows.map((row) => row.subjectId)).toEqual([loginId]);
+    expect(rows.map((row) => row.subjectId)).not.toContain(guestId);
+  });
+
+  it('gets at most ten guesses at the password of the login row: the guest row of the same email gives no more', async () => {
+    const { email } = await loginAndGuest();
     const statuses: number[] = [];
     for (let round = 0; round < 3; round++) {
       for (let i = 0; i < 9; i++) statuses.push((await storeLogin(stranger(), email, WRONG)).statusCode);
-      expect((await merchantLogin(stranger(), email, SQUATTER_PASSWORD)).statusCode).not.toBe(401);
     }
     expect(statuses.filter((status) => status === 401)).toHaveLength(10);
     expect(statuses.slice(10).every((status) => status === 429)).toBe(true);
     expectLocked(await storeLogin(stranger(), email, CUSTOMER_PASSWORD));
-  });
-
-  it("cannot end a running lock by changing the merchant's own password", async () => {
-    const email = await sharedEmail();
-    const squatter = new MerchantPortal(t, stranger());
-    expect((await squatter.login(email, SQUATTER_PASSWORD)).statusCode).toBe(200);
-    await lockOut(storeLogin, email);
-    expectLocked(await storeLogin(stranger(), email, CUSTOMER_PASSWORD));
-    const changed = await squatter.changePassword(SQUATTER_PASSWORD, NEW_PASSWORD);
-    expect(changed.statusCode, changed.body).toBe(204);
-    expectLocked(await storeLogin(stranger(), email, CUSTOMER_PASSWORD));
-    expectLocked(await smartSignIn(stranger(), email, CUSTOMER_PASSWORD));
   });
 });
 

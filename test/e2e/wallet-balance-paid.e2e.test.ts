@@ -92,7 +92,7 @@ describe('the customer wallet story: top up by hand, pay from the balance, refun
 
   it('step 2: the customer uploads the receipt; the top-up waits for staff in Deposits', async () => {
     const { db } = await testDb();
-    const fileId = await insertProofFile(db, customer.id, { ownerType: 'customer' });
+    const fileId = await insertProofFile(db, customer.id);
     const res = await store.call(
       'POST',
       `/store/v1/me/wallet/top-ups/${topUpId}/receipt`,
@@ -128,7 +128,7 @@ describe('the customer wallet story: top up by hand, pay from the balance, refun
     });
     orderId = res.json().order.id;
     const { db } = await testDb();
-    expect((await orderRow(db, orderId)).customerId).toBe(customer.id);
+    expect((await orderRow(db, orderId)).accountId).toBe(customer.id);
     expect(await journalKinds()).toEqual(['deposit', 'b2c_payment']);
     expect((await ledgerTotals(db)).sum).toBe('0.0000');
   });

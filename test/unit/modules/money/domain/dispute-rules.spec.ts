@@ -7,6 +7,7 @@ import {
   EVIDENCE_KEYS,
   buildEvidencePack,
   chargebackReturn,
+  clawbackRulesOf,
   disputeNote,
   evidenceText,
   paymentStatusAfterDispute,
@@ -204,5 +205,30 @@ describe('paymentStatusAfterDispute', () => {
   it('otherwise gives the status its completed refunds leave', () => {
     expect(paymentStatusAfterDispute([], 'captured')).toBe('captured');
     expect(paymentStatusAfterDispute([{ status: 'won' }], 'partial_refund')).toBe('partial_refund');
+  });
+});
+
+describe('clawbackRulesOf', () => {
+  it('lets a merchant wallet pass its credit limit and leaves it as the dispute held it', () => {
+    expect(clawbackRulesOf('client_wallet')).toEqual({
+      allowBelowCreditLimit: true,
+      allowNegativeCustomerWallet: false,
+      freezeAfterPosting: false,
+    });
+  });
+
+  it('lets a store balance go below zero and freezes it on the row lock the posting took', () => {
+    expect(clawbackRulesOf('customer_wallet')).toEqual({
+      allowBelowCreditLimit: false,
+      allowNegativeCustomerWallet: true,
+      freezeAfterPosting: true,
+    });
+  });
+
+  it('never allows both floors to be passed by one posting', () => {
+    for (const kind of ['client_wallet', 'customer_wallet'] as const) {
+      const rules = clawbackRulesOf(kind);
+      expect(rules.allowBelowCreditLimit && rules.allowNegativeCustomerWallet).toBe(false);
+    }
   });
 });

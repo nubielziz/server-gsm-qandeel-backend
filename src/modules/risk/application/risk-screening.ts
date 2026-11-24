@@ -27,8 +27,11 @@ function countryOrNull(value: string | null | undefined): string | null {
 
 /** What the storefront payment tells the screening about the payment it just captured. */
 export interface ScreeningInput {
-  /** The customer, when the buyer has a customers row. */
-  readonly customerId: number | null;
+  /**
+   * The buyer's account row (decision 064): the login account of a signed-in checkout, or the guest row of the typed email; `null` when
+   * none is known. A guest checkout never names the login account that holds the same email.
+   */
+  readonly accountId: number | null;
   /** The buyer's email as given at checkout. */
   readonly email: string;
   readonly checkoutSessionId?: number | null;
@@ -36,7 +39,7 @@ export interface ScreeningInput {
   readonly orderId?: number | null;
   /** The captured amount in USD, VAT included (4-decimal text). */
   readonly amountUsd: string;
-  /** How the customer paid (`b2cPaymentMethod`, or `balance` for the store balance of feature 21). */
+  /** How the buyer paid (`b2cPaymentMethod`, or `balance` for the store balance of feature 21). */
   readonly paymentMethod: 'card' | 'wallet' | 'crypto' | 'balance';
   /** The visitor's address (decision 018's trusted proxy address). */
   readonly ip?: string | null;
@@ -53,7 +56,7 @@ export interface ScreeningInput {
   /** The card is prepaid, from the card driver's charge details. */
   readonly prepaidCard?: boolean;
   /**
-   * True when a signed-in customer opened the checkout (`checkout_sessions.opened_signed_in`): only then do the account's history and
+   * True when a signed-in account opened the checkout (`checkout_sessions.opened_signed_in`): only then do the account's history and
    * order counts apply to this payment (decision 050). A guest payment is judged as a first order.
    */
   readonly openedSignedIn: boolean;
@@ -83,7 +86,7 @@ export interface ScreeningResult {
 
 /** What a billing job asks about a top-up. */
 export interface TopUpScreeningInput {
-  /** The merchant's email, when known. */
+  /** The account's email, when known. */
   readonly email?: string | null;
   /** The gateway's card fingerprint of the top-up payment. */
   readonly cardFingerprint?: string | null;
@@ -100,14 +103,16 @@ export interface TopUpScreening {
  * Screens payments.
  *
  * Why: orders-suppliers-11 and the map: "rules score a B2C payment; a flagged order is placed held". The rules come from the table
- * inside the caller's transaction (never from a cache: they decide whether a customer's money is held). Every screening writes
- * one `risk_assessments` row with the score, the signals (plain sentences) and the decision, whatever the decision is, so the
- * customer detail's risk panel and the queue's history have the record. A flagged automatic top-up goes to staff review
+ * inside the caller's transaction (never from a cache: they decide whether a buyer's money is held). Every screening writes
+ * one `risk_assessments` row (with the buyer's `account_id`) with the score, the signals (plain sentences) and the decision, whatever the
+ * decision is, so the account's risk panel and the queue's history have the record. A flagged automatic top-up goes to staff review
  * (`payments.review_required`, money-3): {@link RiskScreening.reviewTopUp} answers that without writing anything.
  *
  * Decision 050: `assess` first takes a transaction lock on the buyer's email, so payments of one email screened at the same moment see each
  * other's orders. A signed-in payment is judged on the account's own signed-in checkouts; a guest payment is always a first order, is counted
- * on its email and the customer row of that email, and adds nothing to the history of the account that owns the email. The three countries
+ * on its email and its own guest row, and adds nothing to the history of the account that owns the email. Decision 064: the velocity rules
+ * (orders in 24 hours from one email, orders in an hour from one device, the first order) count shop orders only, whatever the rank of the
+ * buyer is today: a merchant's portal and Dhru orders never raise them. The three countries
  * (tax, visitor, card) are upper-cased once and all three are probed on the country blocklist. A declared tax country that the card's country
  * (else the visitor's) contradicts is a review reason, while the shop has a tax window in force: the order is held, whatever the score.
  *
@@ -135,7 +140,7 @@ export class RiskScreening {
     // Lock order (decision 050): the payment and checkout-session rows the caller holds, then this lock, then the order, stock and ledger
     // rows of the placement. No network call happens while it is held.
     await lockBuyer(tx, email);
-    const proven = input.openedSignedIn && input.customerId !== null;
+    const proven = input.openedSignedIn && input.accountId !== null;
     const rules = await this.rules.load(tx);
     const imei = input.imei ? normalizeImei(input.imei) : null;
     const taxCountry = countryOrNull(input.country);
@@ -152,7 +157,7 @@ export class RiskScreening {
       tx,
       {
         email,
-        customerId: input.customerId,
+        accountId: input.accountId,
         ip: input.ip ?? null,
         exceptOrderId: input.orderId ?? null,
         exceptSessionId: input.checkoutSessionId ?? null,
@@ -183,7 +188,7 @@ export class RiskScreening {
     const row = await insertAssessment(tx, {
       checkoutSessionId: input.checkoutSessionId ?? null,
       orderId: input.orderId ?? null,
-      customerId: input.customerId,
+      accountId: input.accountId,
       score: verdict.score,
       decision: verdict.decision,
       signals: [...verdict.signals],
@@ -219,8 +224,8 @@ export class RiskScreening {
    * Tells whether an automatic top-up must wait for staff.
    *
    * Why: RESOLUTIONS money-3: after the delay the auto-credit job re-checks the gateway and risk; a flagged payment gets
-   * `review_required` and the reason as its note. A top-up is a merchant paying in, so the only risk facts are the blocklist: the
-   * card the money came from, and the merchant's email.
+   * `review_required` and the reason as its note. A top-up is an account paying a balance in, so the only risk facts are the blocklist: the
+   * card the money came from, and the account's email.
    *
    * @param db the database or the job's transaction
    * @param input the card fingerprint and the email

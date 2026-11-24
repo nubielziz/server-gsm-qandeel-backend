@@ -9,7 +9,7 @@ import {
 
 const campaign = (over: Partial<RenderableCampaign> = {}): RenderableCampaign => ({
   content: { title: 'Hello {{name}}', body: 'Maintenance on Friday.' },
-  link: { customer: '/account/orders', merchant: '/merchant/wallet', staff: '/system' },
+  link: { customer: '/account/orders', merchant: '/account/wallet', staff: '/system' },
   purpose: 'service',
   ...over,
 });
@@ -17,13 +17,13 @@ const campaign = (over: Partial<RenderableCampaign> = {}): RenderableCampaign =>
 describe('linkFor', () => {
   it('joins the base address and the audience path, without a double slash', () => {
     expect(linkFor(campaign().link, 'customer', 'https://shop.example/')).toBe('https://shop.example/account/orders');
-    expect(linkFor(campaign().link, 'merchant', 'https://shop.example')).toBe('https://shop.example/merchant/wallet');
+    expect(linkFor(campaign().link, 'merchant', 'https://shop.example')).toBe('https://shop.example/account/wallet');
   });
 
   it('answers the path alone without a base, and nothing without a link', () => {
     expect(linkFor(campaign().link, 'customer')).toBe('/account/orders');
     expect(linkFor(null, 'customer', 'https://shop.example')).toBeUndefined();
-    expect(linkFor({ merchant: '/merchant' }, 'customer', 'https://shop.example')).toBeUndefined();
+    expect(linkFor({ merchant: '/account/wallet' }, 'customer', 'https://shop.example')).toBeUndefined();
   });
 });
 
@@ -71,9 +71,9 @@ describe('renderCampaign', () => {
       ...base,
       audience: 'merchant',
       channel: 'email',
-      preferencesUrl: 'https://shop.example/merchant/settings/notifications',
+      preferencesUrl: 'https://shop.example/account/settings/notifications',
     });
-    expect(message.text).toEndWith('Manage notifications: https://shop.example/merchant/settings/notifications');
+    expect(message.text).toEndWith('Manage notifications: https://shop.example/account/settings/notifications');
     expect(message.headers).toBeUndefined();
   });
 

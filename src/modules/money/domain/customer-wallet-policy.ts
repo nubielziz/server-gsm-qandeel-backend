@@ -1,5 +1,6 @@
-// The customer wallet policy (feature 21, plan § 5.8): the eight settings turned into one value with safe defaults, and the pure rules that
-// use it: top-up limits, liveness of an open top-up, the store status of a top-up, the customer's memo and the spendable figures.
+// The store wallet policy (feature 21, plan § 5.8): the eight settings turned into one value with safe defaults, and the pure rules that
+// use it: top-up limits, liveness of an open top-up, the store status of a top-up, the account's memo, the spendable figures and the
+// money side of an erasure (decision 064).
 import type { FieldError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { CUSTOMER_WALLET_SETTINGS, CUSTOMER_WALLET_SETTING_RANGES } from '../../platform';
@@ -218,4 +219,55 @@ export function availableOf(facts: { balance: Money; frozen: boolean; enabled: b
 export function roomOf(maxBalance: Money, balance: Money, pendingNet: Money): Money {
   const room = maxBalance.sub(balance).sub(pendingNet);
   return room.isNegative() ? Money.zero() : room;
+}
+
+/** What the money side of an account's erasure looks at, read under the locks of the erasure. */
+export interface ErasureFacts {
+  /** The account's wallet-kind ledger accounts (`client_wallet`, `client_hold`, `customer_wallet`): kind, balance and whether it is on hold. */
+  readonly wallets: ReadonlyArray<{ readonly kind: string; readonly balance: Money; readonly frozen: boolean }>;
+  /** Whether a top-up payment of the account (either wallet kind) still waits for staff or the automatic credit. */
+  readonly pendingTopUpPayment: boolean;
+  /** How many disputes of the account's top-ups are open. */
+  readonly openTopUpDisputes: number;
+  /** The oldest order paid from the store balance that is still open (its rejection refunds to the balance), if any. */
+  readonly openBalanceOrderId: number | undefined;
+  /** The oldest refund to the store balance that waits for staff, if any. */
+  readonly openBalanceRefundId: number | undefined;
+}
+
+/**
+ * Tells what keeps an account from being erased, in money's terms.
+ *
+ * Why: decision 064, O12 and risk K11: money is never stranded on an anonymized account. Every wallet of the account and its
+ * hold must be at zero and no wallet on hold (the inactive kind may linger at zero after a rank change), and nothing may be on its way to
+ * the balance: a top-up waiting for review, an open top-up dispute, an order paid from the balance that is still open (its rejection
+ * refunds to the balance) and a refund to the balance that waits for staff. An open order paid by card does not hold the erasure: its
+ * refund goes back to the card. The first reason found is answered, in this order.
+ *
+ * @param facts what the erasure transaction read
+ * @returns the sentence staff read (it becomes the `409 CONFLICT` detail), or `undefined` when nothing holds the erasure
+ */
+export function erasureRefusal(facts: ErasureFacts): string | undefined {
+  for (const wallet of facts.wallets) {
+    if (wallet.balance.isZero()) continue;
+    const amount = `${wallet.balance.toWire()} USD`;
+    if (wallet.kind === 'customer_wallet') {
+      return `The customer has a store balance of ${amount}. Bring it to zero with an adjustment first.`;
+    }
+    if (wallet.kind === 'client_hold')
+      return `The account still has ${amount} held for orders. Settle or release them first.`;
+    return `The account has a merchant wallet balance of ${amount}. Bring it to zero first.`;
+  }
+  if (facts.wallets.some((wallet) => wallet.frozen)) {
+    return 'The balance of this account is on hold. Lift the hold first.';
+  }
+  if (facts.pendingTopUpPayment) return 'A top-up of this customer waits for review. Approve or reject it first.';
+  if (facts.openTopUpDisputes > 0) return 'A dispute of this customer’s top-up is still open.';
+  if (facts.openBalanceOrderId !== undefined) {
+    return `Order ORD-${facts.openBalanceOrderId} of this customer was paid from the store balance and is still open. Complete or reject it first.`;
+  }
+  if (facts.openBalanceRefundId !== undefined) {
+    return `Refund RF-${facts.openBalanceRefundId} to this customer’s store balance is still open. Approve or decline it first.`;
+  }
+  return undefined;
 }

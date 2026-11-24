@@ -4,12 +4,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { StorageService } from '@src/infra/storage';
+import { makeAccount } from '../../support/accounts';
 import { adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { insertInvoiceRow } from '../../support/billing';
 import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
+import { insertUsd } from '../../support/fixtures';
 import { insertWalletMerchant } from '../../support/money';
 import { pdfFontNames } from '../../support/pdf';
 
@@ -63,6 +65,14 @@ describe('POST /admin/invoices', () => {
       createdAt: '2026-11-01T10:00:00.000Z',
     });
     expect(res.body.number).toBe(`INV-2026-${String(res.body.id).padStart(4, '0')}`);
+    // The owner is the account and the invoice fills the merchant wallet; the old column repeats the account while it lasts (decision 064).
+    const [stored] = await db.select().from(s.invoices).where(eq(s.invoices.id, res.body.id));
+    expect(stored).toMatchObject({
+      accountId: merchant.id,
+      walletKind: 'client_wallet',
+      legacyClientId: merchant.id,
+      issuedBy: admin.staffId,
+    });
     // No ledger entry at issue.
     expect(await db.select().from(s.ledgerTransactions)).toHaveLength(0);
     const [audit] = await db.select().from(s.auditLogs);
@@ -75,7 +85,7 @@ describe('POST /admin/invoices', () => {
     const [file] = await db.select().from(s.files).where(eq(s.files.id, read.body.pdfFileId));
     expect(file).toMatchObject({
       mime: 'application/pdf',
-      ownerType: 'client',
+      ownerType: 'account',
       ownerId: merchant.id,
       filename: `${res.body.number}.pdf`,
     });
@@ -146,6 +156,22 @@ describe('POST /admin/invoices', () => {
     expect(await db.select().from(s.invoices)).toHaveLength(0);
   });
 
+  it('refuses an account of the retail rank and a guest with not_merchant, and writes nothing (decision 064)', async () => {
+    const { db } = await testDb();
+    const retail = await makeAccount({ rank: 'retail', country: 'JO', db });
+    const guest = await makeAccount({ rank: 'retail', guest: true, country: 'JO', db });
+    const admin = await adminWith(t, ['invoices:create']);
+    for (const id of [retail.id, guest.id]) {
+      const res = await admin.post('/admin/invoices', { clientId: id, amount: '10', description: 'x' });
+      expect(res.status).toBe(422);
+      expect(res.body.errors).toEqual([
+        { field: 'clientId', code: 'not_merchant', message: expect.stringContaining('merchant') },
+      ]);
+    }
+    expect(await db.select().from(s.invoices)).toHaveLength(0);
+    expect(await db.select().from(s.auditLogs)).toHaveLength(0);
+  });
+
   it('refuses a caller who may only read invoices', async () => {
     const reader = await adminWith(t, ['invoices:read']);
     expect((await reader.post('/admin/invoices', { clientId: 1, amount: '1', description: 'x' })).status).toBe(403);
@@ -157,17 +183,14 @@ describe('GET /admin/invoices', () => {
     const { db } = await testDb();
     const zain = await insertWalletMerchant(db, { name: 'Zain Mobile Hub' });
     const gulf = await insertWalletMerchant(db, { name: 'Gulf Digital' });
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: 'dana@example.com', name: 'Dana Customer' })
-      .returning({ id: s.customers.id });
+    const customer = await makeAccount({ rank: 'retail', email: 'dana@example.com', name: 'Dana Customer', db });
     const open = await insertInvoiceRow(db, zain.id, { amount: '100.0000', description: 'Annual fee', kind: 'manual' });
     await insertInvoiceRow(db, zain.id, { amount: '300.0000', status: 'paid', paidAt: clock.now() });
     await insertInvoiceRow(db, gulf.id, { amount: '200.0000', status: 'void' });
-    await insertInvoiceRow(db, zain.id, {
+    // A storefront receipt belongs to the account of the buyer (a retail rank), not to a merchant.
+    await insertInvoiceRow(db, customer.id, {
       kind: 'receipt',
-      clientId: null,
-      customerId: customer!.id,
+      legacyClientId: null,
       amount: '20.0000',
       status: 'paid',
     });
@@ -184,14 +207,19 @@ describe('GET /admin/invoices', () => {
     expect((await admin.get('/admin/invoices?status=paid&status=void')).total).toBe(3);
     expect((await admin.get('/admin/invoices?kind=manual')).total).toBe(1);
     expect((await admin.get(`/admin/invoices?clientId=${gulf.id}`)).total).toBe(1);
+    // `accountId` is the filter and `clientId` its alias: both read the account, whatever its side of the wire (decision 064).
+    expect((await admin.get(`/admin/invoices?accountId=${gulf.id}`)).total).toBe(1);
+    expect((await admin.get(`/admin/invoices?accountId=${zain.id}`)).total).toBe(2);
+    expect((await admin.get(`/admin/invoices?accountId=${customer.id}`)).body[0]).toMatchObject({ kind: 'receipt' });
+    expect((await admin.get(`/admin/invoices?clientId=${customer.id}`)).total).toBe(1);
     expect((await admin.get('/admin/invoices?q=gulf')).total).toBe(1);
     expect((await admin.get(`/admin/invoices?q=${open.number}`)).body[0].id).toBe(open.id);
     const byCustomer = await admin.get('/admin/invoices?q=dana');
     expect(byCustomer.body[0]).toMatchObject({
       kind: 'receipt',
       client: null,
-      // Decision 047: this caller does not hold customers:read, so the address comes masked.
-      customer: { id: customer!.id, name: 'Dana Customer', email: 'da•••@example.com' },
+      // Decision 047: this caller does not hold clients:read, so the address comes masked.
+      customer: { id: customer.id, name: 'Dana Customer', email: 'da•••@example.com' },
     });
     expect((await admin.get('/admin/invoices?_sort=status')).status).toBe(200);
     expect((await admin.get('/admin/invoices?status=bogus')).status).toBe(422);
@@ -212,22 +240,18 @@ describe('GET /admin/invoices', () => {
     expect(all.body.map((row: { id: number; kind: string }) => [row.id, row.kind])).toEqual([[old.id, 'statement']]);
   });
 
-  it("masks a storefront receipt's customer address without customers:read (decision 047)", async () => {
+  it("masks a storefront receipt's customer address without clients:read (decision 047)", async () => {
     const { db } = await testDb();
-    const zain = await insertWalletMerchant(db, { name: 'Zain' });
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: 'dana@example.com', name: 'Dana Customer' })
-      .returning({ id: s.customers.id });
-    const receipt = await insertInvoiceRow(db, zain.id, {
+    await insertUsd(db);
+    const customer = await makeAccount({ rank: 'retail', email: 'dana@example.com', name: 'Dana Customer', db });
+    const receipt = await insertInvoiceRow(db, customer.id, {
       kind: 'receipt',
-      clientId: null,
-      customerId: customer!.id,
+      legacyClientId: null,
       amount: '20.0000',
       status: 'paid',
     });
     const plain = await adminWith(t, ['invoices:read']);
-    const reader = await adminWith(t, ['invoices:read', 'customers:read']);
+    const reader = await adminWith(t, ['invoices:read', 'clients:read']);
     expect((await plain.get('/admin/invoices')).body[0].customer.email).toBe('da•••@example.com');
     expect((await plain.get(`/admin/invoices/${receipt.id}`)).body.customer.email).toBe('da•••@example.com');
     expect((await reader.get('/admin/invoices')).body[0].customer.email).toBe('dana@example.com');
@@ -235,6 +259,33 @@ describe('GET /admin/invoices', () => {
     // The names are searched for everybody, and the address is not part of the search.
     expect((await plain.get('/admin/invoices?q=dana')).total).toBe(1);
     expect((await plain.get('/admin/invoices?q=example.com')).total).toBe(0);
+  });
+
+  it('names the account of an invoice by its wallet kind: the client of a merchant wallet, the customer of any other (decision 064)', async () => {
+    const { db } = await testDb();
+    const merchant = await insertWalletMerchant(db, { name: 'Zain Mobile Hub' });
+    const shopper = await makeAccount({ rank: 'retail', email: 'dana@example.com', name: 'Dana Customer', db });
+    const merchantTopUp = await insertInvoiceRow(db, merchant.id, { description: 'Top-up' });
+    const storeTopUp = await insertInvoiceRow(db, shopper.id, {
+      walletKind: 'customer_wallet',
+      legacyClientId: null,
+      description: 'Store balance top-up',
+    });
+    // An account that was a retail account and became a merchant keeps showing its old store top-ups as a customer's.
+    const crossed = await insertInvoiceRow(db, merchant.id, {
+      walletKind: 'customer_wallet',
+      description: 'Old store top-up',
+    });
+    const admin = await adminWith(t, ['invoices:read', 'clients:read']);
+    const sides = async (id: number) => {
+      const body = (await admin.get(`/admin/invoices/${id}`)).body;
+      return [body.client?.id ?? null, body.customer?.id ?? null];
+    };
+    expect(await sides(merchantTopUp.id)).toEqual([merchant.id, null]);
+    expect(await sides(storeTopUp.id)).toEqual([null, shopper.id]);
+    expect(await sides(crossed.id)).toEqual([null, merchant.id]);
+    // The filter finds all of an account's invoices, of either wallet kind.
+    expect((await admin.get(`/admin/invoices?accountId=${merchant.id}`)).total).toBe(2);
   });
 
   it('reads one invoice, answers 404 for an unknown id and 403 without invoices:read', async () => {

@@ -123,23 +123,31 @@ function bestMatch(
  * Why: scenario ip-rules steps 3-6. (1) A live block rule with the audience's scope, or with scope `all`, that covers the
  * address refuses it. (2) For the admin console, when the restriction is on, the address needs a live allow rule; none
  * refuses it. (3) Otherwise it is let through. A rule past its `expiresAt` drops out by itself, without a reload. An address
- * that could not be read matches no rule: it passes everywhere except the restricted admin console.
+ * that could not be read matches no rule: it passes everywhere except the restricted admin console. A request with two audiences (the
+ * shared sign-in paths, see `ipAudienceOf`) is refused by a block rule whose scope covers either one.
  *
  * @param rules the compiled rules
  * @param address the client address (`undefined` when it could not be read)
- * @param audience the audience of the request
+ * @param audience the audience of the request, or its audiences when it has more than one
  * @param nowMs the current time in milliseconds
  * @returns the decision and the rule that made it
  */
 export function decideIpAccess(
   rules: CompiledIpRules,
   address: IpAddress | undefined,
-  audience: IpAudience,
+  audience: IpAudience | readonly IpAudience[],
   nowMs: number,
 ): IpDecision {
-  const block = bestMatch(rules, 'block', (rule) => rule.scope === 'all' || rule.scope === audience, address, nowMs);
+  const audiences: readonly IpAudience[] = typeof audience === 'string' ? [audience] : audience;
+  const block = bestMatch(
+    rules,
+    'block',
+    (rule) => rule.scope === 'all' || (audiences as readonly string[]).includes(rule.scope),
+    address,
+    nowMs,
+  );
   if (block) return { decision: 'refused', rule: block, reason: 'blocked' };
-  if (audience === 'admin' && rules.restricted) {
+  if (audiences.includes('admin') && rules.restricted) {
     // The routes only create allow rules with scope `admin`; a row with another scope (a manual edit) does not open the console.
     const allow = bestMatch(rules, 'allow', (rule) => rule.scope === 'admin' || rule.scope === 'all', address, nowMs);
     return allow

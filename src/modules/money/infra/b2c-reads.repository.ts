@@ -7,6 +7,7 @@
 // `support_tickets` with plain selects. Nothing outside this file knows.
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
+import type { OrderSource } from '../../orders';
 
 /** A storefront order as the refund and dispute screens read it. */
 export interface OrderFacts {
@@ -15,7 +16,10 @@ export interface OrderFacts {
   readonly completedAt: Date | null;
   /** The supplier cost of the order, USD. */
   readonly totalCost: string;
-  readonly customerId: number | null;
+  /** The buyer: the account of the order (a guest row for a guest checkout). */
+  readonly accountId: number;
+  /** The door the order came through (`store` is a shop order, decision 064); the shop's mails are written for that door only. */
+  readonly source: OrderSource;
   readonly checkoutSessionId: number | null;
   /** The title the service is published under, or its catalog name when it has no listing. */
   readonly serviceName: string;
@@ -42,7 +46,8 @@ export async function loadOrderFacts(db: DbExecutor, ids: readonly number[]): Pr
       status: s.orders.status,
       completedAt: s.orders.completedAt,
       totalCost: s.orders.totalCost,
-      customerId: s.orders.customerId,
+      accountId: s.orders.accountId,
+      source: s.orders.source,
       checkoutSessionId: s.orders.checkoutSessionId,
       serviceName: sql<string>`coalesce(${s.serviceListings.publicTitle}, ${s.services.name})`,
       resultCode: s.orders.resultCode,
@@ -105,7 +110,10 @@ export interface LedgerParts {
   readonly net: string;
   /** The VAT payable part. */
   readonly vat: string;
-  /** What moved through the gateway account, or through the customer's store balance for a balance payment (feature 21). */
+  /**
+   * What moved through the gateway account, or through the account's wallet for a balance payment (feature 21): the store balance
+   * (`customer_wallet`), or the merchant wallet (`client_wallet`) when the account held the merchant rank when a refund went back to it.
+   */
   readonly gross: string;
 }
 
@@ -115,7 +123,10 @@ export interface LedgerParts {
  * Why: RESOLUTIONS money-4: a refund's `netAmount` and `taxAmount` and a payment's VAT are read from the posted lines (the revenue or
  * customer funds line, the `vat_payable` line and the `gateway_clearing` line), never recomputed. A payment from the store balance and its
  * refunds move the gross through the `customer_wallet` line instead (plan 21 § 2.3 item 1): without it, what is left to refund on a balance
- * payment would never shrink and a second partial refund could return the same money twice.
+ * payment would never shrink and a second partial refund could return the same money twice. Since decision 064 a refund goes back to the
+ * account's live wallet (decision 064), so after a rank change it credits the `client_wallet` line: that line counts as the gross too,
+ * or a balance payment refunded in two parts across a crossing could return more than was paid. `reports` read the same three kinds
+ * (`fundingOf` in `b2c-reports.repository.ts`); a new reader of a journal's gross uses all three.
  *
  * @param db the database or a transaction
  * @param transactionIds the `ledger_transactions.id` values
@@ -131,7 +142,7 @@ export async function ledgerPartsOf(
     select le.transaction_id as id,
       coalesce(sum(abs(le.amount)) filter (where la.kind in ('revenue', 'customer_funds')), 0)::text as net,
       coalesce(sum(abs(le.amount)) filter (where la.kind = 'vat_payable'), 0)::text as vat,
-      coalesce(sum(abs(le.amount)) filter (where la.kind in ('gateway_clearing', 'customer_wallet')), 0)::text as gross
+      coalesce(sum(abs(le.amount)) filter (where la.kind in ('gateway_clearing', 'customer_wallet', 'client_wallet')), 0)::text as gross
     from ledger_entries le join ledger_accounts la on la.id = le.account_id
     where le.transaction_id in (${sql.join(
       unique.map((id) => sql`${id}`),
@@ -150,9 +161,9 @@ export interface EvidenceFacts {
     ip: string;
     at: Date;
   }>;
-  /** Earlier completed storefront orders of the customer that were paid and never disputed. */
+  /** Earlier completed storefront orders of the buyer's account that were paid and never disputed. */
   readonly priorPaidOrders: number;
-  /** Support tickets of the customer around the order (within five days) or about it; a ticket whose address is not confirmed is not the customer's (decision 053). */
+  /** Support tickets of the account around the order (within five days) or about it; a ticket whose address is not confirmed is not the account's (decision 053). */
   readonly tickets: ReadonlyArray<{ number: string; subject: string }>;
 }
 
@@ -162,12 +173,12 @@ const FIVE_DAYS_MS = 5 * 86_400_000;
  * Reads the consents, the history and the support contacts behind an evidence pack.
  *
  * @param db the database or a transaction
- * @param order the disputed order's id, customer and placement time
+ * @param order the disputed order's id, buyer account and placement time
  * @returns the facts
  */
 export async function loadEvidenceFacts(
   db: DbExecutor,
-  order: { id: number; customerId: number; sessionId: number | null; placedAt: Date },
+  order: { id: number; accountId: number; sessionId: number | null; placedAt: Date },
 ): Promise<EvidenceFacts> {
   const consentRows =
     order.sessionId === null
@@ -187,7 +198,7 @@ export async function loadEvidenceFacts(
           .orderBy(asc(s.consentRecords.id));
   const prior = await db.execute<{ n: number }>(sql`
     select count(*)::int as n from orders o
-    where o.customer_id = ${order.customerId} and o.id <> ${order.id} and o.status = 'completed'
+    where o.account_id = ${order.accountId} and o.id <> ${order.id} and o.status = 'completed'
       and exists (select 1 from payments p where p.order_id = o.id and p.status in ('captured', 'partial_refund', 'refunded'))
       and not exists (select 1 from disputes d where d.order_id = o.id)`);
   const tickets = await db
@@ -195,8 +206,8 @@ export async function loadEvidenceFacts(
     .from(s.supportTickets)
     .where(
       and(
-        eq(s.supportTickets.requesterType, 'customer'),
-        eq(s.supportTickets.requesterId, order.customerId),
+        eq(s.supportTickets.requesterType, 'account'),
+        eq(s.supportTickets.requesterId, order.accountId),
         s.requesterProven(),
         sql`(${s.supportTickets.orderId} = ${order.id} or (${s.supportTickets.createdAt} >= ${new Date(order.placedAt.getTime() - FIVE_DAYS_MS)} and ${s.supportTickets.createdAt} <= ${new Date(order.placedAt.getTime() + FIVE_DAYS_MS)}))`,
       ),
@@ -241,7 +252,8 @@ export async function ledgerTxIdsByKeys(db: DbExecutor, keys: readonly string[])
 /** The columns of an order a refund's journal needs. */
 export interface RefundOrderRow {
   readonly id: number;
-  readonly customerId: number | null;
+  /** The buyer: the account of the order. */
+  readonly accountId: number;
   readonly totalPrice: string;
   readonly taxAmount: string;
   readonly status: 'pending' | 'processing' | 'completed' | 'rejected';
@@ -250,7 +262,7 @@ export interface RefundOrderRow {
 
 const REFUND_ORDER_COLUMNS = {
   id: s.orders.id,
-  customerId: s.orders.customerId,
+  accountId: s.orders.accountId,
   totalPrice: s.orders.totalPrice,
   taxAmount: s.orders.taxAmount,
   status: s.orders.status,

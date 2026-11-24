@@ -42,7 +42,7 @@ let logged: string[] = [];
 async function run(options: {
   contract: ReturnType<typeof contractFor>;
   env?: 'test' | 'production';
-  actor?: 'staff' | 'client' | undefined;
+  actor?: 'staff' | 'account' | undefined;
   rows?: number;
   next?: CallHandler;
 }): Promise<unknown> {
@@ -92,7 +92,7 @@ describe('AuditEnforcementInterceptor', () => {
     expect(await run({ contract: contractFor('GET'), actor: 'staff' })).toEqual({ ok: true });
     const optedOut = contractFor('POST', { audit: false, description: 'A sign-in step: nothing to audit.' });
     expect(await run({ contract: optedOut, actor: 'staff' })).toEqual({ ok: true });
-    expect(await run({ contract: contractFor('POST'), actor: 'client' })).toEqual({ ok: true });
+    expect(await run({ contract: contractFor('POST'), actor: 'account' })).toEqual({ ok: true });
     expect(await run({ contract: contractFor('POST'), actor: undefined })).toEqual({ ok: true });
     expect(logged).toHaveLength(0);
   });

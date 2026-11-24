@@ -8,7 +8,7 @@ Decisions common to all modules: 008 route contracts, 016 layout and boundaries,
 
 ## Status
 
-Built: feature 18 (the review queue, the rules, the blocklist and the data requests, with the customer privacy routes).
+Built: feature 18 (the review queue, the rules, the blocklist and the data requests, with the account privacy routes). Since decision 064 this module names the buyer by account: an assessment, a blocklist entry and a data request carry the account's number (`account_id`) whatever its rank, a guest checkout names its guest row, and the old `customer_id` columns are never written (`retiredCustomerId`).
 
 ### Risk screening (feature 18, `RiskScreening`)
 
@@ -19,7 +19,7 @@ assessment with `linkOrder` when the order did not exist yet. The rules are read
 cache (a rule decides whether a customer's money is held).
 
 **At the storefront capture** (`CheckoutCaptureService` of the customers module) every confirmed payment is assessed on the webhook's
-transaction before `CustomerOrderPlacement.place`, with what the capture knows (customer, email, checkout session, USD gross incl. VAT,
+transaction before `CustomerOrderPlacement.place`, with what the capture knows (the buyer account (`ScreeningInput.accountId`, null when no row is known; a guest checkout passes its guest row), email, checkout session, USD gross incl. VAT,
 payment method, the session's IMEI, the card's fingerprint, country and funding from the card driver's charge details, the tax country, the
 session's address and visitor country (`checkout_sessions.ip_country`), and whether the account itself opened the checkout: decision 050).
 `allow` places the order as before. `review` places it `held` (no stock claimed, no `order.dispatch_requested`, a `review` timeline line with `holdReason`).
@@ -57,9 +57,9 @@ late payment at once when the gateway can refund.
 At boot the API logs `Risk rule without an input source: <rule>. <reason>` for each gap (`application/risk-input-check.ts`,
 `domain/risk-inputs.ts`); the rules page itself does not say it yet.
 
-- **Guest checkouts** (decision 050). A payment is *proven* when its checkout was opened by a signed-in customer
-  (`checkout_sessions.opened_signed_in`) and the customer is known. A proven payment is judged on that account's own signed-in checkouts: its
-  history (first order) and its daily and hourly counts. A guest payment is always a first order, is counted on its email and the customer
+- **Guest checkouts** (decision 050). A payment is *proven* when its checkout was opened by a signed-in account
+  (`checkout_sessions.opened_signed_in`) and the account is known. A proven payment is judged on that account's own signed-in checkouts: its
+  history (first order) and its daily and hourly counts. A guest payment is always a first order, is counted on its email and the guest
   row of that email, and adds nothing to the history of the account that owns the email. When the email has earlier orders the first-order
   signal reads `Guest checkout, treated as a first order above $<n>`, so the reviewer does not read the account's history as the buyer's.
   The blocklist's guest-checkout entries match a guest payment only.
@@ -75,6 +75,8 @@ At boot the API logs `Risk rule without an input source: <rule>. <reason>` for e
   payments of one email screened at the same moment run one after the other and the second sees the first one's order. Lock order: the payment
   and checkout-session rows the caller holds, then this lock, then the order, stock and ledger rows of the placement; no network call is made
   while it is held.
+
+- **Shop orders only** (decision 064). The velocity rules (orders in 24 hours from one email, orders in one hour from one device, the first order) and the review queue count shop orders only (`prepaidOrderSql`, `source = 'store'`), so the orders a merchant account holds from its wallet never raise them and its portal history is not its shopping history. The assessments of a guest row move to the account that proves its mailbox in the link exchange (the participant `risk_assessments` of the guest claim, `application/guest-claim.participant.ts`, `RiskGuestClaimParticipant`, API process only: rows are taken `FOR UPDATE NOWAIT` so the claim never waits for a reviewer or a payment, and only the pointer moves).
 
 ### The review queue (feature 18)
 
@@ -92,7 +94,7 @@ the order, and blocks the checkout's email for guest checkouts only when that em
 account, or an email verified before the order); otherwise it blocks the email everywhere, as on a signed-in order, which adds no card. The
 limited entry's reason ends with " (guest checkouts only)" and the audit row says `emailScope: 'guest checkouts'`.
 
-The held order's `customer.email` is masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047; `RiskQueueService.get(contact)`).
+The held order's `customer.email` is masked (`ja•••@example.com`) unless the caller holds `clients:read` (the `customer` key holds the buyer account: its id is the account id, any rank, the guest row for a guest checkout; its history counts the account's shop orders only) (decision 047; `RiskQueueService.get(contact)`).
 
 ### The rules (feature 18)
 
@@ -107,7 +109,7 @@ change with the demo's phrases.
 display: an email as its normalised text (the recipe of feature 14b), an IMEI behind the prefix `imei:`, the other kinds behind a kind
 prefix. An insert is `ON CONFLICT (kind, value_hash) DO NOTHING`; `match` ignores an entry past its `expires_at` (the clock's time is a
 parameter). `POST /admin/blocklist` adds manual entries (`409 ALREADY_BLOCKED` for a duplicate), `DELETE` removes an entry of any source.
-`removeAddedByBlockOf` deletes only the manual entries a customer's block added (RESOLUTIONS b2c-5). `isEmailBlocked` answers whether an
+`removeAddedByBlockOf` deletes only the manual entries an account's block added (RESOLUTIONS b2c-5; `BlockRequest.accountId`, no `customerId` key at all). `isEmailBlocked` answers whether an
 email or its domain is blocked: the customers module asks it for admin create and email change, store sign-in and sign-up, and the
 checkout (`POST /store/v1/checkout-sessions` also asks for the IMEI) refuses a match with the `ACCOUNT_SUSPENDED` a blocked customer gets,
 one message whichever entry matched.
@@ -118,32 +120,36 @@ email change, a signed-in checkout, a signed-in payment and a top-up do not matc
 refund of a guest order writes one. A block that staff add by hand over it (`POST /admin/blocklist`) widens the entry to a full one (the
 route answers `201`, the audit row's `before` says `scope: 'guest checkouts'`); a full entry stays `409 ALREADY_BLOCKED`. The risk refund
 of an order that is not a limited guest order widens it the same way when it blocks the email (the audit row's `blocked` lists the email and
-`emailScopeBefore` says `guest checkouts`), so a full block is never refused because a narrower entry of that email exists. The customer
-block keeps `ON CONFLICT DO NOTHING`: it leaves a limited entry as it is, and the customer's `blocked` status refuses the account anyway.
+`emailScopeBefore` says `guest checkouts`), so a full block is never refused because a narrower entry of that email exists. The account
+block keeps `ON CONFLICT DO NOTHING`: it leaves a limited entry as it is, and the account's `blocked` status refuses the account anyway.
+
+**The risk refund of a held guest order and the login account of its email** (`RiskDecisionsService`, `AccountDirectory.findLoginByEmail`). When staff refund a held guest order and block its email, the entry is limited to guest checkouts if a login account holds that email and existed before the order (made by staff, or its mailbox proven earlier: `accountBeforeOrder`), because the guest row is not that account; the account keeps signing in. Otherwise the block is a full one.
 
 ### Data requests (feature 18)
 
 `POST /store/v1/me/data-export` and `/data-delete` record an `open` request due 30 days later (asking again while one is open returns it,
 serialised by an advisory lock). `GET`/`PATCH /admin/data-requests` list and move them: open to in progress, completed or rejected; a
 rejection needs a note (stored on the request and in the audit row); a closed request is `409 REQUEST_CLOSED`; an erasure request cannot
-be completed by hand before the customer is anonymized (`409 ERASURE_NOT_DONE`). `DataRequestService.completePending` is what an
-export download and an anonymization call to close the customer's waiting request.
+be completed by hand before the account is anonymized (`409 ERASURE_NOT_DONE`). `DataRequestService.completePending(tx, accountId, ...)` is what an
+export download and an anonymization call to close the account's waiting request.
+
+**Decision 064.** The routes are `rank: 'any'` (a copy of the data can be asked by an account of any rank) and the use case takes the account row lock first (`AccountDirectory.lockForUpdate`), so the rank it judges is the current one. **Erasure is for the retail rank only**: for a merchant rank `POST /store/v1/me/data-delete` answers `409 CONFLICT` with "This account has a merchant rank. Ask us to move it to the retail rank first; then you can ask for erasure." and stores nothing. The rows of `GET /admin/data-requests` and its two siblings carry `accountId` and `accountName` ("Deleted account" after anonymization) in place of `customerId` and `customerName`; the filter `accountId` replaces `customerId`, which is `422`; the audit entity is `account`. The lock order of a request: the account row, then the request rows (the advisory lock `data_request:<id>:<kind>` is gone).
 
 ## Public API (`index.ts`)
 
 `countryFromHeader`, `maskedImei`, `erasedMainInput`, `RISK_RULE_IDS`, `holdReason`, `blockDisplay`, `blockHashInput`,
 `normalizeBlockValue`, the services `RiskScreening`, `RiskDecisionsService`, `Blocklist`, `RiskRules`, `DataRequestService`, and the modules
-`RiskServicesModule` (the services without controllers), `RiskAdminModule` (the routes), `RiskModule`. Other modules import only `src/modules/risk/index.ts` (lint rule `gsm/module-boundaries`).
+`RiskServicesModule` (the services without controllers), `RiskAdminModule` (the routes), `RiskModule`. The services take `AccountDirectory` (identity): `DataRequestService(DbService, AuditService, AccountDirectory, CLOCK)` and `RiskDecisionsService(DbService, OrderTransitions, Blocklist, AuditService, AccountDirectory, CLOCK)`. Other modules import only `src/modules/risk/index.ts` (lint rule `gsm/module-boundaries`).
 
 ## Owned tables
 
-Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts`. A fourth table, `imei_checks`, stays in the database and in the schema, unread and unwritten, until the migration of the accounts model drops it.
+Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts`. A fourth table, `imei_checks`, stays in the database and in the schema, unread and unwritten, until the contract release of the one account type drops it. The buyer column of the three tables is `account_id` (NOT NULL on `data_requests`, nullable on the other two; the retired `customer_id` columns are `retiredCustomerId`).
 
 | Table | What it holds |
 |---|---|
-| `risk_assessments` | Risk assessment of a session or an order: a score, signals and a decision (allow, review or block). |
+| `risk_assessments` | Risk assessment of a session or an order: a score, signals and a decision (allow, review or block); `account_id` names the buyer account (a guest row for a guest checkout). |
 | `blocklist_entries` | The blocklist: email, domain, IMEI, card fingerprint, device and country. IP addresses live in ip_rules. |
-| `data_requests` | Data-subject requests: export or deletion, with a legal deadline. |
+| `data_requests` | Data-subject requests: export or deletion, with a legal deadline; `account_id` names the account. |
 
 ## Routes
 
@@ -179,7 +185,7 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 
 - `b2c-paid`: Paid storefront order (tables: `risk_assessments`)
 - `b2c-chargeback`: Chargeback dispute that we lose (tables: `blocklist_entries`, `risk_assessments`)
-- `b2c-account`: Managing a storefront customer account (tables: `blocklist_entries`)
+- `b2c-account`: Managing a storefront account (tables: `blocklist_entries`)
 - `ip-rules`: IP block list and allowlist (tables: `risk_assessments`)
 - `system-alert`: Alert and incident: a supplier slows down (tables: `risk_assessments`)
 

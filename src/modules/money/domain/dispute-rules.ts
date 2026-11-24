@@ -4,6 +4,7 @@
 import { Money } from '../../../common/money';
 import type { DisputeStatus, OrderPaymentStatus } from '../db/schema';
 import { refundSplit } from './b2c-money';
+import type { WalletLedgerKind } from './wallet-kinds';
 
 /** How long staff have to answer a dispute when the gateway names no deadline (days). */
 export const DEFAULT_EVIDENCE_DAYS = 7;
@@ -245,6 +246,32 @@ export function chargebackReturn(input: {
   }
   const split = refundSplit(input.paid, input.tax, share);
   return { net: split.net, vat: split.vat };
+}
+
+/** How the posting of a lost top-up dispute may take a wallet below its usual floor, and whether it freezes the wallet afterwards. */
+export interface ClawbackRules {
+  /** The merchant wallet may go below its credit limit (the one posting that may). */
+  readonly allowBelowCreditLimit: boolean;
+  /** The store balance may go below zero (the one posting that may). */
+  readonly allowNegativeCustomerWallet: boolean;
+  /** The posting is followed by a freeze of the wallet it took from (the store balance below zero must be frozen at commit). */
+  readonly freezeAfterPosting: boolean;
+}
+
+/**
+ * The rules of the clawback of a lost top-up dispute, by the kind of the wallet it takes from.
+ *
+ * Why: decision 064: the credit comes back from the account's live wallet, whatever the kind. A merchant wallet may pass its credit limit
+ * (it was frozen when the dispute opened); a store balance may go below zero and is frozen on the row lock the posting took, because the
+ * deferred trigger refuses a negative store balance that is not frozen at commit.
+ *
+ * @param kind the kind of the live wallet the credit goes back from
+ * @returns the posting flags and whether a freeze follows
+ */
+export function clawbackRulesOf(kind: WalletLedgerKind): ClawbackRules {
+  return kind === 'client_wallet'
+    ? { allowBelowCreditLimit: true, allowNegativeCustomerWallet: false, freezeAfterPosting: false }
+    : { allowBelowCreditLimit: false, allowNegativeCustomerWallet: true, freezeAfterPosting: true };
 }
 
 /**

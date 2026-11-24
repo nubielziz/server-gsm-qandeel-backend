@@ -17,6 +17,7 @@ import {
 } from '../infra/storefront-money.repository';
 import { BASE_CURRENCY } from '../domain/accounts';
 import { driverFor } from '../infra/gateway-drivers/drivers';
+import type { ShopCurrencyReads } from '../ports/shop-currency-reads';
 
 /** A currency the storefront can show and charge in. */
 export interface StorefrontCurrency {
@@ -58,12 +59,13 @@ export interface StorefrontPaymentMethod {
  * Why: the map's `GET /store/v1/config` lists "countries, currencies, tax and enabled payment methods", and a checkout locks the
  * tax rate and the exchange rate it reads here. The money module owns `currencies`, `tax_rates` and `payment_gateways`, so the
  * storefront and the checkout ask this class (decision 016) instead of reading those tables. Decision 049: a currency whose rate is held
- * or older than `fx.max_rate_age_hours` is not offered; a session that locked a rate keeps it (`byCode`).
+ * or older than `fx.max_rate_age_hours` is not offered; a session that locked a rate keeps it (`byCode`). It also answers the
+ * `ShopCurrencyReads` seam of identity's account writes (bound in `MoneyModule`).
  *
  * Side effects: none (reads only).
  */
 @Injectable()
-export class StorefrontMoney {
+export class StorefrontMoney implements ShopCurrencyReads {
   /**
    * @param clock the clock the age of a rate is measured with (decision 031)
    * @param images the public pictures, to turn a method's uploaded logo into its public path. Optional because this class lives in the

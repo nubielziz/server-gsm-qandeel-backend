@@ -65,7 +65,8 @@ async function confirmedTopUp(amountCents = 5000, reference = `pi_${crypto.rando
     .insert(s.invoices)
     .values({
       number: `INV-2026-${String(Math.floor(Math.random() * 9000) + 1000)}`,
-      customerId: customer.id,
+      accountId: customer.id,
+      walletKind: 'customer_wallet',
       kind: 'topup',
       amount: '50.0000',
       fee: '1.5000',
@@ -95,7 +96,7 @@ describe('POST /webhooks/payments/:gateway for a customer top-up', () => {
     expect(payments[0]).toMatchObject({
       purpose: 'topup',
       status: 'pending',
-      customerId: customer.id,
+      accountId: customer.id,
       reviewRequired: false,
       methodType: 'card',
     });

@@ -250,11 +250,13 @@ describe.skipIf(!frontendPresent)('the health seed', () => {
     expect(report.body).toMatchObject({ running: false, result: 'pass' });
     expect(report.body.lastRun).toMatchObject({ job: 'ledger_integrity', status: 'succeeded' });
     expect(report.body.lastSuccessAt).toBe(report.body.lastRun.finishedAt);
-    expect(report.body.checks.map((check: { status: string }) => check.status)).toEqual([
-      'pass',
-      'pass',
-      'pass',
-      'pass',
+    // The map's four checks, then the one of decision 064: the wallets follow the rank of their account.
+    expect(report.body.checks.map((check: { key: string; status: string }) => [check.key, check.status])).toEqual([
+      ['entries_balanced', 'pass'],
+      ['accounts_match_lines', 'pass'],
+      ['stuck_holds', 'pass'],
+      ['payments_without_entry', 'pass'],
+      ['wallets_follow_rank', 'pass'],
     ]);
   });
 

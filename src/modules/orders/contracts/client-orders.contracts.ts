@@ -57,7 +57,8 @@ export const getMyDashboard = defineRoute({
   summary: 'My dashboard',
   description:
     "The signed-in merchant's wallet figures (`balance`, `reserved`, `creditLimit`, `available`), the number of its orders in each " +
-    'status, the number still open and its five latest orders. Never cached.',
+    'status, the number still open and its five latest orders. Only orders placed through the portal and the Dhru API count: an order the ' +
+    "same account paid first in the shop is not part of the portal's figures. Never cached.",
   tags: ['client-orders'],
   surface: 'client',
   access: 'merchant-session',
@@ -75,7 +76,7 @@ export const getMyDashboard = defineRoute({
       latestOrders: z.array(MerchantOrderSchema),
     }),
   },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL'],
+  errors: ['UNAUTHORIZED'],
   examples: {
     response: {
       wallet: { balance: '1209.7500', reserved: '71.2300', creditLimit: '2000.0000', available: '3209.7500' },
@@ -124,7 +125,8 @@ export const placeClientOrder = defineRoute({
     'again with the response header `idempotency-replayed: true` (nothing is placed); another body with the key is `409 ' +
     'IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS` (`Retry-After`). A refused request stores nothing, so the key ' +
     `may be sent again. The answer is kept ${IDEMPOTENCY_WINDOW_DAYS} days; a replay is the first answer as it was (the orders may have moved on). ` +
-    'Without the header nothing changes.',
+    'Without the header nothing changes. An account that is not active is refused with `403 ACCOUNT_SUSPENDED` and a frozen merchant wallet with ' +
+    '`409 WALLET_FROZEN`; nothing is written (a retail rank never reaches this route: `403 RANK_NOT_ALLOWED`).',
   tags: ['client-orders'],
   surface: 'client',
   access: 'merchant-session',
@@ -133,10 +135,11 @@ export const placeClientOrder = defineRoute({
   success: { status: 201, schema: z.object({ orders: z.array(MerchantOrderSchema) }) },
   errors: [
     'UNAUTHORIZED',
-    'ACCOUNT_PENDING_APPROVAL',
+    'ACCOUNT_SUSPENDED',
     'CSRF_FAILED',
     'NOT_FOUND',
     'INSUFFICIENT_FUNDS',
+    'WALLET_FROZEN',
     'SERVICE_DISABLED',
     'PRICE_CHANGED',
     'DUPLICATE_ORDER',
@@ -160,7 +163,8 @@ export const listClientOrders = defineRoute({
   key: 'GET /client/orders',
   summary: 'My orders',
   description:
-    "The signed-in merchant's orders. Filters: `status` (repeat for IN, `status_ne`), `type`, `serviceId`, `createdAt_gte` and " +
+    "The signed-in account's orders placed through the portal and the Dhru API (an order the same account paid first in the shop is not " +
+    'listed here: it is in `GET /store/v1/me/orders`). Filters: `status` (repeat for IN, `status_ne`), `type`, `serviceId`, `createdAt_gte` and ' +
     '`createdAt_lte`. `q` searches the input and the service name, and the order id exactly when it is all digits. Sort by ' +
     '`createdAt` (default, newest first), `totalPrice` or `status`. Never cached.',
   tags: ['client-orders'],
@@ -168,7 +172,7 @@ export const listClientOrders = defineRoute({
   access: 'merchant-session',
   query: MERCHANT_ORDER_QUERY,
   success: { status: 200, schema: MerchantOrderSchema },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'VALIDATION_FAILED'],
   examples: { response: [ORDER_EXAMPLE] },
 });
 
@@ -177,7 +181,7 @@ export const exportClientOrders = defineRoute({
   key: 'GET /client/orders/export',
   summary: 'Export my orders as CSV',
   description:
-    "The merchant's orders that match the same filters, `q` and sort as `GET /client/orders` as `text/csv` (`Content-Disposition: " +
+    "The account's portal and Dhru orders that match the same filters, `q` and sort as `GET /client/orders` as `text/csv` (`Content-Disposition: " +
     'attachment`). Columns: `id,created,service,input,quantity,status,price,currency`; never cost or supplier. More than 100,000 ' +
     'matching orders is `422`. Streamed, never cached.',
   tags: ['client-orders'],
@@ -185,7 +189,7 @@ export const exportClientOrders = defineRoute({
   access: 'merchant-session',
   query: z.record(z.string(), z.unknown()).pipe(MERCHANT_ORDER_QUERY),
   success: { status: 200, contentType: 'text/csv' },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'VALIDATION_FAILED'],
 });
 
 /** `GET /client/orders/:id`. */
@@ -194,13 +198,14 @@ export const showClientOrder = defineRoute({
   summary: 'One of my orders',
   description:
     'The order with its timeline: the lines the merchant may see (placement, hold, acceptance, completion, rejection, release, refund, ' +
-    "reopen, verification), never a note, a supplier line, a risk line or the settlement. Another merchant's order is `404`.",
+    "reopen, verification), never a note, a supplier line, a risk line or the settlement. Another account's order, and the account's own " +
+    'store order, are `404`.',
   tags: ['client-orders'],
   surface: 'client',
   access: 'merchant-session',
   params: z.object({ id: zIdParam }),
   success: { status: 200, schema: MerchantOrderSchema.extend({ events: z.array(MerchantEventSchema) }) },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'NOT_FOUND', 'VALIDATION_FAILED'],
   examples: {
     response: {
       ...ORDER_EXAMPLE,
@@ -217,7 +222,8 @@ export const cancelClientOrder = defineRoute({
     'Cancels an order that was never sent (`pending`, manual or held) when its service allows it: the order is rejected as ' +
     '"Cancelled by the merchant" and the hold returns to the wallet. An order that was sent to a supplier once (being sent now, sent, or ' +
     'sent and then failed or queued again) is `409 ALREADY_SENT`: it is cancelled by staff. A service that does not allow cancellation, or an ' +
-    'order already being worked on, is `409 INVALID_TRANSITION`.',
+    "order already being worked on, is `409 INVALID_TRANSITION`. The account's own store order (paid first, in the shop) is `404`: it is refunded " +
+    'by staff, never cancelled here.',
   tags: ['client-orders'],
   surface: 'client',
   access: 'merchant-session',
@@ -226,7 +232,6 @@ export const cancelClientOrder = defineRoute({
   success: { status: 204 },
   errors: [
     'UNAUTHORIZED',
-    'ACCOUNT_PENDING_APPROVAL',
     'CSRF_FAILED',
     'NOT_FOUND',
     'ORDER_NOT_OPEN',
@@ -244,7 +249,7 @@ export const verifyClientOrder = defineRoute({
   description:
     'Asks staff to check the result of a completed order (once). Allowed when the service allows verification and inside its window ' +
     '(`verify_window_h` hours from completion); otherwise `409 INVALID_TRANSITION`. The order enters the verification queue; staff ' +
-    'accept the charge or refund it.',
+    "accept the charge or refund it. The account's own store order is `404`.",
   tags: ['client-orders'],
   surface: 'client',
   access: 'merchant-session',
@@ -253,7 +258,6 @@ export const verifyClientOrder = defineRoute({
   success: { status: 204 },
   errors: [
     'UNAUTHORIZED',
-    'ACCOUNT_PENDING_APPROVAL',
     'CSRF_FAILED',
     'NOT_FOUND',
     'ORDER_NOT_COMPLETED',

@@ -21,6 +21,7 @@ import { StorageModule } from '@src/infra/storage';
 import { CatalogAdminModule, CatalogPricesModule } from '@src/modules/catalog';
 import { CustomersAccountsModule } from '@src/modules/customers';
 import { AccessAdminModule } from '@src/modules/identity/access-admin.module';
+import { AccountWiringCheckModule } from '@src/modules/identity/account-wiring-check.module';
 import { ApiKeysModule } from '@src/modules/identity/api-keys.module';
 import { MerchantNotificationsModule } from '@src/modules/identity/merchant-notifications.module';
 import { MerchantAdminModule } from '@src/modules/identity/merchant-admin.module';
@@ -29,6 +30,7 @@ import { StaffAuthModule } from '@src/modules/identity/staff-auth.module';
 import { IpRulesModule } from '@src/modules/identity/security/ip-rules/ip-rules.module';
 import { UploadSessionModule } from '@src/modules/identity/security/upload-session.module';
 import { HealthAdminModule } from '@src/modules/health';
+import { AccountWalletsModule } from '@src/modules/money/account-wallets.module';
 import { MoneyAdminModule } from '@src/modules/money/money-admin.module';
 import { OrderTrackingModule, OrdersAdminModule } from '@src/modules/orders';
 import { CheckoutModule, GrowthModule } from '@src/modules/customers';
@@ -126,6 +128,8 @@ const NEEDS_DATABASE_AND_CACHE = [
   ApiKeysModule,
   MerchantNotificationsModule,
   MoneyAdminModule,
+  // Decision 064: the live wallet reads need the settings reader, which these apps leave out.
+  AccountWalletsModule,
   CatalogPricesModule,
   CatalogAdminModule,
   OrdersAdminModule,
@@ -245,6 +249,8 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   // Decision 055: the test apps connect as the test database's owner on purpose (one role, decision 014); the check of the real
   // processes is tested by itself.
   builder.overrideModule(DatabaseRoleCheckModule).useModule(NoSecurityModule);
+  // Decision 064: the test apps leave modules out on purpose; the boot check of the account registries is tested on its own.
+  builder.overrideModule(AccountWiringCheckModule).useModule(NoSecurityModule);
   if (options.withoutInfrastructure) {
     const replaced = [RedisModule, CacheModule, RateLimitModule, QueuesModule, StorageModule, ...NEEDS_INFRASTRUCTURE];
     for (const module of replaced) builder.overrideModule(module).useModule(NoInfrastructureModule);

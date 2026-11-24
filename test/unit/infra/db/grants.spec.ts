@@ -64,8 +64,26 @@ describe('applicationRoleOf', () => {
 });
 
 describe('APPEND_ONLY_TABLES', () => {
-  it('names the ledger, the order timeline and the audit log', () => {
-    expect([...APPEND_ONLY_TABLES]).toEqual(['ledger_entries', 'ledger_transactions', 'order_events', 'audit_logs']);
+  it('names the ledger, the order timeline, the audit log and the three history tables of the one account type', () => {
+    // Decision 064: the map of old merchant and customer numbers, the history of rank changes and the keys of the staff wallet
+    // actions only ever receive new rows, like the ledger. The list is compared as a set: its order is not part of the rule.
+    const tables: string[] = [...APPEND_ONLY_TABLES];
+    expect(tables.sort()).toEqual(
+      [
+        'ledger_entries',
+        'ledger_transactions',
+        'order_events',
+        'audit_logs',
+        'account_legacy_ids',
+        'account_rank_changes',
+        'wallet_action_keys',
+      ].sort(),
+    );
+  });
+
+  it('lists no table twice', () => {
+    const tables: string[] = [...APPEND_ONLY_TABLES];
+    expect(new Set(tables).size).toBe(tables.length);
   });
 });
 describe('applicationRoleOf and the password', () => {

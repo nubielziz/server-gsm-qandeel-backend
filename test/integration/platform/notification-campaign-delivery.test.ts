@@ -104,13 +104,14 @@ describe('the campaign branch of the delivery', () => {
   it('sends a merchant the email with the site link, and staff an email without a link', async () => {
     await insertMerchant(db, { name: 'Zain Mobile Hub', email: 'ops@zainmobilehub.example' });
     const { rows } = await fannedOut({ channels: ['email'], audience: { staff: {}, merchants: {} } });
-    const merchant = rows.find((row) => row.recipientType === 'client')!;
+    // The staff row is the staff type, the merchant's an account row (both ranks are one type).
+    const merchant = rows.find((row) => row.recipientType === 'account')!;
     expect(await sendBroadcast(t, merchant.id, 'email')).toEqual({ outcome: 'sent' });
-    // The site path joins the site's root once (PORTAL_BASE_URL already ends at /merchant in production).
+    // The site path joins the site's root once (PORTAL_BASE_URL already ends at /account in production).
     expect(mailbox(t).sent.at(-1)).toMatchObject({
       to: 'ops@zainmobilehub.example',
       subject: 'Maintenance for Zain Mobile Hub',
-      text: 'The portal is read-only on Friday.\n\nhttp://localhost:5175/merchant/wallet',
+      text: 'The portal is read-only on Friday.\n\nhttp://localhost:5175/account/wallet',
     });
     expect(telegramOutbox(t).sent).toEqual([]);
     const staff = rows.find((row) => row.recipientType === 'staff')!;
@@ -118,12 +119,12 @@ describe('the campaign branch of the delivery', () => {
     expect(mailbox(t).sent.at(-1)?.text).toBe('The portal is read-only on Friday.');
   });
 
-  it("ends a merchant's marketing email with the site's notification settings page, under /merchant once", async () => {
+  it("ends a merchant's marketing email with the site's notification settings page, under /account once", async () => {
     await insertMerchant(db, { name: 'Zain Mobile Hub' });
     const { rows } = await fannedOut({ purpose: 'marketing', channels: ['email'], audience: { merchants: {} } });
     expect(await sendBroadcast(t, rows[0]!.id, 'email')).toEqual({ outcome: 'sent' });
     expect(mailbox(t).sent.at(-1)?.text).toEndWith(
-      'Manage notifications: http://localhost:5175/merchant/settings/notifications',
+      'Manage notifications: http://localhost:5175/account/settings/notifications',
     );
   });
 
@@ -197,14 +198,14 @@ describe('the campaign branch of the delivery', () => {
     const [older] = await db
       .insert(s.notifications)
       .values({
-        recipientType: 'client',
+        recipientType: 'account',
         recipientId: merchant,
         channel: 'telegram',
         event: 'broadcast.announcement',
         payload: {},
         status: 'queued',
         campaignId: id,
-        dedupeKey: `campaign-${id}:telegram:client-${merchant}`,
+        dedupeKey: `campaign-${id}:telegram:account-${merchant}`,
       })
       .returning();
     const take = spyOn(t.app.get(BroadcastBudget), 'take');

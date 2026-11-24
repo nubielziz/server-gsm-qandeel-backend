@@ -1,6 +1,7 @@
 // Integration tests of the risk inputs (decision 050): the card's country and funding and the visitor's country reach the score, a declared tax
 // country that the evidence contradicts is held for review, the blocks that follow a guest order attach to what it used and never to the
-// account's standing, and the API names at boot the rules that have no input.
+// account's standing (a guest checkout is the guest row of its email, never the login account that holds it: decision 064), and the API
+// names at boot the rules that have no input.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { desc, eq } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
@@ -8,6 +9,8 @@ import { RefundProcessModule } from '@src/modules/money';
 import { Blocklist } from '@src/modules/risk';
 import { auditBlockLabel } from '@src/modules/risk/domain/blocklist-values';
 import { RiskInputCheck } from '@src/modules/risk/application/risk-input-check';
+import { accountRow, makeAccount } from '../../support/accounts';
+import { accountLinks, captureAccountLinks } from '../../support/account-links';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -39,14 +42,7 @@ import { seedDefaultTemplates } from '../../support/notifications';
 import { eventsOf, orderRow, outboxOf } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { assessmentOf, auditRows, blocklistRows } from '../../support/risk';
-import {
-  STORE_ORIGIN,
-  StoreClient,
-  captureCustomerLinks,
-  clearStoreRateLimits,
-  customerLinks,
-  makeCustomer,
-} from '../../support/store';
+import { STORE_ORIGIN, StoreClient, clearStoreRateLimits } from '../../support/store';
 import { APPLE_IMEI, TURNSTILE_HEADERS } from '../../support/storefront';
 
 const clock = new TestClock('2026-11-08T12:00:00.000Z');
@@ -77,7 +73,7 @@ beforeEach(async () => {
   await resetDb();
   await clearIdentityCaches(t);
   await clearStoreRateLimits(t);
-  captureCustomerLinks(t);
+  captureAccountLinks(t);
   world = await b2cWorld(t, db, fake);
   await insertSupplierLink(db, world.icloud.serviceId);
   risk = await adminWith(t, ['risk:*', 'refunds:*', 'orders:*'], { name: 'Rami K.' });
@@ -186,8 +182,8 @@ function openAsGuest(email: string) {
   });
 }
 
-/** A signed-in customer pays a checkout by card: sign in, open, pay and the gateway's signed confirmation; returns the order id. */
-async function signedInPaidOrder(customerId: number, email: string): Promise<number> {
+/** A signed-in account pays a checkout by card: sign in, open, pay and the gateway's signed confirmation; returns the order id. */
+async function signedInPaidOrder(accountId: number, email: string): Promise<number> {
   const client = new StoreClient(t, freshClientIp());
   expect((await client.login(email)).statusCode).toBe(200);
   const { token } = await openSignedInCheckout(client, world, email);
@@ -202,17 +198,14 @@ async function signedInPaidOrder(customerId: number, email: string): Promise<num
     card: { ...DEFAULT_CARD, fingerprint: 'fp_signed' },
   });
   expect((await hook(t, clock, 'payments', world.gateway.code, body)).statusCode).toBe(200);
-  const [order] = await db
-    .select()
-    .from(s.orders)
-    .where(eq(s.orders.customerId, customerId))
-    .orderBy(desc(s.orders.id));
+  const [order] = await db.select().from(s.orders).where(eq(s.orders.accountId, accountId)).orderBy(desc(s.orders.id));
   return order!.id;
 }
 
 describe('the blocks that follow a guest order', () => {
   it('a refund of a guest order that blocks its email stops guest checkouts with that email, never its account', async () => {
-    const account = await makeCustomer(t, {
+    const account = await makeAccount(t, {
+      rank: 'retail',
       email: 'owner@mail.example',
       emailVerifiedAt: new Date(clock.nowMs() - DAY),
     });
@@ -221,7 +214,11 @@ describe('the blocks that follow a guest order', () => {
       email: 'owner@mail.example',
       card: { ...DEFAULT_CARD, fingerprint: 'fp_guest' },
     });
-    expect(await orderRow(db, paid.orderId)).toMatchObject({ dispatchState: 'held', customerId: account.id });
+    const guestOrder = await orderRow(db, paid.orderId);
+    expect(guestOrder).toMatchObject({ dispatchState: 'held' });
+    // The guest checkout is the guest row of the email, never the login account that holds the same email (decision 064).
+    expect(guestOrder.accountId).not.toBe(account.id);
+    expect((await accountRow(guestOrder.accountId)).hasAccount).toBe(false);
     expect((await risk.post(`/admin/risk/orders/${paid.orderId}/refund`, { blockEmail: true })).status).toBe(204);
     const entries = await blocklistRows(db);
     expect(entries.map((entry) => [entry.kind, entry.guestOnly])).toEqual([
@@ -252,8 +249,7 @@ describe('the blocks that follow a guest order', () => {
       { headers: { 'user-agent': 'Mozilla/5.0 (test)' } },
     );
     expect(signedIn.statusCode).toBe(201);
-    const [customer] = await db.select().from(s.customers).where(eq(s.customers.id, account.id));
-    expect(customer).toMatchObject({ status: 'active' });
+    expect(await accountRow(account.id)).toMatchObject({ status: 'active' });
     expect(await t.app.get(Blocklist).isEmailBlocked(db, 'owner@mail.example')).toBe(false);
   });
 
@@ -267,7 +263,7 @@ describe('the blocks that follow a guest order', () => {
     const before = new StoreClient(t, freshClientIp());
     const asked = await before.magicLink('newbuyer@mail.example');
     expect([asked.statusCode, asked.body]).toEqual([204, '']);
-    expect(customerLinks()).toHaveLength(1);
+    expect(accountLinks()).toHaveLength(1);
     expect((await risk.post(`/admin/risk/orders/${paid.orderId}/refund`, { blockEmail: true })).status).toBe(204);
     expect((await blocklistRows(db)).map((entry) => [entry.kind, entry.guestOnly])).toEqual([
       ['email', false],
@@ -280,11 +276,12 @@ describe('the blocks that follow a guest order', () => {
     expect(await t.app.get(Blocklist).isEmailBlocked(db, 'newbuyer@mail.example')).toBe(true);
     const after = new StoreClient(t, freshClientIp());
     expect((await after.magicLink('newbuyer@mail.example')).statusCode).toBe(204);
-    expect(customerLinks()).toHaveLength(1);
+    expect(accountLinks()).toHaveLength(1);
   });
 
   it('a refund of a signed-in order that blocks its email blocks it everywhere, as before', async () => {
-    const account = await makeCustomer(t, {
+    const account = await makeAccount(t, {
+      rank: 'retail',
       email: 'member@mail.example',
       emailVerifiedAt: new Date(clock.nowMs() - DAY),
     });
@@ -302,7 +299,8 @@ describe('the blocks that follow a guest order', () => {
 
 describe('a full block over an entry limited to guest checkouts', () => {
   it('a refund of a signed-in order that blocks its email widens the limited entry and says so in the audit row', async () => {
-    const account = await makeCustomer(t, {
+    const account = await makeAccount(t, {
+      rank: 'retail',
       email: 'owner@mail.example',
       emailVerifiedAt: new Date(clock.nowMs() - DAY),
     });
@@ -339,10 +337,10 @@ describe('a full block over an entry limited to guest checkouts', () => {
     expect(after['emailScopeBefore']).toBe('guest checkouts');
     expect(after['emailScope']).toBeUndefined();
     // The account can no longer sign in by link: no link is made.
-    const links = customerLinks().length;
+    const links = accountLinks().length;
     const asked = await new StoreClient(t, freshClientIp()).magicLink('owner@mail.example');
     expect(asked.statusCode).toBe(204);
-    expect(customerLinks()).toHaveLength(links);
+    expect(accountLinks()).toHaveLength(links);
   });
 });
 
@@ -351,14 +349,14 @@ describe('a payment from the store balance', () => {
     await walletSettings(t, db);
     await seedDefaultTemplates(db);
     await insertWalletTemplates(db);
-    const account = await makeCustomer(t, { email: 'wallet@mail.example' });
+    const account = await makeAccount(t, { rank: 'retail', email: 'wallet@mail.example' });
     await fundCustomer(db, account.id, '50');
     const client = new StoreClient(t, freshClientIp());
     expect((await client.login('wallet@mail.example')).statusCode).toBe(200);
     const { token } = await openSignedInCheckout(client, world, 'wallet@mail.example', {
       headers: { 'cf-ipcountry': 'US' },
     });
-    const [session] = await db.select().from(s.checkoutSessions).where(eq(s.checkoutSessions.customerId, account.id));
+    const [session] = await db.select().from(s.checkoutSessions).where(eq(s.checkoutSessions.accountId, account.id));
     expect(session).toMatchObject({ ipCountry: 'US', openedSignedIn: true });
     const paid = await payFromBalance(client, token, 'balance-1');
     expect(paid.statusCode).toBe(201);

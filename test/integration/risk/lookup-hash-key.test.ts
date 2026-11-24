@@ -69,7 +69,7 @@ describe('stored lookups are keyed with LOOKUP_HASH_KEY', () => {
   it('an unsubscribe link made by this app verifies only with the lookup key', () => {
     const tokens = t.app.get(TokenService);
     const token = marketingUnsubscribeToken(tokens, 42);
-    expect(parseMarketingUnsubscribeToken(tokens, token)).toBe(42);
+    expect(parseMarketingUnsubscribeToken(tokens, token)).toEqual({ kind: 'account', id: 42 });
     const pepperOnly = new TokenService({
       security: { tokenPepper: DEV_DEFAULTS.tokenPepper, lookupHashKey: DEV_DEFAULTS.tokenPepper },
     } as never);

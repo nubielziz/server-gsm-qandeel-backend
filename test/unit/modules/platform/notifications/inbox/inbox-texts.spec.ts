@@ -37,6 +37,17 @@ describe('BUILT_IN_INBOX_TEXTS', () => {
     expect(inboxTextProblems(BUILT_IN_INBOX_TEXTS, events())).toEqual([]);
   });
 
+  it('links no merchant text to a retired /merchant address: its pages are in the account area (decision 064)', () => {
+    for (const text of BUILT_IN_INBOX_TEXTS) {
+      if (text.audience === 'merchant' && text.link !== undefined)
+        expect(text.link, text.event).toStartWith('/account');
+      expect(text.link ?? '', text.event).not.toMatch(/^\/merchant(\/|$)/);
+    }
+    const links = new Map(BUILT_IN_INBOX_TEXTS.map((text) => [text.event, text.link]));
+    expect(links.get('wallet.low_balance')).toBe('/account/wallet');
+    expect(links.get('invoice.paid')).toBe('/account/invoices');
+  });
+
   it('links to a site path without a language prefix, when it links', () => {
     for (const text of BUILT_IN_INBOX_TEXTS) {
       if (text.link !== undefined) {

@@ -39,12 +39,12 @@ const ids = world.ids;
 const MAX_RECORDS = 12;
 let csrf = '';
 
-async function send(method, path, { query, body } = {}) {
+async function send(method, path, { query, body, headers: extra } = {}) {
   const url = new URL(path, BASE);
   for (const [name, value] of Object.entries(query ?? {})) {
     for (const item of [value].flat()) url.searchParams.append(name, String(item));
   }
-  const headers = { accept: 'application/json' };
+  const headers = { accept: 'application/json', ...extra };
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (method !== 'GET' && csrf) headers['x-csrf-token'] = csrf;
   let response;
@@ -164,6 +164,19 @@ function record(endpoint, request, result, reasons = '') {
   fixtures.set(fixtureFileName(endpoint.key), { status: result.status, headers: result.headers, body: result.body });
 }
 
+/** How many `Idempotency-Key` headers the harvest has sent: each call gets a new key, the same one on every run. */
+let idempotencyKeys = 0;
+
+/**
+ * The headers a mutation sends besides the defaults: an `Idempotency-Key` when the console function takes one (its
+ * `idempotencyKey` parameter), as the console does for a wallet change, a credit limit or a rank change.
+ */
+function headersFor(endpoint) {
+  if (!fnParam(endpoint, 'idempotencyKey')) return undefined;
+  idempotencyKeys += 1;
+  return { 'idempotency-key': `harvest-key-${idempotencyKeys}` };
+}
+
 /** Calls one mutation; when the mock refuses a record in the wrong state (a payment already approved) it tries the next. */
 async function mutate(endpoint) {
   const method = endpoint.key.split(' ')[0];
@@ -174,7 +187,7 @@ async function mutate(endpoint) {
     for (const body of bodiesFor(endpoint)) {
       const path = fill(endpoint.key.split(' ')[1], set);
       lastRequest = `${path} ${JSON.stringify(body)?.slice(0, 120) ?? ''}`;
-      last = await send(method, path, { body });
+      last = await send(method, path, { body, headers: headersFor(endpoint) });
       if (last.status >= 200 && last.status <= 299) break search;
       reasons.add(`${last.status} ${last.body?.detail ?? last.error ?? ''}`.slice(0, 90));
     }

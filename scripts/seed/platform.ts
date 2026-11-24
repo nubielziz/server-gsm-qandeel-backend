@@ -4,7 +4,8 @@ import { and, eq, ne } from 'drizzle-orm';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
 import type { DefaultTemplate } from '../../src/modules/platform';
 import { SUPPORT_DEFAULT_TEMPLATES } from '../../src/modules/support';
-import { type DemoSeed, demoNumericId, demoRows } from './demo-state';
+import { accountIdOfDemo } from './account-ids';
+import { type DemoSeed, demoRows } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
 
 /**
@@ -121,8 +122,11 @@ const MERCHANT_LOG: ReadonlyArray<{
  *
  * Why: the demo's merchant templates (low balance, invoices, order results) are the defaults migration 0009 ships, so the seed adds only the
  * customer emails the demo knows and the migrations do not ship (support reply); the four storefront order and payment mails are
- * migration defaults too (feature 16), and the seed only sets their on/off switch to the demo's. The counts the mock shows (112, 86, 6, 41, 0) become real `sent` rows with the demo customers' ids; the customers
- * themselves arrive with feature 14b, so until then the log shows their address as `***`. Every row has a `seed:` dedupe key, so a second run adds nothing.
+ * migration defaults too (feature 16), and the seed only sets their on/off switch to the demo's. The counts the mock shows (112, 86, 6, 41, 0)
+ * become real `sent` rows addressed to the demo customers' accounts (`c3` is account 103); the accounts themselves arrive with the customers
+ * seeder, so until then the log shows their address as `***`. Both kinds of recipient are accounts (decision 064): each row keeps the audience
+ * whose text it uses in its payload (`customer` for these, `merchant` for the merchant log), as a sent message does, so the 30-day counts of a
+ * template stay per audience whatever rank the account holds. Every row has a `seed:` dedupe key, so a second run adds nothing.
  *
  * @param db the transaction to write with
  * @param demo the loaded frontend demo state
@@ -170,11 +174,11 @@ async function seedNotifications(db: DbExecutor, demo: DemoSeed): Promise<SeedRe
       for (let n = 0; n < row.sent; n += 1) {
         const at = new Date(demo.now - Math.round(((n + 0.5) * 29 * DAY_MS) / row.sent));
         log.push({
-          recipientType: 'customer',
-          recipientId: demoNumericId(customers[n % customers.length]!.id),
+          recipientType: 'account',
+          recipientId: accountIdOfDemo(customers[n % customers.length]!.id),
           channel: 'email',
           event,
-          payload: { variables: { orderId: `SF-${20431 - n}` } },
+          payload: { variables: { orderId: `SF-${20431 - n}` }, audience: 'customer' },
           status: 'sent',
           sentAt: at,
           attempts: 1,
@@ -194,11 +198,11 @@ async function seedNotifications(db: DbExecutor, demo: DemoSeed): Promise<SeedRe
       const failed = index % 7 === 3;
       const queued = !failed && index % 11 === 5;
       log.push({
-        recipientType: 'client',
-        recipientId: demoNumericId(merchant.id),
+        recipientType: 'account',
+        recipientId: accountIdOfDemo(merchant.id),
         channel: kind.channel,
         event: kind.event,
-        payload: { variables: { merchantName: merchant.name, ...kind.variables } },
+        payload: { variables: { merchantName: merchant.name, ...kind.variables }, audience: 'merchant' },
         status: failed ? 'failed' : queued ? 'queued' : 'sent',
         sentAt: failed || queued ? null : at,
         attempts: queued ? 0 : failed ? 5 : 1,
@@ -253,10 +257,19 @@ async function seedCampaigns(db: DbExecutor, demo: DemoSeed): Promise<SeedReport
   const sentAt = new Date(demo.now - 3.5 * DAY_MS);
   const createdAt = new Date(demo.now - 4 * DAY_MS);
   const everyone = { staff: {}, merchants: {}, customers: { hasAccount: true } };
-  const people: Array<{ type: 'staff' | 'client' | 'customer'; id: number; read: boolean }> = [
-    { type: 'staff', id: SEED_OWNER_ID, read: true },
-    { type: 'client', id: SEED_MERCHANT_ID, read: true },
-    ...(customer ? [{ type: 'customer' as const, id: demoNumericId(customer.id), read: false }] : []),
+  // The people the sent campaign reached: a staff member and two accounts, each in the group of its rank. The email row keeps that group's
+  // audience in its payload, as the fan-out writes it.
+  const people: Array<{
+    type: 'staff' | 'account';
+    id: number;
+    audience: 'staff' | 'merchant' | 'customer';
+    read: boolean;
+  }> = [
+    { type: 'staff', id: SEED_OWNER_ID, audience: 'staff', read: true },
+    { type: 'account', id: SEED_MERCHANT_ID, audience: 'merchant', read: true },
+    ...(customer
+      ? [{ type: 'account' as const, id: accountIdOfDemo(customer.id), audience: 'customer' as const, read: false }]
+      : []),
   ];
   // The seed writes fixed ids (the console mock's), which the insert type of a generated identity column leaves out.
   const campaignRows: Array<typeof s.notificationCampaigns.$inferInsert & { readonly id: number }> = [
@@ -267,7 +280,7 @@ async function seedCampaigns(db: DbExecutor, demo: DemoSeed): Promise<SeedReport
       channels: ['in_app', 'email'],
       audience: everyone,
       content: SEED_CAMPAIGN_CONTENT.maintenance,
-      link: { merchant: '/merchant/orders', customer: '/account/orders' },
+      link: { merchant: '/account/orders', customer: '/account/orders' },
       status: 'sent',
       queuedAt: sentAt,
       startedAt: sentAt,
@@ -306,7 +319,7 @@ async function seedCampaigns(db: DbExecutor, demo: DemoSeed): Promise<SeedReport
       channels: ['in_app'],
       audience: { merchants: {} },
       content: SEED_CAMPAIGN_CONTENT.services,
-      link: { merchant: '/merchant/services' },
+      link: { merchant: '/account/services' },
       status: 'draft',
       createdBy: SEED_OWNER_ID,
       createdAt: new Date(demo.now - 2 * HOUR_MS),
@@ -336,7 +349,7 @@ async function seedCampaigns(db: DbExecutor, demo: DemoSeed): Promise<SeedReport
       recipientId: person.id,
       channel: 'email' as const,
       event: 'broadcast.announcement',
-      payload: {},
+      payload: { audience: person.audience },
       status: 'sent' as const,
       sentAt,
       attempts: 1,

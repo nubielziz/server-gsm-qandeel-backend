@@ -99,7 +99,7 @@ describe('postTransaction', () => {
     ]);
     expect(entries.every((entry) => entry.createdAt.getTime() === when.getTime())).toBe(true);
 
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '100.0000',
       version: 1,
     });
@@ -140,7 +140,7 @@ describe('postTransaction', () => {
     const second = await post(posting);
     expect(second).toEqual({ id: first.id, replayed: true, touched: [] });
     expect(await ledgerTotals(db)).toEqual(before);
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '40.0000',
       version: 1,
     });
@@ -205,7 +205,7 @@ describe('the credit limit guard (decision 024 step 4)', () => {
     await fundWallet(db, merchant.id, '100');
     // 100 + 50 credit = 150 spendable.
     await post(input(adjust({ clientId: merchant.id, amount: m('150'), direction: 'debit' }), merchant.id));
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '-50.0000',
     });
 
@@ -217,7 +217,7 @@ describe('the credit limit guard (decision 024 step 4)', () => {
     expect((error as AppError).detail).toBe('The wallet would end at -50.0001, below its credit limit of 50.0000.');
     // The refused posting left no trace.
     expect((await ledgerTotals(db)).transactions).toBe(2);
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '-50.0000',
     });
   });
@@ -229,10 +229,10 @@ describe('the credit limit guard (decision 024 step 4)', () => {
     const error = await rejectionOf(post(input(order({ clientId: merchant.id, amount: m('10.0001') }), 5)));
     expect((error as AppError).code).toBe('INSUFFICIENT_FUNDS');
     await post(input(order({ clientId: merchant.id, amount: m('10') }), 5));
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '0.0000',
     });
-    expect(await accountFigures(db, 'client_hold', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_hold', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '10.0000',
     });
   });
@@ -247,7 +247,7 @@ describe('the credit limit guard (decision 024 step 4)', () => {
       .set({ overdraftLimit: '100.0000' })
       .where(and(eq(s.ledgerAccounts.ownerId, merchant.id), eq(s.ledgerAccounts.kind, 'client_wallet')));
     await post(input(adjust({ clientId: merchant.id, amount: m('50'), direction: 'credit' }), merchant.id));
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '-250.0000',
     });
     // New debits stay refused until the balance is back above the limit.
@@ -271,10 +271,10 @@ describe('the journals of the retired commission event (decision 062)', () => {
       createdBy: SYSTEM,
       lines: [
         ...debitLine({ kind: 'commission_expense' }, m('0.20')),
-        ...creditLine({ kind: 'client_wallet', ownerType: 'client', ownerId: merchant.id }, m('0.20')),
+        ...creditLine({ kind: 'client_wallet', ownerType: 'account', ownerId: merchant.id }, m('0.20')),
       ],
     });
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '0.2000',
     });
     expect(await accountFigures(db, 'commission_expense')).toMatchObject({ balance: '0.2000' });
@@ -316,7 +316,9 @@ describe('the 12 money events that can still be posted, together', () => {
     expect(totals.sum).toBe('0.0000');
     expect(await findBalanceDifferences(db)).toEqual([]);
     // Spot checks against the map's numbers: wallet 100 - 5 (completed) + 10 - 4 = 101; revenue 5 + 12.49 + 12.49 = 29.98.
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: c })).toMatchObject({ balance: '101.0000' });
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: c })).toMatchObject({
+      balance: '101.0000',
+    });
     expect(await accountFigures(db, 'revenue')).toMatchObject({ balance: '29.9800' });
     expect(await accountFigures(db, 'fee_income')).toMatchObject({ balance: '3.0000' });
     // 50 topup - 3 - 7.20 - 7.20 = 32.60 left at the supplier.
@@ -340,10 +342,10 @@ describe('concurrency', () => {
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(3);
     expect(refused).toHaveLength(7);
     expect(refused.every((result) => (result.reason as AppError).code === 'INSUFFICIENT_FUNDS')).toBe(true);
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '10.0000',
     });
-    expect(await accountFigures(db, 'client_hold', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_hold', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '90.0000',
     });
     expect(await findBalanceDifferences(db)).toEqual([]);
@@ -358,7 +360,7 @@ describe('concurrency', () => {
       ),
     );
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(3);
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '-90.0000',
     });
   });
@@ -371,7 +373,7 @@ describe('concurrency', () => {
     expect(new Set(results.map((result) => result.id)).size).toBe(1);
     expect(results.filter((result) => !result.replayed)).toHaveLength(1);
     expect(await ledgerTotals(db)).toMatchObject({ transactions: 1, entries: 2 });
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '25.0000',
     });
   });

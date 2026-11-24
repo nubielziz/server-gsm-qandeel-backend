@@ -116,7 +116,7 @@ describe('POST /store/v1/checkout-sessions/:token/balance-payment', () => {
       methodType: 'balance',
       gatewayId: null,
       status: 'captured',
-      customerId: customer.id,
+      accountId: customer.id,
       orderId: body.order.id,
       amount: '3.8400',
       currency: 'GBP',
@@ -138,7 +138,7 @@ describe('POST /store/v1/checkout-sessions/:token/balance-payment', () => {
     const order = await orderRow(db, body.order.id);
     // Decision 054: the tracking token is stored only as its keyed hash and an encrypted copy.
     expect(order).toMatchObject({
-      customerId: customer.id,
+      accountId: customer.id,
       publicToken: null,
       publicTokenHash: tokenHashOf(t, 'tracking', body.order.trackingToken),
     });
@@ -235,17 +235,21 @@ describe('POST /store/v1/checkout-sessions/:token/balance-payment', () => {
     expect(foreign.statusCode).toBe(403);
     expect(json(foreign)).toMatchObject({ code: 'FORBIDDEN', detail: 'This checkout belongs to another account.' });
 
-    // A guest checkout typed with the account's email carries the account's id, but can never spend its balance (K2).
+    // A guest checkout typed with the account's email makes a guest row of its own and attaches nothing to the account, so it can
+    // never spend the account's balance (K2).
     const guest = await openCheckout(t, world, { email: customer.email });
     expect(guest.session.balancePayable).toBe(false);
     const [guestRow] = await db
       .select()
       .from(s.checkoutSessions)
       .where(eq(s.checkoutSessions.tokenHash, tokenHashOf(t, 'checkout', guest.token)));
-    expect(guestRow!.customerId).toBe(customer.id);
+    expect(guestRow!.accountId).not.toBe(customer.id);
+    const [guestAccount] = await db.select().from(s.clients).where(eq(s.clients.id, guestRow!.accountId!));
+    expect(guestAccount).toMatchObject({ hasAccount: false });
     const refused = await payFromBalance(client, guest.token);
     expect(refused.statusCode).toBe(403);
-    expect(json(refused).detail).toBe('Open the checkout while signed in to pay from your balance.');
+    // The checkout belongs to the guest row, so the ownership check refuses it before anything else is read.
+    expect(json(refused)).toMatchObject({ code: 'FORBIDDEN', detail: 'This checkout belongs to another account.' });
     expect(await counts()).toEqual({ payments: 0, orders: 0 });
     expect((await customerWalletRow(db, customer.id))!.balance).toBe('50.0000');
   });

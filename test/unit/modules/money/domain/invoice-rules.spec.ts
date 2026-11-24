@@ -5,15 +5,20 @@ import {
   checkDescription,
   dueAtOf,
   invoiceNumber,
+  invoiceWireSide,
   isIssuedBy,
   isTransferTopUp,
+  judgePriorTopUp,
   manualInvoiceTotals,
   MERCHANT_OPEN_TOPUPS,
+  NOT_MERCHANT_PROBLEM,
   OPEN_TOPUPS_DETAIL,
   parseAmount,
   paymentRef,
+  TOPUP_OPENING_GRACE_MS,
   tooManyOpenTopUps,
   tooManyPendingReceipts,
+  topUpFingerprint,
   topupInvoiceTotals,
   vatRateFrom,
 } from '@src/modules/money/domain/invoice-rules';
@@ -103,5 +108,76 @@ describe('the limits of decision 049', () => {
     expect(isTransferTopUp({ kind: 'topup' }, { isManual: true })).toBe(true);
     expect(isTransferTopUp({ kind: 'topup' }, { isManual: false })).toBe(false);
     expect(isTransferTopUp({ kind: 'manual' }, { isManual: true })).toBe(false);
+  });
+});
+
+describe('topUpFingerprint', () => {
+  it('names the gateway and the amount in one stable text, whatever the amount was typed as', () => {
+    expect(topUpFingerprint(7, Money.of('50'))).toBe('[7,"50.0000"]');
+    expect(topUpFingerprint(7, Money.of('50.00'))).toBe(topUpFingerprint(7, Money.of('50')));
+    expect(topUpFingerprint(7, Money.of('50'))).not.toBe(topUpFingerprint(8, Money.of('50')));
+    expect(topUpFingerprint(7, Money.of('50'))).not.toBe(topUpFingerprint(7, Money.of('50.0001')));
+  });
+});
+
+describe('judgePriorTopUp: what a create does with the invoice an earlier request left under its key', () => {
+  const now = new Date('2026-11-10T09:00:00.000Z');
+  const request = { fingerprint: topUpFingerprint(7, Money.of('50')), walletKind: 'client_wallet' as const };
+  const prior = (overrides: Partial<Parameters<typeof judgePriorTopUp>[0]> = {}) => ({
+    requestFingerprint: request.fingerprint,
+    walletKind: 'client_wallet' as const,
+    status: 'open' as const,
+    checkoutUrl: null,
+    createdAt: new Date(now.getTime() - 5_000),
+    ...overrides,
+  });
+
+  it('replays the same request, whatever the invoice has become since', () => {
+    for (const status of ['open', 'paid', 'void'] as const) {
+      expect(judgePriorTopUp(prior({ status }), request, true, now)).toBe('replay');
+    }
+    expect(judgePriorTopUp(prior({ checkoutUrl: 'https://pay.example/cs_1' }), request, false, now)).toBe('replay');
+  });
+
+  it('refuses the key for another gateway, another amount, another wallet kind or an invoice without a fingerprint', () => {
+    expect(
+      judgePriorTopUp(prior({ requestFingerprint: topUpFingerprint(8, Money.of('50')) }), request, true, now),
+    ).toBe('reused');
+    expect(
+      judgePriorTopUp(prior({ requestFingerprint: topUpFingerprint(7, Money.of('60')) }), request, true, now),
+    ).toBe('reused');
+    expect(judgePriorTopUp(prior({ walletKind: 'customer_wallet' }), request, true, now)).toBe('reused');
+    expect(judgePriorTopUp(prior({ requestFingerprint: null }), request, true, now)).toBe('reused');
+  });
+
+  it('holds a retry while an automatic top-up has no page yet, then lets it take over', () => {
+    const opening = (age: number) => prior({ createdAt: new Date(now.getTime() - age) });
+    expect(judgePriorTopUp(opening(1_000), request, false, now)).toBe('in_progress');
+    expect(judgePriorTopUp(opening(TOPUP_OPENING_GRACE_MS - 1), request, false, now)).toBe('in_progress');
+    expect(judgePriorTopUp(opening(TOPUP_OPENING_GRACE_MS), request, false, now)).toBe('restart');
+    expect(judgePriorTopUp(opening(10 * TOPUP_OPENING_GRACE_MS), request, false, now)).toBe('restart');
+  });
+
+  it('never waits for the page of a manual top-up, and never restarts a top-up that is not open', () => {
+    expect(judgePriorTopUp(prior({ createdAt: new Date(now.getTime() - 1_000) }), request, true, now)).toBe('replay');
+    expect(judgePriorTopUp(prior({ status: 'void', createdAt: new Date(0) }), request, false, now)).toBe('replay');
+    expect(judgePriorTopUp(prior({ status: 'paid', createdAt: new Date(0) }), request, false, now)).toBe('replay');
+  });
+});
+
+describe('invoiceWireSide', () => {
+  it('names the account the client of a merchant-wallet invoice and the customer of any other', () => {
+    expect(invoiceWireSide({ kind: 'topup', walletKind: 'client_wallet' })).toBe('client');
+    expect(invoiceWireSide({ kind: 'manual', walletKind: 'client_wallet' })).toBe('client');
+    expect(invoiceWireSide({ kind: 'statement', walletKind: null })).toBe('client');
+    expect(invoiceWireSide({ kind: 'topup', walletKind: 'customer_wallet' })).toBe('customer');
+    expect(invoiceWireSide({ kind: 'receipt', walletKind: null })).toBe('customer');
+  });
+});
+
+describe('NOT_MERCHANT_PROBLEM', () => {
+  it('is the 422 the staff dialog shows under the Merchant field for a retail account', () => {
+    expect(NOT_MERCHANT_PROBLEM).toMatchObject({ field: 'clientId', code: 'not_merchant' });
+    expect(NOT_MERCHANT_PROBLEM.message).toContain('merchant');
   });
 });

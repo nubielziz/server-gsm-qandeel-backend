@@ -1,18 +1,33 @@
 // Helpers for the admin customer tests (feature 14b): the currencies the customers join, a service and orders for the order figures,
-// a payment with its refund, dispute and ticket for the detail's counts, and the audit rows of a customer.
-import { and, asc, eq } from 'drizzle-orm';
+// a payment with its refund, dispute and ticket for the detail's counts, and the audit rows of a retail account. A customer is an
+// account of the retail rank (decision 064): every id here is an account id.
+import { asc, sql } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
+import { accountHistorySql } from '@src/modules/identity';
 import { insertCategory, insertService } from './catalog';
 import { insertOrderRow } from './orders';
 
-/** Inserts USD, GBP, EUR and SEK (GBP and USD shown by the store, SEK not). Ids 1 to 4 in that order. */
+/**
+ * Inserts USD, GBP, EUR and SEK (GBP and USD shown by the store, SEK not). Ids 1 to 4 in that order on an empty table. A currency that is
+ * already there (the base currency another helper inserted) takes these values instead of failing the insert.
+ */
 export async function insertStoreCurrencies(db: Database): Promise<void> {
-  await db.insert(s.currencies).values([
-    { code: 'USD', name: 'US dollar', rateToBase: '1', isStorefront: true },
-    { code: 'GBP', name: 'Pound sterling', rateToBase: '0.79', isStorefront: true },
-    { code: 'EUR', name: 'Euro', rateToBase: '0.92', isStorefront: true },
-    { code: 'SEK', name: 'Swedish krona', rateToBase: '10.6', isStorefront: false },
-  ]);
+  await db
+    .insert(s.currencies)
+    .values([
+      { code: 'USD', name: 'US dollar', rateToBase: '1', isStorefront: true },
+      { code: 'GBP', name: 'Pound sterling', rateToBase: '0.79', isStorefront: true },
+      { code: 'EUR', name: 'Euro', rateToBase: '0.92', isStorefront: true },
+      { code: 'SEK', name: 'Swedish krona', rateToBase: '10.6', isStorefront: false },
+    ])
+    .onConflictDoUpdate({
+      target: s.currencies.code,
+      set: {
+        name: sql`excluded.name`,
+        rateToBase: sql`excluded.rate_to_base`,
+        isStorefront: sql`excluded.is_storefront`,
+      },
+    });
 }
 
 /**
@@ -45,19 +60,19 @@ export async function insertAnyService(db: Database, name = 'Vodafone UK iPhone 
   return insertService(db, category, { name });
 }
 
-/** Inserts a storefront order for a customer and returns its id. */
+/** Inserts a storefront order for a retail account and returns its id. */
 export async function insertCustomerOrder(
   db: Database,
   serviceId: number,
-  customerId: number,
+  accountId: number,
   values: Partial<typeof s.orders.$inferInsert> = {},
 ): Promise<number> {
-  const row = await insertOrderRow(db, { serviceId, customerId, source: 'store', currency: 'GBP', ...values });
+  const row = await insertOrderRow(db, { serviceId, accountId, source: 'store', currency: 'GBP', ...values });
   return row.id;
 }
 
-/** Inserts a payment for an order (and the gateway it needs); returns the payment id. */
-export async function insertOrderPayment(db: Database, orderId: number, customerId: number): Promise<number> {
+/** Inserts a payment for an order of an account (and the gateway it needs); returns the payment id. */
+export async function insertOrderPayment(db: Database, orderId: number, accountId: number): Promise<number> {
   const [gateway] = await db
     .insert(s.paymentGateways)
     .values({ code: `stripe-${crypto.randomUUID().slice(0, 6)}`, driver: 'stripe', name: 'Card' })
@@ -65,7 +80,7 @@ export async function insertOrderPayment(db: Database, orderId: number, customer
   const [payment] = await db
     .insert(s.payments)
     .values({
-      customerId,
+      accountId,
       orderId,
       purpose: 'order',
       gatewayId: gateway!.id,
@@ -78,23 +93,23 @@ export async function insertOrderPayment(db: Database, orderId: number, customer
   return payment!.id;
 }
 
-/** Inserts one refund, one dispute and one ticket of a customer for the detail's counts. */
-export async function insertCustomerHistory(db: Database, customerId: number, orderId: number): Promise<void> {
-  const paymentId = await insertOrderPayment(db, orderId, customerId);
+/** Inserts one refund, one dispute and one ticket of an account for the detail's counts. */
+export async function insertCustomerHistory(db: Database, accountId: number, orderId: number): Promise<void> {
+  const paymentId = await insertOrderPayment(db, orderId, accountId);
   await db.insert(s.refunds).values({
     paymentId,
     orderId,
-    customerId,
+    accountId,
     amount: '5.0000',
     currency: 'USD',
     method: 'original',
-    requestedByType: 'customer',
-    requestedById: customerId,
+    requestedByType: 'account',
+    requestedById: accountId,
   });
   await db.insert(s.disputes).values({
     paymentId,
     orderId,
-    customerId,
+    accountId,
     gatewayDisputeId: `dp_${crypto.randomUUID().slice(0, 8)}`,
     reasonCode: 'fraudulent',
     amount: '13.7500',
@@ -104,16 +119,23 @@ export async function insertCustomerHistory(db: Database, customerId: number, or
   await db.insert(s.supportTickets).values({
     number: `T-${crypto.randomUUID().slice(0, 6)}`,
     subject: 'Where is my unlock?',
-    requesterType: 'customer',
-    requesterId: customerId,
+    requesterType: 'account',
+    requesterId: accountId,
   });
 }
 
-/** The audit rows written for one customer, oldest first. */
-export async function auditOfCustomer(db: Database, customerId: number) {
+/**
+ * The audit rows written for one account, oldest first: the rows of entity `account` with its id, and the rows an older release wrote
+ * under the old words (the number spaces the id map names for this account; see `accountHistorySql`).
+ *
+ * @param db the test database
+ * @param accountId the account
+ * @returns the audit rows
+ */
+export async function auditOfCustomer(db: Database, accountId: number) {
   return db
     .select()
     .from(s.auditLogs)
-    .where(and(eq(s.auditLogs.entityType, 'customer'), eq(s.auditLogs.entityId, customerId)))
+    .where(accountHistorySql(sql`${s.auditLogs.entityType}`, sql`${s.auditLogs.entityId}`, accountId))
     .orderBy(asc(s.auditLogs.id));
 }

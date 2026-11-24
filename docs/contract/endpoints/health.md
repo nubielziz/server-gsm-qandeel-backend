@@ -44,7 +44,7 @@ Frontend features covering this module: `dashboard`, `system-health`, `system` (
 ## GET /admin/queues
 
 - **Map**: Bull Board UI for monitoring the queues. (Bull Board لمراقبة الـ queues (واجهة)) · staff-permission `queues:read` · stage 9 · tables -
-- **Frontend**: `queuesBoardUrl` (src/features/dashboard/api/dashboard.ts:57) · params none · returns `string` · success 200
+- **Frontend**: `queuesBoardUrl` (src/features/dashboard/api/dashboard.ts:58) · params none · returns `string` · success 200
 - **Request**: Never fetched: the console builds the absolute URL <API base>/admin/queues and opens it in a new tab for staff with queues:read (api/dashboard.ts:37-39, hooks/useDashboardGrants.ts:17-21, M8).
 - **Response**: The Bull Board HTML UI (text/html) with its assets and JSON calls under /admin/queues/*. Authenticated by the staff session cookie on a top-level navigation (no CSRF header, no Authorization header) and the queues:read permission; when not signed in, redirect to the console sign-in or answer an HTML 401.
 - **Errors**: 401 UNAUTHORIZED (no valid staff session cookie); 403 FORBIDDEN (caller lacks queues:read)

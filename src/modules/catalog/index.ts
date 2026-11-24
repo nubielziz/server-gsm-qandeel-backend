@@ -4,6 +4,9 @@
 // the retail price writer, the retail price rules, the follow pass and the pass that cleans category names (feature 31, decision 040), then the admin routes module. Other modules import only this file.
 // Order matters: `CatalogModule` and the leaves other modules use come first, ahead of `CatalogAdminModule`, whose controllers
 // lead into identity (decision 032), and of the follow pass's worker module, which leads into health.
+// The read of the ranks other modules use (an abstract class with no dependencies, so it loads first; decision 064).
+export { RankGroupReads } from './ports/rank-group-reads';
+export type { ClientGroupKind } from './ports/rank-group-reads';
 export {
   CATALOG_CATEGORY_CHANGED_EVENT,
   CATALOG_SERVICES_CHANGED_EVENT,

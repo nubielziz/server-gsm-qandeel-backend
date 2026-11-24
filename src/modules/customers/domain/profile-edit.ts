@@ -1,6 +1,14 @@
-// The name, phone and country rule of a customer's profile edit, shared by the staff edit (PATCH /admin/customers/:id) and the
-// customer's own edit (PATCH /store/v1/me), so both judge "changed" and record before and after values alike.
-import type { Customer } from '../db/schema';
+// The name, phone and country rule of an account's profile edit, shared by the shop's own edit (PATCH /store/v1/me) and any staff edit that
+// judges "changed" the same way, so both record before and after values alike.
+
+/** The columns a profile edit may write. */
+export interface ProfileColumns {
+  readonly name: string;
+  readonly phone: string;
+  readonly country: string;
+  /** The ISO code of the shown currency; a changed country re-derives it. */
+  readonly currency: string | null;
+}
 
 /** The profile fields both edits share. */
 export interface ProfileEditInput {
@@ -11,7 +19,7 @@ export interface ProfileEditInput {
 
 /** What an edit changes: the columns to write and the old and new value of each changed field (the audit entry of a staff edit). */
 export interface ProfileChanges {
-  readonly columns: Partial<Customer>;
+  readonly columns: Partial<ProfileColumns>;
   readonly before: Record<string, unknown>;
   readonly after: Record<string, unknown>;
 }
@@ -23,35 +31,35 @@ export interface ProfileChanges {
  * country sets the currency derived for it (`null` only when USD itself is missing from `currencies`). The order of the notes (name,
  * country, phone) is the order of the audit entry.
  *
- * @param customer the stored row, read under the lock
+ * @param current the stored account, read under the lock
  * @param input the fields sent
  * @param derivedCurrency the currency of `input.country` (see `CustomerProfileRules.currencyFor`); read only when the country changes
  * @returns the columns to write and the before and after values of the changed fields; empty when nothing changes
  */
 export function profileChanges(
-  customer: Pick<Customer, 'name' | 'phone' | 'country'>,
+  current: Pick<ProfileColumns, 'name' | 'phone' | 'country'>,
   input: ProfileEditInput,
   derivedCurrency: string | null | undefined,
 ): ProfileChanges {
-  const columns: Partial<Customer> = {};
+  const columns: { -readonly [K in keyof ProfileColumns]?: ProfileColumns[K] } = {};
   const before: Record<string, unknown> = {};
   const after: Record<string, unknown> = {};
   const note = (field: string, from: unknown, to: unknown) => {
     before[field] = from;
     after[field] = to;
   };
-  if (input.name !== undefined && input.name !== customer.name) {
+  if (input.name !== undefined && input.name !== current.name) {
     columns.name = input.name;
-    note('name', customer.name, input.name);
+    note('name', current.name, input.name);
   }
-  if (input.country !== undefined && input.country !== customer.country) {
+  if (input.country !== undefined && input.country !== current.country) {
     columns.country = input.country;
     columns.currency = derivedCurrency ?? null;
-    note('country', customer.country, input.country);
+    note('country', current.country, input.country);
   }
-  if (input.phone !== undefined && input.phone !== customer.phone) {
+  if (input.phone !== undefined && input.phone !== current.phone) {
     columns.phone = input.phone;
-    note('phone', customer.phone, input.phone);
+    note('phone', current.phone, input.phone);
   }
   return { columns, before, after };
 }

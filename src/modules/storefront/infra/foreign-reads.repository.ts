@@ -9,7 +9,7 @@
 // `services`, `service_categories`, `service_fields`, `client_groups`, `orders`, `consent_records`, `tac_catalog` and `staff_users`
 // with plain selects, like catalog's foreign-reads file. Replace the bodies with calls to their services;
 // nothing outside this file knows.
-import { type SQL, and, asc, eq, gte, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { type SQL, and, asc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere, schema as s } from '../../../infra/db';
 import { isMainInputKey, resolvedSupplierKey } from '../../../common/dhru';
@@ -291,7 +291,9 @@ export interface Sales {
 /**
  * Counts the non-rejected storefront orders of some services since a moment, with their net revenue.
  *
- * Why: `orders30d` and `revenue30d` of a listing row (ANSWERS storefront Q1). A storefront order has a customer and no merchant.
+ * Why: `orders30d` and `revenue30d` of a listing row (ANSWERS storefront Q1). A storefront order is an order of the shop's door
+ * (`orders.source` is `store`, decision 064): the door says how the order was paid, whatever rank its buyer holds now. This file does not
+ * import the orders barrel (orders imports storefront policies: a load cycle, decision 032), so the one comparison is written here.
  *
  * @param db the database or a transaction
  * @param serviceIds the services of a page
@@ -310,7 +312,7 @@ export async function salesOf(db: DbExecutor, serviceIds: readonly number[], sin
     .where(
       and(
         inArray(s.orders.serviceId, [...serviceIds]),
-        isNotNull(s.orders.customerId),
+        eq(s.orders.source, 'store'),
         ne(s.orders.status, 'rejected'),
         gte(s.orders.placedAt, since),
       ),

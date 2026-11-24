@@ -104,7 +104,7 @@ describe('the ticket link token at rest', () => {
     const { customer, token, row } = await openFromAccount();
     const bystander = await openFromAccount();
     const privacy = await adminWith(t, ['customers:*']);
-    expect((await privacy.post(`/admin/customers/${customer.id}/anonymize`)).status).toBe(204);
+    expect((await privacy.post(`/admin/clients/${customer.id}/anonymize`)).status).toBe(204);
     expect(await ticketById(row.id)).toMatchObject({ token: null, tokenHash: null, tokenEnc: null });
     expect((await show(token)).statusCode).toBe(404);
     expect((await ticketById(bystander.row.id)).tokenHash).toBe(bystander.row.tokenHash);

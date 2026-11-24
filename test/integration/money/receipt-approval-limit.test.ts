@@ -69,7 +69,7 @@ async function pendingTopUp(
 const approve = (staff: AdminApi, paymentId: number) => staff.post(`/admin/payments/${paymentId}/approve`);
 const walletOf = async (clientId: number) => {
   const { db } = await testDb();
-  return (await accountFigures(db, 'client_wallet', { type: 'client', id: clientId }))?.balance;
+  return (await accountFigures(db, 'client_wallet', { type: 'account', id: clientId }))?.balance;
 };
 const statusOf = async (paymentId: number) => {
   const { db } = await testDb();
@@ -140,13 +140,13 @@ describe('POST /admin/payments/:id/approve: the 24-hour limit of a staff member'
       audience: 'b2c',
       isManual: true,
     });
-    const invoice = await insertInvoiceRow(w.db, w.merchant.id, {
-      clientId: null,
-      customerId: customer.id,
+    const invoice = await insertInvoiceRow(w.db, customer.id, {
+      legacyClientId: null,
+      walletKind: 'customer_wallet',
       amount: '6000.0000',
       gatewayId: cliq,
     });
-    const receiptFileId = await insertProofFile(w.db, customer.id, { ownerType: 'customer' });
+    const receiptFileId = await insertProofFile(w.db, customer.id, { ownerType: 'account' });
     const payment = await insertPendingPayment(w.db, invoice, cliq, { methodType: 'bank', receiptFileId });
     const staff = await adminWith(t, REVIEWER);
     expect((await approve(staff, payment.id)).status).toBe(200);

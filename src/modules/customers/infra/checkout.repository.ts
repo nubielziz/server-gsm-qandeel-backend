@@ -1,49 +1,33 @@
-// Drizzle queries on checkout_sessions and the guest rows of customers for the storefront checkout (feature 14a). Only the customers
-// module touches these tables.
+// Drizzle queries on checkout_sessions and the one guest-only write of a marketing choice, for the storefront checkout (feature 14a, decision 064).
+// Only the customers module touches `checkout_sessions`. The guest row of an email is made by identity's `AccountDirectory`, never here.
+//
+// DEVIATION to resolve when the identity module exports a writer for the marketing choice of a guest row (decision 016): `clients` belongs
+// to identity, which exports reads and locks but not this write, so `setGuestMarketingOptIn` updates the row with a plain statement, like the
+// other foreign-read files of this module (`customer.repository.ts`).
 import { and, asc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { SealedCapabilityToken, UnsealedCapabilityToken } from '../../../infra/crypto';
-import type { DbExecutor } from '../../../infra/db';
-import {
-  type CheckoutSession,
-  type Customer,
-  type NewCheckoutSession,
-  type NewCustomer,
-  checkoutSessions,
-  customers,
-} from '../db/schema';
+import { type DbExecutor, schema as s } from '../../../infra/db';
+import { type CheckoutSession, type NewCheckoutSession, checkoutSessions } from '../db/schema';
 
 /**
- * Keeps a guest's marketing choice in step with the consent a checkout recorded.
+ * Keeps a guest row's marketing choice in step with the consent a checkout recorded.
  *
- * Why: the console's customer list shows `marketing_opt_in`; a guest's only way to choose is the checkout, so the column follows
- * the latest checkout record. An account holder's column is never touched here (`has_account = false` in the filter): only the
- * signed-in account page changes it.
+ * Why: the console's account list shows `marketing_opt_in`; a guest's only way to choose is the checkout, so the column follows the latest
+ * checkout record. A row with a login is never touched here (`has_account = false` in the filter, which also covers a guest row that turned
+ * into an account a moment ago): only the signed-in account page, or the account holder's own consent at checkout, changes it.
+ *
+ * Side effects: updates the `clients` row of a guest.
  *
  * @param db the caller's transaction
- * @param id the customer id
+ * @param id the guest row's id
  * @param granted the recorded answer
  * @param now the injected clock's time for `updated_at`
  */
 export async function setGuestMarketingOptIn(db: DbExecutor, id: number, granted: boolean, now: Date): Promise<void> {
   await db
-    .update(customers)
+    .update(s.clients)
     .set({ marketingOptIn: granted, updatedAt: now })
-    .where(and(eq(customers.id, id), eq(customers.hasAccount, false)));
-}
-
-/**
- * Inserts a guest customer unless the email already belongs to someone.
- *
- * Why: two checkouts with the same new email at once must end with one customer; `ON CONFLICT DO NOTHING` on the unique
- * `lower(email)` index lets the loser read the winner's row instead of failing.
- *
- * @param db the caller's transaction
- * @param values the guest row
- * @returns the new row, or `undefined` when the email was already taken
- */
-export async function insertGuestCustomer(db: DbExecutor, values: NewCustomer): Promise<Customer | undefined> {
-  const [row] = await db.insert(customers).values(values).onConflictDoNothing().returning();
-  return row;
+    .where(and(eq(s.clients.id, id), eq(s.clients.hasAccount, false)));
 }
 
 /**
@@ -67,37 +51,6 @@ export async function insertCheckoutSession(db: DbExecutor, values: NewCheckoutS
  */
 export async function findCheckoutSession(db: DbExecutor, id: number): Promise<CheckoutSession | undefined> {
   const [row] = await db.select().from(checkoutSessions).where(eq(checkoutSessions.id, id)).limit(1);
-  return row;
-}
-
-/** How the checkout behind an order was opened. */
-export interface OrderCheckout {
-  readonly customerId: number | null;
-  /** The address the checkout was opened with. */
-  readonly email: string;
-  /** True when the signed-in account opened it itself. */
-  readonly openedSignedIn: boolean;
-}
-
-/**
- * Finds the checkout session that created an order.
- *
- * Why: whether the order's tracking link speaks for the account, and whom its receipt names, depend on how the checkout was opened.
- *
- * @param db the database or a transaction
- * @param orderId the order
- * @returns the session's customer, address and sign-in mark, or `undefined` for an order without a checkout
- */
-export async function findSessionOfOrder(db: DbExecutor, orderId: number): Promise<OrderCheckout | undefined> {
-  const [row] = await db
-    .select({
-      customerId: checkoutSessions.customerId,
-      email: checkoutSessions.email,
-      openedSignedIn: checkoutSessions.openedSignedIn,
-    })
-    .from(checkoutSessions)
-    .where(eq(checkoutSessions.orderId, orderId))
-    .limit(1);
   return row;
 }
 
@@ -125,15 +78,15 @@ export async function lockCheckoutSession(db: DbExecutor, id: number): Promise<C
  *
  * @param db the database or a transaction
  * @param lookup the hash of the presented token (`CapabilityTokenVault.hashOf('checkout', …)`) and the token itself
- * @returns the session id and its customer, with its stored hash or plain token, or `undefined`
+ * @returns the session id and its account, with its stored hash or plain token, or `undefined`
  */
 export async function findSessionByToken(
   db: DbExecutor,
   lookup: { readonly hash: string; readonly token: string },
-): Promise<{ id: number; customerId: number | null; tokenHash: string | null; token: string | null } | undefined> {
+): Promise<{ id: number; accountId: number | null; tokenHash: string | null; token: string | null } | undefined> {
   const columns = {
     id: checkoutSessions.id,
-    customerId: checkoutSessions.customerId,
+    accountId: checkoutSessions.accountId,
     tokenHash: checkoutSessions.tokenHash,
     token: checkoutSessions.token,
   };
@@ -204,18 +157,6 @@ export async function sealSessionToken(
 }
 
 /**
- * Links a session to a customer.
- *
- * @param db the caller's transaction
- * @param id the session id
- * @param customerId the customer
- * @param now the injected clock's time for `updated_at`
- */
-export async function setSessionCustomer(db: DbExecutor, id: number, customerId: number, now: Date): Promise<void> {
-  await db.update(checkoutSessions).set({ customerId, updatedAt: now }).where(eq(checkoutSessions.id, id));
-}
-
-/**
  * Marks a checkout session paid and links the order it created.
  *
  * Why: scenario b2c-paid step 7: in the capture's transaction the session becomes `paid` with its `order_id`; an expired session that was
@@ -230,4 +171,85 @@ export async function setSessionCustomer(db: DbExecutor, id: number, customerId:
  */
 export async function markSessionPaid(db: DbExecutor, id: number, orderId: number, now: Date): Promise<void> {
   await db.update(checkoutSessions).set({ status: 'paid', orderId, updatedAt: now }).where(eq(checkoutSessions.id, id));
+}
+
+/**
+ * Tells whether an account has a checkout it opened while signed in that is neither paid nor expired.
+ *
+ * Why: the `open_checkout` blocker of the rank change (decision 064): such a session may be paid from the store balance, so the account
+ * cannot cross to the merchant kind while it lives. Judged on the injected clock like `effectiveStatus`: an open session past its
+ * `expires_at` is expired. A guest checkout never counts (it was not opened signed in).
+ *
+ * @param db the rank change's transaction, after the account row is locked
+ * @param accountId the account
+ * @param now the injected clock's time
+ * @returns true when such a session exists
+ */
+export async function hasOpenSignedInCheckout(db: DbExecutor, accountId: number, now: Date): Promise<boolean> {
+  const [row] = await db
+    .select({ id: checkoutSessions.id })
+    .from(checkoutSessions)
+    .where(
+      and(
+        eq(checkoutSessions.accountId, accountId),
+        eq(checkoutSessions.openedSignedIn, true),
+        eq(checkoutSessions.status, 'open'),
+        gt(checkoutSessions.expiresAt, now),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
+/** The columns of a session the guest claim needs to judge it. */
+export type SessionLife = Pick<CheckoutSession, 'id' | 'status' | 'expiresAt'>;
+
+/**
+ * Locks every checkout session of an account row without waiting.
+ *
+ * Why: the guest claim (decision 064) must never queue behind a capture or a consent post that holds a session; `FOR UPDATE NOWAIT`
+ * raises the lock error (SQLSTATE 55P03) at once and the claim answers `busy`.
+ *
+ * Side effects: row locks until the claim's transaction ends.
+ *
+ * @param db the claim's transaction
+ * @param accountId the guest row
+ * @returns the status and expiry of each session of the row, by id
+ * @throws the lock error (55P03) when another transaction holds one of the rows
+ */
+export async function lockSessionsOfAccountNoWait(db: DbExecutor, accountId: number): Promise<SessionLife[]> {
+  return db
+    .select({ id: checkoutSessions.id, status: checkoutSessions.status, expiresAt: checkoutSessions.expiresAt })
+    .from(checkoutSessions)
+    .where(eq(checkoutSessions.accountId, accountId))
+    .orderBy(asc(checkoutSessions.id))
+    .for('update', { noWait: true });
+}
+
+/**
+ * Moves the checkout sessions of one account row to another.
+ *
+ * Why: the guest claim: the paid and expired checkouts of a guest row belong to the account that proved the mailbox. The email of each
+ * session stays as it was typed.
+ *
+ * Side effects: updates `checkout_sessions.account_id` and `updated_at`.
+ *
+ * @param db the claim's transaction (the rows are locked by {@link lockSessionsOfAccountNoWait})
+ * @param guestId the guest row that owns them now
+ * @param accountId the account that takes them
+ * @param now the injected clock's time for `updated_at`
+ * @returns how many sessions moved
+ */
+export async function moveSessionsToAccount(
+  db: DbExecutor,
+  guestId: number,
+  accountId: number,
+  now: Date,
+): Promise<number> {
+  const moved = await db
+    .update(checkoutSessions)
+    .set({ accountId, updatedAt: now })
+    .where(eq(checkoutSessions.accountId, guestId))
+    .returning({ id: checkoutSessions.id });
+  return moved.length;
 }

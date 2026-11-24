@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm';
 import { DbService, schema as s } from '@src/infra/db';
 import { OrderTransitions } from '@src/modules/orders';
 import { MaintenanceService } from '@src/modules/platform';
+import { ensureRetailGroup } from '../support/accounts';
 import { type TestApp, createTestApp } from '../support/app';
 import { clearIdentityCaches } from '../support/auth';
 import { insertCategory, insertService } from '../support/catalog';
@@ -29,8 +30,11 @@ interface Fixture {
   readonly action: string;
   readonly description: string;
   readonly request: { readonly action: string; readonly parameters?: unknown };
-  /** `wrong-key`: send a key that does not exist; `poor`: a merchant whose wallet cannot cover an order. */
-  readonly credentials?: 'wrong-key' | 'poor';
+  /**
+   * `wrong-key`: send a key that does not exist; `poor`: a merchant whose wallet cannot cover an order; `retail-rank`: a live key of an
+   * account whose rank was moved to the retail rank in SQL, without the revoke the rank change makes.
+   */
+  readonly credentials?: 'wrong-key' | 'poor' | 'retail-rank';
   /** Extra setup: `priceRaised` lists the services, then raises the price of the automatic service by more than the tolerance. */
   readonly given?: readonly string[];
   /** Compare the entry of this service in the list instead of the whole answer. */
@@ -281,6 +285,14 @@ describe('the fixtures', () => {
         const merchant = await insertWalletMerchant(db, { name: 'Poor Co' });
         await fundWallet(db, merchant.id, '10');
         client = dhruClient(t, await credentialsFor(t, db, merchant.id));
+      }
+      if (fixture.credentials === 'retail-rank') {
+        await db
+          .update(s.clients)
+          .set({ groupId: await ensureRetailGroup(db) })
+          .where(eq(s.clients.id, world.merchant.id));
+        // The cached views of the keys hold the rank kind: drop them, as the rank change does after its commit.
+        await clearApiKeyCaches(t);
       }
       const request = fill(fixture.request, values) as Fixture['request'];
       const res = await client.raw(

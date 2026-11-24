@@ -70,7 +70,7 @@ async function customerTicket() {
     subject: 'Where is my unlock?',
   });
   await insertSupportMessage(db, ticket.id, {
-    authorType: 'customer',
+    authorType: 'account',
     authorId: customer.id,
     body: 'Hello.',
     createdAt: new Date(clock.nowMs() - MINUTE),
@@ -190,7 +190,7 @@ describe('an email reply', () => {
     const { db } = await testDb();
     const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub' });
     const ticket = await insertSupportTicket(db, {
-      requesterType: 'client',
+      requesterType: 'account',
       requesterId: merchant,
       token: null,
       subject: 'Invoice question',
@@ -202,14 +202,14 @@ describe('an email reply', () => {
     expect(await sendTicketMails(t)).toEqual([{ sent: true }]);
     const [mail] = mailbox(t).sent;
     expect(mail!.text).toContain('See the statement.');
-    expect(mail!.text).toContain(`Open the conversation: http://localhost:5175/merchant/support/${ticket.id}`);
+    expect(mail!.text).toContain(`Open the conversation: http://localhost:5175/account/support/${ticket.id}`);
   });
 
   it('gets an anonymized customer nothing', async () => {
     const { ticket, customer } = await customerTicket();
     await reply(ticket.id, 'Too late.');
     const privacy = await adminWith(t, ['customers:privacy']);
-    expect((await privacy.post(`/admin/customers/${customer.id}/anonymize`)).status).toBe(204);
+    expect((await privacy.post(`/admin/clients/${customer.id}/anonymize`)).status).toBe(204);
     clock.advance(5 * MINUTE);
     await sweep();
     expect((await sendTicketMails(t)).every((result) => !result.sent)).toBe(true);
@@ -222,7 +222,7 @@ describe('a merchant ticket that came from Telegram', () => {
     const { db } = await testDb();
     const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub', telegramChatId: '555001' });
     const ticket = await insertSupportTicket(db, {
-      requesterType: 'client',
+      requesterType: 'account',
       requesterId: merchant,
       token: null,
       channel: 'telegram',

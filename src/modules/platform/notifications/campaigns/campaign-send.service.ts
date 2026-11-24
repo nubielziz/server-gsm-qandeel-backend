@@ -172,7 +172,7 @@ export class CampaignSendService {
         if (!current) throw campaignNotFound();
         throw notNow(current, 'cancelled');
       }
-      // A stored audience that no longer parses could have reached anyone: every type recounts.
+      // A stored audience that no longer parses could have reached anyone: every recipient type recounts.
       const spec = parseStoredAudience(row.audience);
       this.doorbell.recount(spec ? selectionsOf(spec).map((selection) => selection.type) : AUDIENCE_TYPE_ORDER);
       await this.audit.record(tx, {

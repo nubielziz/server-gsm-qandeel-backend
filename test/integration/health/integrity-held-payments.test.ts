@@ -12,6 +12,7 @@ import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { ordersWorld } from '../../support/orders';
 import { deleteBullKeys, testBullPrefix } from '../../support/queues';
+import { insertCustomerRow } from '../../support/storefront';
 import { RedisService } from '@src/infra/redis';
 
 const prefix = testBullPrefix();
@@ -46,6 +47,8 @@ async function paymentsCheck() {
 describe('payments_without_entry and held storefront payments (decision 048)', () => {
   it('a held storefront payment is a finding until its money is back', async () => {
     const { db } = await testDb();
+    // The buyer of the held payment: a retail account without a login (a guest checkout made it); the payment and its return name it.
+    const buyer = await insertCustomerRow(db);
     const [gateway] = await db
       .insert(s.paymentGateways)
       .values({ code: 'card-b2c', driver: 'card', name: 'Card gateway', audience: 'b2c' })
@@ -54,6 +57,7 @@ describe('payments_without_entry and held storefront payments (decision 048)', (
       .insert(s.payments)
       .values({
         purpose: 'order',
+        accountId: buyer,
         gatewayId: gateway!.id,
         gatewayTxnId: 'pi_h',
         amount: '3.8400',
@@ -67,6 +71,7 @@ describe('payments_without_entry and held storefront payments (decision 048)', (
     // A pending payment that is not held is not confirmed: never a finding.
     await db.insert(s.payments).values({
       purpose: 'order',
+      accountId: buyer,
       gatewayId: gateway!.id,
       amount: '3.8400',
       currency: 'USD',
@@ -90,6 +95,7 @@ describe('payments_without_entry and held storefront payments (decision 048)', (
       .insert(s.refunds)
       .values({
         paymentId: held!.id,
+        accountId: buyer,
         amount: '3.8400',
         currency: 'USD',
         reason: 'Paid back by hand by staff',

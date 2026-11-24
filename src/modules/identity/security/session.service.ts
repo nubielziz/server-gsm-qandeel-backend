@@ -1,17 +1,20 @@
-// SessionService: create, rotate, touch, revoke and look up the sessions of staff, merchants and customers (decision 018).
+// SessionService: create, rotate, touch, revoke and look up the sessions of staff and accounts (decision 018, decision 064).
 // Tokens are random and stored only as keyed hashes (decision 019); lookups are cached 60 seconds in the cache Redis and
 // deleted after the commit of any change to the session or its account, which also rings the `session` doorbell (decision 037).
 // A cached view is used only when it belongs to the presented token, and its deletes are retried (decision 055).
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { LogThrottle } from '../../../common/log-throttle';
 import { CacheKeys, CacheService } from '../../../infra/cache';
 import { TokenService } from '../../../infra/crypto';
-import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
+import { DbService, type DbExecutor, type Transaction, type TransactionContext, onCommit } from '../../../infra/db';
 import { RATE_LIMITERS } from '../../../infra/rate-limit';
 import { RealtimePublisher, SESSION_TOPIC } from '../../../infra/realtime';
 import type { SubjectType } from '../db/schema';
+import { AccountSessions, type AccountSessionStart } from '../ports/account-sessions';
+import { SessionCookies } from './session-cookies';
 import { SessionPolicy } from './session-policy';
 import {
   findLiveSessionByHash,
@@ -83,9 +86,10 @@ function assertCreateInput(input: CreateSessionInput): void {
 /**
  * The session store behind the cookies.
  *
- * Why: decision 018 uses one session mechanism for staff, merchants and customers: an opaque 256-bit token in a cookie,
+ * Why: decision 018 uses one session mechanism for staff and accounts: an opaque 256-bit token in a cookie,
  * a row in `sessions` with a sign-in stage, absolute and idle expiry from settings, rotation when a step completes
- * (no fixation) and revocation of one session or all sessions of an account.
+ * (no fixation) and revocation of one session or all sessions of an account. It is also the implementation of the
+ * {@link AccountSessions} port (decision 064): the sign-in use cases start and end the sessions of accounts through it.
  *
  * Side effects: reads and writes `sessions`; reads and deletes `gsm:{env}:identity:session:{tokenHash}` in the cache Redis (the
  * deletes after the commit, retried and reported when Redis fails, decision 055); after the commit of an end (revoke, rotate, revoke
@@ -95,7 +99,7 @@ function assertCreateInput(input: CreateSessionInput): void {
  * @see docs/decisions/018-auth-sessions-csrf.md, docs/decisions/055-infra.md and docs/cache-keys.md
  */
 @Injectable()
-export class SessionService {
+export class SessionService implements AccountSessions {
   private readonly logger = new Logger(SessionService.name);
   private readonly throttle = new LogThrottle(60_000);
 
@@ -108,13 +112,14 @@ export class SessionService {
     private readonly subjects: SessionSubjects,
     @Inject(CLOCK) private readonly clock: Clock,
     private readonly realtime: RealtimePublisher,
+    private readonly cookies: SessionCookies,
   ) {}
 
   /**
    * Creates a session and returns its token.
    *
-   * Why: login creates a pending session (10 minutes) and the sign-in steps rotate it to `active`; merchant and customer
-   * sign-in create their sessions directly.
+   * Why: login creates a pending session (10 minutes) and the sign-in steps rotate it to `active`; an account's sign-in creates its
+   * session directly (through {@link SessionService.start}, which also sets the cookies).
    *
    * Side effects: inserts a `sessions` row (the token hash only); after the commit, loads its view into the cache (best effort;
    * decision 053: an address that used up its budget of failed lookups is answered from the cache only, so a new session is served
@@ -286,7 +291,7 @@ export class SessionService {
    * Side effects: sets `revoked_at` on every live session of the account; deletes their cached views and rings `session ended`
    * with their ids after the commit.
    *
-   * @param subjectType staff, client or customer
+   * @param subjectType staff or account
    * @param subjectId the account id
    * @param options `exceptSessionId`: a session to keep
    * @param work the caller's transaction, if it has one
@@ -327,7 +332,7 @@ export class SessionService {
    * Side effects: deletes the cache keys of the account's live sessions (after the commit when `work` is given); when it has live
    * sessions, rings `session subject` afterwards, so its live streams end with `bye reauth` and reconnect through the guard.
    *
-   * @param subjectType staff, client or customer
+   * @param subjectType staff or account
    * @param subjectId the account id
    * @param work the caller's transaction, if it has one
    */
@@ -341,6 +346,86 @@ export class SessionService {
     const fields = { subjectType, subjectId };
     if (work) work.afterCommit(() => void this.realtime.publish(SESSION_TOPIC, 'subject', fields));
     else this.realtime.publishOnCommit(SESSION_TOPIC, 'subject', fields);
+  }
+
+  /**
+   * Opens the session of an account and sets its cookies on the reply (the `AccountSessions` port).
+   *
+   * Why: decision 064. Every sign-in (password, code step, link, forced change) ends in one session of subject `account`; the rank kind
+   * (read by the caller under the account's lock) names the readable CSRF cookie that goes with it. The caller never touches the
+   * cookies or the session store.
+   *
+   * Side effects: inserts a `sessions` row in the caller's transaction (see {@link SessionService.create}) and writes the session
+   * cookie, the CSRF cookie of the rank kind, the clearing of the other CSRF name and of the old shop cookie, and the `X-CSRF-Token`
+   * header on the reply, before the commit: the caller must send the reply only when the transaction commits.
+   *
+   * @param work the caller's transaction
+   * @param reply the reply the cookies go on; the address and user agent of its request are stored with the session
+   * @param input the account, the stage reached and the rank kind
+   * @returns when the session ends
+   * @throws {RangeError} when the account id or the address is not valid
+   */
+  async start(
+    work: SessionWork,
+    reply: FastifyReply,
+    input: AccountSessionStart,
+  ): Promise<{ readonly expiresAt: Date }> {
+    const { ip, headers } = reply.request;
+    const userAgent = headers['user-agent'];
+    const issued = await this.create(
+      {
+        subjectType: 'account',
+        subjectId: input.accountId,
+        stage: input.stage,
+        ip,
+        ...(typeof userAgent === 'string' ? { userAgent } : {}),
+      },
+      work,
+    );
+    this.cookies.setAccount(reply, issued.token, issued.session.expiresAt, input.rankKind);
+    return { expiresAt: issued.session.expiresAt };
+  }
+
+  /**
+   * Ends every live session of an account inside the caller's transaction (the `AccountSessions` port).
+   *
+   * Why: a suspension, a rank change across kinds, a password reset and an erasure sign the account out everywhere (decision 064). The
+   * caller holds only `tx`; the cache deletes and the `session ended` doorbell run after its commit through the transaction's own
+   * callback list (`onCommit`), so a rolled-back change leaves the sessions and their views alone.
+   *
+   * Side effects: sets `revoked_at` on every live session; after the commit deletes their cached views and rings `session ended`.
+   *
+   * @param tx the caller's transaction
+   * @param accountId the account
+   * @returns how many sessions ended
+   */
+  async revokeAll(tx: Transaction, accountId: number): Promise<number> {
+    const rows = await revokeLiveSessionsOf(tx, 'account', accountId, this.clock.now());
+    const after = { afterCommit: onCommit };
+    this.forgetAfterCommit(
+      after,
+      rows.map((row) => row.tokenHash),
+    );
+    this.announceEnded(
+      after,
+      rows.map((row) => row.id),
+    );
+    return rows.length;
+  }
+
+  /**
+   * Drops the cached views of an account's sessions so the next request reads the stored state (the `AccountSessions` port).
+   *
+   * Why: a view holds the status and the rank of its account for up to a minute; after a change of either, the caller invalidates
+   * after the commit (decision 064).
+   *
+   * Side effects: see {@link SessionService.invalidateSubject}.
+   *
+   * @param accountId the account
+   * @returns when the cached views are dropped (and the live streams of the account told to read the session again)
+   */
+  invalidate(accountId: number): Promise<void> {
+    return this.invalidateSubject('account', accountId);
   }
 
   private async load(hash: string): Promise<SessionView | undefined> {

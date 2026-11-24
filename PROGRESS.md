@@ -4,6 +4,19 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**One account type (2026-11-24, decision 064): merged, not released.** Merchants and customers are one account type, told apart by a
+rank (a client group; only the merchant kind is a merchant): one accounts table, one stored type word and one buyer column, one sign-in and
+one session with a default-deny rank gate, one live wallet per account, and one Owner-only route that changes a rank. Migrations 0066
+(expand, with a read-only preflight) and 0067 (permissions); the old customer routes answer 410 until the contract release. **Before it on
+main, each its own commit and its own release:** the gate that closes the public hosts to all but the operator (deploy files only), then the
+retired features of the merchant side (decisions 061 and 062, migrations 0064 and 0065). **Checks:** typecheck, lint, format, the English
+check and every generator check against the console's `main`, the verify stage of the production image, and the whole suite locally
+(10,866 tests pass, 1 skipped, none failed). The migration was rehearsed on a copy of a development database and compared row by row (accounts,
+ledger, references). **Release:** by hand with the deployer on hold, by the runbook of `docs/OPERATIONS.md` (search for "decision 064"),
+never by `resume`, `retry` or `force`: it needs a checked backup with a restore drill and a rehearsal on a production copy first, and
+`PORTAL_BASE_URL` becomes the account area of the shop. **Open:** the contract release (it drops the frozen customer tables and the 410
+routes) follows after the expand release has run for some days.
+
 **The Product / Services page of the console, backend part (2026-11-24, decision 063): merged.** The owner replaced the console's
 one-page Catalog with a page in the layout their staff know (console decision 022). The reads of decision 060 stay and are used by it. Three
 additive parts were added for it. `GET /admin/services/price-grid` (feature 47) answers a page of services with the price every merchant

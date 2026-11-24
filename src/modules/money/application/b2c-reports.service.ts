@@ -9,7 +9,7 @@ import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
 import { BASE_CURRENCY } from '../domain/accounts';
 import { type PaymentReportSort, paymentsReport, vatRows } from '../infra/b2c-reports.repository';
-import { loadBillingCustomers } from '../infra/foreign-directory.repository';
+import { loadBillingMerchants } from '../infra/foreign-directory.repository';
 import { storedOrderMethod } from '../domain/b2c-money';
 import { REPORT_SORTS, type getPaymentsReport, type getVatReport } from '../contracts/b2c-reports.contracts';
 
@@ -101,9 +101,10 @@ export class B2cReportsService {
       { method: query.method, start, limit, sort, order: query._order ?? query.order ?? 'desc' },
       since,
     );
-    const customers = await loadBillingCustomers(
+    // The buyers are accounts of any rank; the wire keeps its `customer` key (the console's Payments report names the buyer so).
+    const accounts = await loadBillingMerchants(
       this.db.db,
-      report.lines.flatMap((line) => (line.customerId === null ? [] : [line.customerId])),
+      report.lines.flatMap((line) => (line.accountId === null ? [] : [line.accountId])),
     );
     const figures = new Map(report.methods.map((row) => [storedOrderMethod(row.method), row]));
     return {
@@ -120,7 +121,7 @@ export class B2cReportsService {
         };
       }),
       payments: report.lines.map((line) => {
-        const customer = line.customerId === null ? undefined : customers.get(line.customerId);
+        const account = line.accountId === null ? undefined : accounts.get(line.accountId);
         return {
           id: line.id,
           orderId: line.orderId,
@@ -132,8 +133,8 @@ export class B2cReportsService {
           status: line.status as 'captured',
           currency: line.currency,
           fx: line.fx,
-          // Decision 047, rule B: a customer without a name is labelled by the masked address, for every caller.
-          customer: customer ? { id: customer.id, name: customerNameForStaff(customer.name, customer.email) } : null,
+          // Decision 047, rule B: an account without a name is labelled by the masked address, for every caller.
+          customer: account ? { id: account.id, name: customerNameForStaff(account.name, account.email) } : null,
         };
       }),
       total: report.total,

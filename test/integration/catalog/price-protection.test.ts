@@ -76,7 +76,7 @@ describe('the guard over the listed price a merchant was shown', () => {
     const groups = await insertDemoGroups(db);
     const { serviceId } = await insertAtt(db);
     const merchant = await insertMerchantIn(db, groups.standard);
-    const session = await openSession(t, { type: 'client', id: merchant });
+    const session = await openSession(t, { type: 'account', id: merchant });
     const listed = t.app.get(ListedPrices);
 
     // No listing yet: nothing to compare.

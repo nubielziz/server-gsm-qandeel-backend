@@ -246,10 +246,10 @@ export async function insertGateway(t: TestApp, db: Database, overrides: Gateway
 }
 
 /**
- * Inserts a file row owned by a merchant, as the upload routes store it (area `files`; the upload route is feature 7a's; no object is stored).
+ * Inserts a file row owned by an account, as the upload routes store it (area `files`; the upload route is feature 7a's; no object is stored).
  *
  * @param db the test database
- * @param clientId the owner
+ * @param clientId the owner (an account id)
  * @param overrides columns to change (mime, filename)
  * @returns the file id
  */
@@ -268,7 +268,7 @@ export async function insertProofFile(
       mime: 'application/pdf',
       size: 1234,
       sha256: id.replaceAll('-', '').padEnd(64, '0'),
-      ownerType: 'client',
+      ownerType: 'account',
       ownerId: clientId,
       ...overrides,
     })
@@ -277,10 +277,13 @@ export async function insertProofFile(
 }
 
 /**
- * Inserts an invoice row of a merchant.
+ * Inserts an invoice row of a merchant-rank account (a top-up of its merchant wallet by default).
+ *
+ * Why: the owner column is `account_id`; `client_id` is still written for merchant invoices during the expand release, and a top-up or
+ * manual invoice names the wallet kind it credits (`invoices_wallet_kind_check`).
  *
  * @param db the test database
- * @param clientId the merchant
+ * @param clientId the account (a merchant)
  * @param overrides columns to change
  * @returns the invoice
  */
@@ -296,8 +299,12 @@ export async function insertInvoiceRow(
     .insert(s.invoices)
     .values({
       number,
-      clientId,
+      accountId: clientId,
+      legacyClientId: clientId,
       kind: 'topup',
+      ...(overrides.kind === undefined || overrides.kind === 'topup' || overrides.kind === 'manual'
+        ? { walletKind: 'client_wallet' as const }
+        : {}),
       amount,
       fee,
       netAmount: Money.of(amount).sub(Money.of(fee)).toWire(),
@@ -312,7 +319,7 @@ export async function insertInvoiceRow(
 }
 
 /**
- * Inserts a pending top-up payment of an invoice.
+ * Inserts a pending top-up payment of an invoice (it belongs to the invoice's account).
  *
  * @param db the test database
  * @param invoice the invoice it pays
@@ -329,6 +336,7 @@ export async function insertPendingPayment(
   const [row] = await db
     .insert(s.payments)
     .values({
+      accountId: invoice.accountId,
       purpose: 'topup',
       invoiceId: invoice.id,
       gatewayId,

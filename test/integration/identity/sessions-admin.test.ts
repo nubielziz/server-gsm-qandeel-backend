@@ -1,5 +1,5 @@
-// Integration tests of the admin session routes and the ended-session purge job (feature 2a, scenarios admin-team and ip-rules):
-// the one live-session rule (resolution identity-platform-6), the list of staff sessions, ending a session, and the
+// Integration tests of the admin session routes and the ended-session purge job (feature 2a, scenarios admin-team and ip-rules, decision 064):
+// the one live-session rule (resolution identity-platform-6), the list of staff and account sessions, ending a session, and the
 // daily purge of sessions that ended more than 30 days ago.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { randomUUID } from 'node:crypto';
@@ -20,7 +20,8 @@ import {
 import { SessionPurgeProcessor } from '@src/modules/identity/jobs/session-purge.processor';
 import { adminFor, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
-import { clearIdentityCaches, insertMerchant, insertRole, insertStaff, openSession } from '../../support/auth';
+import { makeAccount } from '../../support/accounts';
+import { clearIdentityCaches, insertRole, insertStaff, openSession } from '../../support/auth';
 import { DAY, HOUR, MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { createInfra } from '../../support/infra';
@@ -56,24 +57,30 @@ async function viewer(permissions = ['sessions:read', 'sessions:revoke', 'staff:
 }
 
 describe('GET /admin/sessions', () => {
-  it("lists fully signed-in staff sessions with their account, marks the caller's own, and nothing else", async () => {
+  it("lists fully signed-in sessions of staff and of accounts with the person behind each, marks the caller's own, and no sign-in step", async () => {
     const rami = await viewer();
     const { db } = await testDb();
     const support = await insertRole(db, ['staff:read']);
     const lina = await insertStaff(db, support, { name: 'Lina S.', email: 'lina@example.com' });
     const linaSession = await openSession(t, { type: 'staff', id: lina });
-    // Never listed: a merchant (its per-device list is retired), a storefront customer, and the sign-in steps before the second
-    // factor or the password change.
-    const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub', email: 'ops@zain.example' });
-    await openSession(t, { type: 'client', id: merchant });
-    await openSession(t, { type: 'customer', id: 99 });
+    // Accounts of both ranks are listed, under one subject type; the sign-in steps before the second factor or the password change are not.
+    const merchant = await makeAccount(t, { rank: 'merchant', name: 'Zain Mobile Hub', email: 'ops@zain.example' });
+    const retail = await makeAccount(t, { rank: 'retail', name: 'Mina Saleh', email: 'mina@example.com' });
+    const merchantSession = await openSession(t, { type: 'account', id: merchant.id });
+    const retailSession = await openSession(t, { type: 'account', id: retail.id });
     await openSession(t, { type: 'staff', id: lina }, { stage: 'pending_totp' });
     await openSession(t, { type: 'staff', id: lina }, { stage: 'pending_password' });
+    await openSession(t, { type: 'account', id: retail.id }, { stage: 'pending_totp' });
 
     const res = await rami.get('/admin/sessions?_sort=id&_order=asc');
     expect(res.status).toBe(200);
-    expect(res.total).toBe(2);
-    expect(ids(res.body)).toEqual([rami.session.sessionId, linaSession.sessionId]);
+    expect(res.total).toBe(4);
+    expect(ids(res.body)).toEqual([
+      rami.session.sessionId,
+      linaSession.sessionId,
+      merchantSession.sessionId,
+      retailSession.sessionId,
+    ]);
     const created = clock.now().toISOString();
     expect(res.body[1]).toEqual({
       id: linaSession.sessionId,
@@ -91,7 +98,34 @@ describe('GET /admin/sessions', () => {
       subject: { id: rami.staffId, name: 'Rami K.' },
       current: true,
     });
-    expect(JSON.stringify(res.body)).not.toMatch(/tokenHash|token_hash|"token"/);
+    // The caller holds no clients:read: an account's address is masked, for a merchant and for a retail account.
+    expect(res.body[2]).toMatchObject({
+      subjectType: 'account',
+      subject: { id: merchant.id, name: 'Zain Mobile Hub', email: 'op•••@zain.example' },
+      current: false,
+    });
+    expect(res.body[3]).toMatchObject({
+      subjectType: 'account',
+      subject: { id: retail.id, email: 'mi•••@example.com' },
+    });
+    expect(JSON.stringify(res.body)).not.toMatch(/tokenHash|token_hash|"token"|ops@zain|mina@example/);
+  });
+
+  it('shows an account address in full only to a caller who holds clients:read, whatever its rank', async () => {
+    const merchant = await makeAccount(t, { rank: 'merchant', email: 'ops@zain.example' });
+    const retail = await makeAccount(t, { rank: 'retail', email: 'mina@example.com' });
+    await openSession(t, { type: 'account', id: merchant.id });
+    await openSession(t, { type: 'account', id: retail.id });
+    const reader = await adminWith(t, ['sessions:read', 'clients:read'], { name: 'Reader' });
+    const emails = (await reader.get('/admin/sessions?subjectType=account')).body.map(
+      (row: { subject: { email: string } }) => row.subject.email,
+    );
+    expect(emails.sort()).toEqual(['mina@example.com', 'ops@zain.example']);
+    const blind = await adminWith(t, ['sessions:read'], { name: 'Blind' });
+    const masked = (await blind.get('/admin/sessions?subjectType=account')).body.map(
+      (row: { subject: { email: string } }) => row.subject.email,
+    );
+    expect(masked.sort()).toEqual(['mi•••@example.com', 'op•••@zain.example']);
   });
 
   it('applies one live rule: revoked, expired and idle-dead sessions disappear, with the idle limit of staff', async () => {
@@ -159,19 +193,25 @@ describe('GET /admin/sessions', () => {
     expect((await rami.get('/admin/sessions?_sort=ip')).status).toBe(422);
   });
 
-  it('no longer lists a merchant: the merchant filter values and subjectId are refused', async () => {
+  it('filters by the account subject type, and refuses the old words client and customer and a subject id', async () => {
     const rami = await viewer();
-    const { db } = await testDb();
-    const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub' });
-    await openSession(t, { type: 'client', id: merchant });
-    for (const query of ['subjectType=client', `subjectType=client&subjectId=${merchant}`, 'subjectId=7']) {
+    const merchant = await makeAccount(t, { rank: 'merchant' });
+    const accountSession = await openSession(t, { type: 'account', id: merchant.id });
+    for (const query of [
+      'subjectType=client',
+      'subjectType=customer',
+      `subjectType=account&subjectId=${merchant.id}`,
+      'subjectId=7',
+    ]) {
       const res = await rami.get(`/admin/sessions?${query}`);
       expect(res.status, query).toBe(422);
       expect(res.body.code).toBe('VALIDATION_FAILED');
     }
-    const all = await rami.get('/admin/sessions?_end=100');
-    expect(all.total).toBe(1);
-    expect(ids(all.body)).toEqual([rami.session.sessionId]);
+    const accounts = await rami.get('/admin/sessions?subjectType=account&_end=100');
+    expect(ids(accounts.body)).toEqual([accountSession.sessionId]);
+    const staff = await rami.get('/admin/sessions?subjectType=staff&_end=100');
+    expect(ids(staff.body)).toEqual([rami.session.sessionId]);
+    expect((await rami.get('/admin/sessions?_end=100')).total).toBe(2);
   });
 
   it("shows the account's current name (a rename is visible at once) and needs sessions:read", async () => {
@@ -258,26 +298,25 @@ describe('DELETE /admin/sessions/:id', () => {
     expect((await rami.get('/admin/sessions')).status).toBe(401);
   });
 
-  it("answers 404 for a session that is not live by the list's rule: unknown, revoked, expired, idle, a merchant, a customer or a sign-in step", async () => {
+  it("answers 404 for a session that is not live by the list's rule: unknown, revoked, expired, idle or a sign-in step", async () => {
     const rami = await viewer();
     const { db } = await testDb();
     const support = await insertRole(db, ['staff:read']);
     const lina = await insertStaff(db, support);
-    const merchant = await insertMerchant(db);
+    const retail = await makeAccount(t, { rank: 'retail' });
     const revoked = await openSession(t, { type: 'staff', id: lina });
     await db.update(s.sessions).set({ revokedAt: clock.now() }).where(eq(s.sessions.id, revoked.sessionId));
     const expired = await openSession(t, { type: 'staff', id: lina }, { ttlSeconds: 60 });
     const idle = await openSession(t, { type: 'staff', id: lina });
-    const customer = await openSession(t, { type: 'customer', id: 7 });
     const step = await openSession(t, { type: 'staff', id: lina }, { stage: 'pending_totp' });
-    const merchantLive = await openSession(t, { type: 'client', id: merchant });
+    const accountStep = await openSession(t, { type: 'account', id: retail.id }, { stage: 'pending_totp' });
 
-    for (const dead of [revoked, customer, step, merchantLive]) {
+    for (const dead of [revoked, step, accountStep]) {
       const res = await rami.delete(`/admin/sessions/${dead.sessionId}`);
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('NOT_FOUND');
     }
-    expect((await sessionRow(merchantLive.sessionId)).revokedAt).toBeNull();
+    expect((await sessionRow(accountStep.sessionId)).revokedAt).toBeNull();
     expect((await rami.delete('/admin/sessions/999999')).status).toBe(404);
     expect((await rami.delete('/admin/sessions/abc')).status).toBe(422);
 
@@ -286,6 +325,40 @@ describe('DELETE /admin/sessions/:id', () => {
     for (const dead of [expired, idle])
       expect((await later.delete(`/admin/sessions/${dead.sessionId}`)).status).toBe(404);
     expect(await auditRows()).toHaveLength(0);
+  });
+
+  it('ends the session of an account only for a caller who holds clients:security, and audits it under the account', async () => {
+    const merchant = await makeAccount(t, { rank: 'merchant', name: 'Zain Mobile Hub' });
+    const retail = await makeAccount(t, { rank: 'retail', name: 'Mina Saleh' });
+    const merchantSession = await openSession(t, { type: 'account', id: merchant.id });
+    const retailSession = await openSession(t, { type: 'account', id: retail.id });
+    const rami = await viewer();
+    const refused = await rami.delete(`/admin/sessions/${merchantSession.sessionId}`);
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toBe('You need the clients:security permission to do this.');
+    expect((await sessionRow(merchantSession.sessionId)).revokedAt).toBeNull();
+    expect(await auditRows()).toHaveLength(0);
+
+    const security = await adminWith(t, ['sessions:read', 'sessions:revoke', 'clients:security'], { name: 'Nadia H.' });
+    for (const ended of [merchantSession, retailSession]) {
+      expect((await security.delete(`/admin/sessions/${ended.sessionId}`)).status).toBe(204);
+      expect((await sessionRow(ended.sessionId)).revokedAt).toEqual(clock.now());
+    }
+    const [first, second] = await auditRows();
+    expect(first).toMatchObject({
+      action: 'ended session of',
+      entityType: 'account',
+      entityId: merchant.id,
+      entityLabel: 'Zain Mobile Hub',
+      actorId: security.staffId,
+    });
+    expect(first!.before).toEqual({ sessionId: merchantSession.sessionId, ip: '203.0.113.7' });
+    expect(first!.after).toEqual({ ended: true });
+    expect(second).toMatchObject({ entityType: 'account', entityId: retail.id, entityLabel: 'Mina Saleh' });
+    // The ended sessions leave the list.
+    expect(ids((await security.get('/admin/sessions?_end=100')).body).sort((a, b) => a - b)).toEqual(
+      [rami.session.sessionId, security.session.sessionId].sort((a, b) => a - b),
+    );
   });
 
   it('needs sessions:revoke and a CSRF token', async () => {
@@ -347,18 +420,21 @@ describe('what the session list and ending a session show, by permission', () =>
     }
   });
 
-  it("neither lists nor ends a merchant's session, whatever the caller holds", async () => {
-    const { db } = await testDb();
-    const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub', email: 'ops@zain.example' });
-    const merchantSession = await openSession(t, { type: 'client', id: merchant });
+  it("lists and ends an account's session for an Owner, and the row carries the person in full", async () => {
+    const merchant = await makeAccount(t, { rank: 'merchant', name: 'Zain Mobile Hub', email: 'ops@zain.example' });
+    const merchantSession = await openSession(t, { type: 'account', id: merchant.id });
     const owner = await adminWith(t, ['*']);
 
     const listed = (await owner.get('/admin/sessions?_end=100')).body as Array<{ id: number }>;
-    expect(ids(listed)).not.toContain(merchantSession.sessionId);
-    expect(JSON.stringify(listed)).not.toContain('ops@zain.example');
-    expect((await owner.delete(`/admin/sessions/${merchantSession.sessionId}`)).status).toBe(404);
-    expect((await sessionRow(merchantSession.sessionId)).revokedAt).toBeNull();
-    expect(await auditRows()).toHaveLength(0);
+    expect(sessionIn(listed, merchantSession.sessionId)).toMatchObject({
+      subjectType: 'account',
+      ip: '203.0.113.7',
+      userAgent: 'bun-test',
+      subject: { id: merchant.id, name: 'Zain Mobile Hub', email: 'ops@zain.example' },
+    });
+    expect((await owner.delete(`/admin/sessions/${merchantSession.sessionId}`)).status).toBe(204);
+    expect((await sessionRow(merchantSession.sessionId)).revokedAt).toEqual(clock.now());
+    expect((await auditRows())[0]).toMatchObject({ entityType: 'account', entityId: merchant.id });
   });
 });
 

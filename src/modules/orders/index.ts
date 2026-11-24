@@ -2,6 +2,10 @@
 // placement and transition services the Dhru, supplier and risk features call, the outbox event types, and the modules.
 // Other modules import only this file.
 // Order matters (decision 032): the pure rules and SQL fragments come first, ahead of the modules whose providers lead into identity.
+// The door an order came through (paid first or held from the wallet) and the read of an account's shop orders (decision 064).
+export { isPrepaidOrder, prepaidOrderSql } from './domain/door';
+export { ShopOrders } from './ports/shop-orders';
+export type { ShopOrderPage, ShopOrderRow } from './ports/shop-orders';
 export {
   WIRE_DISPATCH_STATES,
   decideOrderAction,

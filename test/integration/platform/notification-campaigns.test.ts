@@ -92,8 +92,8 @@ describe('POST /admin/notification-campaigns', () => {
       ...CAMPAIGN_INPUT,
       audience: {
         include: [
-          { type: 'customer', id: 1 },
-          { type: 'customer', id: 1 },
+          { type: 'account', id: 1 },
+          { type: 'account', id: 1 },
         ],
       },
     });

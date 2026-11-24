@@ -114,7 +114,7 @@ describe('the migration that retires merchant verification by documents', () => 
   it('runs on an empty database, and leaves the retired table and column, and the merchants, as they are', async () => {
     const { db, pool } = await testDb();
     await migrate();
-    const merchantId = await insertMerchant(db, { status: 'pending' });
+    const merchantId = await insertMerchant(db, { status: 'suspended', suspendedReason: 'Under review by staff' });
     await db.insert(s.kycSubmissions).values({ clientId: merchantId, status: 'approved', fileIds: [] });
     const [clientBefore] = await db.select().from(s.clients).where(eq(s.clients.id, merchantId));
 

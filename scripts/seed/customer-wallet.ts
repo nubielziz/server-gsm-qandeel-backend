@@ -1,6 +1,6 @@
-// Development seed of the customer wallet (feature 21, plan § 10 B3): switches the store balance on, adds a manual B2C gateway (CliQ) and gives
-// two seeded customers with an account a credited $50 top-up and a top-up waiting for review. Called by dev-seed.ts in development only.
-import { and, asc, eq } from 'drizzle-orm';
+// Development seed of the store balance (feature 21, plan § 10 B3): switches the store balance on, adds a manual B2C gateway (CliQ) and gives
+// two seeded retail accounts that can sign in a credited $50 top-up and a top-up waiting for review. Called by dev-seed.ts in development only.
+import { and, asc, eq, ne } from 'drizzle-orm';
 import { Money } from '../../src/common/money';
 import { type DbExecutor, schema as s } from '../../src/infra/db';
 import { customerTopup, postTransaction } from '../../src/modules/money';
@@ -15,11 +15,14 @@ const CREDITED_KEY = 'seed:wallet:credited';
 const IN_REVIEW_KEY = 'seed:wallet:in-review';
 
 /**
- * Seeds the customer wallet of a development database.
+ * Seeds the store balance of a development database.
  *
- * Why: the console's customer Wallet tab and the storefront's balance page need data to show; the money goes through `postTransaction`
+ * Why: the console's Wallet part of a retail account and the storefront's balance page need data to show; the money goes through `postTransaction`
  * (key `deposit:payment:<id>`, like a real credit), so the books stay balanced. Every write is keyed (the setting, the gateway code, the
  * invoices' `Idempotency-Key`), so a second run adds nothing.
+ *
+ * The two holders are the first retail accounts (a rank that is not a merchant one) that can sign in and may act, by number; the invoices are
+ * of the store-balance kind (`wallet_kind = 'customer_wallet'`), whatever rank the account holds later.
  *
  * Side effects: may insert a `settings` row, a `payment_gateways` row, two `invoices`, two `payments` and one ledger transaction.
  *
@@ -47,10 +50,11 @@ export async function seedCustomerWallet(db: DbExecutor, now: Date): Promise<See
     .onConflictDoNothing({ target: s.paymentGateways.code });
   const [gateway] = await db.select().from(s.paymentGateways).where(eq(s.paymentGateways.code, SEED_TOPUP_GATEWAY));
   const holders = await db
-    .select({ id: s.customers.id })
-    .from(s.customers)
-    .where(and(eq(s.customers.hasAccount, true), eq(s.customers.status, 'active')))
-    .orderBy(asc(s.customers.id))
+    .select({ id: s.clients.id })
+    .from(s.clients)
+    .innerJoin(s.clientGroups, eq(s.clientGroups.id, s.clients.groupId))
+    .where(and(eq(s.clients.hasAccount, true), eq(s.clients.status, 'active'), ne(s.clientGroups.kind, 'b2b')))
+    .orderBy(asc(s.clients.id))
     .limit(2);
   if (!gateway || holders.length < 2) return { table: 'invoices (wallet top-ups)', inserted: 0, existing: 0 };
   let inserted = 0;
@@ -60,7 +64,7 @@ export async function seedCustomerWallet(db: DbExecutor, now: Date): Promise<See
     const [found] = await db
       .select({ id: s.invoices.id })
       .from(s.invoices)
-      .where(and(eq(s.invoices.customerId, holder.id), eq(s.invoices.idempotencyKey, key)));
+      .where(and(eq(s.invoices.accountId, holder.id), eq(s.invoices.idempotencyKey, key)));
     if (found) {
       existing++;
       continue;
@@ -70,7 +74,8 @@ export async function seedCustomerWallet(db: DbExecutor, now: Date): Promise<See
     const invoice = await insertInvoice(db, {
       id,
       number: invoiceNumber(now.getUTCFullYear(), id),
-      customerId: holder.id,
+      accountId: holder.id,
+      walletKind: 'customer_wallet',
       kind: 'topup',
       amount: '50',
       fee: '0',
@@ -91,7 +96,7 @@ export async function seedCustomerWallet(db: DbExecutor, now: Date): Promise<See
       .values({
         purpose: 'topup',
         invoiceId: invoice.id,
-        customerId: holder.id,
+        accountId: holder.id,
         gatewayId: gateway.id,
         gatewayTxnId: `CLIQ-SEED-${invoice.id}`,
         amount: '50',

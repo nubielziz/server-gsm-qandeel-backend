@@ -850,7 +850,7 @@ describe('money rules do not change', () => {
       status: 'awaiting_payment',
       method: { code: 'instapay', methodType: 'bank' },
     });
-    const fileId = await insertProofFile(db, customer.id, { ownerType: 'customer' });
+    const fileId = await insertProofFile(db, customer.id, { ownerType: 'account' });
     const receipt = await store.call(
       'POST',
       `/store/v1/me/wallet/top-ups/${created.json().id}/receipt`,

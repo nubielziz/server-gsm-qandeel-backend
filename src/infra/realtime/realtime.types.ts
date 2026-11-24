@@ -5,9 +5,11 @@
  * The kinds of people a stream is opened for.
  *
  * Why: decision 037: one stream per signed-in browser and surface; `ticket` is the holder of a ticket link (feature 28), who has
- * no account and no default audience key.
+ * no account and no default audience key. Decision 064: every account, of any rank, is one kind, `account`: the merchant route and
+ * the shop route build the same viewer, so the audience key of an account is `u:account:<id>` whichever door it came through, and
+ * the inbox doorbell, the session doorbell and the viewer all build that one key.
  */
-export type StreamViewerKind = 'staff' | 'client' | 'customer' | 'ticket';
+export type StreamViewerKind = 'staff' | 'account' | 'ticket';
 
 /**
  * The person behind one open stream, as the guard authenticated them.
@@ -64,7 +66,7 @@ export interface Frame {
 /**
  * What a doorbell means for the open streams.
  *
- * Why: a source answers with the audience keys the event is for (`u:customer:42`), and either a frame to write or a reason to
+ * Why: a source answers with the audience keys the event is for (`u:account:42`), and either a frame to write or a reason to
  * end those streams (feature 28 ends the streams of a revoked ticket link).
  */
 export interface Delivery {

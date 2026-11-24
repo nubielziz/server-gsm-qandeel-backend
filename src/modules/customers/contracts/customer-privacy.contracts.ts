@@ -3,12 +3,14 @@
 import { z } from 'zod';
 import { defineRoute, zIdParam } from '../../../common/contract';
 import { BLOCK_REASONS, MAX_BLOCK_NOTE_LENGTH } from '../domain/customer-privacy';
+import { retiredNote } from './shared';
 
 /** `POST /admin/customers/:id/block`. */
 export const blockCustomer = defineRoute({
   key: 'POST /admin/customers/:id/block',
   summary: 'Block or unblock a customer',
   description:
+    retiredNote('POST /admin/clients/:id/block') +
     '`{ blocked: true, reason }` blocks a customer for fraud (use suspend for a temporary stop); `{ blocked: false }` lifts the ' +
     'block (a reason is optional). Blocking sets the status `blocked`, ends every session, appends the ' +
     'reason to the internal notes, and adds to the blocklist, with source manual, the reason, the caller and the customer: the email, ' +
@@ -40,6 +42,7 @@ export const blockCustomer = defineRoute({
     'NOT_BLOCKED',
     'ANONYMIZED',
     'VALIDATION_FAILED',
+    'ROUTE_RETIRED',
   ],
   examples: { request: { blocked: true, reason: 'Chargeback or dispute' } },
 });
@@ -49,6 +52,7 @@ export const exportCustomerData = defineRoute({
   key: 'GET /admin/customers/:id/export',
   summary: 'Export a customer’s data',
   description:
+    retiredNote('GET /admin/clients/:id/export') +
     'A JSON file (`Content-Disposition: attachment; filename="customer-<id>.json"`, never cached) with everything the shop holds ' +
     'about the customer: the profile, the orders with their IMEI, the payments without card data, the consents, the checkout ' +
     "sessions, the support tickets with their public messages (only tickets whose requester's address is confirmed: a ticket opened " +
@@ -65,7 +69,7 @@ export const exportCustomerData = defineRoute({
   originCheck: true,
   params: z.object({ id: zIdParam }),
   success: { status: 200, contentType: 'application/json' },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'ROUTE_RETIRED'],
 });
 
 /** `POST /admin/customers/:id/anonymize`. */
@@ -73,6 +77,7 @@ export const anonymizeCustomer = defineRoute({
   key: 'POST /admin/customers/:id/anonymize',
   summary: 'Anonymize a customer',
   description:
+    retiredNote('POST /admin/clients/:id/anonymize') +
     'Irreversible. The customer becomes `anonymized`: the name is "Deleted customer", the email `deleted-<id>@redacted.invalid` (the ' +
     'old address is free again), the phone and internal notes are cleared, marketing is off and the account is closed (credentials ' +
     'deleted, every session ended, outstanding links voided). The IMEI on their orders and checkout sessions is cut to ' +
@@ -86,5 +91,5 @@ export const anonymizeCustomer = defineRoute({
   permission: 'customers:privacy',
   params: z.object({ id: zIdParam }),
   success: { status: 204 },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'ANONYMIZED', 'CONFLICT'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'ANONYMIZED', 'CONFLICT', 'ROUTE_RETIRED'],
 });

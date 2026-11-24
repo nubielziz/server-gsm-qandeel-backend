@@ -1,5 +1,6 @@
-// AccountTicketOpener: the one way a signed-in customer or merchant opens a ticket (feature 28, slice B2, routes 7 and 9). MyTicketsService
-// and ClientTicketService call it; the visitor's public form (no session, Turnstile, an email or an order link) stays StoreTicketService.
+// AccountTicketOpener: the one way a signed-in account opens a ticket (feature 28, slice B2, routes 7 and 9; decision 064). MyTicketsService
+// (the shop's retail rank) and ClientTicketService (the portal's merchant rank) call it; the visitor's public form (no session, Turnstile,
+// an email or an order link) stays StoreTicketService.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError, type FieldError } from '../../../common/errors';
@@ -34,18 +35,19 @@ export interface OpenedAccountTicket {
 }
 
 /**
- * Opens a ticket for a signed-in customer or merchant.
+ * Opens a ticket for a signed-in account.
  *
- * Why: feature 28, rules 6 and 7 (B217): a signed-in customer opens a ticket without Turnstile and gets the link token at once (the
- * session already proves who they are, unlike the email path of the public form); a merchant gets a ticket without a token (the session
- * is the credential). The ticket starts `new` with the priority of its category and a reply target, the first message is the requester's
- * newest (staff's `hasUnread`), and staff see it at once through `ticket updated`. `orderId` must be an order of the caller. Without
- * Turnstile the route could be used to flood the inbox, so an account opens 5 tickets an hour (limiter `ticket-open`, decision 021),
+ * Why: feature 28, rules 6 and 7 (B217) and decision 064: a signed-in retail account opens a ticket without Turnstile and gets the link
+ * token at once (the session already proves who they are, unlike the email path of the public form); an account of a merchant rank gets a
+ * ticket without a token (the session is the credential). The rank kind comes from the session's principal. The ticket starts `new` with
+ * the priority of its category and a reply target, the first message is the requester's newest (staff's `hasUnread`), and staff see it
+ * at once through `ticket updated`. `orderId` must be an order of the caller (`orders.account_id`, an authorization check).
+ * Without Turnstile the route could be used to flood the inbox, so an account opens 5 tickets an hour (limiter `ticket-open`, decision 021),
  * counted before anything is read or written so probing order ids is limited too.
  *
- * Side effects: counts a point of `ticket-open` on the cache Redis (`customer:<id>` or `client:<id>`, one hour); inserts the
- * `support_tickets` and `ticket_messages` rows, and for a customer the receipt's `support.ticket_mail` outbox event, in one transaction
- * (a merchant gets no receipt: its ticket has no page to link); rings `ticket updated` after the commit.
+ * Side effects: counts a point of `ticket-open` on the cache Redis (`account:<id>`, one hour); inserts the `support_tickets` and
+ * `ticket_messages` rows, and for a retail account the receipt's `support.ticket_mail` outbox event, in one transaction (a merchant rank
+ * gets no receipt: its ticket has no page to link); rings `ticket updated` after the commit.
  *
  * @see POST /store/v1/me/tickets, POST /client/tickets
  */
@@ -64,14 +66,14 @@ export class AccountTicketOpener {
   /**
    * Opens the ticket.
    *
-   * @param owner the signed-in customer or merchant (from the session, never from the body)
+   * @param owner the signed-in account and its rank kind (from the session, never from the body)
    * @param input the subject, the first message and what it carries
    * @returns the stored ticket, its first message and the message's files
    * @throws {AppError} `RATE_LIMITED` (429 with `Retry-After`) from the 6th ticket of an account in an hour; `VALIDATION_FAILED` (422 on
    *   `orderId`: `unknown_order`; on `fileIds`: `unknown_file`, `not_yours`, `type`, `too_large`)
    */
   async open(owner: TicketOwner, input: OpenAccountTicketInput): Promise<OpenedAccountTicket> {
-    await this.limits.enforce('ticket-open', `${owner.type}:${owner.id}`);
+    await this.limits.enforce('ticket-open', `account:${owner.id}`);
     return this.db.runInTransaction(async (work) => {
       const { tx } = work;
       const now = this.clock.now();
@@ -86,16 +88,16 @@ export class AccountTicketOpener {
           ],
         });
       }
-      const { ids, files } = await this.attachments.attach(tx, owner, input.fileIds);
+      const { ids, files } = await this.attachments.attach(tx, { type: 'account', id: owner.id }, input.fileIds);
       const category = input.category ?? 'other';
       const priority = defaultPriority(category);
-      // Only a customer's ticket has a page; its 128-bit token (decision 010) is stored as a keyed hash and an encrypted copy (decision
-      // 054). A merchant's ticket has neither.
-      const issued = owner.type === 'customer' ? this.vault.issue('ticket') : null;
+      // Only a retail account's ticket has a page; its 128-bit token (decision 010) is stored as a keyed hash and an encrypted copy (decision
+      // 054). A merchant rank's ticket has neither.
+      const issued = owner.rankKind === 'retail' ? this.vault.issue('ticket') : null;
       const ticket = await insertTicket(tx, {
         subject: input.subject,
         channel: 'web',
-        requesterType: owner.type,
+        requesterType: 'account',
         requesterId: owner.id,
         orderId: input.orderId ?? null,
         category,
@@ -113,7 +115,7 @@ export class AccountTicketOpener {
       });
       const message = await insertMessage(tx, {
         ticketId: ticket.id,
-        authorType: owner.type,
+        authorType: 'account',
         authorId: owner.id,
         body: input.message,
         isInternal: false,
@@ -121,8 +123,8 @@ export class AccountTicketOpener {
         createdAt: now,
       });
       const stored = await updateTicket(tx, ticket.id, { lastRequesterMessageId: message.id, updatedAt: now });
-      // The receipt is sent by the job, which re-reads the customer; a merchant's ticket has none.
-      if (owner.type === 'customer') await this.mail.received(work, ticket);
+      // The receipt is sent by the job, which re-reads the account; a merchant rank's ticket has none.
+      if (owner.rankKind === 'retail') await this.mail.received(work, ticket);
       this.events.updated(ticket.id);
       return { ticket: stored, message, files };
     });

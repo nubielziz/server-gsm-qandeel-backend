@@ -201,7 +201,7 @@ describe('append-only tables', () => {
     const orderId = await insertOrder(db, parents);
     await db
       .insert(s.orderEvents)
-      .values({ orderId, type: 'created', toStatus: 'pending', actorType: 'client', actorId: parents.clientId });
+      .values({ orderId, type: 'created', toStatus: 'pending', actorType: 'account', actorId: parents.clientId });
     await db
       .insert(s.auditLogs)
       .values({ actorType: 'staff', actorId: 1, action: 'suspended admin', entityType: 'staff', entityId: 2 });
@@ -247,17 +247,17 @@ describe('ledger accounts', () => {
     expect(failure.constraint).toBe('ledger_accounts_identity_uq');
   });
 
-  it('give each merchant one wallet and one hold, and refuse an account whose kind and owner disagree', async () => {
+  it('give each account one wallet and one hold, and refuse an account whose kind and owner disagree', async () => {
     const { db } = await testDb();
     const { clientId } = await insertOrderParents(db);
     await db.insert(s.ledgerAccounts).values([
-      { kind: 'client_wallet', ownerType: 'client', ownerId: clientId, currency: 'USD' },
-      { kind: 'client_hold', ownerType: 'client', ownerId: clientId, currency: 'USD' },
+      { kind: 'client_wallet', ownerType: 'account', ownerId: clientId, currency: 'USD' },
+      { kind: 'client_hold', ownerType: 'account', ownerId: clientId, currency: 'USD' },
     ]);
     const twice = await pgErrorOf(
       db
         .insert(s.ledgerAccounts)
-        .values({ kind: 'client_wallet', ownerType: 'client', ownerId: clientId, currency: 'USD' }),
+        .values({ kind: 'client_wallet', ownerType: 'account', ownerId: clientId, currency: 'USD' }),
     );
     expect(twice.constraint).toBe('ledger_accounts_identity_uq');
     const walletWithoutOwner = await pgErrorOf(
@@ -265,7 +265,7 @@ describe('ledger accounts', () => {
     );
     expect(walletWithoutOwner.constraint).toBe('ledger_accounts_kind_owner_check');
     const bankWithOwner = await pgErrorOf(
-      db.insert(s.ledgerAccounts).values({ kind: 'bank', ownerType: 'client', ownerId: clientId, currency: 'USD' }),
+      db.insert(s.ledgerAccounts).values({ kind: 'bank', ownerType: 'account', ownerId: clientId, currency: 'USD' }),
     );
     expect(bankWithOwner.constraint).toBe('ledger_accounts_kind_owner_check');
   });

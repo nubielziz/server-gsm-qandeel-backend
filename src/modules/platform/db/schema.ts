@@ -58,12 +58,13 @@ export const NOTIFICATION_STATUSES = ['queued', 'sent', 'failed'] as const;
 export type NotificationStatus = (typeof NOTIFICATION_STATUSES)[number];
 
 /**
- * Who a logged notification was sent to: staff, a merchant (`client`) or a storefront customer.
+ * Who a logged notification was sent to: a staff member or an account (of any rank).
  *
- * Why: RESOLUTIONS identity-platform-11: the log says `client` where the template audience says `merchant`; the
- * notification worker maps one to the other.
+ * Why: RESOLUTIONS identity-platform-11: the log says `account` where the template audience says `merchant` or `customer`; the
+ * notification worker maps the account's rank to the audience. Decision 064 rewrote the words `client` and `customer` to `account`
+ * (notification rows are mutable).
  */
-export const NOTIFICATION_RECIPIENT_TYPES = ['staff', 'client', 'customer'] as const;
+export const NOTIFICATION_RECIPIENT_TYPES = ['staff', 'account'] as const;
 
 /** One value of {@link NOTIFICATION_RECIPIENT_TYPES}. */
 export type NotificationRecipientType = (typeof NOTIFICATION_RECIPIENT_TYPES)[number];
@@ -79,14 +80,37 @@ export const WEBHOOK_DELIVERY_STATUSES = ['pending', 'delivered', 'failed'] as c
 export type WebhookDeliveryStatus = (typeof WEBHOOK_DELIVERY_STATUSES)[number];
 
 /**
- * Who acted in an audit log row: a staff member, a merchant, a storefront customer or the system.
+ * Every actor word an audit log row may hold, the old ones included: a staff member, an account or the system.
  *
- * Why: RESOLUTIONS identity-platform-7: the only values `AuditService` writes (the request actor, or `system` for jobs).
+ * Why: RESOLUTIONS identity-platform-7: the values `AuditService` writes (the request actor, or `system` for jobs). The table is
+ * append-only, so the rows written before decision 064 keep `client` and `customer` (read through `account_legacy_ids`) and the CHECK only
+ * gained `account`. New rows may write {@link CURRENT_AUDIT_ACTOR_TYPES} only.
  */
-export const AUDIT_ACTOR_TYPES = ['staff', 'client', 'customer', 'system'] as const;
+export const AUDIT_ACTOR_TYPES = ['staff', 'client', 'customer', 'system', 'account'] as const;
 
-/** One value of {@link AUDIT_ACTOR_TYPES}. */
+/** One value of {@link AUDIT_ACTOR_TYPES}: what a stored row may say. */
 export type AuditActorType = (typeof AUDIT_ACTOR_TYPES)[number];
+
+/**
+ * The actor words a new audit log row may write (`audit_logs_actor_type_current_check`, added NOT VALID).
+ *
+ * Why: decision 064: one word, `account`, for every merchant and customer.
+ */
+export const CURRENT_AUDIT_ACTOR_TYPES = ['staff', 'account', 'system'] as const;
+
+/** One value of {@link CURRENT_AUDIT_ACTOR_TYPES}: what a writer may pass. */
+export type CurrentAuditActorType = (typeof CURRENT_AUDIT_ACTOR_TYPES)[number];
+
+/**
+ * Who owns a stored file: a staff member or an account.
+ *
+ * Why: decision 064 closes the list that no check guarded before: the rows written with `client` or `customer` are rewritten to `account`
+ * (file rows are mutable; the object keys in the bucket keep their old owner path, which is only a name).
+ */
+export const FILE_OWNER_TYPES = ['staff', 'account'] as const;
+
+/** One value of {@link FILE_OWNER_TYPES}. */
+export type FileOwnerType = (typeof FILE_OWNER_TYPES)[number];
 
 /**
  * System settings as key and value pairs.
@@ -271,7 +295,7 @@ export type NotificationCampaign = typeof notificationCampaigns.$inferSelect;
 export type NewNotificationCampaign = typeof notificationCampaigns.$inferInsert;
 
 /**
- * The in-app notifications of staff, merchants and customers (feature 23).
+ * The in-app notifications of staff and accounts (feature 23).
  *
  * Why: the in-app channel is its own table (not a value of the log's channel enum): read state, an unread count and paging per
  * person. An item comes from a campaign (rendered from the campaign's content at read time) or from an event (rendered from the
@@ -282,7 +306,7 @@ export const notificationInbox = pgTable(
   {
     id: pk(),
     recipientType: text().$type<NotificationRecipientType>().notNull(),
-    /** polymorphic: staff_users, clients or customers by recipient_type */
+    /** polymorphic: staff_users or clients (an account id) by recipient_type */
     recipientId: bigId().notNull(),
     campaignId: fk((): AnyPgColumn => notificationCampaigns.id),
     /** the registry key of an event item */
@@ -327,14 +351,14 @@ export type NewNotificationInboxItem = typeof notificationInbox.$inferInsert;
 /**
  * A log of the notifications that were sent.
  *
- * Why: Log of the notifications sent to staff, merchants and customers (route /admin/notifications, B72).
+ * Why: Log of the notifications sent to staff and accounts (route /admin/notifications, B72).
  */
 export const notifications = pgTable(
   'notifications',
   {
     id: pk(),
     recipientType: text().$type<NotificationRecipientType>().notNull(),
-    /** polymorphic: staff_users, clients or customers by recipient_type */
+    /** polymorphic: staff_users or clients (an account id) by recipient_type */
     recipientId: bigId().notNull(),
     channel: text().$type<NotificationChannel>().notNull(),
     /** the template event key (not a foreign key, B72) */
@@ -517,7 +541,7 @@ export const auditLogs = pgTable(
   {
     id: pk(),
     actorType: text().$type<AuditActorType>().notNull(),
-    /** polymorphic: staff_users or clients by actor_type; null for system actions */
+    /** polymorphic: staff_users or clients (an account id) by actor_type; a `client` or `customer` row of before decision 064 is read through `account_legacy_ids`; null for system actions */
     actorId: bigId(),
     /**
      * name of the actor when the row was written, so a rename or delete does not change history; empty for the
@@ -541,6 +565,8 @@ export const auditLogs = pgTable(
   },
   (t) => [
     check('audit_logs_actor_type_check', inList(t.actorType, AUDIT_ACTOR_TYPES)),
+    // Added NOT VALID by the expand migration: the rows of before stay, a new row writes the current words only.
+    check('audit_logs_actor_type_current_check', inList(t.actorType, CURRENT_AUDIT_ACTOR_TYPES)),
     index('audit_logs_created_idx').on(t.createdAt.desc()),
     index('audit_logs_actor_idx').on(t.actorType, t.actorId, t.createdAt.desc()),
     index('audit_logs_entity_idx').on(t.entityType, t.entityId),
@@ -570,15 +596,16 @@ export const files = pgTable(
     size: bigint({ mode: 'number' }).notNull(),
     /** hex digest, to detect duplicate uploads */
     sha256: text().notNull(),
-    /** client, staff or customer; no source fixes the strings */
-    ownerType: text().notNull(),
-    /** polymorphic: clients, staff_users or customers by owner_type */
+    /** staff or account (`files_owner_type_check`) */
+    ownerType: text().$type<FileOwnerType>().notNull(),
+    /** polymorphic: staff_users or clients (an account id) by owner_type */
     ownerId: bigId().notNull(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     unique('files_object_uq').on(t.bucket, t.key),
+    check('files_owner_type_check', inList(t.ownerType, FILE_OWNER_TYPES)),
     index('files_owner_idx').on(t.ownerType, t.ownerId),
     index('files_sha256_idx').on(t.sha256),
   ],

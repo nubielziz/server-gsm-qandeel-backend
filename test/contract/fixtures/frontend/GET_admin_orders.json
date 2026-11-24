@@ -20,11 +20,17 @@
         "slaMinutes": 15,
         "category": "Files"
       },
-      "client": {
+      "account": {
         "id": 3,
-        "name": "Phone Doctor FZE"
+        "name": "Phone Doctor FZE",
+        "email": "ops@phonedoctorfze.example",
+        "rank": {
+          "id": 3,
+          "name": "VIP",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "SM-S911B",
       "quantity": 1,
       "inputs": {},
@@ -101,11 +107,17 @@
         "slaMinutes": 2880,
         "category": "Carrier unlock"
       },
-      "client": {
+      "account": {
         "id": 8,
-        "name": "Casablanca Unlock"
+        "name": "Casablanca Unlock",
+        "email": "ops@casablancaunlo.example",
+        "rank": {
+          "id": 2,
+          "name": "Wholesale",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "352905112490861",
       "quantity": 1,
       "inputs": {
@@ -184,11 +196,17 @@
         "slaMinutes": 2880,
         "category": "Carrier unlock"
       },
-      "client": {
+      "account": {
         "id": 4,
-        "name": "Basra Unlock Center"
+        "name": "Basra Unlock Center",
+        "email": "ops@basraunlockcen.example",
+        "rank": {
+          "id": 2,
+          "name": "Wholesale",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "354607111076240",
       "quantity": 1,
       "inputs": {
@@ -267,11 +285,17 @@
         "slaMinutes": 180,
         "category": "Xiaomi"
       },
-      "client": {
+      "account": {
         "id": 8,
-        "name": "Casablanca Unlock"
+        "name": "Casablanca Unlock",
+        "email": "ops@casablancaunlo.example",
+        "rank": {
+          "id": 2,
+          "name": "Wholesale",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "353890113898412",
       "quantity": 1,
       "inputs": {
@@ -350,11 +374,17 @@
         "slaMinutes": 720,
         "category": "Carrier unlock"
       },
-      "client": {
+      "account": {
         "id": 10,
-        "name": "Karachi Unlock Hub"
+        "name": "Karachi Unlock Hub",
+        "email": "ops@karachiunlockh.example",
+        "rank": {
+          "id": 2,
+          "name": "Wholesale",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "353890111349160",
       "quantity": 1,
       "inputs": {
@@ -433,11 +463,17 @@
         "slaMinutes": 180,
         "category": "Xiaomi"
       },
-      "client": {
+      "account": {
         "id": 3,
-        "name": "Phone Doctor FZE"
+        "name": "Phone Doctor FZE",
+        "email": "ops@phonedoctorfze.example",
+        "rank": {
+          "id": 3,
+          "name": "VIP",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "359254101036747",
       "quantity": 1,
       "inputs": {
@@ -516,11 +552,17 @@
         "slaMinutes": 2,
         "category": "Samsung"
       },
-      "client": {
+      "account": {
         "id": 4,
-        "name": "Basra Unlock Center"
+        "name": "Basra Unlock Center",
+        "email": "ops@basraunlockcen.example",
+        "rank": {
+          "id": 2,
+          "name": "Wholesale",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "359254106834625",
       "quantity": 1,
       "inputs": {
@@ -599,11 +641,16 @@
         "slaMinutes": 1440,
         "category": "Carrier unlock"
       },
-      "client": null,
-      "customer": {
-        "id": 19,
+      "account": {
+        "id": 119,
         "name": "Jack Turner",
-        "email": "jt.4569@tempbox.example"
+        "email": "jt.4569@tempbox.example",
+        "rank": {
+          "id": 4,
+          "name": "Storefront retail",
+          "kind": "retail"
+        },
+        "guest": true
       },
       "imei": "356912111872749",
       "quantity": 1,
@@ -667,11 +714,17 @@
         "slaMinutes": 1,
         "category": "Apple"
       },
-      "client": {
+      "account": {
         "id": 3,
-        "name": "Phone Doctor FZE"
+        "name": "Phone Doctor FZE",
+        "email": "ops@phonedoctorfze.example",
+        "rank": {
+          "id": 3,
+          "name": "VIP",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "353890110354484",
       "quantity": 1,
       "inputs": {
@@ -750,11 +803,17 @@
         "slaMinutes": 5,
         "category": "Credits"
       },
-      "client": {
+      "account": {
         "id": 2,
-        "name": "Al-Noor Telecom"
+        "name": "Al-Noor Telecom",
+        "email": "ops@alnoortelecom.example",
+        "rank": {
+          "id": 2,
+          "name": "Wholesale",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "amir92@gsm.example",
       "quantity": 10,
       "inputs": {},
@@ -831,11 +890,16 @@
         "slaMinutes": 2,
         "category": "Apple"
       },
-      "client": null,
-      "customer": {
-        "id": 18,
+      "account": {
+        "id": 118,
         "name": "Hannah Weber",
-        "email": "hannah.weber@inbox.example"
+        "email": "hannah.weber@inbox.example",
+        "rank": {
+          "id": 4,
+          "name": "Storefront retail",
+          "kind": "retail"
+        },
+        "guest": false
       },
       "imei": "358480111557387",
       "quantity": 1,
@@ -899,11 +963,17 @@
         "slaMinutes": 1,
         "category": "Generic"
       },
-      "client": {
+      "account": {
         "id": 19,
-        "name": "Tunis Fix Point"
+        "name": "Tunis Fix Point",
+        "email": "ops@tunisfixpoint.example",
+        "rank": {
+          "id": 1,
+          "name": "Standard",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "354607115147690",
       "quantity": 1,
       "inputs": {
@@ -982,11 +1052,17 @@
         "slaMinutes": 2,
         "category": "Samsung"
       },
-      "client": {
+      "account": {
         "id": 10,
-        "name": "Karachi Unlock Hub"
+        "name": "Karachi Unlock Hub",
+        "email": "ops@karachiunlockh.example",
+        "rank": {
+          "id": 2,
+          "name": "Wholesale",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "867412052327342",
       "quantity": 1,
       "inputs": {
@@ -1065,11 +1141,17 @@
         "slaMinutes": 1440,
         "category": "Carrier unlock"
       },
-      "client": {
+      "account": {
         "id": 10,
-        "name": "Karachi Unlock Hub"
+        "name": "Karachi Unlock Hub",
+        "email": "ops@karachiunlockh.example",
+        "rank": {
+          "id": 2,
+          "name": "Wholesale",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "867412055638919",
       "quantity": 1,
       "inputs": {
@@ -1148,11 +1230,17 @@
         "slaMinutes": 1,
         "category": "Generic"
       },
-      "client": {
+      "account": {
         "id": 6,
-        "name": "Erbil Mobile Parts"
+        "name": "Erbil Mobile Parts",
+        "email": "ops@erbilmobilepar.example",
+        "rank": {
+          "id": 1,
+          "name": "Standard",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "013883004348953",
       "quantity": 1,
       "inputs": {
@@ -1231,11 +1319,17 @@
         "slaMinutes": 3,
         "category": "Files"
       },
-      "client": {
+      "account": {
         "id": 1,
-        "name": "Zain Mobile Hub"
+        "name": "Zain Mobile Hub",
+        "email": "ops@zainmobilehub.example",
+        "rank": {
+          "id": 3,
+          "name": "VIP",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "ELS-NX9",
       "quantity": 1,
       "inputs": {},
@@ -1312,11 +1406,17 @@
         "slaMinutes": 15,
         "category": "Files"
       },
-      "client": {
+      "account": {
         "id": 1,
-        "name": "Zain Mobile Hub"
+        "name": "Zain Mobile Hub",
+        "email": "ops@zainmobilehub.example",
+        "rank": {
+          "id": 3,
+          "name": "VIP",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "SM-S911B",
       "quantity": 1,
       "inputs": {},
@@ -1393,11 +1493,17 @@
         "slaMinutes": 30,
         "category": "Remote"
       },
-      "client": {
+      "account": {
         "id": 12,
-        "name": "Jeddah Tech Bar"
+        "name": "Jeddah Tech Bar",
+        "email": "ops@jeddahtechbar.example",
+        "rank": {
+          "id": 1,
+          "name": "Standard",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "SN 724A68922",
       "quantity": 1,
       "inputs": {
@@ -1476,11 +1582,17 @@
         "slaMinutes": 1440,
         "category": "Carrier unlock"
       },
-      "client": {
+      "account": {
         "id": 3,
-        "name": "Phone Doctor FZE"
+        "name": "Phone Doctor FZE",
+        "email": "ops@phonedoctorfze.example",
+        "rank": {
+          "id": 3,
+          "name": "VIP",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "867412056693442",
       "quantity": 1,
       "inputs": {
@@ -1559,11 +1671,17 @@
         "slaMinutes": 30,
         "category": "Remote"
       },
-      "client": {
+      "account": {
         "id": 8,
-        "name": "Casablanca Unlock"
+        "name": "Casablanca Unlock",
+        "email": "ops@casablancaunlo.example",
+        "rank": {
+          "id": 2,
+          "name": "Wholesale",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "SN 819A98299",
       "quantity": 1,
       "inputs": {
@@ -1642,11 +1760,17 @@
         "slaMinutes": 1440,
         "category": "Carrier unlock"
       },
-      "client": {
+      "account": {
         "id": 10,
-        "name": "Karachi Unlock Hub"
+        "name": "Karachi Unlock Hub",
+        "email": "ops@karachiunlockh.example",
+        "rank": {
+          "id": 2,
+          "name": "Wholesale",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "354607112286319",
       "quantity": 1,
       "inputs": {
@@ -1725,11 +1849,17 @@
         "slaMinutes": 720,
         "category": "Carrier unlock"
       },
-      "client": {
+      "account": {
         "id": 3,
-        "name": "Phone Doctor FZE"
+        "name": "Phone Doctor FZE",
+        "email": "ops@phonedoctorfze.example",
+        "rank": {
+          "id": 3,
+          "name": "VIP",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "013883001905730",
       "quantity": 1,
       "inputs": {
@@ -1808,11 +1938,17 @@
         "slaMinutes": 1440,
         "category": "Carrier unlock"
       },
-      "client": {
+      "account": {
         "id": 15,
-        "name": "Doha Phone Lab"
+        "name": "Doha Phone Lab",
+        "email": "ops@dohaphonelab.example",
+        "rank": {
+          "id": 2,
+          "name": "Wholesale",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "867412054604326",
       "quantity": 1,
       "inputs": {
@@ -1891,11 +2027,17 @@
         "slaMinutes": 3,
         "category": "Files"
       },
-      "client": {
+      "account": {
         "id": 1,
-        "name": "Zain Mobile Hub"
+        "name": "Zain Mobile Hub",
+        "email": "ops@zainmobilehub.example",
+        "rank": {
+          "id": 3,
+          "name": "VIP",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "SM-A546E",
       "quantity": 1,
       "inputs": {},
@@ -1972,11 +2114,17 @@
         "slaMinutes": 1440,
         "category": "Carrier unlock"
       },
-      "client": {
+      "account": {
         "id": 15,
-        "name": "Doha Phone Lab"
+        "name": "Doha Phone Lab",
+        "email": "ops@dohaphonelab.example",
+        "rank": {
+          "id": 2,
+          "name": "Wholesale",
+          "kind": "merchant"
+        },
+        "guest": false
       },
-      "customer": null,
       "imei": "352905118588528",
       "quantity": 1,
       "inputs": {

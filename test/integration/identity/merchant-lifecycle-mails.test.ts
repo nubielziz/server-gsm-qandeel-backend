@@ -9,6 +9,7 @@ import {
   SECURITY_NOTICE_PHRASES,
   type SecurityNoticeKind,
 } from '@src/modules/identity/application/mail/merchant-lifecycle-mails';
+import { makeAccount } from '../../support/accounts';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -27,6 +28,7 @@ import {
 } from '../../support/merchant-portal';
 import { mailbox, notificationRows, sendAllQueued } from '../../support/notifications';
 import { freshClientIp } from '../../support/pipeline-routes';
+import { expectRejection } from '../../support/rejection';
 
 const clock = new TestClock();
 let t: TestApp;
@@ -62,19 +64,9 @@ const tokensOf = async (clientId: number) =>
   (await testDb()).db
     .select()
     .from(s.authTokens)
-    .where(and(eq(s.authTokens.subjectType, 'client'), eq(s.authTokens.subjectId, clientId)));
+    .where(and(eq(s.authTokens.subjectType, 'account'), eq(s.authTokens.subjectId, clientId)));
 
 describe('activation and reactivation', () => {
-  it('activating a merchant that is still pending sends no mail: nobody applied', async () => {
-    const merchant = await makeMerchant(t, { status: 'pending', name: 'Zain Mobile Hub' });
-    const api = await staff();
-    expect((await api.patch(`/admin/clients/${merchant.id}`, { status: 'active' })).status).toBe(200);
-    expect(await rows()).toEqual([]);
-    await sendAllQueued(t);
-    expect(mailbox(t).sent).toEqual([]);
-    expect((await clientRow(merchant.id)).status).toBe('active');
-  });
-
   it('reactivating a suspended merchant writes one merchant.reactivated notification, and every merchant gets the one template', async () => {
     const first = await makeMerchant(t, { status: 'suspended', name: 'Zain Mobile Hub' });
     const second = await makeMerchant(t, { status: 'suspended', name: 'Cedar Phones' });
@@ -87,6 +79,9 @@ describe('activation and reactivation', () => {
     const byTo = new Map(mailbox(t).sent.map((mail) => [mail.to, mail]));
     expect(byTo.get(first.email)?.subject).toBe('Your merchant account is active again');
     expect(byTo.get(first.email)?.text).toContain('Hi Zain Mobile Hub,');
+    // The merchant pages live under the signed-in area of the shop (decision 064), never under the retired /merchant path.
+    expect(byTo.get(first.email)?.text).toContain(`${t.config.http.storeBaseUrl}/account`);
+    expect(byTo.get(first.email)?.text).not.toContain('/merchant');
     expect(byTo.get(second.email)?.subject).toBe('Your merchant account is active again');
     expect(byTo.get(second.email)?.text).toContain('Hi Cedar Phones,');
     expect(byTo.get(second.email)?.html).toBeUndefined();
@@ -148,12 +143,9 @@ describe('suspension', () => {
     expect(JSON.stringify(await rows())).not.toContain(reason);
   });
 
-  it('a merchant that is still pending can be suspended and then cannot sign in; pending to pending and active to pending stay refused', async () => {
-    const applicant = await makeMerchant(t, { status: 'pending' });
+  it('a merchant that has not signed in yet can be suspended and then cannot sign in', async () => {
+    const applicant = await makeMerchant(t);
     const api = await staff();
-    const refused = await api.patch(`/admin/clients/${applicant.id}`, { status: 'pending' });
-    expect(refused.status).toBe(409);
-    expect(refused.body.code).toBe('INVALID_TRANSITION');
     const declined = await api.patch(`/admin/clients/${applicant.id}`, {
       status: 'suspended',
       reason: 'Under review',
@@ -164,11 +156,6 @@ describe('suspension', () => {
     expect(login.statusCode).toBe(403);
     expect(login.json().code).toBe('ACCOUNT_SUSPENDED');
     expect((await rows()).map((row) => row.event)).toEqual(['merchant.suspended']);
-
-    const active = await makeMerchant(t);
-    const back = await api.patch(`/admin/clients/${active.id}`, { status: 'pending' });
-    expect(back.status).toBe(409);
-    expect(back.body.code).toBe('INVALID_TRANSITION');
   });
 
   it('a link sent before the suspension is dead after the reactivation (410)', async () => {
@@ -282,5 +269,68 @@ describe('the templates of merchant mail', () => {
     // Plain text mails: no HTML part, and no placeholder is left unfilled.
     expect(sent.every((mail) => mail.html === undefined)).toBe(true);
     expect(sent.some((mail) => /\{\{/.test(mail.text) || /\{\{/.test(mail.subject))).toBe(false);
+  });
+});
+
+describe('the suspension mails are merchant mails (decision 064)', () => {
+  it('suspends and reactivates a retail account without a mail: 200, the status changes, no notification row', async () => {
+    const shopper = await makeAccount(t, { rank: 'retail', name: 'Sam Shopper' });
+    const api = await staff();
+    const suspended = await api.patch(`/admin/clients/${shopper.id}`, { status: 'suspended', reason: 'Under review' });
+    expect(suspended.status).toBe(200);
+    expect(suspended.body.status).toBe('suspended');
+    expect((await clientRow(shopper.id)).status).toBe('suspended');
+    const reactivated = await api.patch(`/admin/clients/${shopper.id}`, { status: 'active' });
+    expect(reactivated.status).toBe(200);
+    expect((await clientRow(shopper.id)).status).toBe('active');
+    expect(await rows()).toEqual([]);
+    await sendAllQueued(t);
+    expect(mailbox(t).sent).toEqual([]);
+  });
+
+  it('still mails a merchant rank on the same two changes', async () => {
+    const merchant = await makeMerchant(t, { name: 'Zain Mobile Hub' });
+    const api = await staff();
+    await api.patch(`/admin/clients/${merchant.id}`, { status: 'suspended', reason: 'Under review' });
+    await api.patch(`/admin/clients/${merchant.id}`, { status: 'active' });
+    expect((await rows()).map((row) => [row.event, row.recipientId])).toEqual([
+      ['merchant.suspended', merchant.id],
+      ['merchant.reactivated', merchant.id],
+    ]);
+  });
+});
+
+describe('the family of a security notice follows the rank kind (decision 064)', () => {
+  it('writes merchant.security_notice for a merchant rank and customer.security_notice for a retail rank, both for the account', async () => {
+    const merchant = await makeMerchant(t, { name: 'Zain Mobile Hub' });
+    const shopper = await makeAccount(t, { rank: 'retail', name: 'Sam Shopper' });
+    const mails = t.app.get(MerchantLifecycleMails);
+    await t.app.get(DbService).runInTransaction(async (work) => {
+      await mails.securityNotice(work, { ...merchant.row, rankKind: 'merchant' }, 'twofa_reset');
+      await mails.securityNotice(work, { id: shopper.id, name: shopper.row.name, rankKind: 'retail' }, 'twofa_reset');
+    });
+    expect((await rows()).map((row) => [row.event, row.recipientType, row.recipientId])).toEqual([
+      ['merchant.security_notice', 'account', merchant.id],
+      ['customer.security_notice', 'account', shopper.id],
+    ]);
+    await sendAllQueued(t);
+    const byTo = new Map(mailbox(t).sent.map((mail) => [mail.to, mail]));
+    expect(byTo.get(merchant.email)?.subject).toBe('A security change on your merchant account');
+    expect(byTo.get(shopper.email)?.subject).toBe('A security change on your account');
+    expect(byTo.get(shopper.email)?.text).toContain(SECURITY_NOTICE_PHRASES.twofa_reset);
+    expect(byTo.get(shopper.email)?.text).toContain('Hi Sam Shopper,');
+  });
+
+  it('refuses an API key notice for a retail rank: it holds no key', async () => {
+    const shopper = await makeAccount(t, { rank: 'retail' });
+    const mails = t.app.get(MerchantLifecycleMails);
+    await expectRejection(
+      t.app
+        .get(DbService)
+        .runInTransaction((work) =>
+          mails.securityNotice(work, { id: shopper.id, name: shopper.row.name, rankKind: 'retail' }, 'api_key_created'),
+        ),
+      'does not exist for a retail account',
+    );
   });
 });

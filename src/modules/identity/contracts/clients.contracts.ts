@@ -1,162 +1,119 @@
-// Route contracts of merchant management (map domain A, routes /admin/clients, stage 2): list, show, create by invitation,
-// suspend, reactivate and move to another group. Shapes match the console's Client (docs/contract/endpoints/identity.md).
+// Route contracts of the accounts of the staff console (map domain A, routes /admin/clients): the one list of every rank, the counts, the
+// detail, make an account and edit it. Merchants, shop customers and guests are one kind of row (decision 064); the row is
+// `AccountRowSchema`. The security tools, the rank change, block, privacy and the wallet routes under /admin/clients/:id have their own
+// contracts in the modules that own them.
 import { z } from 'zod';
-import {
-  defineRoute,
-  listQuery,
-  zDecimal,
-  zId,
-  zIdParam,
-  zIsoDateTime,
-  zMoney,
-  zSignedMoney,
-} from '../../../common/contract';
-import { MerchantCountry } from './merchant-auth.contracts';
-import { EmailField, NameField, PersonRef } from './shared';
+import { defineRoute, listQuery, zId, zIdParam, zMoney } from '../../../common/contract';
+import { CLIENT_STATUSES } from '../db/schema';
+import { ACCOUNT_RANK_KINDS, ACCOUNT_ROW_EXAMPLE, AccountRowSchema } from './account-row';
+import { CountryField, EmailField, NameField } from './shared';
 
-/** Wallet figures; only for staff who hold `wallet:read`. */
-const Wallet = z.object({ balance: zSignedMoney, reserved: zMoney, creditLimit: zMoney, available: zSignedMoney });
+/** The answer of `POST /admin/clients`: the new account, and the temporary password once when staff chose that mode. */
+const CreatedAccountSchema = AccountRowSchema.extend({ temporaryPassword: z.string().optional() });
 
-/** The last 30 days of orders; only for staff who hold `wallet:read`. */
-const Stats = z.object({
-  orders: z.number().int().min(0),
-  spend: zMoney,
-  profit: zSignedMoney,
-  margin: zDecimal.nullable(),
-  successRate: z.number().nullable(),
-  lastOrderAt: zIsoDateTime.nullable(),
+/** The numbers of the chips and the header sentence of the Accounts page. */
+const AccountCountsSchema = z.object({
+  all: z.number().int().min(0),
+  retail: z.number().int().min(0),
+  merchant: z.number().int().min(0),
+  guests: z.number().int().min(0),
+  active: z.number().int().min(0),
+  suspended: z.number().int().min(0),
+  blocked: z.number().int().min(0),
+  anonymized: z.number().int().min(0),
+  invitationPending: z.number().int().min(0),
 });
 
-/** How the merchant signs in and what staff can still do about it (feature 20). */
-const Security = z.object({
-  hasPassword: z.boolean(),
-  mustChangePassword: z.boolean(),
-  passwordChangedAt: zIsoDateTime.nullable(),
-  twofaEnabled: z.boolean(),
-  lastLoginAt: zIsoDateTime.nullable(),
-  lastLoginIp: z.string().nullable(),
-  activeSessions: z.number().int().min(0),
-  linkSentAt: zIsoDateTime.nullable(),
-  verificationSentAt: zIsoDateTime.nullable(),
-});
-
-/** Why, when and by whom the merchant was suspended (feature 20). */
-const Suspension = z.object({ at: zIsoDateTime.nullable(), reason: z.string().nullable(), by: PersonRef.nullable() });
-
-/**
- * A merchant as the console reads it. Never carries a password hash, TOTP data or preferences.
- *
- * The keys of feature 20 (`address` to `suspension`) are optional in the schema, because the console's recorded fixtures are
- * validated against it, and always sent by the server.
- */
-const ClientRow = z.object({
-  id: zId,
-  createdAt: zIsoDateTime,
-  name: z.string(),
-  email: z.string(),
-  country: z.string(),
-  username: z.string(),
-  company: z.string(),
-  phone: z.string(),
-  groupId: zId,
-  emailVerifiedAt: zIsoDateTime.nullable(),
-  status: z.enum(['active', 'suspended', 'pending']),
-  group: z.object({ id: zId, name: z.string(), discountPercent: zDecimal }).nullable(),
-  address: z.string().optional(),
-  taxId: z.string().optional(),
-  internalNotes: z.string().optional(),
-  security: Security.optional(),
-  suspension: Suspension.nullable().optional(),
-  wallet: Wallet.optional(),
-  stats: Stats.optional(),
-});
-
-const CLIENT_EXAMPLE = {
-  id: 1,
-  createdAt: '2025-09-01T09:30:00.000Z',
-  name: 'Zain Mobile Hub',
-  email: 'ops@zainmobilehub.example',
-  country: 'JO',
-  username: 'zain-mobile-hub',
-  company: 'Zain Mobile Hub',
-  phone: '',
-  groupId: 3,
-  emailVerifiedAt: '2025-09-01T10:30:00.000Z',
-  status: 'active',
-  group: { id: 3, name: 'VIP', discountPercent: '8.0000' },
-  address: 'Abdali Boulevard, Amman',
-  taxId: 'JO-1234567',
-  internalNotes: 'Pays by bank transfer on Sundays.',
-  security: {
-    hasPassword: true,
-    mustChangePassword: false,
-    passwordChangedAt: '2025-09-01T10:35:00.000Z',
-    twofaEnabled: true,
-    lastLoginAt: '2026-11-01T09:30:00.000Z',
-    lastLoginIp: '203.0.113.24',
-    activeSessions: 2,
-    linkSentAt: null,
-    verificationSentAt: null,
-  },
-  suspension: null,
-  wallet: { balance: '1480.0000', reserved: '0.0000', creditLimit: '2000.0000', available: '3480.0000' },
-} as const;
-
-/** `GET /admin/clients`: the merchants. */
+/** `GET /admin/clients`: every account, whatever its rank. */
 export const listClients = defineRoute({
   key: 'GET /admin/clients',
-  summary: 'List merchants',
+  summary: 'List accounts',
   description:
-    'Merchants of any status with their group. `wallet` and `stats` are sent only to staff who hold ' +
-    '`wallet:read` (MISMATCHES B26). `q` is a case-insensitive contains over name, email, company, username and country. ' +
+    'Every account of any rank and status, guests included (one table, decision 064): without `rankKind` the list holds them all. ' +
+    'Each row names its rank (`rank.kind` is `retail` or `merchant`), whether it has a login (`hasAccount`: false is a guest), ' +
+    'whether an invitation waits for its first password (`invitationPending`), and the count and date of its orders (`ordersCount`, ' +
+    '`lastOrderAt`, both doors, any status). `wallet` and `stats` are sent only to staff who hold `wallet:read`, and so is the sort ' +
+    '`balance` (`403 FORBIDDEN` without it). Filters: `id`, `status` (repeat the key for several), `rankId`, `rankKind`, ' +
+    '`hasAccount`, `country` and `invitationPending`. `q` is a case-insensitive contains over name, email, company and username. ' +
     'Default order: name.',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'clients:read',
   query: listQuery({
-    sorts: ['name', 'status', 'createdAt', 'id'],
+    sorts: ['name', 'createdAt', 'id', 'status', 'country', 'rank', 'ordersCount', 'lastOrderAt', 'balance'],
     defaultSort: { field: 'name', order: 'asc' },
     filters: {
       id: { type: 'id', ops: ['eq'] },
-      status: { type: 'enum', values: ['active', 'suspended', 'pending'], ops: ['eq', 'ne'] },
-      groupId: { type: 'id', ops: ['eq'] },
+      status: { type: 'enum', values: CLIENT_STATUSES, ops: ['eq', 'ne'] },
+      rankId: { type: 'id', ops: ['eq'] },
+      rankKind: { type: 'enum', values: ACCOUNT_RANK_KINDS, ops: ['eq'] },
+      hasAccount: { type: 'boolean' },
+      country: { type: 'string', ops: ['eq'] },
+      invitationPending: { type: 'boolean' },
     },
-    search: ['name', 'email', 'company', 'username', 'country'],
+    search: ['name', 'email', 'company', 'username'],
   }),
-  success: { status: 200, schema: ClientRow },
+  success: { status: 200, schema: AccountRowSchema },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'VALIDATION_FAILED'],
-  examples: { response: [CLIENT_EXAMPLE] },
+  examples: { response: [ACCOUNT_ROW_EXAMPLE] },
 });
 
-/** `GET /admin/clients/:id`: one merchant. */
+/** `GET /admin/clients/counts`: the numbers of the Accounts page in one aggregate. */
+export const countClients = defineRoute({
+  key: 'GET /admin/clients/counts',
+  summary: 'Count accounts',
+  description:
+    'One aggregate over every account, independent of any filter and never cached: `all`, `retail` and `merchant` (by rank kind; ' +
+    'guests are retail), `guests` (no login), one number per status, and `invitationPending` (a login, no password yet, an active status).',
+  tags: ['clients'],
+  surface: 'admin',
+  access: 'staff-permission',
+  permission: 'clients:read',
+  success: { status: 200, schema: AccountCountsSchema },
+  errors: ['UNAUTHORIZED', 'FORBIDDEN'],
+  examples: {
+    response: {
+      all: 150,
+      retail: 128,
+      merchant: 22,
+      guests: 31,
+      active: 140,
+      suspended: 6,
+      blocked: 3,
+      anonymized: 1,
+      invitationPending: 4,
+    },
+  },
+});
+
+/** `GET /admin/clients/:id`: one account. */
 export const showClient = defineRoute({
   key: 'GET /admin/clients/:id',
-  summary: 'Show a merchant',
+  summary: 'Show an account',
+  description:
+    'The row of the list for any rank and any status (a guest, a suspended and an anonymized account too). `security` is null for a guest.',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'clients:read',
   params: z.object({ id: zIdParam }),
-  success: { status: 200, schema: ClientRow },
+  success: { status: 200, schema: AccountRowSchema },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND'],
-  examples: { response: CLIENT_EXAMPLE },
+  examples: { response: ACCOUNT_ROW_EXAMPLE },
 });
 
-/** `POST /admin/clients`: invite a new merchant. */
+/** `POST /admin/clients`: make an account. */
 export const createClient = defineRoute({
   key: 'POST /admin/clients',
-  summary: 'Invite a merchant',
+  summary: 'Make an account',
   description:
-    'Creates the merchant as `active` with a generated Dhru username, opens its wallet and hold accounts ' +
-    'in the same transaction (`MerchantAccounts.open`, with the credit limit), issues a one-hour invite token (hash only) ' +
-    'and writes the outbox event `merchant.invited` (ids only). The merchant sets a password with ' +
-    '`POST /client/auth/password/reset` (until then its `security.hasPassword` is false: the invitation is pending). A credit limit above zero needs a ' +
-    'group that allows credit (user rule 2): `422` on `creditLimit` otherwise. `groupId` defaults to the default group. ' +
-    'A `creditLimit` above zero also needs `wallet:credit_limit`, and a `groupId` other than the default group needs `groups:update` ' +
-    '(`403 FORBIDDEN`, after the validation and before anything is written; decision 046). A `creditLimit` above the approval ' +
-    'limit of adjustments (`wallet.adjust_approval_limit`, default $10,000) also needs an Owner (`403 FORBIDDEN`, decision 049), and ' +
-    "so does one that takes the staff member's credits to merchant wallets and credit-limit raises within 24 hours above it.",
+    'Makes an active account with a login. An omitted `groupId` is the retail rank; a merchant rank needs an Owner and also gets a ' +
+    'generated Dhru username and its wallet and hold accounts. `creditLimit` and `company` are for merchant ranks only (`422` on a ' +
+    'retail rank), and a credit limit above zero needs a rank that allows credit. `password.mode` is `reset_link` (the default: a one-hour ' +
+    'link is mailed) or `temporary_password` (needs `clients:security`; the password is returned once in `temporaryPassword` and the ' +
+    'answer is never cached). `409 EMAIL_TAKEN` when a login has the email; a guest that holds it is named with the field error code ' +
+    '`guest`. A blocklisted email is `422` on `email`.',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',
@@ -164,30 +121,32 @@ export const createClient = defineRoute({
   body: z.object({
     name: NameField,
     email: EmailField,
-    country: z
-      .string()
-      .trim()
-      .toUpperCase()
-      .regex(/^[A-Z]{2}$/, 'Use a two-letter country code like JO.'),
+    country: CountryField,
+    phone: z.string().trim().max(40, 'Use at most 40 characters.').optional(),
+    company: z.string().trim().max(160, 'Use at most 160 characters.').optional(),
     groupId: zId.optional(),
     creditLimit: zMoney.optional(),
-    invite: z.literal(true),
+    password: z.object({ mode: z.enum(['reset_link', 'temporary_password']) }).default({ mode: 'reset_link' }),
   }),
-  success: { status: 201, schema: ClientRow },
+  success: { status: 201, schema: CreatedAccountSchema },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'VALIDATION_FAILED', 'EMAIL_TAKEN'],
   examples: {
     request: {
       name: 'Zain Mobile Hub',
       email: 'ops@zainmobilehub.example',
       country: 'JO',
+      company: 'Zain Mobile Hub',
       groupId: 3,
       creditLimit: '2000.0000',
-      invite: true,
+      password: { mode: 'reset_link' },
     },
     response: {
-      ...CLIENT_EXAMPLE,
-      status: 'active',
+      ...ACCOUNT_ROW_EXAMPLE,
       emailVerifiedAt: null,
+      invitationPending: true,
+      lastLoginAt: null,
+      ordersCount: 0,
+      lastOrderAt: null,
       security: {
         hasPassword: false,
         mustChangePassword: false,
@@ -199,28 +158,25 @@ export const createClient = defineRoute({
         linkSentAt: '2026-11-01T09:30:00.000Z',
         verificationSentAt: null,
       },
+      stats: { orders: 0, spend: '0.0000', profit: '0.0000', margin: null, successRate: null, lastOrderAt: null },
     },
   },
 });
 
-/** `PATCH /admin/clients/:id`: activate, suspend, reactivate, move to another group, or edit the details. */
+/** `PATCH /admin/clients/:id`: change the status or the details of an account. */
 export const updateClient = defineRoute({
   key: 'PATCH /admin/clients/:id',
-  summary: 'Change a merchant',
+  summary: 'Change an account',
   description:
-    'One kind of change per call: a status, a group or details (a mix is `422` on the first key of the second kind). ' +
-    '`status`: `active` from `pending` (an account that was never activated) or `suspended` (reactivate); `suspended` from `active` or `pending` ' +
-    'with a `reason` of 3 to 140 characters; any other change is `409 INVALID_TRANSITION`. A suspension ' +
-    "ends the merchant's sessions, cancels every open link and refuses new orders; open orders keep processing and the wallet is " +
-    'untouched; the staff reason stays internal. Suspension and reactivation email the merchant (activating a `pending` account sends no mail). `groupId` moves the ' +
-    'merchant (never to the storefront retail group, and not to a group without credit while the credit limit is above zero: ' +
-    '`422` on `groupId`); it prices new orders only. Details (`name`, `company`, `phone`, `country`, `email`, `address`, ' +
-    '`taxId`, `internalNotes`; several at once, a value equal to the stored one is not a change): changing the `email` cancels ' +
-    'every open link, clears `emailVerifiedAt` and emails a new verification link (or the invitation while the merchant has no ' +
-    'password) to the new address; it ends every session of the merchant and emails a security notice to the address before the ' +
-    'change (`409 EMAIL_TAKEN` for an address in use, `429` after five email changes of one merchant in an hour). ' +
-    'Besides `clients:update`: suspending and reactivating also need `clients:security`; a group move needs `groups:update` (`403 FORBIDDEN`, decision 046); ' +
-    'an email change also needs `clients:security` (decision 047).',
+    'One kind of change per call: a status or details (a mix is `422` on the first key of the second kind). `status` is `active` ' +
+    '(reactivate a suspended account) or `suspended` (with a `reason` of 3 to 140 characters); any other change is ' +
+    '`409 INVALID_TRANSITION`, and `blocked` and `anonymized` have their own routes (`422` on `status`). Details are `name`, ' +
+    '`company`, `phone`, `country`, `email`, `address`, `taxId` and `internalNotes` (several at once; a value equal to the stored ' +
+    'one is not a change). A `groupId` is refused with `422` (field `groupId`, code `use_rank_route`): the rank changes through ' +
+    '`POST /admin/clients/:id/rank`. Suspending, reactivating and changing the email of an account with a login also need ' +
+    '`clients:security`; reactivating a merchant-rank account that was suspended because it was never approved needs the Owner ' +
+    '(`403 FORBIDDEN`). A guest cannot take an email that another guest or an account with a login uses (`409 EMAIL_TAKEN`, code ' +
+    '`taken`). Any write on an anonymized account is `409 ANONYMIZED`.',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',
@@ -228,13 +184,13 @@ export const updateClient = defineRoute({
   params: z.object({ id: zIdParam }),
   body: z
     .object({
-      status: z.enum(['active', 'suspended', 'pending']).optional(),
+      status: z.enum(['active', 'suspended']).optional(),
       reason: z.string().trim().max(500).optional(),
       groupId: zId.optional(),
       name: z.string().trim().min(1, 'Enter a name.').max(120, 'Use at most 120 characters.').optional(),
       company: z.string().trim().max(160, 'Use at most 160 characters.').optional(),
       phone: z.string().trim().max(40, 'Use at most 40 characters.').optional(),
-      country: MerchantCountry.optional(),
+      country: CountryField.optional(),
       email: EmailField.optional(),
       address: z.string().trim().max(300, 'Use at most 300 characters.').optional(),
       taxId: z.string().trim().max(40, 'Use at most 40 characters.').optional(),
@@ -242,9 +198,9 @@ export const updateClient = defineRoute({
     })
     .refine(
       (body) => Object.entries(body).some(([key, value]) => key !== 'reason' && value !== undefined),
-      'Send a status, a group or details.',
+      'Send a status or details.',
     ),
-  success: { status: 200, schema: ClientRow },
+  success: { status: 200, schema: AccountRowSchema },
   errors: [
     'UNAUTHORIZED',
     'FORBIDDEN',
@@ -253,7 +209,8 @@ export const updateClient = defineRoute({
     'VALIDATION_FAILED',
     'INVALID_TRANSITION',
     'EMAIL_TAKEN',
+    'ANONYMIZED',
     'RATE_LIMITED',
   ],
-  examples: { request: { status: 'active' }, response: CLIENT_EXAMPLE },
+  examples: { request: { status: 'active' }, response: ACCOUNT_ROW_EXAMPLE },
 });

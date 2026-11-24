@@ -84,11 +84,14 @@ export interface AppConfig {
     readonly shopOrigins: readonly string[];
     /** Base of the problem+json `type` URI, without a trailing slash (decision 028). */
     readonly errorsBaseUrl: string;
-    /** Base URL of the merchant portal, without a trailing slash; links in invitation emails are built from it. */
+    /**
+     * Base URL of the account area of the shop (`https://<shop host>/account`, decision 064), without a trailing slash; the return address of a
+     * merchant's gateway top-up (`<portalBaseUrl>/wallet`) is built from it (the emailed links of every account use `storeBaseUrl`).
+     */
     readonly portalBaseUrl: string;
     /** Base URL of the admin console, without a trailing slash; the staff invitation and reset links are built from it (feature 20). */
     readonly consoleBaseUrl: string;
-    /** Base URL of the storefront, without a trailing slash; the sign-in and password links of customers are built from it. */
+    /** Base URL of the storefront, without a trailing slash; the sign-in, password and verification links of every account are built from it (decision 064). */
     readonly storeBaseUrl: string;
     /** Lower-case name of the country header a trusted proxy sets (e.g. `cf-ipcountry`); unset = not used. */
     readonly geoipCountryHeader: string | undefined;
@@ -311,12 +314,13 @@ export const DEV_DEFAULTS = {
   encryptionKid: 'dev1',
   encryptionKey: Buffer.alloc(32, 'gsm-dev-key').toString('base64'),
   errorsBaseUrl: 'http://localhost:3000/errors',
-  portalBaseUrl: 'http://localhost:5174',
+  // The account area of the shop on 5175 (decision 064): the card top-up return address is `<portalBaseUrl>/wallet`.
+  portalBaseUrl: 'http://localhost:5175/account',
   consoleBaseUrl: 'http://localhost:5173',
   storeBaseUrl: 'http://localhost:5175',
   // The console on 5173 (decision 045; development only: production derives the lists from the base URLs, tests default to none).
   consoleOrigins: 'http://localhost:5173,http://127.0.0.1:5173',
-  // The merchant portal on 5174 (the origin of `portalBaseUrl`) and the storefront on 5175, which also serves the portal under /merchant.
+  // The storefront on 5175, which serves the signed-in area of every account under /account (and the origin of `portalBaseUrl`), and the old portal's 5174.
   shopOrigins: 'http://localhost:5174,http://localhost:5175',
   // The Mailpit of compose.yaml (decision 033): SMTP on 1025, a web UI on 8025 with every message.
   mailSmtpUrl: 'smtp://localhost:1025',
@@ -964,7 +968,8 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
     /\/+$/,
     '',
   );
-  // The merchant invite link is `<PORTAL_BASE_URL>/set-password?token=...` (RESOLUTIONS identity-platform-2).
+  // PORTAL_BASE_URL is the base of the account area of the shop, `https://<shop host>/account` (decision 064): the merchant's gateway return
+  // address is `<PORTAL_BASE_URL>/wallet`; the emailed links of every account use STORE_BASE_URL (below).
   const portalBaseUrl = withDefault('PORTAL_BASE_URL', raw.PORTAL_BASE_URL, DEV_DEFAULTS.portalBaseUrl).replace(
     /\/+$/,
     '',
@@ -974,7 +979,7 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
     /\/+$/,
     '',
   );
-  // The customer links are `<STORE_BASE_URL>/sign-in?token=...` and `/set-password?token=...` (feature 14b).
+  // The links of every account are `<STORE_BASE_URL>/sign-in?token=...`, `/set-password?token=...` and `/verify-email?token=...` (decision 064).
   const storeBaseUrl = withDefault('STORE_BASE_URL', raw.STORE_BASE_URL, DEV_DEFAULTS.storeBaseUrl).replace(/\/+$/, '');
   // Decision 045: production serves every browser page and every emailed link over https.
   if (production) {

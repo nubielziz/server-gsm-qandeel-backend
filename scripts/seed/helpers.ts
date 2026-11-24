@@ -1,7 +1,8 @@
-// Insert helpers shared by the seeders: explicit ids on identity columns, idempotent inserts, sequence repair.
-import { getTableName, sql } from 'drizzle-orm';
+// Insert helpers shared by the seeders: explicit ids on identity columns, idempotent inserts, sequence repair, the retail rank.
+import { asc, eq, getTableName, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
-import type { DbExecutor } from '../../src/infra/db';
+import { type DbExecutor, schema as s } from '../../src/infra/db';
+import { INVENTED_ACCOUNT_ID_FIRST } from './account-ids';
 
 const CHUNK = 500;
 
@@ -55,4 +56,43 @@ export async function syncIdentity(db: DbExecutor, table: PgTable): Promise<void
   await db.execute(
     sql`select setval(pg_get_serial_sequence(${`public.${getTableName(table)}`}, 'id'), coalesce(max(id), 1), max(id) is not null) from ${table}`,
   );
+}
+
+/**
+ * Moves the id sequence of the accounts past the demo accounts, and no further.
+ *
+ * Why: the accounts are one table (`clients`) with the merchants 1 to 20, the retail accounts 101 to 130 and the guest accounts the
+ * checkout seed invents from 900 000. A plain `syncIdentity` would follow that last range, and the next account a person makes in a
+ * development database would be 900 228; this one ignores the invented range, so the next number after the demo is 131. Rerunning the
+ * seed gives the same answer.
+ *
+ * @param db the transaction (or database) to write with
+ */
+export async function syncAccountIdentity(db: DbExecutor): Promise<void> {
+  await db.execute(
+    sql`select setval(pg_get_serial_sequence('public.clients', 'id'), coalesce(max(id), 1), max(id) is not null) from ${s.clients} where id < ${INVENTED_ACCOUNT_ID_FIRST}`,
+  );
+}
+
+/**
+ * The id of the retail rank: the one client group of kind `b2c_retail`.
+ *
+ * Why: every demo customer and every guest account holds the retail rank, and the identity seeder is the one that makes it (the demo's
+ * fourth group), so the seeders that write retail accounts ask for it by kind, not by the number.
+ *
+ * @param db the transaction (or database) to read with
+ * @returns the id of the rank
+ * @throws {Error} when no group has the kind (the identity seeder has not run)
+ */
+export async function retailGroupId(db: DbExecutor): Promise<number> {
+  const [row] = await db
+    .select({ id: s.clientGroups.id })
+    .from(s.clientGroups)
+    .where(eq(s.clientGroups.kind, 'b2c_retail'))
+    .orderBy(asc(s.clientGroups.id))
+    .limit(1);
+  if (row === undefined) {
+    throw new Error('The retail rank (a client group of kind b2c_retail) is missing: the identity seeder creates it.');
+  }
+  return row.id;
 }

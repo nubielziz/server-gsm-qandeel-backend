@@ -176,8 +176,8 @@ export interface ReceiptBuyer {
  * What money asks of the customers module when it draws a storefront receipt: whom the receipt names.
  *
  * Why: the receipt is handed to whoever holds the order's tracking link, and a guest checkout can be opened with any address, an
- * account's included. Only the customers module knows how the checkout was opened (`checkout_sessions`) and the account's stored name
- * (`customers`), so it decides what the document may show.
+ * account's included. Only the customers module knows how the checkout was opened (`checkout_sessions`) and may read the account's stored
+ * name, so it decides what the document may show.
  */
 export interface ReceiptBuyerPort {
   /**
@@ -224,4 +224,4 @@ export class ReceiptBuyerPorts {
 }
 
 /** The order columns money reads while it refunds: kept narrow so the port types stay free of the orders module. */
-export type RefundedOrder = Pick<Order, 'id' | 'customerId' | 'totalPrice' | 'taxAmount' | 'status' | 'currency'>;
+export type RefundedOrder = Pick<Order, 'id' | 'totalPrice' | 'taxAmount' | 'status' | 'currency'>;

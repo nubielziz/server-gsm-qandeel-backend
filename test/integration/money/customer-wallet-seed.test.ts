@@ -28,8 +28,8 @@ describe('seedCustomerWallet', () => {
     expect(setting!.value).toBe(true);
     const [gateway] = await db.select().from(s.paymentGateways).where(eq(s.paymentGateways.code, 'cliq'));
     expect(gateway).toMatchObject({ isManual: true, audience: 'b2c', minAmount: '5.0000', maxAmount: '500.0000' });
-    const [credited] = await db.select().from(s.invoices).where(eq(s.invoices.customerId, first.id));
-    const [waiting] = await db.select().from(s.invoices).where(eq(s.invoices.customerId, second.id));
+    const [credited] = await db.select().from(s.invoices).where(eq(s.invoices.accountId, first.id));
+    const [waiting] = await db.select().from(s.invoices).where(eq(s.invoices.accountId, second.id));
     expect(credited).toMatchObject({ status: 'paid', amount: '50.0000' });
     expect(waiting).toMatchObject({ status: 'open' });
     const [pending] = await db.select().from(s.payments).where(eq(s.payments.invoiceId, waiting!.id));

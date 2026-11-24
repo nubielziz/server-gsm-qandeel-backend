@@ -1,6 +1,8 @@
 // Integration tests of the storefront checkout (feature 14a): POST /store/v1/checkout-sessions, GET /store/v1/checkout-sessions/:token
-// and POST /store/v1/checkout-sessions/:token/consents against the real API: the locked price, tax and exchange rate, the guest
-// customer, the encrypted IMEI, expiry on the injected clock, the capability token, and the consent proof.
+// and POST /store/v1/checkout-sessions/:token/consents against the real API: the locked price, tax and exchange rate, the buyer (the
+// signed-in account, or the guest row of the typed email), the encrypted IMEI, expiry on the injected clock, the capability token, and the
+// consent proof. The rules of the one account type (merchant ranks, login rows that may not act, the rank change) are in
+// checkout-accounts.test.ts.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
@@ -75,7 +77,7 @@ const valid = (world: StorefrontWorld, extra: Record<string, unknown> = {}) => (
 const counts = async () => {
   const { db } = await testDb();
   return {
-    customers: (await db.select().from(s.customers)).length,
+    accounts: (await db.select().from(s.clients)).length,
     sessions: (await db.select().from(s.checkoutSessions)).length,
     consents: (await db.select().from(s.consentRecords)).length,
   };
@@ -142,12 +144,14 @@ describe('POST /store/v1/checkout-sessions', () => {
     expect(row?.expiresAt.toISOString()).toBe('2026-11-07T12:30:00.000Z');
     expect(row?.imeiEnc).not.toContain(APPLE_IMEI);
     expect(t.app.get(EncryptionService).decrypt(row!.imeiEnc!, CHECKOUT_IMEI_AAD)).toBe(APPLE_IMEI);
-    const [customer] = await db.select().from(s.customers);
-    expect(customer).toMatchObject({ email: 'sam@mail.example', hasAccount: false, status: 'active', country: 'GB' });
-    expect(row?.customerId).toBe(customer?.id ?? -1);
+    const [guest] = await db.select().from(s.clients);
+    // The buyer of a signed-out checkout is the guest row of the typed email: no login, the retail rank, the typed country.
+    expect(guest).toMatchObject({ email: 'sam@mail.example', hasAccount: false, status: 'active', country: 'GB' });
+    expect(row?.accountId).toBe(guest?.id ?? -1);
+    expect(row?.openedSignedIn).toBe(false);
   });
 
-  it('makes one guest customer per email, whatever the case, and reuses it for the next checkout', async () => {
+  it('makes one guest row per email, whatever the case, and reuses it for the next checkout', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
     expect((await open(valid(world))).statusCode).toBe(201);
@@ -155,16 +159,16 @@ describe('POST /store/v1/checkout-sessions', () => {
     expect((await open(valid(world, { email: '  sam@mail.example ' }))).statusCode).toBe(201);
     const sessions = await db.select().from(s.checkoutSessions);
     expect(sessions).toHaveLength(3);
-    expect(new Set(sessions.map((row) => row.customerId)).size).toBe(1);
-    expect(await db.select().from(s.customers)).toHaveLength(1);
+    expect(new Set(sessions.map((row) => row.accountId)).size).toBe(1);
+    expect(await db.select().from(s.clients)).toHaveLength(1);
   });
 
-  it('survives two checkouts of the same new email at once with one customer', async () => {
+  it('survives two checkouts of the same new email at once with one guest row', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
     const results = await Promise.all(Array.from({ length: 6 }, () => open(valid(world))));
     expect(results.map((res) => res.statusCode)).toEqual([201, 201, 201, 201, 201, 201]);
-    expect(await db.select().from(s.customers)).toHaveLength(1);
+    expect(await db.select().from(s.clients)).toHaveLength(1);
     expect(await db.select().from(s.checkoutSessions)).toHaveLength(6);
   });
 
@@ -284,7 +288,7 @@ describe('POST /store/v1/checkout-sessions', () => {
     }
   });
 
-  it('refuses a bad IMEI with INVALID_IMEI and leaves no customer and no session behind', async () => {
+  it('refuses a bad IMEI with INVALID_IMEI and leaves no guest row and no session behind', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
     for (const imei of [undefined, '353890110000005', 'abc', '35389011000000']) {
@@ -295,7 +299,7 @@ describe('POST /store/v1/checkout-sessions', () => {
     }
     // An empty string never reaches the IMEI rule: the body schema refuses it.
     expect(body(await open(valid(world, { imei: '' }))).code).toBe('VALIDATION_FAILED');
-    expect(await counts()).toEqual({ customers: 0, sessions: 0, consents: 0 });
+    expect(await counts()).toEqual({ accounts: 0, sessions: 0, consents: 0 });
   });
 
   it('refuses an invalid email, a missing or malformed country and an unknown currency, creating nothing', async () => {
@@ -315,7 +319,7 @@ describe('POST /store/v1/checkout-sessions', () => {
       expect(res.statusCode, field).toBe(422);
       expect(body(res).errors.map((error: { field: string }) => error.field)).toContain(field);
     }
-    expect(await counts()).toEqual({ customers: 0, sessions: 0, consents: 0 });
+    expect(await counts()).toEqual({ accounts: 0, sessions: 0, consents: 0 });
   });
 
   it('refuses a currency whose rate is too old or held, and keeps a locked session in its rate (decision 049)', async () => {
@@ -384,7 +388,7 @@ describe('POST /store/v1/checkout-sessions', () => {
     const control = await mk({});
     const sold = await open(valid(world, { serviceId: control }));
     expect(sold.statusCode).toBe(201);
-    expect(await counts()).toEqual({ customers: 1, sessions: 1, consents: 0 });
+    expect(await counts()).toEqual({ accounts: 1, sessions: 1, consents: 0 });
   });
 
   it('refuses a service whose page is switched off, and sells it again when staff switch the page back on', async () => {
@@ -394,7 +398,7 @@ describe('POST /store/v1/checkout-sessions', () => {
     const off = await open(valid(world));
     expect(off.statusCode).toBe(422);
     expect(body(off).errors[0]).toMatchObject({ field: 'serviceId', code: 'not_available' });
-    expect(await counts()).toEqual({ customers: 0, sessions: 0, consents: 0 });
+    expect(await counts()).toEqual({ accounts: 0, sessions: 0, consents: 0 });
 
     await db.update(s.serviceListings).set({ isListed: true }).where(eq(s.serviceListings.id, world.icloud.listingId));
     expect((await open(valid(world))).statusCode).toBe(201);
@@ -415,7 +419,7 @@ describe('POST /store/v1/checkout-sessions', () => {
     const refused = await open(valid(world, { serviceId: fileId, imei: undefined }));
     expect(refused.statusCode).toBe(422);
     expect(body(refused).errors[0]).toMatchObject({ field: 'serviceId', code: 'not_orderable' });
-    expect(await counts()).toEqual({ customers: 0, sessions: 0, consents: 0 });
+    expect(await counts()).toEqual({ accounts: 0, sessions: 0, consents: 0 });
   });
 
   it('asks a service with order fields for them, checks them, and stores what the buyer gave', async () => {
@@ -459,26 +463,26 @@ describe('POST /store/v1/checkout-sessions', () => {
     expect(row).toMatchObject({ inputs: { username: 'sam_01' }, imeiEnc: null });
   });
 
-  it('refuses a suspended or blocked customer with ACCOUNT_SUSPENDED and a neutral message, and opens nothing', async () => {
+  it('refuses a suspended or blocked row of the typed email with ACCOUNT_SUSPENDED and a neutral message, and opens nothing', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
-    await db.insert(s.customers).values([
-      { email: 'suspended@mail.example', status: 'suspended' },
-      { email: 'blocked@mail.example', status: 'blocked' },
-    ]);
+    // A login row that is suspended, and a guest row that is blocked: neither may order, and neither answer says which it is.
+    await makeCustomer(t, { email: 'suspended@mail.example', status: 'suspended' });
+    await makeCustomer(t, { email: 'blocked@mail.example', status: 'blocked', guest: true });
     for (const email of ['suspended@mail.example', 'BLOCKED@mail.example']) {
       const res = await open(valid(world, { email }));
       expect(res.statusCode, email).toBe(403);
       expect(body(res).code).toBe('ACCOUNT_SUSPENDED');
       expect(body(res).detail).toBe('This account cannot start a new order. Contact support.');
     }
-    expect(await counts()).toEqual({ customers: 2, sessions: 0, consents: 0 });
+    // No new row for either: the two accounts above are all there is.
+    expect(await counts()).toEqual({ accounts: 2, sessions: 0, consents: 0 });
   });
 
   it('refuses a blocklisted email, email domain or IMEI with the answer a blocked customer gets, whatever matched, and opens nothing', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
-    await db.insert(s.customers).values({ email: 'blocked@mail.example', status: 'blocked' });
+    await makeCustomer(t, { email: 'blocked@mail.example', status: 'blocked', guest: true });
     const blockedCustomer = await open(valid(world, { email: 'blocked@mail.example' }));
     expect(blockedCustomer.statusCode).toBe(403);
     const baseline = await counts();
@@ -499,7 +503,7 @@ describe('POST /store/v1/checkout-sessions', () => {
       expect(body(res).detail, entry.kind).toBe(body(blockedCustomer).detail);
       expect(JSON.stringify(body(res)), entry.kind).not.toContain(entry.value);
     }
-    // Nothing was created for any of them (no guest customer, no session).
+    // Nothing was created for any of them (no guest row, no session).
     expect(await counts()).toEqual(baseline);
   });
 
@@ -526,7 +530,7 @@ describe('POST /store/v1/checkout-sessions', () => {
     const res = await open(valid(world));
     expect(res.statusCode).toBe(401);
     expect(body(res).detail).toBe('Sign in to check out.');
-    expect(await counts()).toEqual({ customers: 0, sessions: 0, consents: 0 });
+    expect(await counts()).toEqual({ accounts: 0, sessions: 0, consents: 0 });
   });
 
   it('needs the anti-bot token and creates nothing without it', async () => {
@@ -538,7 +542,7 @@ describe('POST /store/v1/checkout-sessions', () => {
       expect(res.statusCode).toBe(403);
       expect(body(res).code).toBe('TURNSTILE_FAILED');
     }
-    expect(await counts()).toEqual({ customers: 0, sessions: 0, consents: 0 });
+    expect(await counts()).toEqual({ accounts: 0, sessions: 0, consents: 0 });
   });
 
   it('opens nothing without a retail group', async () => {
@@ -572,7 +576,7 @@ describe('POST /store/v1/checkout-sessions and an email blocked for guest checko
     const accepted = await client.call('POST', OPEN_URL, valid(world, { email: customer.email }));
     expect(accepted.statusCode).toBe(201);
     const [row] = await db.select().from(s.checkoutSessions);
-    expect(row).toMatchObject({ customerId: customer.id, openedSignedIn: true });
+    expect(row).toMatchObject({ accountId: customer.id, openedSignedIn: true });
   });
 });
 
@@ -668,11 +672,11 @@ describe('POST /store/v1/checkout-sessions as a signed-in customer (feature 14b)
     expect(row).toMatchObject({
       token: null,
       tokenHash: tokenHashOf(t, 'checkout', body(res).token),
-      customerId: customer.id,
+      accountId: customer.id,
       email: customer.email,
     });
-    // The account is the customer: no guest row was made, and the session works like any other.
-    expect(await counts()).toEqual({ customers: 1, sessions: 1, consents: 0 });
+    // The buyer is the account itself: no guest row was made, and the session works like any other.
+    expect(await counts()).toEqual({ accounts: 1, sessions: 1, consents: 0 });
     expect((await show(body(res).token)).statusCode).toBe(200);
 
     // Without the cookie the same call is a guest's, which this shop does not accept.
@@ -688,7 +692,7 @@ describe('POST /store/v1/checkout-sessions as a signed-in customer (feature 14b)
       expect(res.statusCode, String(csrf)).toBe(403);
       expect(body(res).code).toBe('CSRF_FAILED');
     }
-    expect(await counts()).toEqual({ customers: 1, sessions: 0, consents: 0 });
+    expect(await counts()).toEqual({ accounts: 1, sessions: 0, consents: 0 });
     // With the header it opens.
     expect((await client.call('POST', OPEN_URL, valid(world, { email: customer.email }))).statusCode).toBe(201);
   });
@@ -714,14 +718,14 @@ describe('POST /store/v1/checkout-sessions as a signed-in customer (feature 14b)
         ]);
       }
     }
-    expect(await counts()).toEqual({ customers: 2, sessions: 0, consents: 0 });
+    expect(await counts()).toEqual({ accounts: 2, sessions: 0, consents: 0 });
   });
 
   it('treats a request with no usable session as a guest: no cookie, an unknown token, or a session that is not complete', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
     const account = await makeCustomer(t);
-    // No cookie: a guest who types an account's email gets that customer row, as before 14b.
+    // No cookie: a guest who types an account's email gets a guest row of its own, and nothing attaches to the account.
     const asGuest = await open(valid(world, { email: account.email }));
     expect(asGuest.statusCode).toBe(201);
 
@@ -744,24 +748,27 @@ describe('POST /store/v1/checkout-sessions as a signed-in customer (feature 14b)
 
     const rows = await db.select().from(s.checkoutSessions).orderBy(s.checkoutSessions.id);
     expect(rows.map((row) => row.email)).toEqual([account.email, 'new.guest@mail.example']);
-    expect(rows[0]?.customerId).toBe(account.id);
+    expect(rows[0]?.accountId).not.toBe(account.id);
+    expect(rows[0]).toMatchObject({ openedSignedIn: false });
+    const [guestOfTypedEmail] = await db.select().from(s.clients).where(eq(s.clients.id, rows[0]!.accountId!));
+    expect(guestOfTypedEmail).toMatchObject({ email: account.email, hasAccount: false });
   });
 
-  it('still refuses a suspended customer, who has no usable session any more', async () => {
+  it('still refuses a suspended account, which has no usable session any more, and makes no guest row for its email', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
     const { customer, client } = await signedInCustomer();
-    await db.update(s.customers).set({ status: 'suspended' }).where(eq(s.customers.id, customer.id));
+    await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, customer.id));
     await clearIdentityCaches(t);
 
     const res = await client.call('POST', OPEN_URL, valid(world, { email: customer.email }));
     expect(res.statusCode).toBe(403);
     expect(body(res).code).toBe('ACCOUNT_SUSPENDED');
     expect(body(res).detail).toBe('This account cannot start a new order. Contact support.');
-    // With guest checkout off the suspended customer is just a guest who must sign in.
+    // With guest checkout off the suspended account is just a guest who must sign in.
     await db.insert(s.settings).values({ key: 'guestCheckout', value: false });
     expect((await client.call('POST', OPEN_URL, valid(world, { email: customer.email }))).statusCode).toBe(401);
-    expect(await counts()).toEqual({ customers: 1, sessions: 0, consents: 0 });
+    expect(await counts()).toEqual({ accounts: 1, sessions: 0, consents: 0 });
     expect((await customerRow(customer.id)).status).toBe('suspended');
   });
 });
@@ -891,11 +898,11 @@ describe('POST /store/v1/checkout-sessions/:token/consents', () => {
     const world = await storefrontWorld(db);
     const session = body(await open(valid(world)));
     const [row] = await db.select().from(s.checkoutSessions);
-    return { db, world, token: session.token as string, sessionId: row!.id, customerId: row!.customerId! };
+    return { db, world, token: session.token as string, sessionId: row!.id, accountId: row!.accountId! };
   }
 
   it('records the proof: the version of each text, the time, the address and the user agent', async () => {
-    const { db, token, sessionId, customerId } = await opened();
+    const { db, token, sessionId, accountId } = await opened();
     clock.advance(MINUTE);
     const res = await consent(token, { consents: ALL });
     expect(res.statusCode).toBe(201);
@@ -925,8 +932,8 @@ describe('POST /store/v1/checkout-sessions/:token/consents', () => {
     expect(rows).toHaveLength(3);
     const terms = (await db.select().from(s.legalDocuments).where(eq(s.legalDocuments.type, 'terms')))[0]!;
     expect(rows[0]).toMatchObject({
-      subjectType: 'customer',
-      subjectId: customerId,
+      subjectType: 'account',
+      subjectId: accountId,
       legalDocumentId: terms.id,
       purpose: 'terms',
       granted: true,
@@ -1015,14 +1022,15 @@ describe('POST /store/v1/checkout-sessions/:token/consents', () => {
       'marketing',
       'refund_policy',
     ]);
-    // A guest's only place to choose is the checkout, so the customer list shows what was recorded.
-    const [guest] = await db.select().from(s.customers);
+    // A guest's only place to choose is the checkout, so the account list shows what was recorded.
+    const [guest] = await db.select().from(s.clients);
     expect(guest?.marketingOptIn).toBe(true);
   });
 
   it("never changes an account holder's marketing choice from a guest checkout, but records the purchase consents", async () => {
-    const { db, token, customerId } = await opened();
-    await db.update(s.customers).set({ hasAccount: true, marketingOptIn: false }).where(eq(s.customers.id, customerId));
+    const { db, token, accountId } = await opened();
+    // The guest row got a login since the checkout opened (its holder signed up): the checkout's token alone must not choose for it.
+    await db.update(s.clients).set({ hasAccount: true, marketingOptIn: false }).where(eq(s.clients.id, accountId));
     const res = await consent(token, { consents: [...ALL, { purpose: 'marketing', granted: true }] });
     expect(res.statusCode).toBe(201);
     expect(body(res).records.map((record: { purpose: string }) => record.purpose)).toEqual([
@@ -1033,7 +1041,7 @@ describe('POST /store/v1/checkout-sessions/:token/consents', () => {
     expect(body(res).consent.complete).toBe(true);
     const purposes = (await db.select().from(s.consentRecords)).map((row) => row.purpose);
     expect(purposes.sort()).toEqual(['privacy', 'terms', 'withdrawal_waiver']);
-    const [holder] = await db.select().from(s.customers).where(eq(s.customers.id, customerId));
+    const [holder] = await db.select().from(s.clients).where(eq(s.clients.id, accountId));
     expect(holder?.marketingOptIn).toBe(false);
   });
 

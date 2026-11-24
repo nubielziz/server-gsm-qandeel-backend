@@ -43,6 +43,8 @@ export interface TicketRow {
   readonly ticket: SupportTicket;
   readonly requesterName: string;
   readonly requesterEmail: string | null;
+  /** The rank the requester's row holds, or `null` when the row is gone: the views turn it into the rank kind (`rankKindOfRequester`). */
+  readonly requesterGroupId: number | null;
   readonly assigneeName: string | null;
 }
 
@@ -55,10 +57,10 @@ export interface MessageRow {
 /**
  * The name a requester shows: the stored name, else their address, else a plain word.
  *
- * Why: a guest customer made by a ticket or a checkout may have no name, and an empty cell in the inbox helps nobody.
+ * Why: a guest row made by a ticket or a checkout may have no name, and an empty cell in the inbox helps nobody.
  *
  * @param name the stored name
- * @param email the address (never shown for an anonymized customer)
+ * @param email the address (never shown for an anonymized account)
  * @param fallback the word for somebody with neither
  * @returns the display name
  */
@@ -67,65 +69,56 @@ function displayName(name: string | null, email: string | null, fallback: string
   return trimmed !== '' ? trimmed : (email ?? fallback);
 }
 
-/** The requester's name and address for a row, whatever the requester's kind (anonymized and missing rows read as deleted). */
-function requesterOf(row: {
-  type: SupportTicket['requesterType'];
-  customerName: string | null;
-  customerEmail: string | null;
-  customerStatus: string | null;
-  clientName: string | null;
-  clientEmail: string | null;
-}): { name: string; email: string | null } {
-  if (row.type === 'client') {
-    return { name: displayName(row.clientName, row.clientEmail, 'Merchant'), email: row.clientEmail };
-  }
-  if (row.customerStatus === null || row.customerStatus === 'anonymized') {
+/** The requester's name and address for a row, whatever its rank (an anonymized or missing row reads as deleted). */
+function requesterOf(row: { accountName: string | null; accountEmail: string | null; accountStatus: string | null }): {
+  name: string;
+  email: string | null;
+} {
+  if (row.accountStatus === null || row.accountStatus === 'anonymized') {
     return { name: DELETED_CUSTOMER_NAME, email: null };
   }
-  // Decision 047, rule B: a customer without a name is labelled by the masked address, never the full one; the `email` stays raw and the
-  // view masks it for callers who may not read customers (rule A).
+  // Decision 047, rule B, for every account (decision 064): an account without a name is labelled by the masked address, never the full
+  // one; the `email` stays raw and the view masks it for callers who may not read accounts (rule A).
   return {
     name: displayName(
-      row.customerName,
-      row.customerEmail === null ? null : maskCustomerEmail(row.customerEmail),
-      'Customer',
+      row.accountName,
+      row.accountEmail === null ? null : maskCustomerEmail(row.accountEmail),
+      'Account',
     ),
-    email: row.customerEmail,
+    email: row.accountEmail,
   };
 }
 
 /** What the list and detail queries select. */
 const ticketSelect = {
   ticket: supportTickets,
-  customerName: f.customers.name,
-  customerEmail: f.customers.email,
-  customerStatus: f.customers.status,
-  clientName: f.clients.name,
-  clientEmail: f.clients.email,
+  accountName: f.accounts.name,
+  accountEmail: f.accounts.email,
+  accountStatus: f.accounts.status,
+  accountGroupId: f.accounts.groupId,
   assigneeName: f.staff.name,
 };
 
 function toTicketRow(row: {
   ticket: SupportTicket;
-  customerName: string | null;
-  customerEmail: string | null;
-  customerStatus: string | null;
-  clientName: string | null;
-  clientEmail: string | null;
+  accountName: string | null;
+  accountEmail: string | null;
+  accountStatus: string | null;
+  accountGroupId: number | null;
   assigneeName: string | null;
 }): TicketRow {
-  const who = requesterOf({ type: row.ticket.requesterType, ...row });
+  const who = requesterOf(row);
   return {
     ticket: row.ticket,
     requesterName: who.name,
     requesterEmail: who.email,
+    requesterGroupId: row.accountGroupId,
     assigneeName: row.assigneeName,
   };
 }
 
-/** The join conditions of the requester (a customer or a merchant, by the ticket's type) and of the assignee. */
-const onCustomer = and(eq(supportTickets.requesterType, 'customer'), eq(f.customers.id, supportTickets.requesterId));
-const onClient = and(eq(supportTickets.requesterType, 'client'), eq(f.clients.id, supportTickets.requesterId));
+/** The join conditions of the requester (an account, whatever its rank) and of the assignee. */
+const onAccount = eq(f.accounts.id, supportTickets.requesterId);
 const onAssignee = eq(f.staff.id, supportTickets.assigneeId);
 
 /** True for a ticket whose reply is awaited and overdue, decided against the clock's `now`. */
@@ -134,22 +127,29 @@ function lateSql(now: Date): SQL {
 }
 
 /** The requester name as SQL, for `q`. */
-const requesterNameSql = sql`case when ${supportTickets.requesterType} = 'customer' then ${f.customers.name} else ${f.clients.name} end`;
+const requesterNameSql = sql`${f.accounts.name}`;
 
 /**
  * The requester's email address as SQL, for `q`.
  *
- * Why: a guest who gave no name is shown by email, so the inbox must find them by it. An anonymized customer's address is never shown
+ * Why: a guest who gave no name is shown by email, so the inbox must find them by it. An anonymized account's address is never shown
  * (`requesterOf`), so it is not searchable either.
  */
-const requesterEmailSql = sql`case when ${supportTickets.requesterType} = 'customer' then (case when ${f.customers.status} = 'anonymized' then null else ${f.customers.email} end) else ${f.clients.email} end`;
+const requesterEmailSql = sql`(case when ${f.accounts.status} = 'anonymized' then null else ${f.accounts.email} end)`;
 
 /**
- * The merchant requester's email address as SQL, for `q` of a caller who may not read customers.
+ * The rank kind of the requester as SQL, for the `rankKind` filter.
  *
- * Why: decision 047: a merchant's address stays searchable (it is shown in full), a storefront customer's is not.
+ * Why: the console's Who control shows merchants or retail accounts. The retail rank is the one rank of kind `b2c_retail` and its id comes
+ * from the catalog's port (never a read of `client_groups` here), so any other rank is a merchant rank; a requester that is gone reads as
+ * retail, the fail-closed side (`rankKindOfRequester` is the same rule for a row already read).
+ *
+ * @param retailGroupId the id of the retail rank
+ * @returns text `'retail'` or `'merchant'`
  */
-const merchantEmailSql = sql`case when ${supportTickets.requesterType} = 'client' then ${f.clients.email} end`;
+function requesterRankKindSql(retailGroupId: number): SQL {
+  return sql`(case when ${f.accounts.groupId} is not null and ${f.accounts.groupId} <> ${retailGroupId} then 'merchant' else 'retail' end)`;
+}
 
 /**
  * Translates the `status` filter's wire words to the stored ones before the list is built.
@@ -170,14 +170,16 @@ function storedStatusFilters(filters: readonly ParsedFilter[]): ParsedFilter[] {
 /**
  * Lists tickets for `GET /admin/support-tickets`.
  *
- * Why: the inbox (RULES support): filters status (repeated = IN), late, assigneeId, requesterType, requesterId and `q` over the number,
- * subject, requester name and requester email; `late` is a filter and a sort key, both decided in SQL against the clock's `now` (never `now()`), late
- * tickets first by default.
+ * Why: the inbox (RULES support): filters status (repeated = IN), late, assigneeId, requesterType (`account` only), requesterId (an account
+ * id), rankKind (the rank kind of the requester: `retail` or `merchant`) and `q` over the number, subject, requester name and requester
+ * email; `late` is a filter and a sort key, both decided in SQL against the clock's `now` (never `now()`), late tickets first by default.
+ * The address is searched only by a caller who may read accounts, whatever the rank of the requester (decision 047 for every account).
  *
  * @param db the database or a transaction
  * @param query the parsed list request
  * @param now the injected clock's time
- * @param contact what the caller may see of customers' addresses: for `masked` `q` matches a merchant's address but not a customer's (decision 047)
+ * @param contact what the caller may see of accounts' addresses: for `masked` `q` never matches an address
+ * @param retailGroupId the id of the retail rank (`RankGroupReads.retailGroupId`), for the `rankKind` filter
  * @returns the page of rows and the exact total
  */
 export async function listTicketRows(
@@ -185,6 +187,7 @@ export async function listTicketRows(
   query: ParsedListQuery<TicketSortField>,
   now: Date,
   contact: CustomerContact,
+  retailGroupId: number,
 ): Promise<{ rows: TicketRow[]; total: number }> {
   const columns: ListColumns = {
     id: supportTickets.id,
@@ -194,30 +197,30 @@ export async function listTicketRows(
     assigneeId: supportTickets.assigneeId,
     requesterType: supportTickets.requesterType,
     requesterId: supportTickets.requesterId,
+    rankKind: requesterRankKindSql(retailGroupId),
     createdAt: supportTickets.createdAt,
     updatedAt: supportTickets.updatedAt,
     late: lateSql(now),
     'requester.name': requesterNameSql,
-    'requester.email': contact === 'full' ? requesterEmailSql : merchantEmailSql,
+    'requester.email': requesterEmailSql,
   };
-  const where = listWhere({ filters: storedStatusFilters(query.filters), search: query.search }, columns);
+  // Decision 047: a caller who may not read accounts never finds one by its address; with no field left the search matches nothing.
+  const search =
+    query.search === undefined || contact === 'full'
+      ? query.search
+      : { ...query.search, fields: query.search.fields.filter((field) => field !== 'requester.email') };
+  const where = listWhere({ filters: storedStatusFilters(query.filters), search }, columns);
   const [rows, [total]] = await Promise.all([
     db
       .select(ticketSelect)
       .from(supportTickets)
-      .leftJoin(f.customers, onCustomer)
-      .leftJoin(f.clients, onClient)
+      .leftJoin(f.accounts, onAccount)
       .leftJoin(f.staff, onAssignee)
       .where(where)
       .orderBy(...listOrderBy(query.sort, columns, supportTickets.id))
       .limit(query.range.limit)
       .offset(query.range.start),
-    db
-      .select({ total: count() })
-      .from(supportTickets)
-      .leftJoin(f.customers, onCustomer)
-      .leftJoin(f.clients, onClient)
-      .where(where),
+    db.select({ total: count() }).from(supportTickets).leftJoin(f.accounts, onAccount).where(where),
   ]);
   return { rows: rows.map(toTicketRow), total: total?.total ?? 0 };
 }
@@ -233,8 +236,7 @@ export async function findTicketRow(db: DbExecutor, id: number): Promise<TicketR
   const rows = await db
     .select(ticketSelect)
     .from(supportTickets)
-    .leftJoin(f.customers, onCustomer)
-    .leftJoin(f.clients, onClient)
+    .leftJoin(f.accounts, onAccount)
     .leftJoin(f.staff, onAssignee)
     .where(eq(supportTickets.id, id))
     .limit(1);
@@ -274,7 +276,7 @@ export async function lastPublicMessage(db: DbExecutor, ticketId: number): Promi
     .where(and(eq(ticketMessages.ticketId, ticketId), eq(ticketMessages.isInternal, false)))
     .orderBy(desc(ticketMessages.createdAt), desc(ticketMessages.id))
     .limit(1);
-  return row && { fromRequester: row.authorType === 'customer' || row.authorType === 'client', at: row.createdAt };
+  return row && { fromRequester: row.authorType === 'account', at: row.createdAt };
 }
 
 /**
@@ -455,24 +457,24 @@ export async function updateTicket(
 }
 
 /**
- * Clears the page token of every ticket a customer opened.
+ * Clears the page token of every ticket an account opened.
  *
- * Why: the token is a capability link kept in an email; once the customer is anonymized nobody may open the thread with it
+ * Why: the token is a capability link kept in an email; once the account is anonymized nobody may open the thread with it
  * (decision 010, feature 18). The ticket and its messages stay for the books; only the link goes, in every stored form (the plain token,
  * its hash and its encrypted copy, decision 054). `updated_at` is kept so the inbox order does not move.
  *
  * @param db the anonymization's transaction
- * @param customerId the customer
+ * @param accountId the account
  * @returns how many tickets lost their token
  */
-export async function clearTicketTokensOfCustomer(db: DbExecutor, customerId: number): Promise<number> {
+export async function clearTicketTokensOfAccount(db: DbExecutor, accountId: number): Promise<number> {
   const rows = await db
     .update(supportTickets)
     .set({ token: null, tokenHash: null, tokenEnc: null, updatedAt: sql`${supportTickets.updatedAt}` })
     .where(
       and(
-        eq(supportTickets.requesterType, 'customer'),
-        eq(supportTickets.requesterId, customerId),
+        eq(supportTickets.requesterType, 'account'),
+        eq(supportTickets.requesterId, accountId),
         or(isNotNull(supportTickets.token), isNotNull(supportTickets.tokenHash)),
       ),
     )
@@ -508,16 +510,13 @@ export async function findMessage(db: DbExecutor, id: number): Promise<TicketMes
 const messageSelect = {
   message: ticketMessages,
   staffName: f.staff.name,
-  customerName: f.customers.name,
-  customerEmail: f.customers.email,
-  customerStatus: f.customers.status,
-  clientName: f.clients.name,
-  clientEmail: f.clients.email,
+  accountName: f.accounts.name,
+  accountEmail: f.accounts.email,
+  accountStatus: f.accounts.status,
 };
 
 const onMessageStaff = and(eq(ticketMessages.authorType, 'staff'), eq(f.staff.id, ticketMessages.authorId));
-const onMessageCustomer = and(eq(ticketMessages.authorType, 'customer'), eq(f.customers.id, ticketMessages.authorId));
-const onMessageClient = and(eq(ticketMessages.authorType, 'client'), eq(f.clients.id, ticketMessages.authorId));
+const onMessageAccount = and(eq(ticketMessages.authorType, 'account'), eq(f.accounts.id, ticketMessages.authorId));
 
 /**
  * A message the requester may see: public and not the system's.
@@ -541,8 +540,7 @@ export async function findMessageRow(db: DbExecutor, id: number): Promise<Messag
     .select(messageSelect)
     .from(ticketMessages)
     .leftJoin(f.staff, onMessageStaff)
-    .leftJoin(f.customers, onMessageCustomer)
-    .leftJoin(f.clients, onMessageClient)
+    .leftJoin(f.accounts, onMessageAccount)
     .where(eq(ticketMessages.id, id))
     .limit(1);
   return row && { message: row.message, authorName: authorNameOf(row) };
@@ -552,14 +550,14 @@ export async function findMessageRow(db: DbExecutor, id: number): Promise<Messag
 export type MessageScope =
   /** Staff with `support:read`: every message of every ticket, notes and system messages included. */
   | { readonly kind: 'all' }
-  /** A signed-in requester: the public messages of their own tickets. */
-  | { readonly kind: 'requester'; readonly type: 'customer' | 'client'; readonly id: number }
+  /** A signed-in account (any rank): the public messages of its own tickets. */
+  | { readonly kind: 'requester'; readonly id: number }
   /** The holder of a ticket link: the public messages of that ticket. */
   | { readonly kind: 'ticket'; readonly ticketId: number };
 
 /** A message with its author's name and the ticket fields a live event names. */
 export interface LiveMessageRow extends MessageRow {
-  readonly ticket: Pick<SupportTicket, 'id' | 'number' | 'requesterType' | 'requesterId'>;
+  readonly ticket: Pick<SupportTicket, 'id' | 'number' | 'requesterType' | 'requesterId' | 'token' | 'tokenHash'>;
 }
 
 /**
@@ -586,9 +584,9 @@ export async function messageRowsAfter(
       : scope.kind === 'ticket'
         ? and(eq(ticketMessages.ticketId, scope.ticketId), requesterVisible)
         : and(
-            eq(supportTickets.requesterType, scope.type),
+            eq(supportTickets.requesterType, 'account'),
             eq(supportTickets.requesterId, scope.id),
-            // Decision 053: a ticket whose address is not proven yet is not replayed to the requester's account.
+            // Decision 053, for every account: a ticket whose address is not proven yet is not replayed to the requester's account.
             requesterProven(),
             requesterVisible,
           );
@@ -598,12 +596,13 @@ export async function messageRowsAfter(
       ticketNumber: supportTickets.number,
       requesterType: supportTickets.requesterType,
       requesterId: supportTickets.requesterId,
+      ticketToken: supportTickets.token,
+      ticketTokenHash: supportTickets.tokenHash,
     })
     .from(ticketMessages)
     .innerJoin(supportTickets, eq(supportTickets.id, ticketMessages.ticketId))
     .leftJoin(f.staff, onMessageStaff)
-    .leftJoin(f.customers, onMessageCustomer)
-    .leftJoin(f.clients, onMessageClient)
+    .leftJoin(f.accounts, onMessageAccount)
     .where(and(gt(ticketMessages.id, after), scoped))
     .orderBy(asc(ticketMessages.id))
     .limit(limit);
@@ -615,6 +614,8 @@ export async function messageRowsAfter(
       number: row.ticketNumber,
       requesterType: row.requesterType,
       requesterId: row.requesterId,
+      token: row.ticketToken,
+      tokenHash: row.ticketTokenHash,
     },
   }));
 }
@@ -758,17 +759,17 @@ export async function finishReplyMail(tx: DbExecutor, ticketId: number, mailedId
 }
 
 /**
- * The ids of every ticket a customer opened.
+ * The ids of every ticket an account opened.
  *
  * @param db the database or a transaction
- * @param customerId the customer
+ * @param accountId the account
  * @returns the ticket ids, ascending
  */
-export async function ticketIdsOfCustomer(db: DbExecutor, customerId: number): Promise<number[]> {
+export async function ticketIdsOfAccount(db: DbExecutor, accountId: number): Promise<number[]> {
   const rows = await db
     .select({ id: supportTickets.id })
     .from(supportTickets)
-    .where(and(eq(supportTickets.requesterType, 'customer'), eq(supportTickets.requesterId, customerId)))
+    .where(and(eq(supportTickets.requesterType, 'account'), eq(supportTickets.requesterId, accountId)))
     .orderBy(asc(supportTickets.id));
   return rows.map((row) => row.id);
 }
@@ -882,8 +883,7 @@ export async function listMessageRows(db: DbExecutor, ticketId: number, publicOn
     .select(messageSelect)
     .from(ticketMessages)
     .leftJoin(f.staff, onMessageStaff)
-    .leftJoin(f.customers, onMessageCustomer)
-    .leftJoin(f.clients, onMessageClient)
+    .leftJoin(f.accounts, onMessageAccount)
     .where(
       publicOnly ? and(eq(ticketMessages.ticketId, ticketId), requesterVisible) : eq(ticketMessages.ticketId, ticketId),
     )
@@ -900,20 +900,146 @@ export async function listMessageRows(db: DbExecutor, ticketId: number, publicOn
 export function authorNameOf(row: {
   message: Pick<TicketMessage, 'authorType'>;
   staffName: string | null;
-  customerName: string | null;
-  customerEmail: string | null;
-  customerStatus: string | null;
-  clientName: string | null;
-  clientEmail: string | null;
+  accountName: string | null;
+  accountEmail: string | null;
+  accountStatus: string | null;
 }): string {
   switch (row.message.authorType) {
     case 'system':
       return 'System';
     case 'staff':
       return row.staffName ?? 'Staff';
-    case 'client':
-      return displayName(row.clientName, row.clientEmail, 'Merchant');
-    case 'customer':
-      return requesterOf({ type: 'customer', ...row }).name;
+    case 'account':
+      return requesterOf(row).name;
   }
+}
+
+/**
+ * Locks, without waiting, the tickets an account row opened.
+ *
+ * Why: the guest-order claim (decision 064) moves the tickets of a guest row to the account that proved the mailbox, and it must
+ * never wait: a reply, a status change or the requester's own message holds the ticket row (`lockTicket`), and the claim then answers
+ * `busy` at once. A conflict throws the lock error (SQLSTATE 55P03) that the claim catches.
+ *
+ * Side effects: row locks until the claim's transaction ends.
+ *
+ * @param tx the claim's transaction
+ * @param accountId the guest row
+ * @returns the ticket ids, ascending
+ * @throws the database error 55P03 when another request holds one of the tickets
+ */
+export async function lockTicketsOfRequesterNoWait(tx: DbExecutor, accountId: number): Promise<number[]> {
+  const rows = await tx
+    .select({ id: supportTickets.id })
+    .from(supportTickets)
+    .where(and(eq(supportTickets.requesterType, 'account'), eq(supportTickets.requesterId, accountId)))
+    .orderBy(asc(supportTickets.id))
+    .for('update', { noWait: true });
+  return rows.map((row) => row.id);
+}
+
+/**
+ * Points locked tickets at another account.
+ *
+ * Why: the second step of the guest-order claim: the tickets of the guest row belong to the account now. Only the pointer changes; the
+ * number, the link token, the messages, the proof of the address and `updated_at` stay (a claim is not activity staff have to look at).
+ *
+ * Side effects: writes `support_tickets.requester_id`.
+ *
+ * @param tx the claim's transaction
+ * @param ticketIds the tickets locked by {@link lockTicketsOfRequesterNoWait}
+ * @param fromAccountId the guest row
+ * @param toAccountId the account that claims them
+ * @returns how many tickets moved
+ */
+export async function moveTicketsToAccount(
+  tx: DbExecutor,
+  ticketIds: readonly number[],
+  fromAccountId: number,
+  toAccountId: number,
+): Promise<number> {
+  if (ticketIds.length === 0) return 0;
+  const rows = await tx
+    .update(supportTickets)
+    .set({ requesterId: toAccountId, updatedAt: sql`${supportTickets.updatedAt}` })
+    .where(
+      and(
+        inArray(supportTickets.id, [...ticketIds]),
+        eq(supportTickets.requesterType, 'account'),
+        eq(supportTickets.requesterId, fromAccountId),
+      ),
+    )
+    .returning({ id: supportTickets.id });
+  return rows.length;
+}
+
+/**
+ * Locks, without waiting, the messages an account row wrote on some tickets.
+ *
+ * Why: the guest-order claim moves the requester's own messages with their tickets, so a thread reads as the account's. The messages are
+ * found through the tickets (`ticket_messages_ticket_idx`), which a guest row writes on only its own. A message row is locked by the
+ * attachment retention (it empties `file_ids`), so the claim does not wait for that either.
+ *
+ * Side effects: row locks until the claim's transaction ends.
+ *
+ * @param tx the claim's transaction
+ * @param ticketIds the guest row's tickets
+ * @param authorId the guest row
+ * @returns the message ids, ascending
+ * @throws the database error 55P03 when another request holds one of the messages
+ */
+export async function lockMessagesOfAuthorNoWait(
+  tx: DbExecutor,
+  ticketIds: readonly number[],
+  authorId: number,
+): Promise<number[]> {
+  if (ticketIds.length === 0) return [];
+  const rows = await tx
+    .select({ id: ticketMessages.id })
+    .from(ticketMessages)
+    .where(
+      and(
+        inArray(ticketMessages.ticketId, [...ticketIds]),
+        eq(ticketMessages.authorType, 'account'),
+        eq(ticketMessages.authorId, authorId),
+      ),
+    )
+    .orderBy(asc(ticketMessages.id))
+    .for('update', { noWait: true });
+  return rows.map((row) => row.id);
+}
+
+/**
+ * Points locked messages at another account.
+ *
+ * Why: the third step of the guest-order claim. Only the author pointer changes: the text, the files and the time of a message are never
+ * edited (messages are immutable, `ticket_messages` has no `updated_at`).
+ *
+ * Side effects: writes `ticket_messages.author_id`.
+ *
+ * @param tx the claim's transaction
+ * @param messageIds the messages locked by {@link lockMessagesOfAuthorNoWait}
+ * @param fromAccountId the guest row
+ * @param toAccountId the account that claims them
+ * @returns how many messages moved
+ */
+export async function moveMessagesToAccount(
+  tx: DbExecutor,
+  messageIds: readonly number[],
+  fromAccountId: number,
+  toAccountId: number,
+): Promise<number> {
+  if (messageIds.length === 0) return 0;
+  const rows = await tx
+    .update(ticketMessages)
+    .set({ authorId: toAccountId })
+    .where(
+      and(
+        inArray(ticketMessages.id, [...messageIds]),
+        eq(ticketMessages.authorType, 'account'),
+        eq(ticketMessages.authorId, fromAccountId),
+      ),
+    )
+    .returning({ id: ticketMessages.id });
+  return rows.length;
 }

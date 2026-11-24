@@ -38,7 +38,8 @@ const MAX_EVENTS = 50;
  * Why: B165. The choices live in `clients.notification_prefs` (the key `lowBalanceThreshold` is the one `WalletLowBalanceWatch` reads);
  * the events a merchant may switch are the non-transactional merchant events of the platform's registry, so the screen and the delivery
  * agree. An event never saved reads as email on (the order results stay off until chosen). A `telegram` switch that an older save
- * stored is ignored, and one an older portal still sends is dropped. The merchant portal writes no audit rows (B121).
+ * stored is ignored, and one an older portal still sends is dropped. The merchant portal writes no audit rows (B121). The switches are for
+ * merchant ranks: the rank gate refuses a retail account before the use case runs (decision 064).
  *
  * Side effects: `update` rewrites `clients.notification_prefs` under a row lock.
  *
@@ -55,12 +56,12 @@ export class MerchantNotificationSettings {
   /**
    * Reads the preferences of a merchant.
    *
-   * @param clientId the signed-in merchant
+   * @param accountId the signed-in account
    * @returns the screen's data
-   * @throws {AppError} `NOT_FOUND` when the merchant row is gone
+   * @throws {AppError} `NOT_FOUND` when the account row is gone
    */
-  async get(clientId: number): Promise<PreferencesView> {
-    const client = await findClientById(this.db.db, clientId);
+  async get(accountId: number): Promise<PreferencesView> {
+    const client = await findClientById(this.db.db, accountId);
     if (!client) throw new AppError('NOT_FOUND', { detail: 'This account no longer exists.' });
     return this.view(client, client.notificationPrefs);
   }
@@ -68,13 +69,13 @@ export class MerchantNotificationSettings {
   /**
    * Saves the preferences.
    *
-   * @param clientId the signed-in merchant
+   * @param accountId the signed-in account
    * @param input the threshold and the events to replace
    * @returns the preferences after the save
    * @throws {AppError} `VALIDATION_FAILED` on `events.<n>.event` for an unknown, transactional or repeated event, and on
    *   `lowBalanceThreshold` for a negative or malformed amount
    */
-  async update(clientId: number, input: PreferencesInput): Promise<PreferencesView> {
+  async update(accountId: number, input: PreferencesInput): Promise<PreferencesView> {
     const errors: FieldError[] = [];
     let threshold: string | null | undefined;
     if (input.lowBalanceThreshold !== undefined && input.lowBalanceThreshold !== null) {
@@ -94,7 +95,7 @@ export class MerchantNotificationSettings {
     }
 
     return this.db.runInTransaction(async ({ tx }) => {
-      const client = await lockClient(tx, clientId);
+      const client = await lockClient(tx, accountId);
       if (!client) throw new AppError('NOT_FOUND', { detail: 'This account no longer exists.' });
       const definitions = new Map(
         this.registry.merchantPreferenceEvents().map((definition) => [definition.key, definition] as const),
@@ -123,7 +124,7 @@ export class MerchantNotificationSettings {
         lowBalanceThreshold: threshold === undefined ? thresholdOf(client.notificationPrefs) : threshold,
         events: input.events,
       });
-      await saveNotificationPrefs(tx, clientId, prefs, this.clock.now());
+      await saveNotificationPrefs(tx, accountId, prefs, this.clock.now());
       return this.view(client, prefs);
     });
   }

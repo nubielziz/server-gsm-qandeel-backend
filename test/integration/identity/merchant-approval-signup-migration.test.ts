@@ -1,7 +1,9 @@
 // Integration test of the data migration of decision 062 (merchant sign-up and approval were retired): the SQL is run on rows written
 // before it (merchants that are still pending, with live sessions and open links, and the stored template of the approval mail) and
-// run again, as a database that already has it would. No table and no column is dropped, and the status "pending" stays valid, so the
-// test also proves that the rows of every other merchant and every other template are left alone.
+// run again, as a database that already has it would. No table and no column is dropped, so the test also proves that the rows of every
+// other merchant and every other template are left alone. The accounts migration (decision 064) later narrowed the status and the subject
+// types of sessions and links, so a test that needs the old words runs on the shape the migration meant to change: the three checks are
+// dropped for its body and put back, on empty tables, after it.
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -27,6 +29,30 @@ async function migrate(): Promise<void> {
   await pool.query(readFileSync(join(FOLDER, NAME ?? 'missing'), 'utf8'));
 }
 
+/** The checks the accounts migration narrowed: rows written before it hold the status `pending` and the subject type `client`. */
+const NARROWED_CHECKS = ['clients_status_check', 'sessions_subject_type_check', 'auth_tokens_subject_type_check'];
+
+/**
+ * Runs a body on the shape the old migration was written for.
+ *
+ * Why: the database of the tests has every migration, so a row with the status `pending` or the subject type `client` is refused. The checks are
+ * dropped here and put back after the tables are emptied (the rows the body made hold the old words), exactly as they were (read from the catalog).
+ */
+async function onLegacyShape(body: () => Promise<void>): Promise<void> {
+  const { pool } = await testDb();
+  const { rows } = await pool.query<{ tbl: string; name: string; def: string }>(
+    `select conrelid::regclass::text as tbl, conname as name, pg_get_constraintdef(oid) as def from pg_constraint where conname = any($1::text[])`,
+    [NARROWED_CHECKS],
+  );
+  for (const row of rows) await pool.query(`alter table ${row.tbl} drop constraint ${row.name}`);
+  try {
+    await body();
+  } finally {
+    await resetDb();
+    for (const row of rows) await pool.query(`alter table ${row.tbl} add constraint ${row.name} ${row.def}`);
+  }
+}
+
 /** A time far in the past, so a rewrite of a row shows. */
 const PAST = new Date('2026-01-01T00:00:00.000Z');
 const FUTURE = new Date('2036-01-01T00:00:00.000Z');
@@ -43,7 +69,7 @@ async function insertSession(clientId: number, tokenHash: string, revokedAt: Dat
     .insert(s.sessions)
     .values({
       tokenHash,
-      subjectType: 'client',
+      subjectType: 'client' as never,
       subjectId: clientId,
       stage: 'active',
       ip: '203.0.113.7',
@@ -61,7 +87,7 @@ async function insertLink(clientId: number, tokenHash: string, usedAt: Date | nu
     .insert(s.authTokens)
     .values({
       purpose: 'invite',
-      subjectType: 'client',
+      subjectType: 'client' as never,
       subjectId: clientId,
       tokenHash,
       expiresAt: FUTURE,
@@ -86,26 +112,27 @@ describe('the migration that retires merchant sign-up and approval', () => {
     expect(NAME).toBeDefined();
   });
 
-  it('suspends every merchant that is still pending, with one fixed reason and the time of the run, and never activates one', async () => {
-    const { db } = await testDb();
-    const first = await insertMerchant(db, { status: 'pending', updatedAt: PAST });
-    const second = await insertMerchant(db, { status: 'pending', emailVerifiedAt: PAST, updatedAt: PAST });
+  it('suspends every merchant that is still pending, with one fixed reason and the time of the run, and never activates one', () =>
+    onLegacyShape(async () => {
+      const { db } = await testDb();
+      const first = await insertMerchant(db, { status: 'pending' as never, updatedAt: PAST });
+      const second = await insertMerchant(db, { status: 'pending' as never, emailVerifiedAt: PAST, updatedAt: PAST });
 
-    await migrate();
-    for (const id of [first, second]) {
-      const row = await clientOf(id);
-      expect(row.status, String(id)).toBe('suspended');
-      expect(row.suspendedAt, String(id)).not.toBeNull();
-      expect(row.suspendedAt!.getTime()).toBeGreaterThan(PAST.getTime());
-      expect(row.suspendedBy, String(id)).toBeNull();
-      // The console's dialog takes a reason of 3 to 140 characters: the stored one follows the same rule.
-      expect(row.suspendedReason!.length).toBeGreaterThanOrEqual(3);
-      expect(row.suspendedReason!.length).toBeLessThanOrEqual(140);
-      expect(row.updatedAt.getTime()).toBeGreaterThan(PAST.getTime());
-    }
-    expect((await clientOf(first)).suspendedReason).toBe((await clientOf(second)).suspendedReason);
-    expect((await clientOf(second)).emailVerifiedAt).toEqual(PAST);
-  });
+      await migrate();
+      for (const id of [first, second]) {
+        const row = await clientOf(id);
+        expect(row.status, String(id)).toBe('suspended');
+        expect(row.suspendedAt, String(id)).not.toBeNull();
+        expect(row.suspendedAt!.getTime()).toBeGreaterThan(PAST.getTime());
+        expect(row.suspendedBy, String(id)).toBeNull();
+        // The console's dialog takes a reason of 3 to 140 characters: the stored one follows the same rule.
+        expect(row.suspendedReason!.length).toBeGreaterThanOrEqual(3);
+        expect(row.suspendedReason!.length).toBeLessThanOrEqual(140);
+        expect(row.updatedAt.getTime()).toBeGreaterThan(PAST.getTime());
+      }
+      expect((await clientOf(first)).suspendedReason).toBe((await clientOf(second)).suspendedReason);
+      expect((await clientOf(second)).emailVerifiedAt).toEqual(PAST);
+    }));
 
   it('leaves an active merchant and a suspended merchant exactly as they are', async () => {
     const { db } = await testDb();
@@ -122,52 +149,54 @@ describe('the migration that retires merchant sign-up and approval', () => {
     expect([await clientOf(active), await clientOf(suspended)]).toEqual(before);
   });
 
-  it('ends the live sessions and cancels the open links of those merchants only', async () => {
-    const { db } = await testDb();
-    const pending = await insertMerchant(db, { status: 'pending' });
-    const active = await insertMerchant(db, { status: 'active' });
-    const ended = new Date('2026-03-01T00:00:00.000Z');
-    const live = await insertSession(pending, 'session-of-the-pending-merchant');
-    const already = await insertSession(pending, 'older-session-of-the-pending-merchant', ended);
-    const other = await insertSession(active, 'session-of-the-active-merchant');
-    const open = await insertLink(pending, 'open-link-of-the-pending-merchant');
-    const used = await insertLink(pending, 'used-link-of-the-pending-merchant', ended);
-    const otherLink = await insertLink(active, 'open-link-of-the-active-merchant');
+  it('ends the live sessions and cancels the open links of those merchants only', () =>
+    onLegacyShape(async () => {
+      const { db } = await testDb();
+      const pending = await insertMerchant(db, { status: 'pending' as never });
+      const active = await insertMerchant(db, { status: 'active' });
+      const ended = new Date('2026-03-01T00:00:00.000Z');
+      const live = await insertSession(pending, 'session-of-the-pending-merchant');
+      const already = await insertSession(pending, 'older-session-of-the-pending-merchant', ended);
+      const other = await insertSession(active, 'session-of-the-active-merchant');
+      const open = await insertLink(pending, 'open-link-of-the-pending-merchant');
+      const used = await insertLink(pending, 'used-link-of-the-pending-merchant', ended);
+      const otherLink = await insertLink(active, 'open-link-of-the-active-merchant');
 
-    await migrate();
-    const sessions = await db.select().from(s.sessions).orderBy(asc(s.sessions.id));
-    const sessionOf = (id: number) => sessions.find((row) => row.id === id)!;
-    expect(sessionOf(live).revokedAt).not.toBeNull();
-    expect(sessionOf(already).revokedAt).toEqual(ended);
-    expect(sessionOf(other).revokedAt).toBeNull();
-    const links = await db.select().from(s.authTokens).orderBy(asc(s.authTokens.id));
-    const linkOf = (id: number) => links.find((row) => row.id === id)!;
-    expect(linkOf(open).usedAt).not.toBeNull();
-    expect(linkOf(used).usedAt).toEqual(ended);
-    expect(linkOf(otherLink).usedAt).toBeNull();
-  });
+      await migrate();
+      const sessions = await db.select().from(s.sessions).orderBy(asc(s.sessions.id));
+      const sessionOf = (id: number) => sessions.find((row) => row.id === id)!;
+      expect(sessionOf(live).revokedAt).not.toBeNull();
+      expect(sessionOf(already).revokedAt).toEqual(ended);
+      expect(sessionOf(other).revokedAt).toBeNull();
+      const links = await db.select().from(s.authTokens).orderBy(asc(s.authTokens.id));
+      const linkOf = (id: number) => links.find((row) => row.id === id)!;
+      expect(linkOf(open).usedAt).not.toBeNull();
+      expect(linkOf(used).usedAt).toEqual(ended);
+      expect(linkOf(otherLink).usedAt).toBeNull();
+    }));
 
-  it('changes nothing when it runs again', async () => {
-    const { db } = await testDb();
-    const pending = await insertMerchant(db, { status: 'pending' });
-    await insertMerchant(db, { status: 'active' });
-    await insertSession(pending, 'session-of-the-pending-merchant');
-    await insertLink(pending, 'open-link-of-the-pending-merchant');
-    await insertTemplate('merchant.approved', 'email', 'merchant');
-    const everything = async () => ({
-      clients: await db.select().from(s.clients).orderBy(asc(s.clients.id)),
-      sessions: await db.select().from(s.sessions).orderBy(asc(s.sessions.id)),
-      links: await db.select().from(s.authTokens).orderBy(asc(s.authTokens.id)),
-      templates: await db.select().from(s.notificationTemplates).orderBy(asc(s.notificationTemplates.id)),
-    });
+  it('changes nothing when it runs again', () =>
+    onLegacyShape(async () => {
+      const { db } = await testDb();
+      const pending = await insertMerchant(db, { status: 'pending' as never });
+      await insertMerchant(db, { status: 'active' });
+      await insertSession(pending, 'session-of-the-pending-merchant');
+      await insertLink(pending, 'open-link-of-the-pending-merchant');
+      await insertTemplate('merchant.approved', 'email', 'merchant');
+      const everything = async () => ({
+        clients: await db.select().from(s.clients).orderBy(asc(s.clients.id)),
+        sessions: await db.select().from(s.sessions).orderBy(asc(s.sessions.id)),
+        links: await db.select().from(s.authTokens).orderBy(asc(s.authTokens.id)),
+        templates: await db.select().from(s.notificationTemplates).orderBy(asc(s.notificationTemplates.id)),
+      });
 
-    await migrate();
-    const once = await everything();
-    expect(once.clients.map((row) => row.status)).toEqual(['suspended', 'active']);
+      await migrate();
+      const once = await everything();
+      expect(once.clients.map((row) => row.status)).toEqual(['suspended', 'active']);
 
-    await migrate();
-    expect(await everything()).toEqual(once);
-  });
+      await migrate();
+      expect(await everything()).toEqual(once);
+    }));
 
   it('deletes the stored templates of the approval mail on every channel and keeps every other template', async () => {
     const { db } = await testDb();

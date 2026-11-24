@@ -1,23 +1,27 @@
-// Integration tests of the merchant portal's support routes (feature 28, slice B2, plan § 3.2 routes 8 to 14 and § 7): list, open, the
-// conversation, reply, read mark and the attachment download under /client/tickets. Every route's success and refusals, a foreign
-// ticket is 404, a merchant waiting for approval is allowed and a suspended one is refused, the list's filter, sort, range and total,
-// `hasUnread`, the ticket-open limit and an order of another buyer. Real Postgres and Redis, with a test clock.
+// Integration tests of the merchant portal's support routes (feature 28, slice B2, plan § 3.2 routes 8 to 14 and § 7; decision 064): list,
+// open, the conversation, reply, read mark and the attachment download under /client/tickets. Every route's success and refusals, a foreign
+// ticket is 404, a suspended account and a retail rank are refused, the list's filter, sort, range and total, `hasUnread`, the ticket-open
+// limit, an order of another buyer and a ticket of the public form whose address is not proven yet. Real Postgres and Redis, with a
+// test clock.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { TicketEvents } from '@src/modules/support/application/ticket-events';
 import { type AdminApi } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
+import { ensureRetailGroup, makeAccount } from '../../support/accounts';
 import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { insertCategory, insertService } from '../../support/catalog';
 import { MINUTE, TestClock } from '../../support/clock';
 import { insertCustomerOrder } from '../../support/customers';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { merchantSession } from '../../support/notifications';
-import { insertOrderRow } from '../../support/orders';
+import { insertMigratedOrderRow, insertOrderRow } from '../../support/orders';
+import { freshClientIp } from '../../support/pipeline-routes';
 import { insertCurrency } from '../../support/storefront';
 import {
   clearTicketChatLimits,
+  insertCustomer,
   insertSupportMessage,
   insertSupportTicket,
   seedSupportTemplates,
@@ -37,7 +41,10 @@ beforeAll(async () => {
 beforeEach(async () => {
   clock.set(NOW);
   await resetDb();
-  await seedSupportTemplates((await testDb()).db);
+  const { db } = await testDb();
+  // the reset removed the one retail rank that the migrations insert; a staff reply reads it
+  await ensureRetailGroup(db);
+  await seedSupportTemplates(db);
   await clearIdentityCaches(t);
   await clearTicketChatLimits(t);
   await clearTicketOpenLimits(t);
@@ -69,7 +76,7 @@ async function patchTicket(ticketId: number, values: Partial<typeof s.supportTic
 /** Writes a message into a ticket and moves the ticket's newest-message marks the way the use cases do. */
 async function say(
   ticketId: number,
-  author: { type: 'client' | 'customer' | 'staff' | 'system'; id: number | null },
+  author: { type: 'account' | 'staff' | 'system'; id: number | null },
   body: string,
   values: Partial<typeof s.ticketMessages.$inferInsert> = {},
 ) {
@@ -82,7 +89,7 @@ async function say(
     ...values,
   });
   const isPublicStaff = author.type === 'staff' && values.isInternal !== true;
-  const isRequester = author.type === 'client' || author.type === 'customer';
+  const isRequester = author.type === 'account';
   if (isRequester) await patchTicket(ticketId, { lastRequesterMessageId: message.id });
   if (isPublicStaff) await patchTicket(ticketId, { lastStaffMessageId: message.id });
   return message;
@@ -97,7 +104,7 @@ async function merchantTicket(
   const { db } = await testDb();
   const at = new Date(clock.nowMs() - minutes * MINUTE);
   const ticket = await insertSupportTicket(db, {
-    requesterType: 'client',
+    requesterType: 'account',
     requesterId: clientId,
     token: null,
     status: 'open',
@@ -105,7 +112,7 @@ async function merchantTicket(
     updatedAt: at,
     ...values,
   });
-  const first = await say(ticket.id, { type: 'client', id: clientId }, 'Hello, I have a question.', { createdAt: at });
+  const first = await say(ticket.id, { type: 'account', id: clientId }, 'Hello, I have a question.', { createdAt: at });
   return { ticket, first };
 }
 
@@ -124,8 +131,9 @@ describe('GET /client/tickets', () => {
     const older = await merchantTicket(clientId, { subject: 'Older one', category: 'billing' }, 120);
     const newer = await merchantTicket(clientId, { subject: 'Newer one' }, 10);
     await merchantTicket(rival.clientId, { subject: 'Not mine' });
-    // A customer ticket whose requester id equals the merchant's id is not the merchant's.
-    await insertSupportTicket(db, { requesterType: 'customer', requesterId: clientId, subject: 'A customer' });
+    // The ticket of a retail account is not the merchant's: the list is by the account, whatever the rank of the other.
+    const buyer = await insertCustomer(db);
+    await insertSupportTicket(db, { requesterId: buyer.id, subject: 'A shop buyer' });
     const reply = await replyAsStaff(older.ticket.id, 'Done, check your billing page.');
     // A note and a system message after the reply never count as the last message.
     await say(older.ticket.id, { type: 'staff', id: staff.staffId }, 'Internal: refund approved.', {
@@ -200,15 +208,50 @@ describe('GET /client/tickets', () => {
     expect((await portal.call('GET', '/client/tickets?_start=0&_end=50')).status).toBe(200);
   });
 
-  it('is open to a merchant waiting for approval, refused to a suspended one and to anyone without a merchant session', async () => {
-    const pending = await merchant({ status: 'pending' });
-    expect((await pending.portal.call('GET', '/client/tickets')).status).toBe(200);
+  it('is refused to a suspended account, to a retail rank and to anyone without a session', async () => {
+    const { db } = await testDb();
+    const buyer = await makeAccount({ db, rank: 'retail' });
+    const retail = await merchantSession(t, buyer.id);
+    const rankRefused = await retail.call('GET', '/client/tickets');
+    expect(rankRefused.status).toBe(403);
+    expect(rankRefused.body.code).toBe('RANK_NOT_ALLOWED');
     const suspended = await merchant({ status: 'suspended' });
     const refused = await suspended.portal.call('GET', '/client/tickets');
     expect(refused.status).toBe(403);
     expect(refused.body.code).toBe('ACCOUNT_SUSPENDED');
     expect((await t.app.inject({ method: 'GET', url: '/client/tickets' })).statusCode).toBe(401);
     expect((await staff.get('/client/tickets')).status).toBe(401);
+  });
+
+  it('leaves out a ticket of the public form whose address is not proven yet, in the list and by its id, until the mailed link is used (decision 053)', async () => {
+    const { db, clientId, portal } = await merchant();
+    const link = 'U7kq2Zp9Xw4Ld1Hn6Rb3Pp';
+    // Someone typed this merchant's address on the contact form: the ticket is the merchant's account's, but nobody proved the address.
+    const typed = await insertSupportTicket(db, {
+      requesterId: clientId,
+      subject: 'Typed on the form',
+      token: link,
+      requesterProvenAt: null,
+    });
+    await say(typed.id, { type: 'account', id: clientId }, 'Written by whoever typed the address.');
+    await merchantTicket(clientId, { subject: 'Mine' });
+
+    const before = await portal.call('GET', '/client/tickets');
+    expect(before.status).toBe(200);
+    expect(before.body.map((row: { subject: string }) => row.subject)).toEqual(['Mine']);
+    expect(before.res.headers['x-total-count']).toBe('1');
+    expect((await portal.call('GET', `/client/tickets/${typed.id}`)).status).toBe(404);
+
+    // The link in the receipt goes only to the address: using it proves the address, and the ticket is the merchant's from then on.
+    const opened = await t.app.inject({
+      method: 'GET',
+      url: `/store/v1/tickets/${link}`,
+      remoteAddress: freshClientIp(),
+    });
+    expect(opened.statusCode).toBe(200);
+    const after = await portal.call('GET', '/client/tickets');
+    expect(after.body.map((row: { subject: string }) => row.subject).sort()).toEqual(['Mine', 'Typed on the form']);
+    expect((await portal.call('GET', `/client/tickets/${typed.id}`)).status).toBe(200);
   });
 
   it('tells hasUnread from the merchant’s own mark: a support reply is unread until the merchant marks it', async () => {
@@ -253,7 +296,7 @@ describe('POST /client/tickets', () => {
     expect(row).toMatchObject({
       number: res.body.number,
       channel: 'web',
-      requesterType: 'client',
+      requesterType: 'account',
       requesterId: clientId,
       token: null,
       status: 'new',
@@ -262,7 +305,7 @@ describe('POST /client/tickets', () => {
       createdAt: new Date(NOW),
     });
     const [message] = await db.select().from(s.ticketMessages).where(eq(s.ticketMessages.ticketId, row!.id));
-    expect(message).toMatchObject({ authorType: 'client', authorId: clientId, isInternal: false, fileIds: [] });
+    expect(message).toMatchObject({ authorType: 'account', authorId: clientId, isInternal: false, fileIds: [] });
     expect(row!.lastRequesterMessageId).toBe(message!.id);
     // A merchant's ticket has no page to link: no receipt, and the console is told at once.
     expect(await ticketMailEvents(db)).toEqual([]);
@@ -279,15 +322,20 @@ describe('POST /client/tickets', () => {
     const serviceId = await insertService(db, await insertCategory(db));
     const mine = await insertOrderRow(db, { serviceId, clientId });
     const theirs = await insertOrderRow(db, { serviceId, clientId: rival.clientId });
-    const customer = (
-      await db.insert(s.customers).values({ email: 'shopper@example.com', name: 'Shopper' }).returning()
-    )[0]!;
+    const customer = await insertCustomer(db, { email: 'shopper@example.com', name: 'Shopper' });
     const storefront = await insertCustomerOrder(db, serviceId, customer.id, { currency: 'USD' });
+    // an order of another account whose old customer number is this merchant's id is not the merchant's either: the buyer is the
+    // account column, never the retired number.
+    const lookalike = await insertMigratedOrderRow(db, clientId, {
+      serviceId,
+      accountId: customer.id,
+      source: 'store',
+    });
 
     const ok = await portal.call('POST', '/client/tickets', { ...VALID, orderId: mine.id });
     expect(ok.status).toBe(201);
     expect(ok.body.orderId).toBe(mine.id);
-    for (const orderId of [theirs.id, storefront, 999_999]) {
+    for (const orderId of [theirs.id, storefront, lookalike.id, 999_999]) {
       const refused = await portal.call('POST', '/client/tickets', { ...VALID, orderId });
       expect(refused.status, String(orderId)).toBe(422);
       expect(errorOf(refused)).toMatchObject({ field: 'orderId', code: 'unknown_order' });
@@ -300,7 +348,7 @@ describe('POST /client/tickets', () => {
   it('takes the first message as files only, and refuses an empty one, a foreign file, a big portal upload and a wrong type', async () => {
     const { db, clientId, portal } = await merchant();
     const rival = await merchant({ name: 'Other Shop' });
-    const own = await insertFileRow(db, 'client', clientId, { filename: 'statement.pdf' });
+    const own = await insertFileRow(db, 'account', clientId, { filename: 'statement.pdf' });
     const filesOnly = await portal.call('POST', '/client/tickets', {
       subject: 'Statement',
       message: '',
@@ -327,9 +375,9 @@ describe('POST /client/tickets', () => {
     expect(errorOf(emptyWithEmptyList)).toMatchObject({ field: 'message', code: 'too_small' });
 
     const cases = [
-      [(await insertFileRow(db, 'client', rival.clientId)).id, 'not_yours'],
-      [(await insertFileRow(db, 'client', clientId, { size: 20 * 1024 * 1024 })).id, 'too_large'],
-      [(await insertFileRow(db, 'client', clientId, { mime: 'application/zip', filename: 'a.zip' })).id, 'type'],
+      [(await insertFileRow(db, 'account', rival.clientId)).id, 'not_yours'],
+      [(await insertFileRow(db, 'account', clientId, { size: 20 * 1024 * 1024 })).id, 'too_large'],
+      [(await insertFileRow(db, 'account', clientId, { mime: 'application/zip', filename: 'a.zip' })).id, 'type'],
       [999_999, 'unknown_file'],
     ] as const;
     for (const [fileId, code] of cases) {
@@ -361,9 +409,14 @@ describe('POST /client/tickets', () => {
     expect((await t.app.inject({ method: 'POST', url: '/client/tickets', payload: VALID })).statusCode).toBe(401);
   });
 
-  it('is allowed to a merchant waiting for approval and refused to a suspended one', async () => {
-    const pending = await merchant({ status: 'pending' });
-    expect((await pending.portal.call('POST', '/client/tickets', VALID)).status).toBe(201);
+  it('is refused to a retail rank (nothing is written) and to a suspended account', async () => {
+    const { db } = await testDb();
+    const buyer = await makeAccount({ db, rank: 'retail' });
+    const retail = await merchantSession(t, buyer.id);
+    const rankRefused = await retail.call('POST', '/client/tickets', VALID);
+    expect(rankRefused.status).toBe(403);
+    expect(rankRefused.body.code).toBe('RANK_NOT_ALLOWED');
+    expect(await db.select().from(s.supportTickets)).toHaveLength(0);
     const suspended = await merchant({ status: 'suspended' });
     const refused = await suspended.portal.call('POST', '/client/tickets', VALID);
     expect(refused.status).toBe(403);
@@ -389,12 +442,12 @@ describe('GET /client/tickets/:id', () => {
   it('shows the public conversation with its attachments and the seen marks, never a note or a system message', async () => {
     const { db, clientId, portal } = await merchant();
     const { ticket, first } = await merchantTicket(clientId, { subject: 'Invoice question', category: 'billing' });
-    const file = await insertFileRow(db, 'client', clientId, {
+    const file = await insertFileRow(db, 'account', clientId, {
       filename: 'screenshot.png',
       mime: 'image/png',
       size: 4096,
     });
-    const own = await say(ticket.id, { type: 'client', id: clientId }, 'Here is the screenshot.', {
+    const own = await say(ticket.id, { type: 'account', id: clientId }, 'Here is the screenshot.', {
       fileIds: [file.id],
     });
     const reply = await replyAsStaff(ticket.id, 'Got it, thank you.');
@@ -452,12 +505,12 @@ describe('GET /client/tickets/:id', () => {
     }
   });
 
-  it('answers 404 for another merchant’s ticket, a customer’s ticket with the same number as an id, and an unknown id', async () => {
-    const { clientId, portal } = await merchant();
+  it('answers 404 for another merchant’s ticket, a shop buyer’s ticket and an unknown id', async () => {
+    const { portal } = await merchant();
     const rival = await merchant({ name: 'Other Shop' });
     const theirs = await merchantTicket(rival.clientId);
     const { db } = await testDb();
-    const customerTicket = await insertSupportTicket(db, { requesterType: 'customer', requesterId: clientId });
+    const customerTicket = await insertSupportTicket(db, { requesterId: (await insertCustomer(db)).id });
     for (const id of [theirs.ticket.id, customerTicket.id, 999_999]) {
       const res = await portal.call('GET', `/client/tickets/${id}`);
       expect(res.status, String(id)).toBe(404);
@@ -471,7 +524,7 @@ describe('POST /client/tickets/:id/messages', () => {
   it('writes the merchant’s message, opens a ticket that waited on the merchant, rings the doorbell and keeps the files', async () => {
     const { db, clientId, portal } = await merchant();
     const { ticket } = await merchantTicket(clientId, { status: 'pending_customer' });
-    const file = await insertFileRow(db, 'client', clientId, { filename: 'proof.pdf' });
+    const file = await insertFileRow(db, 'account', clientId, { filename: 'proof.pdf' });
     const rung = spyOn(TicketEvents.prototype, 'message');
     const res = await portal.call('POST', `/client/tickets/${ticket.id}/messages`, {
       body: 'The problem is back.',
@@ -491,7 +544,7 @@ describe('POST /client/tickets/:id/messages', () => {
     expect(rung).toHaveBeenCalledWith(ticket.id, res.body.id);
     rung.mockRestore();
     const [stored] = await db.select().from(s.ticketMessages).where(eq(s.ticketMessages.id, res.body.id));
-    expect(stored).toMatchObject({ authorType: 'client', authorId: clientId, isInternal: false, fileIds: [file.id] });
+    expect(stored).toMatchObject({ authorType: 'account', authorId: clientId, isInternal: false, fileIds: [file.id] });
     // A files-only message.
     const filesOnly = await portal.call('POST', `/client/tickets/${ticket.id}/messages`, {
       body: '',
@@ -508,7 +561,7 @@ describe('POST /client/tickets/:id/messages', () => {
       resolvedAt: new Date(clock.nowMs() - MINUTE),
       slaDueAt: null,
     });
-    const file = await insertFileRow(db, 'client', clientId, { filename: 'proof.pdf' });
+    const file = await insertFileRow(db, 'account', clientId, { filename: 'proof.pdf' });
     const ticketOf = async () =>
       (await db.select().from(s.supportTickets).where(eq(s.supportTickets.id, ticket.id)))[0]!;
     const before = await ticketOf();
@@ -548,7 +601,7 @@ describe('POST /client/tickets/:id/messages', () => {
     const empty = await portal.call('POST', `/client/tickets/${ticket.id}/messages`, { body: '  ' });
     expect(empty.status).toBe(422);
     expect(errorOf(empty)).toMatchObject({ field: 'body', code: 'too_small' });
-    const foreign = await insertFileRow(db, 'client', rival.clientId);
+    const foreign = await insertFileRow(db, 'account', rival.clientId);
     const stolen = await portal.call('POST', `/client/tickets/${ticket.id}/messages`, {
       body: 'x',
       fileIds: [foreign.id],
@@ -653,8 +706,8 @@ describe('GET /client/tickets/:id/files/:fileId', () => {
   it('redirects to a 5-minute attachment link for the file of a public message of the merchant’s ticket', async () => {
     const { db, clientId, portal } = await merchant();
     const { ticket } = await merchantTicket(clientId);
-    const file = await insertFileRow(db, 'client', clientId, { filename: 'Rechnung Oktober.pdf' });
-    await say(ticket.id, { type: 'client', id: clientId }, 'The statement.', { fileIds: [file.id] });
+    const file = await insertFileRow(db, 'account', clientId, { filename: 'Rechnung Oktober.pdf' });
+    await say(ticket.id, { type: 'account', id: clientId }, 'The statement.', { fileIds: [file.id] });
     const staffFile = await insertFileRow(db, 'staff', staff.staffId, { filename: 'invoice.pdf' });
     await replyAsStaff(ticket.id, 'Here is the invoice.', undefined);
     await say(ticket.id, { type: 'staff', id: staff.staffId }, 'Reissued.', { fileIds: [staffFile.id] });
@@ -682,11 +735,11 @@ describe('GET /client/tickets/:id/files/:fileId', () => {
       isInternal: true,
       fileIds: [noteFile.id],
     });
-    const otherFile = await insertFileRow(db, 'client', clientId, { filename: 'other.pdf' });
-    await say(other.ticket.id, { type: 'client', id: clientId }, 'On the other ticket.', { fileIds: [otherFile.id] });
-    const loose = await insertFileRow(db, 'client', clientId, { filename: 'loose.pdf' });
-    const theirFile = await insertFileRow(db, 'client', rival.clientId, { filename: 'theirs.pdf' });
-    await say(theirs.ticket.id, { type: 'client', id: rival.clientId }, 'Theirs.', { fileIds: [theirFile.id] });
+    const otherFile = await insertFileRow(db, 'account', clientId, { filename: 'other.pdf' });
+    await say(other.ticket.id, { type: 'account', id: clientId }, 'On the other ticket.', { fileIds: [otherFile.id] });
+    const loose = await insertFileRow(db, 'account', clientId, { filename: 'loose.pdf' });
+    const theirFile = await insertFileRow(db, 'account', rival.clientId, { filename: 'theirs.pdf' });
+    await say(theirs.ticket.id, { type: 'account', id: rival.clientId }, 'Theirs.', { fileIds: [theirFile.id] });
 
     for (const fileId of [noteFile.id, otherFile.id, loose.id, 999_999]) {
       expect((await portal.call('GET', `/client/tickets/${ticket.id}/files/${fileId}`)).status, String(fileId)).toBe(

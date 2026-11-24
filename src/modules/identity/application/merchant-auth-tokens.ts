@@ -1,23 +1,18 @@
-// MerchantAuthTokens: issues the one-time links of merchants (email verification, password reset, invitation; decision 019,
-// resolution identity-platform-2). Feature 2a calls it for the invite link of POST /admin/clients.
+// MerchantAuthTokens: the old entry of the merchant links (email verification, password reset, invitation; decision 019, resolution
+// identity-platform-2), kept until the contract release (decision 064). A merchant is an account: the rules live in `issueAccountToken`.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { TokenService } from '../../../infra/crypto';
 import type { TransactionContext } from '../../../infra/db';
-import { MAX_LIVE_PUBLIC_LINKS } from '../domain/public-links';
-import { insertAuthToken, voidUnusedTokensBeyondNewest } from '../infra/auth-token.repository';
-import {
-  type ClientTokenPurpose,
-  PASSWORD_LINK_PURPOSES,
-  voidOpenClientTokens,
-} from '../infra/merchant-token.repository';
+import type { ClientTokenPurpose } from '../infra/merchant-token.repository';
+import { ACCOUNT_TOKEN_TTL_MS, issueAccountToken } from './account-auth-tokens';
 
-/** A merchant link is valid for one hour (decision 019, the map's "valid for one hour and one use"). */
-export const MERCHANT_TOKEN_TTL_MS = 60 * 60 * 1000;
+/** A merchant link is valid for one hour (decision 019, the map's "valid for one hour and one use"): the account link's lifetime. */
+export const MERCHANT_TOKEN_TTL_MS = ACCOUNT_TOKEN_TTL_MS;
 
 /** What `issue` takes. */
 export interface IssueMerchantTokenInput {
-  /** The merchant the link is for. */
+  /** The merchant the link is for (an account id). */
   readonly clientId: number;
   /** `verify_email` when the merchant asks for a new link or staff change its address, `reset` for a forgotten password, `invite` when staff created the merchant. */
   readonly purpose: ClientTokenPurpose;
@@ -27,8 +22,7 @@ export interface IssueMerchantTokenInput {
   readonly ip?: string | null;
   /**
    * Keep the two newest unused links of the family instead of voiding every older one, so at most three work at once and the oldest
-   * goes first (decision 052). Only for a link the visitor asked for (forgot password): a stranger who asks again must not void the
-   * link the owner was sent. Every other issue keeps "newest wins".
+   * goes first (decision 052). Only for a link the visitor asked for (forgot password). Every other issue keeps "newest wins".
    */
   readonly keepEarlier?: boolean;
 }
@@ -43,13 +37,14 @@ export interface IssuedMerchantToken {
 }
 
 /**
- * Creates verification, reset and invite tokens for merchants.
+ * Creates verification, reset and invite tokens for merchants, for the callers that have not moved to `AccountAuthTokens` yet.
  *
- * Why: one place owns the token rules for the merchant portal: 256 random bits, only the keyed hash stored, one hour, one use,
- * and only the newest link of a kind works (a reset or invite replaces an older reset or invite; a verification replaces an
- * older verification), except links a visitor asked for: up to three of those work at once (decision 052).
+ * Why: the same rules and the same rows as the seam (`issueAccountToken`), under the old input and answer shapes, so the admin-area
+ * files that call it compile unchanged until the contract release.
  *
- * Side effects: inserts an `auth_tokens` row and marks the merchant's older unused tokens of the same family used.
+ * Side effects: inserts an `auth_tokens` row and marks the account's older unused links of the same family used.
+ *
+ * Kept until the contract release; new code uses `AccountAuthTokens`.
  *
  * @see docs/decisions/019-encryption-and-token-hashing.md
  */
@@ -61,41 +56,20 @@ export class MerchantAuthTokens {
   ) {}
 
   /**
-   * Issues a token and voids the merchant's older unused ones of the same family (all of them, or all but the newest two with `keepEarlier`).
+   * Issues a token and voids the merchant's older unused ones of the same family.
    *
    * @param work the caller's transaction (`runInTransaction`), so the token and the change that needs it commit together
    * @param input the merchant, the purpose and who sent it
    * @returns the token for the link, its row id and its expiry
    */
   async issue(work: Pick<TransactionContext, 'tx'>, input: IssueMerchantTokenInput): Promise<IssuedMerchantToken> {
-    const now = this.clock.now();
-    const token = this.tokens.random(32);
-    // Void first: the unique hash index cannot clash, and "newest wins" holds even if two links are issued at once.
-    const family: readonly ClientTokenPurpose[] =
-      input.purpose === 'verify_email' ? ['verify_email'] : PASSWORD_LINK_PURPOSES;
-    if (input.keepEarlier) {
-      await voidUnusedTokensBeyondNewest(work.tx, {
-        subjectType: 'client',
-        subjectId: input.clientId,
-        purposes: family,
-        now,
-        keep: MAX_LIVE_PUBLIC_LINKS - 1,
-      });
-    } else {
-      await voidOpenClientTokens(work.tx, input.clientId, family, now);
-    }
-    const row = await insertAuthToken(work.tx, {
+    const issued = await issueAccountToken(this.tokens, this.clock.now(), work, {
+      accountId: input.clientId,
       purpose: input.purpose,
-      subjectType: 'client',
-      subjectId: input.clientId,
-      tokenHash: this.tokens.hash(token),
-      expiresAt: new Date(now.getTime() + MERCHANT_TOKEN_TTL_MS),
-      // Written from the clock, not the column default: the console shows it as "link sent at" (security.linkSentAt) and the
-      // expiry above is measured from it (decision 031, feature 20).
-      createdAt: now,
-      ip: input.ip ?? null,
-      createdBy: input.createdBy ?? null,
+      ...(input.createdBy === undefined ? {} : { createdBy: input.createdBy }),
+      ...(input.ip === undefined ? {} : { ip: input.ip }),
+      ...(input.keepEarlier ? { keepEarlier: true } : {}),
     });
-    return { token, id: row.id, expiresAt: row.expiresAt };
+    return { token: issued.token, id: issued.tokenId, expiresAt: issued.expiresAt };
   }
 }

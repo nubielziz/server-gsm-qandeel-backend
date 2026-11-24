@@ -26,7 +26,7 @@ export interface IntegrityReportView {
  *
  * Why: scenario system-integrity steps 3 and 7: a staff member opens the details (the account, the difference, the last entry, the time of the last
  * successful check) and reruns the check now as a background job. The report is built from `job_runs` of the job `ledger_integrity` (B99: the
- * counters are top-level in the run's `result`, the four checks nested under `checks`). The check only reads the ledger and never corrects anything.
+ * counters are top-level in the run's `result`, the five checks nested under `checks`). The check only reads the ledger and never corrects anything.
  *
  * Side effects: `run` inserts a `job_runs` row, adds a BullMQ job on the `maintenance` queue (id `manual-<run id>`) and writes one audit row.
  */
@@ -42,7 +42,7 @@ export class IntegrityService {
   /**
    * The integrity report.
    *
-   * @returns whether a run is going, the last finished run, the time of the last clean one and the four checks of the last finished run
+   * @returns whether a run is going, the last finished run, the time of the last clean one and the five checks of the last finished run
    *   (all `unknown` before the first run, or when the last run failed)
    * @throws {AppError} `DATABASE_UNAVAILABLE` when Postgres cannot be reached
    */

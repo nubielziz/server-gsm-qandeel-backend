@@ -1,6 +1,6 @@
 // Integration test of the data migration that retires the dead data of the accounts clean-up (the notification event deposit.approved): the SQL
 // is run on rows written before it and run again, as a database that already has it would, and on an empty table. The migration file is found by
-// the end of its name, so the test follows the file when the lead renumbers it.
+// the end of its name, so the test follows the file when it is renumbered.
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';

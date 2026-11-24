@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
+import { makeAccount } from '../../support/accounts';
 import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { TestClock } from '../../support/clock';
 import { createDraft } from '../../support/campaigns';
@@ -32,24 +33,27 @@ beforeEach(async () => {
 
 const ids = (body: Array<{ id: number }>) => body.map((row) => row.id);
 
-/** A small log: a merchant's mail and an older Telegram message (its chat in the payload), a customer's mail and a staff member's mail, in every status, over four hours. */
+/** A small log: a merchant account's mail and an older Telegram message (its chat in the payload), a retail account's mail and a staff member's mail, in every status, over four hours. */
 async function history() {
   const { db } = await testDb();
   const merchant = await insertMerchant(db, {
     name: 'Zain Mobile Hub',
     email: 'ops@zainmobilehub.example',
   });
-  const [customer] = await db
-    .insert(s.customers)
-    .values({ email: 'daniel.whitmore@example.com', name: 'Daniel' })
-    .returning({ id: s.customers.id });
+  const customer = await makeAccount({
+    db,
+    rank: 'retail',
+    password: null,
+    email: 'daniel.whitmore@example.com',
+    name: 'Daniel',
+  });
   const staffId = owner.staffId;
   const at = (hours: number) => new Date(clock.nowMs() - hours * 3_600_000);
   const rows = await db
     .insert(s.notifications)
     .values([
       {
-        recipientType: 'client',
+        recipientType: 'account',
         recipientId: merchant,
         channel: 'email',
         event: 'wallet.low_balance',
@@ -60,7 +64,7 @@ async function history() {
         createdAt: at(4),
       },
       {
-        recipientType: 'client',
+        recipientType: 'account',
         recipientId: merchant,
         channel: 'telegram',
         event: 'wallet.low_balance',
@@ -71,8 +75,8 @@ async function history() {
         createdAt: at(3),
       },
       {
-        recipientType: 'customer',
-        recipientId: customer!.id,
+        recipientType: 'account',
+        recipientId: customer.id,
         channel: 'email',
         event: 'order.completed',
         status: 'failed',
@@ -103,7 +107,7 @@ describe('GET /admin/notifications', () => {
     expect(ids(res.body)).toEqual([queued, failed, lowTelegram, lowEmail]);
     expect(res.body[3]).toEqual({
       id: lowEmail,
-      recipientType: 'client',
+      recipientType: 'account',
       recipientId: expect.any(Number),
       channel: 'email',
       event: 'wallet.low_balance',
@@ -161,7 +165,10 @@ describe('GET /admin/notifications', () => {
     expect(await list('status_ne=sent')).toEqual([queued, failed]);
     expect(await list('channel=telegram')).toEqual([lowTelegram]);
     expect(await list('event=wallet.low_balance')).toEqual([lowTelegram, lowEmail]);
-    expect(await list('recipientType=customer')).toEqual([failed]);
+    // Both ranks are one recipient type (decision 064); the old words are refused.
+    expect(await list('recipientType=account')).toEqual([failed, lowTelegram, lowEmail]);
+    expect((await owner.get('/admin/notifications?recipientType=customer')).status).toBe(422);
+    expect((await owner.get('/admin/notifications?recipientType=client')).status).toBe(422);
     expect(await list('recipientType=staff&status=queued')).toEqual([queued]);
     expect((await owner.get('/admin/notifications?status=nope')).status).toBe(422);
   });
@@ -192,19 +199,21 @@ describe('GET /admin/notifications', () => {
     expect(ids((await list('q=low_bal')).body)).toEqual([lowTelegram, lowEmail]);
   });
 
-  it("matches a customer's whole address only for callers with customers:read (decision 047)", async () => {
+  it("matches an account's whole address only for callers with clients:read, whatever its rank (decision 047, 064)", async () => {
     const { lowEmail, lowTelegram, failed } = await history();
-    const noCustomers = await adminWith(t, ['notifications:read']);
-    const withCustomers = await adminWith(t, ['notifications:read', 'customers:read']);
+    const noAccounts = await adminWith(t, ['notifications:read']);
+    const withAccounts = await adminWith(t, ['notifications:read', 'clients:read']);
     const idsFor = async (api: AdminApi, text: string) =>
       ids((await api.get(`/admin/notifications?q=${encodeURIComponent(text)}`)).body);
-    // The customer's whole address finds nothing for a caller who may not read customers, and finds the row with customers:read.
-    expect(await idsFor(noCustomers, 'daniel.whitmore@example.com')).toEqual([]);
-    expect(await idsFor(withCustomers, 'Daniel.Whitmore@Example.com')).toEqual([failed]);
-    // A merchant's address (and the event) is searched for both.
-    expect(await idsFor(noCustomers, 'ops@zainmobilehub.example')).toEqual([lowTelegram, lowEmail]);
-    expect(await idsFor(noCustomers, 'order.completed')).toEqual([failed]);
-    expect((await noCustomers.get('/admin/notifications?q=daniel.whitmore%40example.com')).total).toBe(0);
+    // The whole address of a retail account finds nothing for a caller who may not read accounts, and finds the row with clients:read.
+    expect(await idsFor(noAccounts, 'daniel.whitmore@example.com')).toEqual([]);
+    expect(await idsFor(withAccounts, 'Daniel.Whitmore@Example.com')).toEqual([failed]);
+    // The address of an account of a merchant rank is the same personal data: found only with clients:read (it used to be open to both).
+    expect(await idsFor(noAccounts, 'ops@zainmobilehub.example')).toEqual([]);
+    expect(await idsFor(withAccounts, 'ops@zainmobilehub.example')).toEqual([lowTelegram, lowEmail]);
+    // The event is searched for both.
+    expect(await idsFor(noAccounts, 'order.completed')).toEqual([failed]);
+    expect((await noAccounts.get('/admin/notifications?q=daniel.whitmore%40example.com')).total).toBe(0);
   });
 
   it('shows the address a security notice went to, masked, not the current address of the account (decision 047)', async () => {
@@ -213,7 +222,7 @@ describe('GET /admin/notifications', () => {
     const [row] = await db
       .insert(s.notifications)
       .values({
-        recipientType: 'client',
+        recipientType: 'account',
         recipientId: merchant,
         channel: 'email',
         event: 'merchant.security_notice',
@@ -261,7 +270,7 @@ describe('GET /admin/notifications', () => {
     // A pile of one campaign's messages to people that do not exist (the joins find nothing): the count is still the row count.
     await db.insert(s.notifications).values(
       Array.from({ length: 30 }, (_, n) => ({
-        recipientType: 'customer' as const,
+        recipientType: 'account' as const,
         recipientId: 900_000 + n,
         channel: 'email' as const,
         event: 'broadcast.announcement',
@@ -306,7 +315,7 @@ describe('GET /admin/notifications/:id', () => {
     const [answer] = await db
       .insert(s.notifications)
       .values({
-        recipientType: 'client',
+        recipientType: 'account',
         recipientId: merchant,
         channel: 'telegram',
         event: 'telegram.unlinked',
@@ -331,7 +340,7 @@ describe('GET /admin/notifications/:id', () => {
     const [row] = await db
       .insert(s.notifications)
       .values({
-        recipientType: 'client',
+        recipientType: 'account',
         recipientId: merchant,
         channel: 'telegram',
         event: 'telegram.unlinked',
@@ -361,7 +370,7 @@ describe('GET /admin/notifications/:id', () => {
     const [row] = await db
       .insert(s.notifications)
       .values({
-        recipientType: 'client',
+        recipientType: 'account',
         recipientId: merchant,
         channel: 'telegram',
         event: 'support.reply',

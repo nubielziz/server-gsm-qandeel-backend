@@ -81,10 +81,10 @@ describe('the money events of the map', () => {
     });
   }
 
-  it('puts each line on the right owner: merchant accounts by client, supplier prepaid by supplier, the rest system', () => {
+  it('puts each line on the right owner: wallets and holds by account, supplier prepaid by supplier, the rest system', () => {
     const accounts = (id: MoneyEventId) => BUILT[id].lines.map((line) => line.account);
-    expect(accounts('deposit')).toContainEqual({ kind: 'client_wallet', ownerType: 'client', ownerId: 7 });
-    expect(accounts('order')).toContainEqual({ kind: 'client_hold', ownerType: 'client', ownerId: 7 });
+    expect(accounts('deposit')).toContainEqual({ kind: 'client_wallet', ownerType: 'account', ownerId: 7 });
+    expect(accounts('order')).toContainEqual({ kind: 'client_hold', ownerType: 'account', ownerId: 7 });
     expect(accounts('complete')).toContainEqual({ kind: 'supplier_prepaid', ownerType: 'supplier', ownerId: 2 });
     expect(accounts('topup')).toContainEqual({ kind: 'supplier_prepaid', ownerType: 'supplier', ownerId: 2 });
     expect(accounts('payout')).toEqual([{ kind: 'bank' }, { kind: 'gateway_clearing' }]);
@@ -98,7 +98,7 @@ describe('the money events of the map', () => {
       complete: 'order',
       reject: 'order',
       topup: 'supplier',
-      adjust: 'client',
+      adjust: 'account',
       b2c_pay: 'order',
       b2c_fee: 'order',
       b2c_deliver: 'order',

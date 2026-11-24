@@ -82,9 +82,12 @@ export function gatewayToWire(
 /**
  * Builds an invoice for staff.
  *
+ * Why: an invoice has one owner, its account (decision 064); the console still names it as the `client` (a merchant wallet's invoice) or
+ * the `customer` (any other), and both carry the account id. The caller chooses the side with `invoiceWireSide`.
+ *
  * @param row the invoice row
- * @param client the merchant `{id, name}`, or `undefined`
- * @param customer the storefront customer, or `undefined`
+ * @param client the account of a merchant-wallet invoice `{id, name}`, or `undefined`
+ * @param customer the account of any other invoice (a store top-up, a storefront receipt), or `undefined`
  * @returns the console's invoice (a `''` description is sent as null)
  */
 export function invoiceToWire(
@@ -125,7 +128,7 @@ export interface PaymentContext {
   readonly walletBalance: string | null;
   readonly gateway: { id: number; name: string } | undefined;
   readonly reviewerName: string | undefined;
-  /** True when the merchant (or the customer) has no approved top-up yet (a hint for the reviewer). */
+  /** True when the account has no approved top-up yet (a hint for the reviewer). */
   readonly firstDeposit: boolean;
   /** The storefront customer of a store balance top-up, with the balance now (feature 21); `undefined` for a merchant deposit. */
   readonly customer?: { id: number; name: string; email: string; walletBalance: string | null } | undefined;

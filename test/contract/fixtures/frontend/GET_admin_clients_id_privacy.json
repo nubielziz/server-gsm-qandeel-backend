@@ -1,0 +1,42 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "marketingOptIn": false,
+    "latestConsents": {
+      "orderId": 48850,
+      "records": [
+        {
+          "purpose": "terms",
+          "document": "Terms of service v3.2",
+          "at": "2026-10-31T11:53:34.000Z",
+          "ip": "203.0.113.55"
+        },
+        {
+          "purpose": "privacy",
+          "document": "Privacy policy v2.1",
+          "at": "2026-10-31T11:53:34.000Z",
+          "ip": "203.0.113.55"
+        },
+        {
+          "purpose": "refund_policy",
+          "document": "Refund policy v1.4",
+          "at": "2026-10-31T11:53:34.000Z",
+          "ip": "203.0.113.55"
+        },
+        {
+          "purpose": "withdrawal_waiver",
+          "document": null,
+          "at": "2026-10-31T11:53:37.000Z",
+          "ip": "203.0.113.55"
+        }
+      ]
+    },
+    "risk": {
+      "highestScore": null,
+      "signals": []
+    }
+  }
+}

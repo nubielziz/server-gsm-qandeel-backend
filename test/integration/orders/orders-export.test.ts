@@ -9,6 +9,7 @@ import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { IMEIS, insertOrderRow, type OrdersWorld, ordersWorld } from '../../support/orders';
+import { makeCustomer } from '../../support/store';
 
 let t: TestApp;
 let world: OrdersWorld;
@@ -44,15 +45,23 @@ async function csv(url: string) {
   return { status: res.statusCode, res, body: res.body, json: () => res.json() };
 }
 
+/** The name of the rank an account holds now (the last column of the export). */
+async function rankNameOf(accountId: number): Promise<string> {
+  const { db } = await testDb();
+  const [row] = await db
+    .select({ name: s.clientGroups.name })
+    .from(s.clients)
+    .innerJoin(s.clientGroups, eq(s.clientGroups.id, s.clients.groupId))
+    .where(eq(s.clients.id, accountId));
+  return row!.name;
+}
+
 describe('GET /admin/orders/export', () => {
-  it('answers a CSV attachment with the console columns, one line per matching order', async () => {
+  it('answers a CSV attachment with the console columns and the rank last, one line per matching order', async () => {
     const { db, merchant, other, auto } = world;
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: 'a@example.com', name: 'Jack Turner' })
-      .returning({ id: s.customers.id });
+    const customer = await makeCustomer(t, { guest: true, email: 'a@example.com', name: 'Jack Turner' });
     const a = await insertOrderRow(db, {
-      clientId: merchant.id,
+      accountId: merchant.id,
       serviceId: auto.serviceId,
       imei: IMEIS[0],
       status: 'completed',
@@ -64,13 +73,13 @@ describe('GET /admin/orders/export', () => {
       totalCost: '13.5000',
     });
     const b = await insertOrderRow(db, {
-      customerId: customer!.id,
+      accountId: customer.id,
       serviceId: auto.serviceId,
       imei: IMEIS[1],
       source: 'store',
     });
     await insertOrderRow(db, {
-      clientId: other.id,
+      accountId: other.id,
       serviceId: auto.serviceId,
       imei: IMEIS[2],
       status: 'rejected',
@@ -82,10 +91,10 @@ describe('GET /admin/orders/export', () => {
     expect(res.res.headers['content-disposition']).toBe('attachment; filename="orders-export.csv"');
     expect(res.res.headers['cache-control']).toBe('no-store');
     const lines = res.body.split('\r\n');
-    expect(lines[0]).toBe('id,created,channel,buyer,service,input,status,supplier,price,cost');
+    expect(lines[0]).toBe('id,created,channel,buyer,service,input,status,supplier,price,cost,rank');
     expect(rowsOf(res.body)).toEqual([
-      `${a.id},${a.createdAt.toISOString()},b2b,Cairo GSM Lab,AT&T USA Premier Unlock,${IMEIS[0]},completed,${(await db.select({ name: s.suppliers.name }).from(s.suppliers).where(eq(s.suppliers.id, auto.supplierId)))[0]!.name},16.2600,13.5000`,
-      `${b.id},${b.createdAt.toISOString()},b2c,Jack Turner,AT&T USA Premier Unlock,${IMEIS[1]},pending,,10.0000,0.0000`,
+      `${a.id},${a.createdAt.toISOString()},b2b,Cairo GSM Lab,AT&T USA Premier Unlock,${IMEIS[0]},completed,${(await db.select({ name: s.suppliers.name }).from(s.suppliers).where(eq(s.suppliers.id, auto.supplierId)))[0]!.name},16.2600,13.5000,${await rankNameOf(merchant.id)}`,
+      `${b.id},${b.createdAt.toISOString()},b2c,Jack Turner,AT&T USA Premier Unlock,${IMEIS[1]},pending,,10.0000,0.0000,Storefront retail`,
     ]);
     expect(lines.at(-1)).toBe('');
   });
@@ -94,7 +103,7 @@ describe('GET /admin/orders/export', () => {
     const { db, merchant, auto } = world;
     for (const [index, price] of ['30.0000', '10.0000', '20.0000'].entries()) {
       await insertOrderRow(db, {
-        clientId: merchant.id,
+        accountId: merchant.id,
         serviceId: auto.serviceId,
         imei: IMEIS[index],
         totalPrice: price,
@@ -102,17 +111,35 @@ describe('GET /admin/orders/export', () => {
       });
     }
     const sorted = await csv('/admin/orders/export?_sort=totalPrice&_order=asc&_start=0&_end=1');
-    expect(rowsOf(sorted.body).map((line) => line.split(',').at(-2))).toEqual(['10.0000', '20.0000', '30.0000']);
+    // The price is the third cell from the end now that the rank closes the line.
+    expect(rowsOf(sorted.body).map((line) => line.split(',').at(-3))).toEqual(['10.0000', '20.0000', '30.0000']);
     const searched = await csv(`/admin/orders/export?q=${IMEIS[1]}`);
     expect(rowsOf(searched.body)).toHaveLength(1);
     const none = await csv('/admin/orders/export?status=rejected');
-    expect(none.body).toBe('id,created,channel,buyer,service,input,status,supplier,price,cost\r\n');
+    expect(none.body).toBe('id,created,channel,buyer,service,input,status,supplier,price,cost,rank\r\n');
+  });
+
+  it("exports the orders of one buyer's rank and of one account, and refuses the old customer filter", async () => {
+    const { db, merchant, other, auto } = world;
+    const customer = await makeCustomer(t, { guest: true, name: 'Jack Turner' });
+    await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId, imei: IMEIS[0] });
+    await insertOrderRow(db, { accountId: other.id, serviceId: auto.serviceId, imei: IMEIS[1] });
+    await insertOrderRow(db, { accountId: customer.id, serviceId: auto.serviceId, imei: IMEIS[2], source: 'store' });
+    const retailRank = customer.row.groupId;
+    const ofRank = await csv(`/admin/orders/export?rankId=${retailRank}`);
+    expect(rowsOf(ofRank.body)).toHaveLength(1);
+    expect(rowsOf(ofRank.body)[0]).toContain(',b2c,');
+    const ofAccount = await csv(`/admin/orders/export?accountId=${merchant.id}`);
+    expect(rowsOf(ofAccount.body)).toHaveLength(1);
+    // `clientId` is the same filter under the merchant's old name (a merchant's number is its account number).
+    expect(rowsOf((await csv(`/admin/orders/export?clientId=${merchant.id}`)).body)).toEqual(rowsOf(ofAccount.body));
+    expect((await csv(`/admin/orders/export?customerId=${customer.id}`)).status).toBe(422);
   });
 
   it('writes the cells that start like a formula as text, and quotes commas and quotes', async () => {
     const { db, merchant, auto } = world;
-    await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId, imei: '=SUM(A1:A9)' });
-    await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId, imei: 'say "hi", please' });
+    await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId, imei: '=SUM(A1:A9)' });
+    await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId, imei: 'say "hi", please' });
     const body = (await csv('/admin/orders/export?_sort=id&_order=asc')).body;
     expect(body).toContain(",'=SUM(A1:A9),");
     expect(body).toContain(',"say ""hi"", please",');
@@ -120,7 +147,7 @@ describe('GET /admin/orders/export', () => {
 
   it('answers only a request started by the console itself (decision 045)', async () => {
     const { db, merchant, auto } = world;
-    await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId });
+    await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId });
     const url = '/admin/orders/export?status=pending';
     const bare = await t.app.inject({ method: 'GET', url, headers: staff.session.headers });
     expect(bare.statusCode).toBe(403);
@@ -139,8 +166,8 @@ describe('GET /admin/orders/export', () => {
 
   it('writes one audit row per export with the number of rows', async () => {
     const { db, merchant, auto } = world;
-    await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId });
-    await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId, imei: IMEIS[1] });
+    await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId });
+    await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId, imei: IMEIS[1] });
     await csv('/admin/orders/export?status=pending');
     const rows = await db.select().from(s.auditLogs);
     expect(rows).toHaveLength(1);
@@ -158,8 +185,8 @@ describe('GET /admin/orders/export', () => {
     const total = EXPORT_BATCH_SIZE * 2 + 345;
     // Many orders share the same creation time, so the id has to break the ties between batches.
     await db.execute(sql`
-      insert into orders (client_id, service_id, type, source, imei, unit_price, total_price, currency, created_at, placed_at)
-      select ${merchant.id}, ${auto.serviceId}, 'imei', 'portal', 'bulk-' || n, 1, 1, 'USD',
+      insert into orders (account_id, client_id, service_id, type, source, imei, unit_price, total_price, currency, created_at, placed_at)
+      select ${merchant.id}, ${merchant.id}, ${auto.serviceId}, 'imei', 'portal', 'bulk-' || n, 1, 1, 'USD',
              timestamptz '2026-01-01 00:00:00+00' + ((n / 100) * interval '1 second'),
              timestamptz '2026-01-01 00:00:00+00' + ((n / 100) * interval '1 second')
       from generate_series(1, ${total}) as n`);
@@ -177,8 +204,8 @@ describe('GET /admin/orders/export', () => {
     const { db, merchant, auto } = world;
     const total = MAX_EXPORT_ROWS + 1;
     await db.execute(sql`
-      insert into orders (client_id, service_id, type, source, imei, unit_price, total_price, currency)
-      select ${merchant.id}, ${auto.serviceId}, 'imei', 'portal', 'n' || n, 1, 1, 'USD' from generate_series(1, ${total}) as n`);
+      insert into orders (account_id, client_id, service_id, type, source, imei, unit_price, total_price, currency)
+      select ${merchant.id}, ${merchant.id}, ${auto.serviceId}, 'imei', 'portal', 'n' || n, 1, 1, 'USD' from generate_series(1, ${total}) as n`);
     const res = await csv('/admin/orders/export');
     expect(res.status).toBe(422);
     expect(res.json()).toMatchObject({
@@ -193,7 +220,7 @@ describe('GET /admin/orders/export', () => {
 
   it('needs reports:read as well, and a refused export writes no audit row (decision 047)', async () => {
     const { db, merchant, auto } = world;
-    await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId });
+    await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId });
     const readerOnly = await adminWith(t, ['orders:read']);
     const refused = await t.app.inject({
       method: 'GET',

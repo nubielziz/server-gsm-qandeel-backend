@@ -4,18 +4,18 @@
   "domain": "E",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 59,
-    "endpoints": 75,
+    "rows": 62,
+    "endpoints": 78,
     "bySurface": {
       "dhru": 1,
       "v1": 2,
       "client": 7,
-      "admin": 53,
+      "admin": 56,
       "hooks": 2,
       "events": 2,
       "store": 8
     },
-    "frontendCalled": 52
+    "frontendCalled": 50
   },
   "stages": [
     3,
@@ -26,7 +26,8 @@
     16,
     21,
     32,
-    38
+    38,
+    48
   ],
   "ownedTables": [
     {
@@ -469,8 +470,16 @@
   ],
   "foreignTables": [
     {
+      "table": "api_keys",
+      "owner": "identity"
+    },
+    {
       "table": "audit_logs",
       "owner": "platform"
+    },
+    {
+      "table": "auth_tokens",
+      "owner": "identity"
     },
     {
       "table": "checkout_sessions",
@@ -489,10 +498,6 @@
       "owner": "customers"
     },
     {
-      "table": "customers",
-      "owner": "customers"
-    },
-    {
       "table": "files",
       "owner": "platform"
     },
@@ -507,6 +512,10 @@
     {
       "table": "orders",
       "owner": "orders"
+    },
+    {
+      "table": "sessions",
+      "owner": "identity"
     },
     {
       "table": "webhook_deliveries",
@@ -841,9 +850,9 @@
       "module": "money",
       "description": "Merchant wallet: available balance, reserved balance and limit.",
       "frontend": {
-        "file": "src/features/merchants/api/wallet.ts",
-        "line": 28,
-        "fn": "getClientWallet"
+        "file": "src/features/accounts/api/wallet.ts",
+        "line": 30,
+        "fn": "getAccountWallet"
       }
     },
     {
@@ -875,9 +884,9 @@
       "module": "money",
       "description": "Merchant account statement.",
       "frontend": {
-        "file": "src/features/merchants/api/wallet.ts",
-        "line": 38,
-        "fn": "listClientStatement"
+        "file": "src/features/accounts/api/wallet.ts",
+        "line": 40,
+        "fn": "listAccountStatement"
       }
     },
     {
@@ -910,9 +919,9 @@
       "module": "money",
       "description": "Manually add to or deduct from the wallet, with a reason.",
       "frontend": {
-        "file": "src/features/merchants/api/wallet.ts",
+        "file": "src/features/accounts/api/wallet.ts",
         "line": 56,
-        "fn": "adjustClientWallet"
+        "fn": "adjustAccountWallet"
       }
     },
     {
@@ -943,9 +952,9 @@
       "module": "money",
       "description": "Credit limit (overdraft).",
       "frontend": {
-        "file": "src/features/merchants/api/wallet.ts",
-        "line": 73,
-        "fn": "setClientCreditLimit"
+        "file": "src/features/accounts/api/wallet.ts",
+        "line": 77,
+        "fn": "setAccountCreditLimit"
       }
     },
     {
@@ -1409,7 +1418,7 @@
       "description": "Invoices; creating one issues a manual invoice for a merchant.",
       "frontend": {
         "file": "src/features/finance/api/invoices.ts",
-        "line": 19,
+        "line": 20,
         "fn": "listInvoices"
       }
     },
@@ -1442,7 +1451,7 @@
       "description": "Invoices; creating one issues a manual invoice for a merchant.",
       "frontend": {
         "file": "src/features/finance/api/invoices.ts",
-        "line": 28,
+        "line": 29,
         "fn": "getInvoice"
       }
     },
@@ -1475,7 +1484,7 @@
       "description": "Invoices; creating one issues a manual invoice for a merchant.",
       "frontend": {
         "file": "src/features/finance/api/invoices.ts",
-        "line": 38,
+        "line": 40,
         "fn": "createInvoice"
       }
     },
@@ -1508,7 +1517,7 @@
       "description": "Payments and the manual review queue.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 22,
+        "line": 24,
         "fn": "listPayments"
       }
     },
@@ -1541,7 +1550,7 @@
       "description": "Payments and the manual review queue.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 32,
+        "line": 34,
         "fn": "getPayment"
       }
     },
@@ -1576,7 +1585,7 @@
       "description": "Approve a manual payment and top up the wallet.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 42,
+        "line": 44,
         "fn": "approvePayment"
       }
     },
@@ -1609,7 +1618,7 @@
       "description": "Reject a payment with a reason.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 51,
+        "line": 53,
         "fn": "rejectPayment"
       }
     },
@@ -1676,7 +1685,7 @@
       "description": "Balances, overdraft and reserved amounts.",
       "frontend": {
         "file": "src/features/finance/api/reports.ts",
-        "line": 33,
+        "line": 35,
         "fn": "getWalletExposure"
       }
     },
@@ -1709,9 +1718,9 @@
       "module": "money",
       "description": "Official account statement for a merchant.",
       "frontend": {
-        "file": "src/features/merchants/api/wallet.ts",
-        "line": 83,
-        "fn": "downloadClientStatement"
+        "file": "src/features/accounts/api/wallet.ts",
+        "line": 141,
+        "fn": "downloadAccountStatement"
       }
     },
     {
@@ -2313,7 +2322,7 @@
       "description": "VAT due by country and period, computed from ledger entries rather than invoices.",
       "frontend": {
         "file": "src/features/finance/api/reports.ts",
-        "line": 43,
+        "line": 45,
         "fn": "getVatReport"
       }
     },
@@ -2680,11 +2689,7 @@
       },
       "module": "money",
       "description": "A customer store balance: balance, hold state and pending top-ups.",
-      "frontend": {
-        "file": "src/features/customers/api/wallet.ts",
-        "line": 31,
-        "fn": "getCustomerWallet"
-      },
+      "frontend": null,
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -2719,11 +2724,7 @@
       },
       "module": "money",
       "description": "A customer balance statement.",
-      "frontend": {
-        "file": "src/features/customers/api/wallet.ts",
-        "line": 41,
-        "fn": "listCustomerWalletStatement"
-      },
+      "frontend": null,
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -2759,11 +2760,7 @@
       },
       "module": "money",
       "description": "Add to or deduct from a customer balance by hand, with a reason.",
-      "frontend": {
-        "file": "src/features/customers/api/wallet.ts",
-        "line": 60,
-        "fn": "adjustCustomerWallet"
-      },
+      "frontend": null,
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -2798,11 +2795,7 @@
       },
       "module": "money",
       "description": "Put a customer balance on hold, with a reason.",
-      "frontend": {
-        "file": "src/features/customers/api/wallet.ts",
-        "line": 78,
-        "fn": "freezeCustomerWallet"
-      },
+      "frontend": null,
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -2837,11 +2830,7 @@
       },
       "module": "money",
       "description": "Lift the hold on a customer balance.",
-      "frontend": {
-        "file": "src/features/customers/api/wallet.ts",
-        "line": 96,
-        "fn": "unfreezeCustomerWallet"
-      },
+      "frontend": null,
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -2865,7 +2854,7 @@
       "stage": 21,
       "tables": [
         "ledger_accounts",
-        "customers"
+        "clients"
       ],
       "dhruResponse": null,
       "origin": {
@@ -3036,6 +3025,133 @@
         "file": "scripts/map-additions/38.mjs",
         "spec": "B-TBD held-payment-close"
       }
+    },
+    {
+      "key": "POST /admin/clients/:id/rank",
+      "method": "POST",
+      "path": "/admin/clients/:id/rank",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Change the rank of an account (Owner only, with an Idempotency-Key): across kinds the balance moves to the wallet of the new kind and the sessions end.",
+      "access": "staff-permission",
+      "permission": "clients:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:update",
+      "stage": 48,
+      "tables": [
+        "clients",
+        "client_groups",
+        "ledger_accounts",
+        "ledger_transactions",
+        "ledger_entries",
+        "account_rank_changes",
+        "sessions",
+        "api_keys",
+        "auth_tokens",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/rank",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/rank"
+      },
+      "module": "money",
+      "description": "Change the rank of an account (Owner only, with an Idempotency-Key): across kinds the balance moves to the wallet of the new kind and the sessions end.",
+      "frontend": {
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 106,
+        "fn": "changeAccountRank"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/clients/:id/wallet/freeze",
+      "method": "POST",
+      "path": "/admin/clients/:id/wallet/freeze",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Put the live wallet of an account on hold, with a reason and an Idempotency-Key.",
+      "access": "staff-permission",
+      "permission": "wallet:adjust",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:adjust",
+      "stage": 48,
+      "tables": [
+        "ledger_accounts",
+        "wallet_action_keys",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/wallet/freeze",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/wallet/freeze"
+      },
+      "module": "money",
+      "description": "Put the live wallet of an account on hold, with a reason and an Idempotency-Key.",
+      "frontend": {
+        "file": "src/features/accounts/api/wallet.ts",
+        "line": 99,
+        "fn": "freezeAccountWallet"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/clients/:id/wallet/unfreeze",
+      "method": "POST",
+      "path": "/admin/clients/:id/wallet/unfreeze",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Lift the hold on the live wallet of an account, with an Idempotency-Key.",
+      "access": "staff-permission",
+      "permission": "wallet:adjust",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:adjust",
+      "stage": 48,
+      "tables": [
+        "ledger_accounts",
+        "wallet_action_keys",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/wallet/unfreeze",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/wallet/unfreeze"
+      },
+      "module": "money",
+      "description": "Lift the hold on the live wallet of an account, with an Idempotency-Key.",
+      "frontend": {
+        "file": "src/features/accounts/api/wallet.ts",
+        "line": 120,
+        "fn": "unfreezeAccountWallet"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
     }
   ],
   "scenarios": [

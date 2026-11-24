@@ -9,6 +9,7 @@ import { type NewRefund, type Refund, type RefundStatus, refunds } from '../db/s
 /** The sort fields of the refund list. */
 export type RefundSortField = 'id' | 'amount' | 'status' | 'createdAt';
 
+// The wire keys stay `customer.*` (the console's Refunds page names the buyer so); the value is the buyer account (decision 064).
 const COLUMNS = {
   id: refunds.id,
   refundId: sql`${refunds.id}::text`,
@@ -16,30 +17,39 @@ const COLUMNS = {
   status: refunds.status,
   createdAt: refunds.createdAt,
   reason: refunds.reason,
-  'customer.name': s.customers.name,
-  'customer.email': s.customers.email,
+  'customer.name': s.clients.name,
+  'customer.email': s.clients.email,
 };
+
+/**
+ * The refunds the Refunds page and its routes show: the ones of a storefront order, which name a payment and an order.
+ *
+ * Why: ANSWERS refunds Q1 and RESOLUTIONS money-12: a merchant refund goes through its order, and decision 048's return of a held payment
+ * has no order, so the page and the reports leave it out. Since decision 064 every refund with a payment carries its payment's account
+ * (`refunds_account_refs_check`), so the account says nothing about the kind of refund: the payment and the order do.
+ */
+const STOREFRONT_REFUND = and(isNotNull(refunds.paymentId), isNotNull(refunds.orderId));
 
 /**
  * Lists storefront refunds.
  *
- * Why: ANSWERS refunds Q1 and RESOLUTIONS money-12: only refunds of customers (`customer_id` set) are listed; merchant refunds go
- * through the order.
+ * Why: ANSWERS refunds Q1 and RESOLUTIONS money-12: only refunds of a storefront order are listed ({@link STOREFRONT_REFUND}), whatever rank
+ * the buyer's account has now.
  *
  * @param db the database or a transaction
- * @param query the parsed list request (`q` searches the id, the reason and the customer name)
+ * @param query the parsed list request (`q` searches the id, the reason and the account's name)
  * @returns the page of refunds and the number matching the filters
  */
 export async function listRefundRows(
   db: DbExecutor,
   query: ParsedListQuery<RefundSortField>,
 ): Promise<{ rows: Refund[]; total: number }> {
-  const where = listWhere(query, COLUMNS, isNotNull(refunds.customerId));
+  const where = listWhere(query, COLUMNS, STOREFRONT_REFUND);
   const [rows, [counted]] = await Promise.all([
     db
       .select({ refund: refunds })
       .from(refunds)
-      .leftJoin(s.customers, eq(s.customers.id, refunds.customerId))
+      .leftJoin(s.clients, eq(s.clients.id, refunds.accountId))
       .where(where)
       .orderBy(...listOrderBy(query.sort, COLUMNS, refunds.id))
       .limit(query.range.limit)
@@ -47,7 +57,7 @@ export async function listRefundRows(
     db
       .select({ total: sql<number>`count(*)::int` })
       .from(refunds)
-      .leftJoin(s.customers, eq(s.customers.id, refunds.customerId))
+      .leftJoin(s.clients, eq(s.clients.id, refunds.accountId))
       .where(where),
   ]);
   return { rows: rows.map((row) => row.refund), total: counted?.total ?? 0 };
@@ -58,13 +68,13 @@ export async function listRefundRows(
  *
  * @param db the database or a transaction
  * @param id the refund id
- * @returns the refund, or `undefined` for an unknown id or a merchant refund
+ * @returns the refund, or `undefined` for an unknown id, a merchant refund or a return without an order
  */
 export async function findStorefrontRefund(db: DbExecutor, id: number): Promise<Refund | undefined> {
   const [row] = await db
     .select()
     .from(refunds)
-    .where(and(eq(refunds.id, id), isNotNull(refunds.customerId)))
+    .where(and(eq(refunds.id, id), STOREFRONT_REFUND))
     .limit(1);
   return row;
 }
@@ -470,4 +480,38 @@ export async function findRefundForGateway(
     )
     .limit(1);
   return row?.refund;
+}
+
+/**
+ * Moves the refunds of a guest row to the account that proved the mailbox (the money participant of the guest-order claim).
+ *
+ * Why: decision 064: every refund with a payment names its payment's account, so when the payments of a guest row move
+ * to the account that claims them, their refunds move with them. The rows are taken `FOR UPDATE NOWAIT`: a refund another request
+ * holds (a staff approval, the refund job's answer) makes the lock error (SQLSTATE 55P03) that the claim catches and answers as `busy`.
+ * `updated_at` is kept as it is: it is the start of the current send of a refund (see {@link refundsAwaitingSend}), and a change of owner
+ * is not a new send.
+ *
+ * Side effects: updates `refunds.account_id` of the guest row's refunds.
+ *
+ * @param tx the claim's transaction, inside the savepoint the claim opened
+ * @param guestId the guest row that holds the refunds now
+ * @param accountId the account that takes them
+ * @returns how many refunds moved
+ * @throws the lock error (55P03) when another transaction holds one of the rows
+ */
+export async function moveGuestRefunds(tx: DbExecutor, guestId: number, accountId: number): Promise<number> {
+  const mine = eq(refunds.accountId, guestId);
+  const locked = await tx
+    .select({ id: refunds.id })
+    .from(refunds)
+    .where(mine)
+    .orderBy(refunds.id)
+    .for('update', { noWait: true });
+  if (locked.length === 0) return 0;
+  const moved = await tx
+    .update(refunds)
+    .set({ accountId, updatedAt: sql`${refunds.updatedAt}` })
+    .where(mine)
+    .returning({ id: refunds.id });
+  return moved.length;
 }

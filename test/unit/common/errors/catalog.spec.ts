@@ -64,10 +64,33 @@ describe('error catalog', () => {
     expect(isErrorCode('nope')).toBe(false);
   });
 
+  it('knows the codes of the one account type (decision 064) with their status and title', () => {
+    const added = {
+      RANK_NOT_ALLOWED: [403, 'This is not available for this account.'],
+      RANK_CHANGE_BLOCKED: [409, 'The rank cannot change yet.'],
+      RANK_CHANGED: [409, 'The account changed rank since this order.'],
+      ROUTE_RETIRED: [410, 'This address was retired.'],
+      WALLET_FROZEN: [409, 'This wallet is on hold.'],
+    } as const;
+    for (const [code, [status, title]] of Object.entries(added)) {
+      expect(isErrorCode(code), code).toBe(true);
+      expect(statusOf(code as never), code).toBe(status);
+      expect(titleOf(code as never), code).toBe(title);
+    }
+  });
+
+  it('says "account" where a guest or an account is meant, never "customer" (one account type)', () => {
+    for (const code of ['ACCOUNT_EXISTS', 'ANONYMIZED', 'NO_ACCOUNT'] as const) {
+      expect(titleOf(code), code).toMatch(/\baccount\b/);
+      expect(titleOf(code), code).not.toMatch(/customer/i);
+    }
+  });
+
   it('exposes status, title and the kebab-case slug of the problem type', () => {
     expect(statusOf('EMAIL_TAKEN')).toBe(409);
     expect(titleOf('EMAIL_TAKEN')).toBe('This email address is already in use.');
     expect(problemSlug('VALIDATION_FAILED')).toBe('validation-failed');
     expect(problemSlug('TWOFA_ALREADY_ENABLED')).toBe('twofa-already-enabled');
+    expect(problemSlug('RANK_CHANGE_BLOCKED')).toBe('rank-change-blocked');
   });
 });

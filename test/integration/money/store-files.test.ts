@@ -78,7 +78,7 @@ describe('POST /store/v1/files', () => {
     expect(res.json()).toMatchObject({ filename: 'receipt.pdf', mime: 'application/pdf', size: 16 });
     const { db } = await testDb();
     const [row] = await db.select().from(s.files).where(eq(s.files.id, res.json().id));
-    expect(row).toMatchObject({ ownerType: 'customer', ownerId: customer.id });
+    expect(row).toMatchObject({ ownerType: 'account', ownerId: customer.id });
   });
 
   it('refuses another media type and an empty file', async () => {

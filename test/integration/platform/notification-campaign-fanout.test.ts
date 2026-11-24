@@ -34,7 +34,7 @@ let t: TestApp;
 let owner: AdminApi;
 let db: Database;
 
-/** Everyone, on every channel: 2 staff, 2 merchants, 3 customers with an account, 1 guest left out. */
+/** Everyone, on every channel: 2 staff, 2 accounts of a merchant rank, 3 retail accounts with a login, 1 guest left out. */
 const EVERYONE = {
   channels: ['in_app', 'email'],
   audience: { staff: {}, merchants: {}, customers: { hasAccount: true } },
@@ -108,14 +108,15 @@ describe('the fan-out', () => {
     const items = await campaignItems(db, id);
     expect(items).toHaveLength(7);
     expect(items.every((item) => item.category === 'announcement' && item.event === null)).toBe(true);
+    // Both account groups are one recipient type (decision 064): the merchants then the retail accounts, each in id order.
     expect(items.map((item) => item.recipientType)).toEqual([
       'staff',
       'staff',
-      'client',
-      'client',
-      'customer',
-      'customer',
-      'customer',
+      'account',
+      'account',
+      'account',
+      'account',
+      'account',
     ]);
     const messages = await campaignMessages(db, id);
     expect(messages.map((m) => m.channel)).toEqual(Array(7).fill('email'));
@@ -193,9 +194,27 @@ describe('the fan-out', () => {
     expect((await campaignRow(db, id)).recipients).toBe(7);
   });
 
+  it('keeps the group each email row was selected in, in the row, and one row per person', async () => {
+    const id = await queuedCampaign();
+    await fanOutAll(t, id);
+    const messages = await campaignMessages(db, id);
+    expect(messages.map((m) => [m.recipientType, (m.payload as { audience?: string }).audience])).toEqual([
+      ['staff', 'staff'],
+      ['staff', 'staff'],
+      ['account', 'merchant'],
+      ['account', 'merchant'],
+      ['account', 'customer'],
+      ['account', 'customer'],
+      ['account', 'customer'],
+    ]);
+    // One row per person and campaign: the dedupe key names the account once, whatever group listed it.
+    expect(new Set(messages.map((m) => m.dedupeKey)).size).toBe(7);
+    expect(messages.at(-1)?.dedupeKey).toBe(`campaign-${id}:email:account-${messages.at(-1)!.recipientId}`);
+  });
+
   it('resumes at the cursor after a crash between chunks', async () => {
     const id = await queuedCampaign();
-    const merchants = t.app.get(NotificationAudiences).get('client');
+    const merchants = t.app.get(NotificationAudiences).get('merchant');
     const crash = spyOn(merchants, 'page').mockRejectedValueOnce(new Error('connection reset'));
     await expectRejection(t.app.get(CampaignFanOutProcessor).process(jobLike({ campaignId: id })), 'connection reset');
     crash.mockRestore();
@@ -204,10 +223,10 @@ describe('the fan-out', () => {
       status: 'sending',
       chunksDone: 1,
       recipients: 2,
-      fanoutCursor: { type: 'client', afterId: 0 },
+      fanoutCursor: { kind: 'merchant', afterId: 0 },
     });
     expect(await campaignItems(db, id)).toHaveLength(2);
-    // The two merchants and the three customers left: one email each.
+    // The two merchants and the three retail accounts left: one email each.
     expect(await fanOutAll(t, id)).toEqual([{ chunks: 3, rows: 5, outcome: 'sent' }]);
     expect(await campaignItems(db, id)).toHaveLength(7);
     expect(await campaignMessages(db, id)).toHaveLength(7);

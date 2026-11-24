@@ -394,20 +394,20 @@ describe('a refund the gateway accepted and fails after the loss leaves the book
   it('a delivered order keeps the plain loss, and its VAT stays owed', async () => {
     const paid = await paidOrder(t, clock, world);
     expect((await staff.post(`/admin/orders/${paid.orderId}/reply`, { code: 'Unlocked' })).status).toBe(204);
-    const customerId = (await orderRow(db, paid.orderId)).customerId!;
+    const accountId = (await orderRow(db, paid.orderId)).accountId;
     const [requested] = await db
       .insert(s.refunds)
       .values({
         paymentId: paid.paymentId,
         orderId: paid.orderId,
-        customerId,
+        accountId,
         amount: paid.charged,
         currency: 'GBP',
         reason: 'The code did not work',
         method: 'original',
         status: 'requested',
-        requestedByType: 'customer',
-        requestedById: customerId,
+        requestedByType: 'account',
+        requestedById: accountId,
         createdAt: clock.now(),
         updatedAt: clock.now(),
       })

@@ -10,9 +10,12 @@
       "fromStatus": null,
       "toStatus": null,
       "actor": {
-        "type": "client",
-        "id": null,
+        "type": "account",
+        "id": 3,
         "name": "Merchant API"
+      },
+      "account": {
+        "id": 3
       },
       "data": {
         "message": "Order received via Dhru API"
@@ -29,6 +32,7 @@
         "id": null,
         "name": "System"
       },
+      "account": null,
       "data": {
         "message": "$3.31 held from Phone Doctor FZE wallet"
       },
@@ -44,6 +48,7 @@
         "id": null,
         "name": "System"
       },
+      "account": null,
       "data": {
         "message": "Sent to FileForge (REST v2)"
       },
@@ -59,6 +64,7 @@
         "id": null,
         "name": "FileForge"
       },
+      "account": null,
       "data": {
         "message": "Accepted by supplier, ref F-322029"
       },
@@ -74,6 +80,7 @@
         "id": null,
         "name": "System"
       },
+      "account": null,
       "data": {
         "message": "Completed by supplier reply"
       },
@@ -89,6 +96,7 @@
         "id": null,
         "name": "System"
       },
+      "account": null,
       "data": {
         "message": "Settled: revenue $3.31, cost $2.40"
       },

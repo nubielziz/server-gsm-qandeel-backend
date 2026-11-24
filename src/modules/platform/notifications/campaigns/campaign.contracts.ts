@@ -30,7 +30,7 @@ const inputShape = {
   purpose: z
     .enum(NOTIFICATION_CAMPAIGN_PURPOSES)
     .describe(
-      '`marketing` reaches only customers who agreed to marketing. A campaign of any purpose reaches only customers whose address is confirmed (a sign-in or verification link was used, or a checkout was paid); a marketing answer counts from then on (decision 053).',
+      '`marketing` reaches only retail accounts and guests who agreed to marketing (accounts of a merchant rank follow their announcement switch). A campaign of any purpose reaches retail accounts and guests only when their address is confirmed (a sign-in or verification link was used, or a checkout was paid); a marketing answer counts from then on (decision 053).',
     ),
   channels: zChannels,
   audience: zAudienceSpec,
@@ -80,7 +80,11 @@ const zCampaignDetail = zCampaign.extend({
 const zAudiencePreview = z.object({
   total: z.number().int().describe('Eligible people in the audience.'),
   reachable: z.number().int().describe('People at least one chosen channel reaches.'),
-  byType: z.object({ staff: z.number().int(), client: z.number().int(), customer: z.number().int() }),
+  byType: z
+    .object({ staff: z.number().int(), merchant: z.number().int(), retail: z.number().int() })
+    .describe(
+      'The reachable people by group: staff, accounts of a merchant rank, and the other accounts with the guests.',
+    ),
   byChannel: z.object({ inApp: z.number().int(), email: z.number().int() }),
   excluded: z.object({
     noConsent: z.number().int(),
@@ -94,8 +98,8 @@ const RECIPIENT_STATUSES = ['delivered', 'read', 'queued', 'sent', 'failed'] as 
 const zRecipient = z.object({
   id: zId,
   channel: zChannel,
-  recipientType: z.enum(['staff', 'client', 'customer']),
-  recipientId: zId,
+  recipientType: z.enum(['staff', 'account']),
+  recipientId: zId.describe('The staff member or the account (a merchant and a shopper are both accounts).'),
   recipient: z.string().describe('The masked address or chat.'),
   status: z.enum(RECIPIENT_STATUSES),
   error: z.string().nullable(),
@@ -272,7 +276,7 @@ export const previewAudience = defineRoute({
     response: {
       total: 1208,
       reachable: 1208,
-      byType: { staff: 6, client: 402, customer: 800 },
+      byType: { staff: 6, merchant: 402, retail: 800 },
       byChannel: { inApp: 1208, email: 1190 },
       excluded: { noConsent: 0, optedOut: 18, noAccount: 0 },
     },
@@ -433,7 +437,7 @@ export const listCampaignRecipients = defineRoute({
       {
         id: 52,
         channel: 'email',
-        recipientType: 'client',
+        recipientType: 'account',
         recipientId: 1,
         recipient: 'o***@zainmobilehub.example',
         status: 'sent',

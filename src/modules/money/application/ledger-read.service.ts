@@ -6,7 +6,7 @@ import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
-import { LEDGER_ACCOUNT_KINDS } from '../db/schema';
+import { LEDGER_ACCOUNT_KINDS, type LedgerOwnerType } from '../db/schema';
 import { BASE_CURRENCY, toDebitPositive } from '../domain/accounts';
 import { escapeLike, parseLedgerSearch } from '../domain/ledger-search';
 import { toWireRefType } from '../domain/ref-types';
@@ -97,8 +97,10 @@ export class LedgerReadService {
   }
 
   private async toWire(rows: readonly JournalRow[]): Promise<WireJournal[]> {
-    const owners = new Map<string, { ownerType: 'client' | 'supplier' | 'customer'; ownerId: number }>();
-    const actors = new Map<string, { type: 'staff' | 'client' | 'customer'; id: number }>();
+    // Wallets and holds are owned by an account (any rank); a journal posted before decision 064 may name its actor `client` or
+    // `customer` (append-only rows keep their word): the directory names such an actor through the legacy map.
+    const owners = new Map<string, { ownerType: LedgerOwnerType; ownerId: number }>();
+    const actors = new Map<string, { type: 'staff' | 'account' | 'client' | 'customer'; id: number }>();
     for (const row of rows) {
       for (const entry of row.entries) {
         const { ownerType, ownerId } = entry.account;

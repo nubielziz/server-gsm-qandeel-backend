@@ -1,22 +1,25 @@
-// The customers module's part of erasing the notification center's data about a customer (feature 23, plan section 9.7).
+// The customers module's part of erasing the notification center's data about an account (feature 23, plan section 9.7; decision 064).
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import type { DbExecutor } from '../../../infra/db';
 import { NotificationPrivacy } from '../../platform';
-import { type CustomerErasureHook, CustomerErasureHooks } from '../application/customer-erasure-hooks';
+import { type AccountErasureHook, AccountErasureHooks } from '../application/customer-erasure-hooks';
 
 /**
- * Deletes a customer's inbox items and empties their log payloads when the customer is anonymized.
+ * Deletes an account's inbox items and empties its log payloads when the account is anonymized.
  *
- * Why: `POST /admin/customers/:id/anonymize` must leave no way back to the customer's data; the inbox repeats orders and announcements
- * and a log row's payload holds the customer's name. Registered with the hook list at boot, so the anonymization runs it in its own
- * transaction (a failure rolls the whole anonymization back).
+ * Why: `POST /admin/clients/:id/anonymize` must leave no way back to the account's data (any rank, and the guest row of its proven email, which
+ * the hook list is called for too): the inbox repeats orders and announcements and a log row's payload holds the account's name. Registered
+ * with the hook list at boot, so the anonymization runs it in its own transaction (a failure rolls the whole anonymization back). The class
+ * keeps its old name so the module that provides it needs no change; it serves every rank now.
  *
  * Side effects: deletes `notification_inbox` rows and updates `notifications.payload` on the anonymization's transaction.
+ *
+ * @see POST /admin/clients/:id/anonymize
  */
 @Injectable()
-export class CustomerInboxErasure implements CustomerErasureHook, OnModuleInit {
+export class CustomerInboxErasure implements AccountErasureHook, OnModuleInit {
   constructor(
-    private readonly hooks: CustomerErasureHooks,
+    private readonly hooks: AccountErasureHooks,
     private readonly privacy: NotificationPrivacy,
   ) {}
 
@@ -26,12 +29,12 @@ export class CustomerInboxErasure implements CustomerErasureHook, OnModuleInit {
   }
 
   /**
-   * Erases one customer's notification data.
+   * Erases one account's notification data.
    *
    * @param tx the anonymization's transaction
-   * @param customerId the customer
+   * @param accountId the account
    */
-  async eraseCustomer(tx: DbExecutor, customerId: number): Promise<void> {
-    await this.privacy.eraseRecipient(tx, 'customer', customerId);
+  async eraseAccount(tx: DbExecutor, accountId: number): Promise<void> {
+    await this.privacy.eraseRecipient(tx, 'account', accountId);
   }
 }

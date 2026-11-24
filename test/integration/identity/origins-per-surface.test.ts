@@ -88,8 +88,9 @@ describe('a GET with originCheck', () => {
   });
 
   it("uses the shop's origins on the store surface", async () => {
+    // A retail account: its session is the one account session, and the store routes judge it against the shop's origins.
     const customer = await makeCustomer(t);
-    const session = await openSession(t, { type: 'customer', id: customer.id });
+    const session = await openSession(t, { type: 'account', id: customer.id });
     const get = (extra: Record<string, string>) =>
       send('GET', '/store/v1/t/sec/origin-checked', { ...session.headers, ...extra });
     expect((await get({ origin: STORE_ORIGIN })).statusCode).toBe(200);
@@ -106,7 +107,7 @@ describe('a live stream', () => {
     expect(staff.json()).toMatchObject({ code: 'CSRF_FAILED' });
     expect(staff.headers['access-control-allow-origin']).toBeUndefined();
     const customer = await makeCustomer(t);
-    const customerSession = await openSession(t, { type: 'customer', id: customer.id });
+    const customerSession = await openSession(t, { type: 'account', id: customer.id });
     const shop = await send('GET', '/store/v1/me/stream', { ...customerSession.headers, origin: CONSOLE_ORIGIN });
     expect(shop.statusCode).toBe(403);
     expect(shop.json()).toMatchObject({ code: 'CSRF_FAILED' });

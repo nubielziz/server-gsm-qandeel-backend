@@ -9,6 +9,7 @@ import type { StoreMessageSchema, StoreTicketSchema } from '../contracts/store-t
 import type { AttachmentSchema, TicketMessageSchema } from '../contracts/shared';
 import type { SupportTicket, TicketMessage } from '../db/schema';
 import type { ReplyChannel } from '../domain/reply-channels';
+import { rankKindOfRequester } from '../domain/requester-rank';
 import { hasUnread } from '../domain/seen';
 import { isLate } from '../domain/ticket-sla';
 import { toWireStatus } from '../domain/ticket-status';
@@ -39,7 +40,7 @@ const iso = (date: Date | null): string | null => (date === null ? null : date.t
 /**
  * Builds the attachments of a message, in the order they were attached.
  *
- * Why: feature 28, rule 8: a message shows its files by name and size (never inline); a file that is gone (erased with its customer,
+ * Why: feature 28, rule 8: a message shows its files by name and size (never inline); a file that is gone (erased with its account,
  * past the retention) is left out rather than shown broken.
  *
  * @param fileIds the message's `file_ids`
@@ -59,8 +60,9 @@ export function toAttachments(fileIds: readonly number[], files: AttachmentFiles
  * @param row the ticket with its joined names
  * @param lastPublicAt the time of its latest public message
  * @param now the injected clock's time, for `late`
- * @param contact what the caller may see of a customer's address (decision 047, rule A: a customer requester's address is masked unless
- *   the caller may read customers; a merchant's address stays in full)
+ * @param contact what the caller may see of an account's address (decision 047, rule A: the address of every requester, whatever its rank,
+ *   is masked unless the caller may read accounts, `clients:read`)
+ * @param retailGroupId the id of the retail rank (`RankGroupReads.retailGroupId`), which tells the rank kind of the requester
  * @returns the row as the console reads it
  */
 export function toTicketView(
@@ -68,6 +70,7 @@ export function toTicketView(
   lastPublicAt: Date | undefined,
   now: Date,
   contact: CustomerContact,
+  retailGroupId: number,
 ): TicketRowView {
   const { ticket } = row;
   return {
@@ -79,10 +82,8 @@ export function toTicketView(
     requesterId: ticket.requesterId,
     requester: {
       name: row.requesterName,
-      email:
-        ticket.requesterType === 'customer' && row.requesterEmail !== null
-          ? customerEmailIn(contact, row.requesterEmail)
-          : row.requesterEmail,
+      email: row.requesterEmail === null ? null : customerEmailIn(contact, row.requesterEmail),
+      rankKind: rankKindOfRequester(row.requesterGroupId, retailGroupId),
     },
     orderId: ticket.orderId,
     category: ticket.category,
@@ -138,7 +139,8 @@ export function toMessageView(row: MessageRow, files: AttachmentFiles): TicketMe
  * @param files the stored files of the thread, by id
  * @param replyChannels the channels a reply may use
  * @param now the injected clock's time
- * @param contact what the caller may see of a customer's address (decision 047)
+ * @param contact what the caller may see of an account's address (decision 047)
+ * @param retailGroupId the id of the retail rank, which tells the rank kind of the requester
  * @returns the detail as the console reads it
  */
 export function toDetailView(
@@ -149,9 +151,10 @@ export function toDetailView(
   replyChannels: readonly ReplyChannel[],
   now: Date,
   contact: CustomerContact,
+  retailGroupId: number,
 ): TicketDetailView {
   return {
-    ...toTicketView(row, lastPublicAt, now, contact),
+    ...toTicketView(row, lastPublicAt, now, contact, retailGroupId),
     messages: messages.map((message) => toMessageView(message, files)),
     replyChannels: [...replyChannels],
   };

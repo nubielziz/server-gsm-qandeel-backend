@@ -6,6 +6,7 @@ import { eq, sql } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { TicketEvents } from '@src/modules/support/application/ticket-events';
 import { type AdminApi } from '../../support/admin-api';
+import { ensureRetailGroup } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { mailbox } from '../../support/notifications';
 import { clearIdentityCaches, insertMerchant } from '../../support/auth';
@@ -15,7 +16,7 @@ import { insertCustomerOrder } from '../../support/customers';
 import { tokenHashOf } from '../../support/capability-tokens';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { merchantSession } from '../../support/notifications';
-import { insertOrderRow } from '../../support/orders';
+import { insertMigratedOrderRow, insertOrderRow } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { makeCustomer } from '../../support/store';
 import { TURNSTILE_HEADERS, insertCurrency } from '../../support/storefront';
@@ -42,7 +43,10 @@ beforeAll(async () => {
 beforeEach(async () => {
   clock.set(NOW);
   await resetDb();
-  await seedSupportTemplates((await testDb()).db);
+  const { db } = await testDb();
+  // the reset removed the one retail rank that the migrations insert; the console reads it to tell the requester's rank
+  await ensureRetailGroup(db);
+  await seedSupportTemplates(db);
   await clearIdentityCaches(t);
   await clearTicketChatLimits(t);
   await clearTicketOpenLimits(t);
@@ -87,7 +91,7 @@ async function customerTicket(
     ...values,
   });
   const first = await insertSupportMessage(db, ticket.id, {
-    authorType: 'customer',
+    authorType: 'account',
     authorId: customerId,
     body: 'I paid yesterday and still have no code.',
     createdAt: at,
@@ -121,10 +125,9 @@ describe('GET /store/v1/me/tickets', () => {
     const older = await customerTicket(mine.id, { subject: 'Older one', category: 'billing' }, 120);
     const newer = await customerTicket(mine.id, { subject: 'Newer one' }, 10);
     await customerTicket(other.id, { subject: 'Not mine' });
-    // A merchant's ticket whose requester id equals the customer's id is not the customer's.
+    // A ticket of a merchant-rank account is not this account's: the list is by the account, whatever the rank of the other.
     await insertSupportTicket(db, {
-      requesterType: 'client',
-      requesterId: mine.id,
+      requesterId: await insertMerchant(db, {}),
       token: null,
       subject: 'A merchant',
     });
@@ -252,14 +255,16 @@ describe('GET /store/v1/me/tickets', () => {
     expect(await unread()).toBe(false);
   });
 
-  it('needs a customer session: 401 without one and for a merchant or staff session, 403 for a suspended customer', async () => {
+  it('needs a retail session: 401 without one and for a staff session, 403 for a merchant rank and for a suspended account', async () => {
     const mine = await customer();
     expect((await t.app.inject({ method: 'GET', url: '/store/v1/me/tickets' })).statusCode).toBe(401);
     expect((await staff.get('/store/v1/me/tickets')).status).toBe(401);
     const { db } = await testDb();
     const clientId = await insertMerchant(db, {});
     const merchant = await merchantSession(t, clientId);
-    expect((await merchant.call('GET', '/store/v1/me/tickets')).status).toBe(401);
+    const rankRefused = await merchant.call('GET', '/store/v1/me/tickets');
+    expect(rankRefused.status).toBe(403);
+    expect(rankRefused.body.code).toBe('RANK_NOT_ALLOWED');
     expect(mine.id).toBeGreaterThan(0);
     const suspended = await customer({ status: 'suspended' });
     const refused = await suspended.session.call('GET', '/store/v1/me/tickets');
@@ -293,7 +298,7 @@ describe('POST /store/v1/me/tickets', () => {
     const [row] = await db.select().from(s.supportTickets).where(eq(s.supportTickets.number, res.body.number));
     expect(row).toMatchObject({
       channel: 'web',
-      requesterType: 'customer',
+      requesterType: 'account',
       requesterId: mine.id,
       // Decision 054: the token is stored only as its keyed hash and an encrypted copy.
       token: null,
@@ -303,7 +308,7 @@ describe('POST /store/v1/me/tickets', () => {
       slaDueAt: new Date(clock.nowMs() + 2 * 60 * MINUTE),
     });
     const [message] = await db.select().from(s.ticketMessages).where(eq(s.ticketMessages.ticketId, row!.id));
-    expect(message).toMatchObject({ authorType: 'customer', authorId: mine.id, isInternal: false });
+    expect(message).toMatchObject({ authorType: 'account', authorId: mine.id, isInternal: false });
     expect(row!.lastRequesterMessageId).toBe(message!.id);
     // The receipt is queued (ids only) and the console is told at once.
     const events = await ticketMailEvents(db);
@@ -366,11 +371,14 @@ describe('POST /store/v1/me/tickets', () => {
     const own = await insertCustomerOrder(db, serviceId, mine.id, { currency: 'USD' });
     const theirs = await insertCustomerOrder(db, serviceId, other.id, { currency: 'USD' });
     const merchantOrder = await insertOrderRow(db, { serviceId, clientId: await insertMerchant(db, {}) });
+    // an order of another account whose old customer number is this account's id is not this account's: the buyer is the account
+    // column, never the retired number.
+    const lookalike = await insertMigratedOrderRow(db, mine.id, { serviceId, accountId: other.id, source: 'store' });
 
     const ok = await mine.session.call('POST', '/store/v1/me/tickets', { ...VALID, orderId: own });
     expect(ok.status).toBe(201);
     expect(ok.body.orderId).toBe(own);
-    for (const orderId of [theirs, merchantOrder.id, 999_999]) {
+    for (const orderId of [theirs, merchantOrder.id, lookalike.id, 999_999]) {
       const refused = await mine.session.call('POST', '/store/v1/me/tickets', { ...VALID, orderId });
       expect(refused.status, String(orderId)).toBe(422);
       expect(errorOf(refused)).toMatchObject({ field: 'orderId', code: 'unknown_order' });
@@ -382,7 +390,7 @@ describe('POST /store/v1/me/tickets', () => {
     const mine = await customer();
     const other = await customer({ name: 'Someone Else' });
     const { db } = await testDb();
-    const own = await insertFileRow(db, 'customer', mine.id, { filename: 'receipt.pdf', mime: 'application/pdf' });
+    const own = await insertFileRow(db, 'account', mine.id, { filename: 'receipt.pdf', mime: 'application/pdf' });
     const filesOnly = await mine.session.call('POST', '/store/v1/me/tickets', {
       subject: 'Receipt',
       message: '',
@@ -406,10 +414,10 @@ describe('POST /store/v1/me/tickets', () => {
     expect(empty.status).toBe(422);
     expect(errorOf(empty)).toMatchObject({ field: 'message', code: 'too_small' });
     const cases = [
-      [(await insertFileRow(db, 'customer', other.id)).id, 'not_yours'],
-      [(await insertFileRow(db, 'client', await insertMerchant(db, {}))).id, 'not_yours'],
-      [(await insertFileRow(db, 'customer', mine.id, { size: 6 * 1024 * 1024 })).id, 'too_large'],
-      [(await insertFileRow(db, 'customer', mine.id, { mime: 'text/plain', filename: 'a.txt' })).id, 'type'],
+      [(await insertFileRow(db, 'account', other.id)).id, 'not_yours'],
+      [(await insertFileRow(db, 'account', await insertMerchant(db, {}))).id, 'not_yours'],
+      [(await insertFileRow(db, 'account', mine.id, { size: 6 * 1024 * 1024 })).id, 'too_large'],
+      [(await insertFileRow(db, 'account', mine.id, { mime: 'text/plain', filename: 'a.txt' })).id, 'type'],
       [999_999, 'unknown_file'],
     ] as const;
     // A refused attempt counts against the hour like a successful one (the limit is taken first, so ids cannot be probed): start afresh.

@@ -61,7 +61,7 @@ export class DhruOrders implements OnModuleInit {
     this.gateway.bind(dhruGetImeiOrderBulk, (call) => this.status(call.caller.clientId, call.params.ID));
     this.gateway.bind(dhruGetFileOrder, async (call) => {
       const status = await this.status(call.caller.clientId, call.params.ID);
-      const row = await findOrderRow(this.db.db, { kind: 'merchant', clientId: call.caller.clientId }, call.params.ID);
+      const row = await findOrderRow(this.db.db, { kind: 'merchant', accountId: call.caller.clientId }, call.params.ID);
       const fileId = row?.order.resultFileId ?? null;
       return fileId === null ? status : { ...status, FILEID: fileId };
     });
@@ -128,36 +128,36 @@ export class DhruOrders implements OnModuleInit {
     const { caller } = call;
     const [order] = await this.db.runInTransaction(({ tx }) =>
       this.placement.place(tx, {
-        clientId: caller.clientId,
+        accountId: caller.clientId,
         source: 'dhru',
         apiKeyId: caller.keyId,
         serviceId,
         quantity,
         items: [{ imei: item.imei, inputs: item.inputs, imeiField: 'IMEI' }],
         fileId,
-        actor: { type: 'client', id: caller.clientId },
+        actor: { type: 'account', id: caller.clientId },
       }),
     );
     return order!.id;
   }
 
   /**
-   * Refuses the wrong placement action for a service the merchant may order.
+   * Refuses the wrong placement action for a service the account may order.
    *
-   * Why: only a service visible to the merchant's group may say which action it takes; an unknown, archived, disabled or hidden
+   * Why: only a service visible to the account's rank may say which action it takes; an unknown, archived, disabled or hidden
    * one is left to the placement, which answers `NOT_FOUND` for all of them alike, so a hidden service's existence and type never
    * leak through this message.
    *
-   * @param clientId the merchant behind the key
+   * @param accountId the account behind the key (a merchant's id is its account id)
    * @param serviceId the service id of the call
    * @param rule `file-not-allowed`: `placeimeiorder` for a File service; `file-required`: `placefileorder` for any other
    */
   private async assertKind(
-    clientId: number,
+    accountId: number,
     serviceId: number,
     rule: 'file-not-allowed' | 'file-required',
   ): Promise<void> {
-    const merchant = await merchantOf(this.db.db, clientId);
+    const merchant = await merchantOf(this.db.db, accountId);
     if (!merchant) return;
     const entry = await this.catalog.find(this.db.db, { clientId: merchant.id, groupId: merchant.groupId }, serviceId);
     if (!entry) return;
@@ -173,15 +173,15 @@ export class DhruOrders implements OnModuleInit {
   }
 
   /**
-   * Reads the status and result of one of the merchant's orders.
+   * Reads the status and result of one of the account's orders of the merchant doors.
    *
-   * @param clientId the merchant behind the key
+   * @param accountId the account behind the key
    * @param orderId the order id (`REFERENCEID`)
    * @returns `STATUS` (0 new, 1 in process, 3 rejected, 4 completed) and `CODE` (the result or the reason; `""` while it runs)
-   * @throws {AppError} `NOT_FOUND` ("Order not found") for an unknown id or another merchant's order
+   * @throws {AppError} `NOT_FOUND` ("Order not found") for an unknown id, another account's order, or the account's own store order
    */
-  private async status(clientId: number, orderId: number): Promise<{ STATUS: 0 | 1 | 3 | 4; CODE: string }> {
-    const row = await findOrderRow(this.db.db, { kind: 'merchant', clientId }, orderId);
+  private async status(accountId: number, orderId: number): Promise<{ STATUS: 0 | 1 | 3 | 4; CODE: string }> {
+    const row = await findOrderRow(this.db.db, { kind: 'merchant', accountId }, orderId);
     if (!row) throw new AppError('NOT_FOUND', { detail: 'Order not found' });
     return { STATUS: dhruStatusOf(row.order.status), CODE: row.order.resultCode ?? '' };
   }

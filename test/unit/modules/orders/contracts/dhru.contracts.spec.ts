@@ -70,4 +70,14 @@ describe('the order actions', () => {
     expect(dhruGetImeiOrder.success.safeParse({ STATUS: 2, CODE: '' }).success).toBe(false);
     expect(dhruGetFileOrder.success.safeParse({ STATUS: 4, CODE: 'Done', FILEID: 9 }).success).toBe(true);
   });
+
+  it('name the refusals of a placement, a frozen merchant wallet included, and keep them out of a status call', () => {
+    for (const action of [dhruPlaceImeiOrder, dhruPlaceImeiOrderBulk, dhruPlaceFileOrder]) {
+      expect(action.errors, action.key).toContain('WALLET_FROZEN');
+      expect(action.errors, action.key).toContain('INSUFFICIENT_FUNDS');
+    }
+    for (const action of [dhruGetImeiOrder, dhruGetImeiOrderBulk, dhruGetFileOrder]) {
+      expect(action.errors, action.key).not.toContain('WALLET_FROZEN');
+    }
+  });
 });

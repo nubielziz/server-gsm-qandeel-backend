@@ -98,7 +98,7 @@ describe('POST /admin/payments/:id/approve', () => {
     });
     // Dr bank 103 (gross), Cr client_wallet 100 (net), Cr fee_income 3: debits are positive, credits negative.
     expect(journal!.lines).toEqual({ bank: '103.0000', client_wallet: '-100.0000', fee_income: '-3.0000' });
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('100.0000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('100.0000');
     const [paid] = await db.select().from(s.invoices).where(eq(s.invoices.id, invoice.id));
     expect(paid).toMatchObject({ status: 'paid' });
     expect(paid!.paidAt!.toISOString()).toBe('2026-11-01T10:01:00.000Z');
@@ -150,6 +150,7 @@ describe('POST /admin/payments/:id/approve', () => {
       .insert(s.payments)
       .values({
         purpose: 'order',
+        accountId: manual.merchant.id,
         gatewayId: manual.gatewayId,
         amount: '10.0000',
         currency: 'USD',
@@ -171,7 +172,7 @@ describe('POST /admin/payments/:id/approve', () => {
     ).toBe(true);
     const deposits = await db.select().from(s.ledgerTransactions).where(eq(s.ledgerTransactions.kind, 'deposit'));
     expect(deposits).toHaveLength(1);
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('100.0000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('100.0000');
   });
 
   it('refuses a caller without payments:approve', async () => {
@@ -248,7 +249,7 @@ describe('POST /admin/payments/:id/approve (a confirmation that does not match i
     expect(approve.body.detail).toContain(reason);
     expect(approve.body.detail).toContain('Reject it');
     expect(await journalOf(db, payment.id)).toBeUndefined();
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+    expect(await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id })).toMatchObject({
       balance: '0.0000',
     });
     expect((await db.select().from(s.invoices).where(eq(s.invoices.id, invoice.id)))[0]!.status).toBe('open');
@@ -312,7 +313,7 @@ describe('POST /admin/payments/:id/approve (a confirmation that does not match i
       client_wallet: '-97.0000',
       fee_income: '-3.0000',
     });
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('97.0000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('97.0000');
   });
 });
 
@@ -364,6 +365,7 @@ describe('GET /admin/payments', () => {
     await admin.post(`/admin/payments/${second.payment.id}/approve`);
     await first.db.insert(s.payments).values({
       purpose: 'order',
+      accountId: first.merchant.id,
       gatewayId: first.gatewayId,
       amount: '10.0000',
       currency: 'USD',

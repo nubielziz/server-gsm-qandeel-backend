@@ -19,7 +19,7 @@ const view = (over: Partial<ApiKeyView> = {}): ApiKeyView => ({
   lastUsedAtMs: null,
   expiresAtMs: null,
   revokedAtMs: null,
-  client: { username: 'Acme', name: 'Acme Trading', status: 'active' },
+  client: { username: 'Acme', name: 'Acme Trading', status: 'active', rankKind: 'merchant' },
   ...over,
 });
 const request = (ip = '203.0.113.9') => ({ ip }) as unknown as FastifyRequest;
@@ -257,7 +257,22 @@ describe('ApiKeyAuthenticator', () => {
     for (const [found, code] of [
       [view({ revokedAtMs: 1 }), 'UNAUTHORIZED'],
       [view({ allowedIps: ['10.0.0.0/8'] }), 'IP_NOT_ALLOWED'],
-      [view({ client: { username: 'Acme', name: 'Acme Trading', status: 'suspended' } }), 'ACCOUNT_SUSPENDED'],
+      [
+        view({ client: { username: 'Acme', name: 'Acme Trading', status: 'suspended', rankKind: 'merchant' } }),
+        'ACCOUNT_SUSPENDED',
+      ],
+      [
+        view({ client: { username: 'Acme', name: 'Acme Trading', status: 'blocked', rankKind: 'merchant' } }),
+        'ACCOUNT_SUSPENDED',
+      ],
+      [
+        view({ client: { username: 'Acme', name: 'Acme Trading', status: 'anonymized', rankKind: 'merchant' } }),
+        'UNAUTHORIZED',
+      ],
+      [
+        view({ client: { username: 'Acme', name: 'Acme Trading', status: 'active', rankKind: 'retail' } }),
+        'UNAUTHORIZED',
+      ],
     ] as const) {
       const s = setup(found);
       expect(await rejectionOf(s.authenticator.authenticate(request(), { key: 'k' }))).toMatchObject({
@@ -267,6 +282,30 @@ describe('ApiKeyAuthenticator', () => {
       expect(s.enforced, code).toEqual([]);
       expect(s.touches, code).toEqual([]);
     }
+  });
+
+  it('refuses a key of an account that is not of a merchant rank in the Authentication Failed envelope, and charges nothing', async () => {
+    const s = setup(view({ client: { username: 'Acme', name: 'Acme Trading', status: 'active', rankKind: 'retail' } }));
+    expect(await rejectionOf(s.authenticator.authenticate(request(), { key: 'k', username: 'Acme' }))).toMatchObject({
+      code: 'UNAUTHORIZED',
+      status: 401,
+      detail: 'Authentication Failed',
+    });
+    expect(s.consumed).toEqual([]);
+    expect(s.enforced).toEqual([]);
+    expect(s.touches).toEqual([]);
+  });
+
+  it('refuses every username for an account that has none (a retail account), charged like an unknown key', async () => {
+    const s = setup(view({ client: { username: null, name: 'Retail Buyer', status: 'active', rankKind: 'retail' } }));
+    for (const username of ['', ' ', 'null', 'Acme']) {
+      expect(await rejectionOf(s.authenticator.authenticate(request(), { key: 'k', username }))).toMatchObject({
+        code: 'UNAUTHORIZED',
+        detail: 'Authentication Failed',
+      });
+    }
+    expect(s.consumed).toHaveLength(4);
+    expect(s.enforced).toEqual([]);
   });
 
   it("uses the limiter's default when the stored limit is not a positive whole number", async () => {

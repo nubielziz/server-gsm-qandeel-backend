@@ -4,12 +4,22 @@ import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import { Pool } from 'pg';
 
 /**
- * The tables that only ever receive new rows: the ledger, the order timeline and the audit log.
+ * The tables that only ever receive new rows: the ledger, the order timeline, the audit log, the map from old ids to accounts, the rank
+ * history and the keys of staff wallet actions.
  *
  * Why: decision 055 and decision 024: no code updates or deletes them (the triggers refuse it too), so the application role gets no
- * `UPDATE` or `DELETE` on them and a stolen application login cannot rewrite money history.
+ * `UPDATE` or `DELETE` on them and a stolen application login cannot rewrite money history. Decision 064 adds the three tables whose rows
+ * are history of accounts: `account_legacy_ids`, `account_rank_changes` and `wallet_action_keys`.
  */
-export const APPEND_ONLY_TABLES = ['ledger_entries', 'ledger_transactions', 'order_events', 'audit_logs'] as const;
+export const APPEND_ONLY_TABLES = [
+  'ledger_entries',
+  'ledger_transactions',
+  'order_events',
+  'audit_logs',
+  'account_legacy_ids',
+  'account_rank_changes',
+  'wallet_action_keys',
+] as const;
 
 /** The pattern a role name must match to be quoted into a grant without surprise: lower-case letters, digits and `_`. */
 const ROLE_NAME = /^[a-z_][a-z0-9_]{0,62}$/;

@@ -1,4 +1,4 @@
-// The validation errors the merchant portal routes share, built in one place so the field names and codes stay identical.
+// The validation errors the sign-in and password routes of every account share, built in one place so the field names and codes stay identical.
 import { AppError } from '../../../common/errors';
 
 /**

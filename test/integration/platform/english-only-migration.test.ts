@@ -1,8 +1,8 @@
 // Migration 0035, the data step of English only (feature 30, decision 039, plan docs/briefs/30-english-only.md sections 4.3-4.6
 // and 9.2): the guard and every data change, on scratch databases whose name ends in `_test` with the guard forced on. Each
-// database is filled at 0034 (from a temporary copy of drizzle/) and migrated to the newest file; after the migration every
-// assertion goes by id, never by a language column, because migrations 0036-0039 drop those columns and this file must keep
-// passing (slices B1, B2, B3 and B5 run it).
+// database is filled at 0034 (from a temporary copy of drizzle/) and migrated to the file before the one-account migration (a fresh
+// database to the newest file); after the migration every assertion goes by id, never by a language column, because migrations
+// 0036-0039 drop those columns and this file must keep passing (slices B1, B2, B3 and B5 run it).
 import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -23,12 +23,20 @@ import {
   poolOn,
   runExport,
 } from '../../support/english-only';
+import { ACCOUNTS_EXPAND_SUFFIX, migrateUntil, migrationTag } from '../../support/migration-files';
 
 // CREATE DATABASE and a migration from zero take seconds on an idle machine and far longer when several worktrees run their
 // suites at once (test/tooling/db-reset.test.ts measured up to 176 s for one file).
 setDefaultTimeout(180_000);
 
 const NEWEST = journalEntries().at(-1)!.tag;
+/**
+ * The last file before the one-account migration. Case (b) stops there: its rows are about languages, and the account migration rewrites
+ * the people rows and the consent subjects the case compares (a fresh database, case a, still goes to the newest file).
+ */
+const BEFORE_ACCOUNTS = ((tags: string[]) => tags[tags.indexOf(migrationTag(ACCOUNTS_EXPAND_SUFFIX)) - 1]!)(
+  journalEntries().map((entry) => entry.tag),
+);
 const scratch = new ScratchDatabases();
 const folders: string[] = [];
 const pools: Pool[] = [];
@@ -128,14 +136,14 @@ describe('a database with content in other languages, filled at 0034 (case b)', 
     expect(await idsOf(pool, 'legacy_slugs')).toEqual([]);
   });
 
-  describe('after the export, the migration to the newest file', () => {
+  describe('after the export, the migration to the file before the one-account migration', () => {
     beforeAll(async () => {
       await exportOf(url);
-      await migrateDatabase(url);
+      await migrateUntil(url, ACCOUNTS_EXPAND_SUFFIX);
     });
 
-    it('applies every file', async () => {
-      expect((await appliedTags(pool)).at(-1)).toBe(NEWEST);
+    it('applies every file up to the one-account migration', async () => {
+      expect((await appliedTags(pool)).at(-1)).toBe(BEFORE_ACCOUNTS);
     });
 
     it('deletes every template in another language (those of the applied migrations too) and keeps the English ones', async () => {

@@ -146,16 +146,33 @@ export function contentProblems(content: CampaignContent): FieldError[] {
   return errors;
 }
 
+/** The page where an account of a merchant rank manages its notifications, in the account area of the shop. */
+export const NOTIFICATION_SETTINGS_PATH = '/account/settings/notifications';
+
+/**
+ * The address of the notification settings page, for the "Manage notifications" line of a merchant's email.
+ *
+ * Why: decision 064: the shop has no `/merchant` addresses any more, every account's pages live under `/account`. The path joins the
+ * shop's root (`STORE_BASE_URL`), never `PORTAL_BASE_URL`, which is the base of the account area and would double the path.
+ *
+ * @param storeBaseUrl the shop's base URL, without a trailing slash
+ * @returns `<storeBaseUrl>/account/settings/notifications`
+ */
+export function notificationSettingsUrl(storeBaseUrl: string): string {
+  return `${storeBaseUrl}${NOTIFICATION_SETTINGS_PATH}`;
+}
+
 const SITE_PATH = /^\/(?!\/)[A-Za-z0-9\-._~/?#=&%]{0,199}$/;
-/** The merchant portal's part of the site: `/merchant`, then `/`, `?`, `#` or nothing. */
-const MERCHANT_PATH = /^\/merchant(?:[/?#]|$)/;
+/** The account area of the site, where every account (a merchant rank too) has its pages: `/account`, then `/`, `?`, `#` or nothing. */
+const ACCOUNT_AREA_PATH = /^\/account(?:[/?#]|$)/;
 
 /**
  * Checks the links of a campaign.
  *
  * Why: a link is a path on our own site (one leading `/`, no scheme, no host), so a campaign cannot carry a phishing URL (13.1).
- * A merchant link must be a page of the merchant portal (`/merchant/...`): the inbox shows the path as it is and the email and
- * join it to the site's root, so a path outside the portal (`/orders`) would be wrong on both.
+ * A merchant link must be a page of the account area (`/account/...`; the shop has no `/merchant` addresses any more, decision 064):
+ * the inbox shows the path as it is and the email joins it to the site's root, so a path outside the area (`/orders`, or the old
+ * `/merchant/orders`) would be wrong on both.
  *
  * @param link the links per audience, or null
  * @returns the field errors, named `link.<audience>`
@@ -172,11 +189,11 @@ export function linkProblems(link: CampaignLink | null | undefined): FieldError[
         code: 'invalid',
         message: 'Use a path on the site that starts with one /, such as /account/orders.',
       });
-    } else if (key === 'merchant' && !MERCHANT_PATH.test(value)) {
+    } else if (key === 'merchant' && !ACCOUNT_AREA_PATH.test(value)) {
       errors.push({
         field: 'link.merchant',
         code: 'invalid',
-        message: 'Use a page of the merchant portal, such as /merchant/orders.',
+        message: 'Use a page of the account area, such as /account/orders.',
       });
     }
   }

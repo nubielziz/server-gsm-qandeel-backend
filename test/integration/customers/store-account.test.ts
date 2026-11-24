@@ -65,7 +65,8 @@ describe('GET /store/v1/me', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.headers['x-csrf-token']).toBe(client.csrf);
-    expect(res.json()).toEqual({
+    // AccountMe (decision 064): the keys of the shop's own account page plus the rank, the status and the two-step flag.
+    expect(res.json()).toMatchObject({
       id: customer.id,
       email: customer.email,
       emailVerifiedAt: '2026-10-12T09:30:00.000Z',
@@ -76,6 +77,8 @@ describe('GET /store/v1/me', () => {
       marketingOptIn: true,
       hasPassword: true,
       createdAt: expect.any(String),
+      status: 'active',
+      rank: expect.objectContaining({ kind: 'retail' }),
     });
   });
 
@@ -85,7 +88,7 @@ describe('GET /store/v1/me', () => {
     expect((await anonymous.me()).statusCode).toBe(401);
     // A session opened some other way (the link) sees the account.
     const { openSession } = await import('../../support/auth');
-    const session = await openSession(t, { type: 'customer', id: customer.id });
+    const session = await openSession(t, { type: 'account', id: customer.id });
     const res = await t.app.inject({ method: 'GET', url: '/store/v1/me', headers: session.headers });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ id: customer.id, hasPassword: false });
@@ -107,8 +110,8 @@ describe('PATCH /store/v1/me', () => {
     const { db } = await testDb();
     const records = await db.select().from(s.consentRecords).orderBy(asc(s.consentRecords.id));
     expect(records).toMatchObject([
-      { subjectType: 'customer', subjectId: customer.id, purpose: 'marketing', granted: true },
-      { subjectType: 'customer', subjectId: customer.id, purpose: 'marketing', granted: false },
+      { subjectType: 'account', subjectId: customer.id, purpose: 'marketing', granted: true },
+      { subjectType: 'account', subjectId: customer.id, purpose: 'marketing', granted: false },
     ]);
     expect(records[0]).toMatchObject({ createdAt: new Date('2026-11-07T10:00:00.000Z') });
     // The proof keeps the address the request came from, which is the address of this storefront client.
@@ -359,7 +362,10 @@ describe('the customer session', () => {
   it('reads the account from the database on every request: a customer anonymized meanwhile is signed out', async () => {
     const { customer, client } = await signedIn();
     const { db } = await testDb();
-    await db.update(s.customers).set({ status: 'anonymized' }).where(eq(s.customers.id, customer.id));
+    await db
+      .update(s.clients)
+      .set({ status: 'anonymized', anonymizedAt: clock.now() })
+      .where(eq(s.clients.id, customer.id));
     await clearIdentityCaches(t);
     expect((await client.me()).statusCode).toBe(401);
   });

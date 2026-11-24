@@ -121,7 +121,7 @@ describe('the migration that retires the abandoned-checkouts list and the remind
   it('ends the queued reminder rows as failed with a fixed reason, and keeps the sent ones and every other event as they are', async () => {
     const { db } = await testDb();
     const row = (event: string, status: 'queued' | 'sent') => ({
-      recipientType: 'customer' as const,
+      recipientType: 'account' as const,
       recipientId: 1,
       channel: 'email' as const,
       event,

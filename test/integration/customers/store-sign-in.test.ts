@@ -8,7 +8,9 @@ import { CacheKeys } from '@src/infra/cache';
 import { TokenService } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
-import { CSRF_COOKIE_NAMES, SESSION_COOKIE_NAMES, csrfTokenFor } from '@src/modules/identity';
+import { SESSION_COOKIE_NAMES, csrfTokenFor } from '@src/modules/identity';
+import { LEGACY_STORE_SESSION_COOKIE, csrfCookieNameOf } from '../../support/account-sessions';
+import { ensureRetailGroup } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { HOUR, MINUTE, TestClock } from '../../support/clock';
@@ -43,6 +45,8 @@ beforeEach(async () => {
   await resetDb();
   await clearIdentityCaches(t);
   await clearStoreRateLimits(t);
+  // The retail rank the migrations insert: `resetDb` empties its table, and a self-signup joins it.
+  await ensureRetailGroup((await testDb()).db);
   captureCustomerLinks(t);
 });
 afterEach(() => mock.restore());
@@ -67,16 +71,16 @@ describe('POST /store/v1/auth/login', () => {
     expect(res.json()).toEqual({ next: 'done' });
     expect(res.headers['cache-control']).toBe('no-store');
 
-    const sessionCookie = res.cookies.find((cookie) => cookie.name === SESSION_COOKIE_NAMES.customer)!;
+    const sessionCookie = res.cookies.find((cookie) => cookie.name === SESSION_COOKIE_NAMES.account)!;
     expect(sessionCookie).toMatchObject({ httpOnly: true, sameSite: 'Lax', path: '/' });
     expect(sessionCookie.maxAge).toBeGreaterThan(29 * 24 * 3600);
-    const csrfCookie = res.cookies.find((cookie) => cookie.name === CSRF_COOKIE_NAMES.customer)!;
+    const csrfCookie = res.cookies.find((cookie) => cookie.name === csrfCookieNameOf('retail'))!;
     expect(csrfCookie.httpOnly).toBeFalsy();
     const expectedCsrf = csrfTokenFor(t.config.security.csrfSecret, t.app.get(TokenService).hash(client.sessionToken!));
     expect(csrfCookie.value).toBe(expectedCsrf);
     expect(res.headers['x-csrf-token']).toBe(expectedCsrf);
 
-    expect(await sessionsOf(customer.id)).toMatchObject([{ subjectType: 'customer', stage: 'active' }]);
+    expect(await sessionsOf(customer.id)).toMatchObject([{ subjectType: 'account', stage: 'active' }]);
     expect((await customerRow(customer.id)).lastLoginAt?.toISOString()).toBe('2026-11-07T10:00:00.000Z');
     expect((await client.me()).statusCode).toBe(200);
   });
@@ -113,7 +117,11 @@ describe('POST /store/v1/auth/login', () => {
   });
 
   it('treats an anonymized customer as unknown', async () => {
-    const customer = await makeCustomer(t, { status: 'anonymized', hasAccount: false });
+    const customer = await makeCustomer(t, {
+      status: 'anonymized',
+      anonymizedAt: new Date('2026-11-01T00:00:00.000Z'),
+      hasAccount: false,
+    });
     expect((await store().login(customer.email)).statusCode).toBe(401);
   });
 
@@ -167,7 +175,11 @@ describe('POST /store/v1/auth/login', () => {
     const known = await makeCustomer(t);
     const noPassword = await makeCustomer(t, { noPassword: true });
     const guest = await makeCustomer(t, { guest: true });
-    const anonymized = await makeCustomer(t, { status: 'anonymized', hasAccount: false });
+    const anonymized = await makeCustomer(t, {
+      status: 'anonymized',
+      anonymizedAt: new Date('2026-11-01T00:00:00.000Z'),
+      hasAccount: false,
+    });
     const emails = [known.email, noPassword.email, guest.email, anonymized.email, `nobody-${randomUUID()}@example.com`];
 
     const answers = [];
@@ -250,11 +262,11 @@ describe('POST /store/v1/auth/magic-link and /auth/verify', () => {
     const { db } = await testDb();
     // The outbox event carries ids only, never the token or the address.
     const [event] = await db.select().from(s.outboxEvents);
-    expect(event).toMatchObject({ type: 'customer.magic_link', aggregateType: 'customers', aggregateId: customer.id });
+    expect(event).toMatchObject({ type: 'customer.magic_link', aggregateType: 'clients', aggregateId: customer.id });
     expect(JSON.stringify(event!.payload)).not.toContain(link!.token);
     expect(JSON.stringify(event!.payload)).not.toContain(customer.email);
     const [row] = await db.select().from(s.authTokens);
-    expect(row).toMatchObject({ purpose: 'magic_link', subjectType: 'customer', subjectId: customer.id, usedAt: null });
+    expect(row).toMatchObject({ purpose: 'magic_link', subjectType: 'account', subjectId: customer.id, usedAt: null });
     expect(row!.tokenHash).not.toBe(link!.token);
     expect(row!.expiresAt.toISOString()).toBe('2026-11-07T11:00:00.000Z');
 
@@ -266,7 +278,7 @@ describe('POST /store/v1/auth/magic-link and /auth/verify', () => {
       emailVerifiedAt: '2026-11-07T10:00:00.000Z',
       hasPassword: true,
     });
-    expect(verified.cookies.some((cookie) => cookie.name === SESSION_COOKIE_NAMES.customer)).toBe(true);
+    expect(verified.cookies.some((cookie) => cookie.name === SESSION_COOKIE_NAMES.account)).toBe(true);
     expect((await client.me()).statusCode).toBe(200);
     expect((await customerRow(customer.id)).lastLoginAt).not.toBeNull();
 
@@ -290,7 +302,7 @@ describe('POST /store/v1/auth/magic-link and /auth/verify', () => {
     // A link only for the known account and the new one; the suspended customer gets nothing.
     expect(customerLinks().map((link) => link.kind)).toEqual(['magic_link', 'magic_link']);
     const { db } = await testDb();
-    const [created] = await db.select().from(s.customers).where(eq(s.customers.email, 'brand.new@example.com'));
+    const [created] = await db.select().from(s.clients).where(eq(s.clients.email, 'brand.new@example.com'));
     expect(created).toMatchObject({
       name: '',
       hasAccount: false,
@@ -305,16 +317,15 @@ describe('POST /store/v1/auth/magic-link and /auth/verify', () => {
   it('makes the self-signup an account when its link is used, and is safe against two requests for one new email', async () => {
     await Promise.all([store().magicLink('twin@example.com'), store().magicLink('twin@example.com')]);
     const { db } = await testDb();
-    const rows = await db.select().from(s.customers).where(eq(s.customers.email, 'twin@example.com'));
+    const rows = await db.select().from(s.clients).where(eq(s.clients.email, 'twin@example.com'));
     expect(rows).toHaveLength(1);
     // A link the visitor asked for does not void the one sent before (decision 052): the first still works, and using it spends the other.
     const [first, second] = customerLinks();
     const client = store();
     expect((await client.verify(first!.token)).statusCode).toBe(200);
     expect((await store().verify(second!.token)).statusCode).toBe(410);
-    expect(await customerRow(rows[0]!.id)).toMatchObject({ hasAccount: true });
-    const [credentials] = await db.select().from(s.customerCredentials);
-    expect(credentials).toMatchObject({ customerId: rows[0]!.id, passwordHash: null });
+    // The account has no password yet: the link only proved the mailbox.
+    expect(await customerRow(rows[0]!.id)).toMatchObject({ hasAccount: true, passwordHash: null });
   });
 
   it('sends nothing for a blocklisted email and creates no customer', async () => {
@@ -323,7 +334,7 @@ describe('POST /store/v1/auth/magic-link and /auth/verify', () => {
     await db.insert(s.blocklistEntries).values({ kind: 'email', valueHash: hash, display: 'b***@example.com' });
     expect((await store().magicLink('Blocked@Example.com')).statusCode).toBe(204);
     expect(customerLinks()).toEqual([]);
-    expect(await db.select().from(s.customers)).toHaveLength(0);
+    expect(await db.select().from(s.clients)).toHaveLength(0);
   });
 
   it('sends nothing for an email on a blocklisted domain either, and creates no customer', async () => {
@@ -331,7 +342,7 @@ describe('POST /store/v1/auth/magic-link and /auth/verify', () => {
     await insertBlock(t, db, 'domain', 'tempbox.example');
     expect((await store().magicLink('Anyone@TempBox.example')).statusCode).toBe(204);
     expect(customerLinks()).toEqual([]);
-    expect(await db.select().from(s.customers)).toHaveLength(0);
+    expect(await db.select().from(s.clients)).toHaveLength(0);
     // A different domain still gets its link.
     expect((await store().magicLink('anyone@other.example')).statusCode).toBe(204);
     expect(customerLinks()).toHaveLength(1);
@@ -348,9 +359,9 @@ describe('POST /store/v1/auth/magic-link and /auth/verify', () => {
     await store().magicLink(customer.email);
     const [, fresh] = customerLinks();
     const { db } = await testDb();
-    await db.update(s.customers).set({ status: 'suspended' }).where(eq(s.customers.id, customer.id));
+    await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, customer.id));
     expect((await store().verify(fresh!.token)).statusCode).toBe(410);
-    await db.update(s.customers).set({ status: 'active' }).where(eq(s.customers.id, customer.id));
+    await db.update(s.clients).set({ status: 'active' }).where(eq(s.clients.id, customer.id));
 
     // A reset link is not a sign-in link.
     await store().forgot(customer.email);
@@ -465,7 +476,7 @@ describe('POST /store/v1/auth/password/forgot and /auth/password/set', () => {
     await store().forgot(customer.email);
     const [, , third] = customerLinks();
     const { db } = await testDb();
-    await db.update(s.customers).set({ status: 'suspended' }).where(eq(s.customers.id, customer.id));
+    await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, customer.id));
     expect((await store().setPassword(third!.token, 'a-third-long-passphrase')).statusCode).toBe(410);
   });
 
@@ -526,10 +537,9 @@ describe('POST /store/v1/me/password', () => {
     expect(res.statusCode).toBe(204);
     expect(client.sessionToken).not.toBe(before);
     expect((await client.me()).statusCode).toBe(200);
-    const { db } = await testDb();
-    const [credentials] = await db.select().from(s.customerCredentials);
+    const credentials = await customerRow(customer.id);
     expect(credentials).toMatchObject({ mustChangePassword: false });
-    expect(credentials!.passwordChangedAt).not.toBeNull();
+    expect(credentials.passwordChangedAt).not.toBeNull();
     // The old token is dead (rotated), the new login does not ask for a change again.
     expect((await store().login(customer.email, 'a-much-longer-passphrase')).json()).toEqual({ next: 'done' });
   });
@@ -548,7 +558,7 @@ describe('POST /store/v1/me/password', () => {
 });
 
 describe('POST /store/v1/auth/logout', () => {
-  it('ends the session and clears both cookies; a request without the CSRF token is refused and signs nobody out', async () => {
+  it('ends the session and clears its cookies, both CSRF names and the old shop cookie; a request without the CSRF token is refused and signs nobody out', async () => {
     const customer = await makeCustomer(t);
     const client = store();
     await client.login(customer.email);
@@ -559,8 +569,14 @@ describe('POST /store/v1/auth/logout', () => {
     const res = await client.logout();
     expect(res.statusCode).toBe(204);
     expect(res.cookies.map((cookie) => cookie.name).sort()).toEqual(
-      [SESSION_COOKIE_NAMES.customer, CSRF_COOKIE_NAMES.customer].sort(),
+      [
+        SESSION_COOKIE_NAMES.account,
+        csrfCookieNameOf('retail'),
+        csrfCookieNameOf('merchant'),
+        LEGACY_STORE_SESSION_COOKIE,
+      ].sort(),
     );
+    expect(res.cookies.every((cookie) => cookie.value === '')).toBe(true);
     expect((await sessionsOf(customer.id))[0]!.revokedAt).not.toBeNull();
     expect((await client.me({ cookies: false })).statusCode).toBe(401);
   });
@@ -572,7 +588,7 @@ describe('POST /store/v1/auth/logout', () => {
     await a.login(customer.email);
     await b.login(customer.email);
     const { db } = await testDb();
-    await db.update(s.customers).set({ status: 'suspended' }).where(eq(s.customers.id, customer.id));
+    await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, customer.id));
     await clearIdentityCaches(t);
     // The guard answers 403 and ends every session of the suspended account.
     expect((await a.me()).statusCode).toBe(403);
@@ -595,7 +611,7 @@ describe('the anti-bot token on the three public auth routes (decision 034)', ()
   const footprint = async () => {
     const { db } = await testDb();
     return {
-      customers: (await db.select().from(s.customers)).length,
+      accounts: (await db.select().from(s.clients)).length,
       sessions: (await db.select().from(s.sessions)).length,
       outbox: (await db.select().from(s.outboxEvents)).length,
       links: customerLinks().length,
@@ -665,7 +681,7 @@ describe('the Origin of the sign-in routes (decision 045)', () => {
 
     const fromShop = await client.verify(link!.token);
     expect(fromShop.statusCode).toBe(200);
-    expect(fromShop.cookies.map((cookie) => cookie.name)).toContain(SESSION_COOKIE_NAMES.customer);
+    expect(fromShop.cookies.map((cookie) => cookie.name)).toContain(SESSION_COOKIE_NAMES.account);
     expect(await spent()).not.toBeNull();
   });
 

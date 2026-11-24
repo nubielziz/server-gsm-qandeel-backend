@@ -267,7 +267,8 @@ describe('placeimeiorder', () => {
     const orderId = Number(entry.REFERENCEID);
     const row = await orderRow(db, orderId);
     expect(row).toMatchObject({
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
+      legacyClientId: world.merchant.id,
       serviceId: world.auto.serviceId,
       source: 'dhru',
       apiKeyId: creds.keyId,
@@ -277,7 +278,7 @@ describe('placeimeiorder', () => {
       totalPrice: '17.2800',
     });
     expect((await eventsOf(db, orderId)).map((event) => [event.type, event.actorType])).toEqual([
-      ['created', 'client'],
+      ['created', 'account'],
       ['hold', 'system'],
     ]);
     expect((await eventsOf(db, orderId))[0]!.data).toMatchObject({ message: 'Order received via Dhru API' });
@@ -363,7 +364,7 @@ describe('placeimeiorder', () => {
     const answer = await dhruClient(t, poor).call('placeimeiorder', { ID: world.auto.serviceId, IMEI: IMEIS[0] });
     expect(answer).toEqual({ ERROR: [{ MESSAGE: 'Not enough credits' }], apiversion: '6.1' });
     expect(await walletOf(db, poor.clientId)).toEqual({ wallet: '10.0000', hold: '0.0000' });
-    expect(await db.select().from(s.orders).where(eq(s.orders.clientId, poor.clientId))).toHaveLength(0);
+    expect(await db.select().from(s.orders).where(eq(s.orders.accountId, poor.clientId))).toHaveLength(0);
   });
 
   it('refuses a second open order for the same service and IMEI (the duplicate rule), and allows it once the first is closed', async () => {
@@ -509,7 +510,7 @@ describe('placeimeiorderbulk', () => {
       .set({ balance: '1000.0000' })
       .where(
         and(
-          eq(s.ledgerAccounts.ownerType, 'client'),
+          eq(s.ledgerAccounts.ownerType, 'account'),
           eq(s.ledgerAccounts.ownerId, world.merchant.id),
           eq(s.ledgerAccounts.kind, 'client_wallet'),
         ),
@@ -598,7 +599,12 @@ describe('file orders', () => {
     expect(row).toMatchObject({ type: 'file', source: 'dhru', imei: 'firmware.bin' });
     expect(row.inputFileId).not.toBeNull();
     const [file] = await db.select().from(s.files).where(eq(s.files.id, row.inputFileId!));
-    expect(file).toMatchObject({ filename: 'firmware.bin', size: 14, ownerType: 'client', ownerId: world.merchant.id });
+    expect(file).toMatchObject({
+      filename: 'firmware.bin',
+      size: 14,
+      ownerType: 'account',
+      ownerId: world.merchant.id,
+    });
     // A result file: staff attach it, the merchant reads its id.
     const [result] = await db
       .insert(s.files)
@@ -670,13 +676,6 @@ describe('credentials and maintenance', () => {
     expect(messageOf(await dhru.call('accountinfo', undefined, { username: 'someone-else' }))).toBe(
       'Authentication Failed',
     );
-  });
-
-  it('refuses a key of a merchant waiting for approval, in the envelope', async () => {
-    const { db } = await testDb();
-    await db.update(s.clients).set({ status: 'pending' }).where(eq(s.clients.id, world.merchant.id));
-    await clearApiKeyCaches(t);
-    expect(messageOf(await dhru.call('accountinfo'))).toBe('This merchant account has not been approved yet.');
   });
 
   it('refuses a placement during api_orders maintenance in the envelope, form, JSON or multipart, and lets the reads through', async () => {

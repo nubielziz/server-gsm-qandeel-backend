@@ -1,8 +1,8 @@
 // Integration tests of placing orders through the merchant portal (feature 5): POST /client/orders on the real application: the price
 // from the one resolver, the hold in the ledger, the placement dispatch rule and its outbox row, the price guard (user rule 9), the
-// duplicate rule, bulk orders, the refusals (funds, IMEI, service, pending merchant) and the concurrency rule (no overspend).
+// duplicate rule, bulk orders, the refusals (funds, IMEI, service, a retail rank, a suspended account, a frozen wallet) and the concurrency rule (no overspend).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { Money } from '@src/common/money';
 import { schema as s } from '@src/infra/db';
 import { ListedPrices } from '@src/modules/catalog';
@@ -11,6 +11,7 @@ import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { accountFigures, fundWallet, insertWalletMerchant, ledgerTotals } from '../../support/money';
+import { makeCustomer } from '../../support/store';
 import {
   IMEIS,
   eventsOf,
@@ -71,7 +72,9 @@ describe('POST /client/orders: one automatic order', () => {
 
     const row = await orderRow(db, placed.id);
     expect(row).toMatchObject({
-      clientId: merchant.id,
+      accountId: merchant.id,
+      // written for the readers of the old image until the contract release drops the column
+      legacyClientId: merchant.id,
       status: 'pending',
       dispatchState: 'pending',
       unitCost: '13.5000',
@@ -90,7 +93,7 @@ describe('POST /client/orders: one automatic order', () => {
     expect((await ledgerTotals(db)).sum).toBe('0.0000');
 
     expect((await eventsOf(db, row.id)).map((event) => [event.type, event.actorType])).toEqual([
-      ['created', 'client'],
+      ['created', 'account'],
       ['hold', 'system'],
     ]);
     // The dispatch job of feature 6 will find this row; no status changed, so no `order.status_changed` event.
@@ -245,24 +248,52 @@ describe('POST /client/orders: refusals', () => {
     await fundWallet(db, credit.id, '10');
     const portal = await portalFor(t, credit.id);
     expect((await portal.post('/client/orders', { serviceId: auto.serviceId, imei: IMEIS[0] })).statusCode).toBe(201);
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: credit.id }))?.balance).toBe('-7.2800');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: credit.id }))?.balance).toBe('-7.2800');
     // 30 of credit allow -30: another 17.28 would end at -24.56, a third at -41.84.
     expect((await portal.post('/client/orders', { serviceId: auto.serviceId, imei: IMEIS[1] })).statusCode).toBe(201);
     const third = await portal.post('/client/orders', { serviceId: auto.serviceId, imei: IMEIS[2] });
     expect(third.statusCode).toBe(402);
   });
 
-  it('refuses a pending merchant (B153) and a call without a session', async () => {
+  it('refuses a retail rank (403 RANK_NOT_ALLOWED), a suspended account (403 ACCOUNT_SUSPENDED) and a call without a session', async () => {
     const { db, auto } = world;
-    const pendingId = await insertMerchant(db, { status: 'pending' });
-    const pending = await (
-      await portalFor(t, pendingId)
-    ).post('/client/orders', { serviceId: auto.serviceId, imei: IMEIS[0] });
-    expect(pending.statusCode).toBe(403);
-    expect(json(pending).code).toBe('ACCOUNT_PENDING_APPROVAL');
+    const body = { serviceId: auto.serviceId, imei: IMEIS[0] };
+    const retail = await makeCustomer(t);
+    const wrongRank = await (await portalFor(t, retail.id)).post('/client/orders', body);
+    expect(wrongRank.statusCode).toBe(403);
+    expect(json(wrongRank).code).toBe('RANK_NOT_ALLOWED');
+    const suspendedId = await insertMerchant(db, { status: 'suspended' });
+    const suspended = await (await portalFor(t, suspendedId)).post('/client/orders', body);
+    expect(suspended.statusCode).toBe(403);
+    expect(json(suspended).code).toBe('ACCOUNT_SUSPENDED');
     const anonymous = await t.app.inject({ method: 'POST', url: '/client/orders', payload: { serviceId: 1 } });
     expect(anonymous.statusCode).toBe(401);
     expect(await db.select().from(s.orders)).toHaveLength(0);
+    expect(await db.select().from(s.orderEvents)).toHaveLength(0);
+  });
+
+  it('refuses a frozen merchant wallet with 409 WALLET_FROZEN and writes nothing', async () => {
+    const { db, merchant, auto } = world;
+    await db
+      .update(s.ledgerAccounts)
+      .set({ frozenAt: clock.now(), frozenReason: 'Top-up under dispute' })
+      .where(
+        and(
+          eq(s.ledgerAccounts.ownerType, 'account'),
+          eq(s.ledgerAccounts.ownerId, merchant.id),
+          eq(s.ledgerAccounts.kind, 'client_wallet'),
+        ),
+      );
+    const res = await (
+      await portalFor(t, merchant.id)
+    ).post('/client/orders', {
+      serviceId: auto.serviceId,
+      imei: IMEIS[0],
+    });
+    expect(res.statusCode).toBe(409);
+    expect(json(res).code).toBe('WALLET_FROZEN');
+    expect(await db.select().from(s.orders)).toHaveLength(0);
+    expect(await walletOf(db, merchant.id)).toEqual({ wallet: '100.0000', hold: '0.0000' });
   });
 });
 
@@ -424,7 +455,7 @@ describe('POST /client/orders: concurrency', () => {
     // 40 / 17.28 = two orders.
     expect(codes).toEqual([201, 201, 402, 402, 402]);
     expect(await walletOf(db, limited.id)).toEqual({ wallet: '5.4400', hold: '34.5600' });
-    expect(await db.select().from(s.orders).where(eq(s.orders.clientId, limited.id))).toHaveLength(2);
+    expect(await db.select().from(s.orders).where(eq(s.orders.accountId, limited.id))).toHaveLength(2);
     expect((await ledgerTotals(db)).sum).toBe('0.0000');
   });
 });

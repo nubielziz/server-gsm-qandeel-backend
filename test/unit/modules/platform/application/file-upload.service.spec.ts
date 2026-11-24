@@ -1,4 +1,4 @@
-// Unit tests of the file name and media type clean-up of the merchants' uploads (B157).
+// Unit tests of the file name and media type clean-up of the accounts' uploads (B157).
 import { describe, expect, it } from 'bun:test';
 import {
   MAX_FILENAME_LENGTH,

@@ -1,26 +1,31 @@
 // Drizzle queries on payments (map routes /admin/payments*, /client/invoices/:id/receipt, the payment webhook and the automatic
 // credit job, stage 8): the top-up list with sort, search and exact count, find with a row lock, insert, guarded update, the due
-// payments of the job and the lookups the wire needs. Only the money module touches this table.
+// payments of the job and the lookups the wire needs. Only the money module touches this table. The owner of a top-up is the account of
+// its invoice (`invoices.account_id`) and the wallet it fills is the invoice's `wallet_kind` (decision 064).
 import { type SQL, and, asc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import type { CustomerContact } from '../../../common/customer-contact';
 import type { DbExecutor } from '../../../infra/db';
 import { escapeLike, listOrderBy, listWhere } from '../../../infra/db/list-sql';
-import { type NewPayment, type Payment, invoices, payments } from '../db/schema';
+import { type InvoiceWalletKind, type NewPayment, type Payment, invoices, payments } from '../db/schema';
 import { normalizeBankReference } from '../domain/payment-rules';
 import { findCustomerIdsByNameOrEmail, findMerchantIdsByName } from './foreign-directory.repository';
 
 /** The sort fields of the top-up payment list. */
 export type PaymentSortField = 'createdAt' | 'id' | 'amount' | 'status';
 
-/** A payment with the merchant or the storefront customer of its invoice. */
+/** A payment with the account and the wallet kind of its invoice. */
 export interface PaymentRow {
   readonly payment: Payment;
-  /** `invoices.client_id` of the linked invoice (the merchant is reached through the invoice); `null` without an invoice. */
-  readonly clientId: number | null;
-  /** `invoices.customer_id` of a store balance top-up (feature 21); `null` for a merchant deposit. */
-  readonly customerId: number | null;
+  /** `invoices.account_id` of the linked invoice: the account that topped up, of either rank; `null` without an invoice. */
+  readonly accountId: number | null;
+  /** `invoices.wallet_kind` of the linked invoice: the wallet it fills (`client_wallet` or `customer_wallet`); `null` without an invoice. */
+  readonly walletKind: InvoiceWalletKind | null;
 }
+
+// `accountId` and its documented alias `clientId` name one column. The owner word reads the invoice's wallet kind (decision 064): a row
+// never infers its owner from which owner column is empty (the words are `TOP_UP_OWNER_WORDS`, the values of the `owner` filter).
+const OWNER_WORD = sql`case ${invoices.walletKind} when 'client_wallet' then 'merchant' when 'customer_wallet' then 'customer' end`;
 
 const COLUMNS = {
   createdAt: payments.createdAt,
@@ -28,12 +33,12 @@ const COLUMNS = {
   amount: payments.amount,
   status: payments.status,
   purpose: payments.purpose,
-  clientId: invoices.clientId,
-  customerId: invoices.customerId,
-  owner: sql`case when ${invoices.clientId} is null then 'customer' else 'merchant' end`,
+  accountId: invoices.accountId,
+  clientId: invoices.accountId,
+  owner: OWNER_WORD,
 };
 
-const ROW = { payment: payments, clientId: invoices.clientId, customerId: invoices.customerId };
+const ROW = { payment: payments, accountId: invoices.accountId, walletKind: invoices.walletKind };
 
 /**
  * Lists top-up payments.
@@ -43,8 +48,9 @@ const ROW = { payment: payments, clientId: invoices.clientId, customerId: invoic
  *
  * @param db the database or a transaction
  * @param query the parsed list request (`q` searches the gateway reference, as typed and in the stored form of a bank reference
- *   (`normalizeBankReference`), and the merchant name)
- * @param contact what the caller may see of customers' addresses: for `masked` `q` matches a customer's name only (decision 047)
+ *   (`normalizeBankReference`), and the account's name; `accountId` or its alias `clientId` keeps the top-ups of one account of either
+ *   rank; `owner` keeps the merchant wallet's or the store balance's)
+ * @param contact what the caller may see of accounts' addresses: for `masked` `q` matches an account's name only (decision 047)
  * @returns the page of rows and the number matching the filters
  */
 export async function listPaymentRows(
@@ -61,10 +67,11 @@ export async function listPaymentRows(
     if (folded !== '' && folded !== query.search.text) {
       alternatives.push(sql`${payments.gatewayTxnId} ilike ${`%${escapeLike(folded)}%`}`);
     }
-    const clientIds = await findMerchantIdsByName(db, pattern);
-    if (clientIds.length > 0) alternatives.push(inArray(invoices.clientId, clientIds));
-    const customerIds = await findCustomerIdsByNameOrEmail(db, pattern, contact === 'full');
-    if (customerIds.length > 0) alternatives.push(inArray(invoices.customerId, customerIds));
+    // One table holds every account: the name matches an account of either rank, and the address one for a caller who may read it.
+    const byName = await findMerchantIdsByName(db, pattern);
+    const byNameOrEmail = await findCustomerIdsByNameOrEmail(db, pattern, contact === 'full');
+    const accountIds = [...new Set([...byName, ...byNameOrEmail])];
+    if (accountIds.length > 0) alternatives.push(inArray(invoices.accountId, accountIds));
   }
   const where = listWhere(
     { filters: query.filters, search: undefined },
@@ -91,7 +98,7 @@ export async function listPaymentRows(
 }
 
 /**
- * Finds a top-up payment by id with its merchant.
+ * Finds a top-up payment by id with its account.
  *
  * @param db the database or a transaction
  * @param id the payment id
@@ -284,49 +291,25 @@ export async function dueAutoCreditIds(db: DbExecutor, now: Date, limit: number)
 }
 
 /**
- * Tells which of some merchants already have an approved top-up.
+ * Tells which of some accounts already have an approved top-up.
  *
- * Why: a pending top-up of a merchant with none is a first deposit, which the reviewer is told (the note hint of money.md).
+ * Why: a pending top-up of an account with none is a first deposit (a first top-up), which the reviewer is told (the note hint of
+ * money.md). One query for both wallet kinds: the account is the owner of the invoice, of either rank (decision 064).
  *
  * @param db the database or a transaction
- * @param clientIds the merchants
+ * @param accountIds the accounts
  * @returns the ids that have at least one approved top-up
  */
-export async function clientsWithApprovedTopup(db: DbExecutor, clientIds: readonly number[]): Promise<Set<number>> {
-  if (clientIds.length === 0) return new Set();
+export async function accountsWithApprovedTopup(db: DbExecutor, accountIds: readonly number[]): Promise<Set<number>> {
+  if (accountIds.length === 0) return new Set();
   const rows = await db
-    .selectDistinct({ clientId: invoices.clientId })
+    .selectDistinct({ accountId: invoices.accountId })
     .from(payments)
     .innerJoin(invoices, eq(invoices.id, payments.invoiceId))
     .where(
-      and(eq(payments.purpose, 'topup'), eq(payments.status, 'approved'), inArray(invoices.clientId, [...clientIds])),
+      and(eq(payments.purpose, 'topup'), eq(payments.status, 'approved'), inArray(invoices.accountId, [...accountIds])),
     );
-  return new Set(rows.flatMap((row) => (row.clientId === null ? [] : [row.clientId])));
-}
-
-/**
- * Tells which storefront customers already have an approved store balance top-up (feature 21).
- *
- * Why: a pending top-up of a customer with none is a first top-up, which the reviewer is told (like a merchant's first deposit).
- *
- * @param db the database or a transaction
- * @param customerIds the customers
- * @returns the ids that have at least one approved top-up
- */
-export async function customersWithApprovedTopup(db: DbExecutor, customerIds: readonly number[]): Promise<Set<number>> {
-  if (customerIds.length === 0) return new Set();
-  const rows = await db
-    .selectDistinct({ customerId: invoices.customerId })
-    .from(payments)
-    .innerJoin(invoices, eq(invoices.id, payments.invoiceId))
-    .where(
-      and(
-        eq(payments.purpose, 'topup'),
-        eq(payments.status, 'approved'),
-        inArray(invoices.customerId, [...customerIds]),
-      ),
-    );
-  return new Set(rows.flatMap((row) => (row.customerId === null ? [] : [row.customerId])));
+  return new Set(rows.map((row) => row.accountId));
 }
 
 /**
@@ -363,23 +346,23 @@ export async function liveReceiptPaymentExists(db: DbExecutor, fileIds: readonly
 }
 
 /**
- * Counts a merchant's receipts on top-up invoices that wait for review.
+ * Counts an account's receipts on top-up invoices that wait for review.
  *
- * Why: decision 049: at most five per merchant (`MERCHANT_OPEN_TOPUPS`), so older unpaid top-ups that stopped counting as open cannot
- * fill the review queue. Read under the merchant's top-up lock.
+ * Why: decision 049: at most five per account (`MERCHANT_OPEN_TOPUPS`), so older unpaid top-ups that stopped counting as open cannot
+ * fill the review queue. Read under the account's top-up lock (`topup:<accountId>`).
  *
  * @param db the receipt's transaction
- * @param clientId the merchant
- * @returns the number of pending payments with a receipt file on the merchant's `topup` invoices
+ * @param accountId the account
+ * @returns the number of pending payments with a receipt file on the account's `topup` invoices
  */
-export async function countPendingTopUpReceipts(db: DbExecutor, clientId: number): Promise<number> {
+export async function countPendingTopUpReceipts(db: DbExecutor, accountId: number): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(payments)
     .innerJoin(invoices, eq(invoices.id, payments.invoiceId))
     .where(
       and(
-        eq(invoices.clientId, clientId),
+        eq(invoices.accountId, accountId),
         eq(invoices.kind, 'topup'),
         eq(payments.status, 'pending'),
         sql`${payments.receiptFileId} is not null`,

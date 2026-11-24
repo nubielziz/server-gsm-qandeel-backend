@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { type AdminApi } from '../../support/admin-api';
+import { ensureRetailGroup } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, insertRole, insertStaff } from '../../support/auth';
 import { TestClock } from '../../support/clock';
@@ -38,6 +39,8 @@ beforeEach(async () => {
   await resetDb();
   await clearIdentityCaches(t);
   const { db } = await testDb();
+  // the reset removed the one retail rank that the migrations insert; the console reads it to tell the requester's rank
+  await ensureRetailGroup(db);
   await seedSupportTemplates(db);
   mailbox(t).reset();
   telegramOutbox(t).reset();
@@ -84,7 +87,7 @@ async function waitingTicket(values: Partial<typeof s.supportTickets.$inferInser
     ...values,
   });
   await insertSupportMessage(db, ticket.id, {
-    authorType: 'customer',
+    authorType: 'account',
     authorId: customer.id,
     body: 'I paid yesterday and still have no code.',
     createdAt: ago(HOUR),
@@ -121,10 +124,10 @@ describe('GET /admin/support-tickets', () => {
         number: ticket.number,
         subject: 'Where is my unlock?',
         channel: 'web',
-        requesterType: 'customer',
+        requesterType: 'account',
         requesterId: customer.id,
-        // Decision 047: the support role of these tests does not hold customers:read, so the customer's address comes masked.
-        requester: { name: 'Victor Hale', email: 'vi•••@mail.example' },
+        // Decision 047: the support role of these tests does not hold clients:read, so the account's address comes masked.
+        requester: { name: 'Victor Hale', email: 'vi•••@mail.example', rankKind: 'retail' },
         orderId: null,
         category: 'delay',
         priority: 'normal',
@@ -149,16 +152,17 @@ describe('GET /admin/support-tickets', () => {
     ]);
   });
 
-  it('shows a merchant’s ticket with the merchant as requester, and an anonymized customer as Deleted customer', async () => {
+  it('shows a merchant rank’s ticket with its account as requester, and an anonymized account as Deleted customer', async () => {
     const { db } = await testDb();
     const merchant = await insertClient(db, { name: 'Zain Mobile Hub', email: 'ops@zain.example' });
     const gone = await insertCustomer(db, {
       name: 'Deleted customer',
       email: 'deleted-9@redacted.invalid',
       status: 'anonymized',
+      anonymizedAt: new Date(),
     });
     await insertSupportTicket(db, {
-      requesterType: 'client',
+      requesterType: 'account',
       requesterId: merchant.id,
       token: null,
       subject: 'Invoice question',
@@ -170,8 +174,13 @@ describe('GET /admin/support-tickets', () => {
         row.requester,
       ]),
     );
-    expect(names['Invoice question']).toEqual({ name: 'Zain Mobile Hub', email: 'ops@zain.example' });
-    expect(names['Old ticket']).toEqual({ name: 'Deleted customer', email: null });
+    // Decision 047 for every rank: the role of these tests does not hold clients:read, so a merchant's address comes masked too.
+    expect(names['Invoice question']).toEqual({
+      name: 'Zain Mobile Hub',
+      email: 'op•••@zain.example',
+      rankKind: 'merchant',
+    });
+    expect(names['Old ticket']).toEqual({ name: 'Deleted customer', email: null, rankKind: 'retail' });
   });
 
   it('flags late from the clock: a reply is awaited and overdue, never for a resolved ticket', async () => {
@@ -226,7 +235,7 @@ describe('GET /admin/support-tickets', () => {
     });
     await insertSupportTicket(db, { requesterId: other.id, subject: 'Done', status: 'resolved' });
     await insertSupportTicket(db, {
-      requesterType: 'client',
+      requesterType: 'account',
       requesterId: merchant.id,
       subject: 'Merchant',
       status: 'open',
@@ -240,8 +249,14 @@ describe('GET /admin/support-tickets', () => {
     expect(await subjects('status=pending')).toEqual(['Waiting']);
     expect(await subjects('status=resolved')).toEqual(['Done']);
     expect(await subjects(`assigneeId=${admin.staffId}`)).toEqual(['Waiting']);
-    expect(await subjects('requesterType=client')).toEqual(['Merchant']);
-    expect(await subjects(`requesterType=customer&requesterId=${other.id}`)).toEqual(['Done']);
+    // Decision 064: the requester is an account; its rank kind tells a merchant from a shop buyer, and the old words are 422.
+    expect(await subjects('requesterType=account&rankKind=merchant')).toEqual(['Merchant']);
+    expect(await subjects('rankKind=retail')).toEqual(['First (SF-1)', 'Waiting', 'Done']);
+    expect(await subjects(`requesterId=${other.id}`)).toEqual(['Done']);
+    for (const old of ['client', 'customer']) {
+      expect((await admin.get(`/admin/support-tickets?requesterType=${old}`)).status, old).toBe(422);
+    }
+    expect((await admin.get('/admin/support-tickets?rankKind=guest')).status).toBe(422);
     expect(await subjects('q=alex')).toEqual(['Done']);
     expect(await subjects('q=zain')).toEqual(['Merchant']);
     expect(await subjects('q=sf-1')).toEqual(['First (SF-1)']);
@@ -261,19 +276,20 @@ describe('GET /admin/support-tickets', () => {
       name: 'Deleted customer',
       email: 'erased-1@redacted.invalid',
       status: 'anonymized',
+      anonymizedAt: new Date(),
     });
     const merchant = await insertClient(db, { name: 'Zain Mobile Hub', email: 'desk@zain-hub.example' });
     await insertSupportTicket(db, { requesterId: guest.id, subject: 'Nameless' });
     await insertSupportTicket(db, { requesterId: named.id, subject: 'Named' });
     await insertSupportTicket(db, { requesterId: gone.id, subject: 'Gone' });
     await insertSupportTicket(db, {
-      requesterType: 'client',
+      requesterType: 'account',
       requesterId: merchant.id,
       subject: 'Merchant',
       token: null,
     });
-    // Decision 047: a customer's address is searched by a caller who may read customers.
-    const reader = await supportStaff(t, ['support:*', 'customers:read']);
+    // Decision 047: an account's address is searched by a caller who may read accounts (clients:read), whatever its rank.
+    const reader = await supportStaff(t, ['support:*', 'clients:read']);
     const subjects = async (query: string, api = reader) =>
       (await api.get(`/admin/support-tickets?${query}&_sort=id&_order=asc`)).body.map(
         (row: { subject: string }) => row.subject,
@@ -285,51 +301,18 @@ describe('GET /admin/support-tickets', () => {
     expect(await subjects('q=zain-hub.example')).toEqual(['Merchant']);
     // The inbox shows the guest by the masked address as the name; the address itself is in full for this caller.
     const shown = (await reader.get('/admin/support-tickets?q=no.name.guest')).body[0];
-    expect(shown.requester).toEqual({ name: 'no•••@mail.example', email: 'no.name.guest@mail.example' });
-    // An anonymized customer's address is never shown, so it is not searchable either.
+    expect(shown.requester).toEqual({
+      name: 'no•••@mail.example',
+      email: 'no.name.guest@mail.example',
+      rankKind: 'retail',
+    });
+    // An anonymized account's address is never shown, so it is not searchable either.
     expect(await subjects('q=erased-1')).toEqual([]);
-    // The caller without customers:read finds a merchant by its address but no customer by theirs.
+    // The caller without clients:read finds no account by its address, a merchant rank's included (the name still matches).
     expect(await subjects('q=no.name.guest', admin)).toEqual([]);
     expect(await subjects('q=%40other.example', admin)).toEqual([]);
-    expect(await subjects('q=zain-hub.example', admin)).toEqual(['Merchant']);
-  });
-
-  it('masks a customer requester’s address without customers:read and keeps a merchant’s (list, one, update; decision 047)', async () => {
-    const { db } = await testDb();
-    const customer = await insertCustomer(db, { name: 'Victor Hale', email: 'victor@mail.example' });
-    const merchant = await insertClient(db, { name: 'Zain Mobile Hub', email: 'desk@zain-hub.example' });
-    const mine = await insertSupportTicket(db, { requesterId: customer.id, subject: 'Mine', status: 'open' });
-    const theirs = await insertSupportTicket(db, {
-      requesterType: 'client',
-      requesterId: merchant.id,
-      subject: 'Theirs',
-      status: 'open',
-      token: null,
-    });
-    const reader = await supportStaff(t, ['support:*', 'customers:read']);
-    const requesters = async (api: typeof admin) => {
-      const list = (await api.get('/admin/support-tickets?_sort=id&_order=asc')).body;
-      const one = (await api.get(`/admin/support-tickets/${mine.id}`)).body;
-      const updated = (await api.patch(`/admin/support-tickets/${mine.id}`, { priority: 'high' })).body;
-      return {
-        list: list.map((row: { requester: { email: string } }) => row.requester.email),
-        one: one.requester.email,
-        updated: updated.requester.email,
-        merchant: (await api.get(`/admin/support-tickets/${theirs.id}`)).body.requester.email,
-      };
-    };
-    expect(await requesters(admin)).toEqual({
-      list: ['vi•••@mail.example', 'desk@zain-hub.example'],
-      one: 'vi•••@mail.example',
-      updated: 'vi•••@mail.example',
-      merchant: 'desk@zain-hub.example',
-    });
-    expect(await requesters(reader)).toEqual({
-      list: ['victor@mail.example', 'desk@zain-hub.example'],
-      one: 'victor@mail.example',
-      updated: 'victor@mail.example',
-      merchant: 'desk@zain-hub.example',
-    });
+    expect(await subjects('q=zain-hub.example', admin)).toEqual([]);
+    expect(await subjects('q=zain%20mobile', admin)).toEqual(['Merchant']);
   });
 
   it('labels a customer without a name by the masked address for every caller: the requester and the author of their message (decision 047)', async () => {
@@ -337,12 +320,12 @@ describe('GET /admin/support-tickets', () => {
     const guest = await insertCustomer(db, { name: '', email: 'no.name.guest@mail.example' });
     const ticket = await insertSupportTicket(db, { requesterId: guest.id, subject: 'Nameless', status: 'open' });
     await insertSupportMessage(db, ticket.id, {
-      authorType: 'customer',
+      authorType: 'account',
       authorId: guest.id,
       body: 'Where is my unlock?',
       createdAt: ago(HOUR),
     });
-    const reader = await supportStaff(t, ['support:*', 'customers:read']);
+    const reader = await supportStaff(t, ['support:*', 'clients:read']);
     for (const api of [admin, reader]) {
       const one = (await api.get(`/admin/support-tickets/${ticket.id}`)).body;
       expect(one.requester.name).toBe('no•••@mail.example');
@@ -350,7 +333,7 @@ describe('GET /admin/support-tickets', () => {
       const row = (await api.get('/admin/support-tickets')).body[0];
       expect(row.requester.name).toBe('no•••@mail.example');
     }
-    // No answer of a caller without customers:read holds the full address anywhere.
+    // No answer of a caller without clients:read holds the full address anywhere.
     expect(JSON.stringify((await admin.get(`/admin/support-tickets/${ticket.id}`)).body)).not.toContain(
       'no.name.guest',
     );
@@ -403,7 +386,7 @@ describe('GET /admin/support-tickets/:id', () => {
         m.isInternal,
       ]),
     ).toEqual([
-      ['customer', 'Victor Hale', false],
+      ['account', 'Victor Hale', false],
       ['staff', 'Lina S.', false],
       ['staff', 'Lina S.', true],
       ['system', 'System', true],
@@ -416,9 +399,13 @@ describe('GET /admin/support-tickets/:id', () => {
     const { db } = await testDb();
     const linked = await insertClient(db, { telegramChatId: '555001' });
     const plain = await insertClient(db);
-    const gone = await insertCustomer(db, { status: 'anonymized', email: 'deleted-1@redacted.invalid' });
-    const a = await insertSupportTicket(db, { requesterType: 'client', requesterId: linked.id, token: null });
-    const b = await insertSupportTicket(db, { requesterType: 'client', requesterId: plain.id, token: null });
+    const gone = await insertCustomer(db, {
+      status: 'anonymized',
+      anonymizedAt: new Date(),
+      email: 'deleted-1@redacted.invalid',
+    });
+    const a = await insertSupportTicket(db, { requesterType: 'account', requesterId: linked.id, token: null });
+    const b = await insertSupportTicket(db, { requesterType: 'account', requesterId: plain.id, token: null });
     const c = await insertSupportTicket(db, { requesterId: gone.id });
     expect((await admin.get(`/admin/support-tickets/${a.id}`)).body.replyChannels).toEqual(['email']);
     expect((await admin.get(`/admin/support-tickets/${b.id}`)).body.replyChannels).toEqual(['email']);
@@ -590,7 +577,7 @@ describe('PATCH /admin/support-tickets/:id', () => {
     });
     const merchant = await insertClient(db);
     const merchantTicket = await insertSupportTicket(db, {
-      requesterType: 'client',
+      requesterType: 'account',
       requesterId: merchant.id,
       token: null,
       status: 'open',
@@ -725,7 +712,7 @@ describe('POST /admin/support-tickets/:id/reply', () => {
     const { db } = await testDb();
     const merchant = await insertClient(db, { name: 'Zain Mobile Hub', telegramChatId: '555001' });
     const ticket = await insertSupportTicket(db, {
-      requesterType: 'client',
+      requesterType: 'account',
       requesterId: merchant.id,
       token: null,
       channel: 'telegram',
@@ -746,7 +733,7 @@ describe('POST /admin/support-tickets/:id/reply', () => {
     expect(mailbox(t).sent[0]).toMatchObject({ subject: `Re: Invoice question (${ticket.number})` });
     expect(mailbox(t).sent[0]!.text).toContain('Hi Zain Mobile Hub,');
     expect(mailbox(t).sent[0]!.text).toContain(
-      `Open the conversation: http://localhost:5175/merchant/support/${ticket.id}`,
+      `Open the conversation: http://localhost:5175/account/support/${ticket.id}`,
     );
     expect((await auditRows())[0]).toMatchObject({ after: { channel: 'email' } });
   });
@@ -754,7 +741,7 @@ describe('POST /admin/support-tickets/:id/reply', () => {
   it('refuses Telegram for every merchant, with or without a chat stored', async () => {
     const { db } = await testDb();
     for (const merchant of [await insertClient(db), await insertClient(db, { telegramChatId: '555001' })]) {
-      const ticket = await insertSupportTicket(db, { requesterType: 'client', requesterId: merchant.id, token: null });
+      const ticket = await insertSupportTicket(db, { requesterType: 'account', requesterId: merchant.id, token: null });
       const res = await admin.post(`/admin/support-tickets/${ticket.id}/reply`, { body: 'Hello', channel: 'telegram' });
       expect(res.status).toBe(422);
       expect(res.body.errors).toEqual([expect.objectContaining({ field: 'channel' })]);
@@ -763,7 +750,11 @@ describe('POST /admin/support-tickets/:id/reply', () => {
 
   it('cannot answer an anonymized customer: nothing is written or sent', async () => {
     const { db } = await testDb();
-    const gone = await insertCustomer(db, { status: 'anonymized', email: 'deleted-1@redacted.invalid' });
+    const gone = await insertCustomer(db, {
+      status: 'anonymized',
+      anonymizedAt: new Date(),
+      email: 'deleted-1@redacted.invalid',
+    });
     const ticket = await insertSupportTicket(db, { requesterId: gone.id });
     const res = await admin.post(`/admin/support-tickets/${ticket.id}/reply`, { body: 'Hello' });
     expect(res.status).toBe(422);

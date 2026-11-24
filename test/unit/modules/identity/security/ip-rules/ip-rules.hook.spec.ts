@@ -64,6 +64,41 @@ describe('IpRulesHook', () => {
     expect(hits).toEqual([]);
   });
 
+  it('stops a store-blocked address on the eight shared sign-in routes of /client/auth, and only on those (decision 064)', async () => {
+    const storeBlock = { id: 11, kind: 'block', scope: 'store', cidr: '203.0.113.9/32', expiresAt: null } as const;
+    const shared = [
+      '/client/auth/sign-in',
+      '/client/auth/login',
+      '/client/auth/2fa',
+      '/client/auth/logout',
+      '/client/auth/password/change',
+      '/client/auth/password/forgot',
+      '/client/auth/password/reset',
+      '/client/auth/verify-email',
+    ];
+    for (const template of shared) {
+      const { hook, hits } = hookWith(rules(false, [storeBlock]));
+      const refusal = (await expectRejection(hook.handle(request(template, '203.0.113.9', template)))) as AppError;
+      expect(refusal.code, template).toBe('IP_NOT_ALLOWED');
+      expect(hits, template).toEqual([11]);
+    }
+    // The rest of the merchant portal is not the store: a store-scope block does not reach it.
+    const { hook, hits } = hookWith(rules(false, [storeBlock]));
+    await hook.handle(request('/client/orders', '203.0.113.9', '/client/orders'));
+    await hook.handle(request('/client/auth/me', '203.0.113.9', '/client/auth/me'));
+    expect(hits).toEqual([]);
+  });
+
+  it('lets an address blocked on another scope sign in, and counts a hit when an all-scope block stops it', async () => {
+    const apiBlock = { id: 12, kind: 'block', scope: 'api', cidr: '203.0.113.9/32', expiresAt: null } as const;
+    const { hook, hits } = hookWith(rules(false, [apiBlock, block]));
+    await expectRejection(hook.handle(request('/client/auth/sign-in', '203.0.113.9', '/client/auth/sign-in')));
+    expect(hits).toEqual([7]);
+    const apiOnly = hookWith(rules(false, [apiBlock]));
+    await apiOnly.hook.handle(request('/client/auth/sign-in', '203.0.113.9', '/client/auth/sign-in'));
+    expect(apiOnly.hits).toEqual([]);
+  });
+
   it('counts a hit when an allow rule lets an address in', async () => {
     const { hook, hits } = hookWith(rules(true, [allow]));
     await hook.handle(request('/admin/staff', '198.51.100.5'));

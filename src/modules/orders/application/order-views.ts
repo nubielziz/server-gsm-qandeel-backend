@@ -1,7 +1,9 @@
 // Order views: the rows of the read model turned into what the routes send. The staff view is the console's `Order` (cost, supplier,
 // notes); the merchant view hides everything that is not the merchant's to see (cost, supplier, internal notes, risk).
 import type { JsonObject } from '../../../common/contract';
-import { type CustomerContact, customerEmailIn } from '../../../common/customer-contact';
+import { type CustomerContact, customerEmailIn, customerNameForStaff } from '../../../common/customer-contact';
+import type { RankKind } from '../../identity';
+import { isPrepaidOrder } from '../domain/door';
 import { deriveQueue, orderStateOf, wireDispatchState } from '../domain/order-machine';
 import type { OrderQueue, WireDispatchState } from '../domain/order-machine';
 import type {
@@ -19,6 +21,23 @@ import type { OrderRow } from '../infra/order-read.repository';
 export interface NamedRef {
   readonly id: number;
   readonly name: string;
+}
+
+/**
+ * The buyer of an order as the console reads it: one shape for a merchant, a shop customer and a guest (decision 064).
+ *
+ * Why: decision 064: `account` replaces the two buyer keys; the rank says which kind of buyer it is, `guest` that it has no login.
+ */
+export interface StaffAccountView {
+  readonly id: number;
+  /** The account's name, or its masked address when it has none (decision 047, rule B). */
+  readonly name: string;
+  /** The address: in full for a caller who holds `clients:read`, masked for everybody else (decision 047). */
+  readonly email: string;
+  /** The buyer's rank today (not the rank it had when it ordered). */
+  readonly rank: { readonly id: number; readonly name: string; readonly kind: RankKind };
+  /** True for a guest row: an email that ordered in the shop without a login. */
+  readonly guest: boolean;
 }
 
 /** The order as the admin console reads it (`Order` of `src/features/orders/types`). */
@@ -43,8 +62,7 @@ export interface StaffOrderView {
   readonly channel: 'b2b' | 'b2c';
   readonly source: OrderSource;
   readonly service: { id: number; name: string; type: Order['type']; slaMinutes: number; category: string | null };
-  readonly client: NamedRef | null;
-  readonly customer: (NamedRef & { email: string }) | null;
+  readonly account: StaffAccountView;
   readonly supplier: NamedRef | null;
   readonly supplierRef: string | null;
   readonly attempts: number;
@@ -77,7 +95,7 @@ const iso = (date: Date | null): string | null => (date === null ? null : date.t
  *
  * @param row the order with its joined names
  * @param extras the dispatch count and the review reason read for the page
- * @param contact what the caller may see of the customer's address (decision 047, rule A: masked unless the caller may read customers)
+ * @param contact what the caller may see of the buyer's address (decision 047, rule A: masked unless the caller may read accounts)
  * @returns the view the console reads
  */
 export function toStaffOrder(
@@ -103,7 +121,7 @@ export function toStaffOrder(
     status: order.status,
     queue: deriveQueue(order),
     reviewReason: carriesReason(order) ? extras.reason : null,
-    channel: order.clientId === null ? 'b2c' : 'b2b',
+    channel: isPrepaidOrder(order) ? 'b2c' : 'b2b',
     source: order.source,
     service: {
       id: order.serviceId,
@@ -112,15 +130,13 @@ export function toStaffOrder(
       slaMinutes: row.slaMinutes,
       category: row.categoryName,
     },
-    client: order.clientId === null ? null : { id: order.clientId, name: row.clientName ?? '' },
-    customer:
-      order.customerId === null
-        ? null
-        : {
-            id: order.customerId,
-            name: row.customerName ?? '',
-            email: customerEmailIn(contact, row.customerEmail ?? ''),
-          },
+    account: {
+      id: order.accountId,
+      name: customerNameForStaff(row.accountName, row.accountEmail),
+      email: customerEmailIn(contact, row.accountEmail),
+      rank: { id: row.rankId, name: row.rankName, kind: row.rankKind },
+      guest: !row.accountHasAccount,
+    },
     supplier: order.supplierId === null ? null : { id: order.supplierId, name: row.supplierName ?? '' },
     supplierRef: order.supplierRef,
     attempts: extras.attempts,
@@ -140,6 +156,11 @@ export interface StaffEventView {
   readonly fromStatus: OrderStatus | null;
   readonly toStatus: OrderStatus | null;
   readonly actor: { type: OrderEventActorType; id: number | null; name: string | null };
+  /**
+   * The account the actor is: an `account` actor, an old `client` (a merchant number, which is the account id) or an old `customer` (resolved
+   * through the map). `null` for staff, a supplier, the system and a number the map does not know.
+   */
+  readonly account: { id: number } | null;
   readonly data: JsonObject;
   readonly createdAt: string;
 }
@@ -148,16 +169,20 @@ export interface StaffEventView {
  * Builds a staff timeline line.
  *
  * @param event the stored event
- * @param actorName the actor's joined name, when it has one
+ * @param actor what was read of the actor: its name, and the account it stands for (`undefined` when its row is gone or the map does not know it)
  * @returns the line the console reads
  */
-export function toStaffEvent(event: OrderEvent, actorName: string | undefined): StaffEventView {
+export function toStaffEvent(
+  event: OrderEvent,
+  actor: { readonly name: string; readonly accountId: number | null } | undefined,
+): StaffEventView {
   return {
     id: event.id,
     type: event.type,
     fromStatus: event.fromStatus,
     toStatus: event.toStatus,
-    actor: { type: event.actorType, id: event.actorId, name: actorName ?? null },
+    actor: { type: event.actorType, id: event.actorId, name: actor?.name ?? null },
+    account: actor?.accountId == null ? null : { id: actor.accountId },
     data: event.data as JsonObject,
     createdAt: event.createdAt.toISOString(),
   };

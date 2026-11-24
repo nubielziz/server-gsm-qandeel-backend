@@ -1,6 +1,6 @@
 // Load test of the live event streams (decision 037, plan docs/briefs/27-realtime-notifications.md § 8). Not part of `check`: the
 // lead runs it once before the merge and records the table in src/infra/realtime/README.md. It builds a listening test app (the test
-// database and Redis of `.env.test`), signs in N customers, and a child process opens one stream each; then it measures memory, the
+// database and Redis of `.env.test`), signs in N retail accounts, and a child process opens one stream each; then it measures memory, the
 // CPU of an idle minute, the delivery of one in-app campaign to all, the drops, the open descriptors and the reconnect after a restart.
 //
 // Usage: NODE_ENV=test bun test/load/realtime-connections.ts [--count 2000] [--idle 60]
@@ -12,6 +12,7 @@ import { PublicIpLimitModule } from '@src/infra/rate-limit';
 import { RedisService } from '@src/infra/redis';
 import { SessionCookies, SessionService } from '@src/modules/identity';
 import { schema as s } from '@src/infra/db';
+import { ensureRetailGroup } from '../support/accounts';
 import { adminWith } from '../support/admin-api';
 import { type TestApp, createTestApp } from '../support/app';
 import { createDraft, sendNow } from '../support/campaigns';
@@ -211,29 +212,33 @@ async function parent(): Promise<void> {
   await resetDb();
   let t: TestApp = await build();
   await clearStreamLimits(t);
-  console.log(`Signing in ${count} customers...`);
+  console.log(`Signing in ${count} retail accounts...`);
+  const retailGroupId = await ensureRetailGroup(db);
   const ids = (
     await db
-      .insert(s.customers)
+      .insert(s.clients)
       .values(
         Array.from({ length: count }, (_, n) => ({
           email: `load-${n}@load.example`,
           name: `Load ${n}`,
+          groupId: retailGroupId,
           hasAccount: true,
           status: 'active' as const,
+          // a campaign reaches only an address that was proven
+          emailVerifiedAt: new Date(),
         })),
       )
-      .returning({ id: s.customers.id })
+      .returning({ id: s.clients.id })
   ).map((row) => row.id);
   const cookies: string[] = [];
   const sessions = t.app.get(SessionService);
-  const cookieName = t.app.get(SessionCookies).sessionCookieName('customer');
+  const cookieName = t.app.get(SessionCookies).sessionCookieName('account');
   // A few at a time: each sign-in holds a pooled transaction while it reads the session settings on the pool.
   for (let at = 0; at < ids.length; at += 4) {
     const batch = await Promise.all(
       ids.slice(at, at + 4).map((id) =>
         sessions.create({
-          subjectType: 'customer',
+          subjectType: 'account',
           subjectId: id,
           stage: 'active',
           ip: '127.0.0.1',

@@ -18,6 +18,26 @@ export const ORDER_QUEUES = ['pending', 'manual', 'needs_attention', 'verificati
 /** An id and a name, the join shape of an order row. */
 const NamedRef = z.object({ id: zId, name: z.string() });
 
+/**
+ * The buyer of an order as the console reads it (decision 064): one shape for a merchant, a shop customer and a guest.
+ *
+ * Why: decision 064: `account` replaces the `client` and `customer` keys (no compatibility fields: the console ships in the same release);
+ * the rank says which kind of buyer it is and `guest` that the account has no login.
+ */
+export const StaffOrderAccountSchema = z.object({
+  id: zId.describe("The buyer account's id; a merchant's number is its account number."),
+  name: z.string().describe("The account's name, or its masked address when it has no name."),
+  email: z
+    .string()
+    .describe(
+      "The account's address; masked (`ja•••@example.com`) unless the caller holds `clients:read` (decision 047), for an account of any rank.",
+    ),
+  rank: z
+    .object({ id: zId, name: z.string(), kind: z.enum(['retail', 'merchant']) })
+    .describe("The buyer's rank today, not the rank it had when it ordered."),
+  guest: z.boolean().describe('True for a guest row: an address that ordered in the shop without a login.'),
+});
+
 /** The result the buyer gets: a code or text, an optional comment and an optional file. */
 const OrderResult = z.object({
   code: z.string().nullable(),
@@ -51,7 +71,11 @@ export const StaffOrderSchema = z.object({
   status: z.enum(ORDER_STATUSES),
   queue: z.enum(ORDER_QUEUES).nullable().describe('Derived from the status and the dispatch state (decision 025).'),
   reviewReason: z.string().nullable().describe('Why the order waits in a review queue; `null` outside one.'),
-  channel: z.enum(['b2b', 'b2c']).describe('`b2b` for a merchant order, `b2c` for a storefront order.'),
+  channel: z
+    .enum(['b2b', 'b2c'])
+    .describe(
+      'Derived from `source`: `b2c` for a storefront order (paid first), `b2b` for every door that holds from the wallet.',
+    ),
   source: z.enum(ORDER_SOURCES),
   service: z.object({
     id: zId,
@@ -60,14 +84,7 @@ export const StaffOrderSchema = z.object({
     slaMinutes: z.number().int().min(1),
     category: z.string().nullable().optional(),
   }),
-  client: NamedRef.nullable(),
-  customer: NamedRef.extend({
-    email: z
-      .string()
-      .describe(
-        "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
-      ),
-  }).nullable(),
+  account: StaffOrderAccountSchema,
   supplier: NamedRef.nullable(),
   supplierRef: z.string().nullable(),
   attempts: z
@@ -92,11 +109,14 @@ export const StaffEventSchema = z.object({
   actor: z.object({
     type: z.enum(ORDER_EVENT_ACTOR_TYPES),
     id: zId.nullable(),
-    name: z
-      .string()
-      .nullable()
-      .describe('The staff member, merchant, customer or supplier name; `null` for the system.'),
+    name: z.string().nullable().describe('The staff member, account or supplier name; `null` for the system.'),
   }),
+  account: z
+    .object({ id: zId })
+    .nullable()
+    .describe(
+      'The account the actor is: an `account` actor, or an old `client` or `customer` row resolved through the map of old numbers; `null` for staff, a supplier, the system and an old number the map does not know.',
+    ),
   data: zJsonObject.describe('Details of the line; `message` is the sentence the console shows as it is.'),
   createdAt: zIsoDateTime,
 });

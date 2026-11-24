@@ -1,7 +1,7 @@
 // Risk tables (map domain K): risk assessments, the blocklist and data-subject requests (and the retired IMEI check log).
 // Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
-import { boolean, check, index, integer, pgTable, text, unique, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, index, integer, pgTable, text, unique, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
   bigId,
   createdAt,
@@ -15,8 +15,8 @@ import {
   updatedAt,
 } from '../../../infra/db/columns';
 import { services, tacCatalog } from '../../catalog/db/schema';
-import { checkoutSessions, customers } from '../../customers/db/schema';
-import { staffUsers } from '../../identity/db/schema';
+import { checkoutSessions, retiredCustomers } from '../../customers/db/schema';
+import { clients, staffUsers } from '../../identity/db/schema';
 import { orders } from '../../orders/db/schema';
 import { files } from '../../platform/db/schema';
 import { suppliers } from '../../suppliers/db/schema';
@@ -137,7 +137,10 @@ export const imeiChecks = pgTable(
     result: jsonObject(),
     supplierId: fk((): AnyPgColumn => suppliers.id),
     serviceId: fk((): AnyPgColumn => services.id),
-    customerId: fk((): AnyPgColumn => customers.id),
+    /** the old customer id (the SQL column is `customer_id`); the table is retired, so is the column */
+    retiredCustomerId: bigint('customer_id', { mode: 'number' }).references((): AnyPgColumn => retiredCustomers.id, {
+      onDelete: 'restrict',
+    }),
     checkoutSessionId: fk((): AnyPgColumn => checkoutSessions.id),
     source: text().$type<ImeiCheckSource>().notNull(),
     cost: money().notNull().default('0'),
@@ -160,7 +163,7 @@ export const imeiChecks = pgTable(
     index('imei_checks_tac_idx').on(t.tac),
     index('imei_checks_supplier_id_idx').on(t.supplierId),
     index('imei_checks_service_id_idx').on(t.serviceId),
-    index('imei_checks_customer_id_idx').on(t.customerId),
+    index('imei_checks_customer_id_idx').on(t.retiredCustomerId),
     index('imei_checks_checkout_session_id_idx').on(t.checkoutSessionId),
   ],
 );
@@ -183,7 +186,12 @@ export const riskAssessments = pgTable(
     id: pk(),
     checkoutSessionId: fk((): AnyPgColumn => checkoutSessions.id),
     orderId: fk((): AnyPgColumn => orders.id),
-    customerId: fk((): AnyPgColumn => customers.id),
+    /** the old customer id: retired (decision 064), unread and unwritten (the SQL column is `customer_id`); the contract migration drops it */
+    retiredCustomerId: bigint('customer_id', { mode: 'number' }).references((): AnyPgColumn => retiredCustomers.id, {
+      onDelete: 'restrict',
+    }),
+    /** the account that was assessed (a login account or the guest row of the checkout's email); null when none is known */
+    accountId: fk((): AnyPgColumn => clients.id),
     score: integer().notNull(),
     decision: text().$type<RiskDecision>().notNull(),
     /** array of strings (the signals that raised the score) */
@@ -203,7 +211,8 @@ export const riskAssessments = pgTable(
       .where(sql`${t.decision} = 'review' and ${t.reviewedAt} is null`),
     index('risk_assessments_order_id_idx').on(t.orderId),
     index('risk_assessments_checkout_session_id_idx').on(t.checkoutSessionId),
-    index('risk_assessments_customer_id_idx').on(t.customerId),
+    index('risk_assessments_customer_id_idx').on(t.retiredCustomerId),
+    index('risk_assessments_account_id_idx').on(t.accountId),
     index('risk_assessments_reviewed_by_idx').on(t.reviewedBy),
   ],
 );
@@ -235,8 +244,12 @@ export const blocklistEntries = pgTable(
     source: text().$type<BlocklistSource>().notNull().default('manual'),
     /** true: the entry blocks guest checkouts only (an email of a guest order whose email belonged to an account before it); the account keeps its use (decision 050) */
     guestOnly: boolean().notNull().default(false),
-    /** the customer a block came from (POST /admin/customers/:id/block); kept null if the customer is deleted (RESOLUTIONS b2c-5) */
-    customerId: bigId().references((): AnyPgColumn => customers.id, { onDelete: 'set null' }),
+    /** the old customer id: retired (decision 064), unread and unwritten (the SQL column is `customer_id`); the contract migration drops it */
+    retiredCustomerId: bigint('customer_id', { mode: 'number' }).references((): AnyPgColumn => retiredCustomers.id, {
+      onDelete: 'set null',
+    }),
+    /** the account a block came from (POST /admin/clients/:id/block); kept null if the account row is deleted (RESOLUTIONS b2c-5) */
+    accountId: bigId().references((): AnyPgColumn => clients.id, { onDelete: 'set null' }),
     createdBy: fk((): AnyPgColumn => staffUsers.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -247,7 +260,8 @@ export const blocklistEntries = pgTable(
     check('blocklist_entries_source_check', inList(t.source, BLOCKLIST_SOURCES)),
     index('blocklist_entries_created_idx').on(t.createdAt.desc()),
     index('blocklist_entries_created_by_idx').on(t.createdBy),
-    index('blocklist_entries_customer_id_idx').on(t.customerId),
+    index('blocklist_entries_customer_id_idx').on(t.retiredCustomerId),
+    index('blocklist_entries_account_id_idx').on(t.accountId),
   ],
 );
 
@@ -266,7 +280,12 @@ export const dataRequests = pgTable(
   'data_requests',
   {
     id: pk(),
-    customerId: fk((): AnyPgColumn => customers.id).notNull(),
+    /** the account the request is about */
+    accountId: fk((): AnyPgColumn => clients.id).notNull(),
+    /** the old customer id: retired (decision 064), nullable now and unwritten (the SQL column is `customer_id`); the contract migration drops it */
+    retiredCustomerId: bigint('customer_id', { mode: 'number' }).references((): AnyPgColumn => retiredCustomers.id, {
+      onDelete: 'restrict',
+    }),
     kind: text().$type<DataRequestKind>().notNull(),
     status: text().$type<DataRequestStatus>().notNull().default('open'),
     requestedAt: timestampTz().notNull().defaultNow(),
@@ -283,7 +302,8 @@ export const dataRequests = pgTable(
     check('data_requests_kind_check', inList(t.kind, DATA_REQUEST_KINDS)),
     check('data_requests_status_check', inList(t.status, DATA_REQUEST_STATUSES)),
     index('data_requests_status_due_idx').on(t.status, t.dueAt),
-    index('data_requests_customer_id_idx').on(t.customerId),
+    index('data_requests_customer_id_idx').on(t.retiredCustomerId),
+    index('data_requests_account_id_idx').on(t.accountId),
     index('data_requests_handled_by_idx').on(t.handledBy),
     index('data_requests_file_id_idx').on(t.fileId),
   ],

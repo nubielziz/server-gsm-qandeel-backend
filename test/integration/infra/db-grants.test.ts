@@ -124,6 +124,14 @@ describe('applyApplicationGrants', () => {
       'delete from order_events',
       'update ledger_entries set amount = amount',
       'delete from ledger_transactions',
+      // Decision 064: the three history tables of the one account type only receive new rows.
+      'update account_legacy_ids set merged = merged',
+      'delete from account_legacy_ids',
+      'update account_rank_changes set moved_amount = moved_amount',
+      'delete from account_rank_changes',
+      'update wallet_action_keys set action = action',
+      'delete from wallet_action_keys',
+      'truncate account_rank_changes',
       'truncate ledger_entries',
       'truncate audit_logs',
       'truncate staff_users',
@@ -140,7 +148,16 @@ describe('applyApplicationGrants', () => {
       expect(sqlState(error), statement).toBe('42501');
     }
     // The tables are as they were: nothing above reached them.
-    for (const table of APPEND_ONLY_TABLES) {
+    const appendOnly = new Set<string>([
+      ...APPEND_ONLY_TABLES,
+      'account_legacy_ids',
+      'account_rank_changes',
+      'wallet_action_keys',
+    ]);
+    for (const table of ['account_legacy_ids', 'account_rank_changes', 'wallet_action_keys']) {
+      expect(APPEND_ONLY_TABLES as readonly string[], `${table} is in APPEND_ONLY_TABLES`).toContain(table);
+    }
+    for (const table of appendOnly) {
       const { rows } = await owner.query<{ privilege_type: string }>(
         `select privilege_type from information_schema.role_table_grants where grantee = $1 and table_name = $2`,
         [app.role, table],

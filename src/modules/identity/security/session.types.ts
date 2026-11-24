@@ -1,13 +1,14 @@
 // Types and pure rules of the session service (decision 018): the cached view of a session, what creating one takes, and
 // when a session counts as ended. No I/O here, so the rules are unit-tested.
+import type { RankKind } from '../ports/rank-kind';
 import type { Session, SessionStage, SubjectType } from '../db/schema';
 
 /**
  * What the session guards need to know about the account behind a session.
  *
  * Why: a suspended account must be refused with `403 ACCOUNT_SUSPENDED` and an account that no longer exists with `401`;
- * every subject type (staff, merchant, customer) maps its own statuses onto these three states (decision 018: "their tables
- * and statuses").
+ * both subject types (staff, account) map their own statuses onto these three states (decision 018: "their tables
+ * and statuses"; decision 064 for the account statuses).
  */
 export type SubjectState = 'ok' | 'suspended' | 'gone';
 
@@ -23,11 +24,11 @@ export interface SubjectSnapshot {
   readonly roleId?: number;
   readonly name?: string;
   /**
-   * Merchants only: true when the merchant is approved (`clients.status = 'active'`). A merchant waiting for approval
-   * (`pending`) keeps a session but may call only the routes that declare `pendingMerchant: 'allow'` (B153). A view cached
-   * without the field counts as not approved, so the guard fails closed for at most the cache lifetime.
+   * Accounts only: the rank of the account when the view was loaded, its id and its kind (`merchant` or `retail`). The rank gate
+   * compares the kind with the rank of the route (decision 064). A view without it is refused on every gated route (fail closed);
+   * staff views never carry one.
    */
-  readonly approved?: boolean;
+  readonly rank?: { readonly id: number; readonly kind: RankKind };
 }
 
 /**
@@ -60,8 +61,8 @@ export type Liveness = 'live' | 'expired' | 'idle';
 /**
  * Decides whether a session is still usable at a moment.
  *
- * Why: decision 018: absolute expiry for every stage, plus an idle expiry for full sessions (staff 30 minutes, merchants and
- * customers 7 days). The cached view can be up to a minute old, so the guards judge it again on every request.
+ * Why: decision 018: absolute expiry for every stage, plus an idle expiry for full sessions (staff 30 minutes, accounts 7 days).
+ * The cached view can be up to a minute old, so the guards judge it again on every request.
  *
  * @param view the session
  * @param nowMs the current time in milliseconds
@@ -79,7 +80,7 @@ export function livenessOf(
 /**
  * The input of {@link SessionService.create}.
  *
- * Why: the sign-in routes create sessions for the three subject types with the stage they have reached.
+ * Why: the sign-in routes create sessions for both subject types with the stage they have reached.
  */
 export interface CreateSessionInput {
   readonly subjectType: SubjectType;

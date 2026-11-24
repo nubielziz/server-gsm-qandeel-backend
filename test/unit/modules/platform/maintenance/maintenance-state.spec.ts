@@ -156,6 +156,26 @@ describe('maintenanceRefusal', () => {
     expect(maintenanceRefusal(on('all'), request('GET', '/admin/staff'), NOW)).toBeUndefined();
   });
 
+  it('never covers the sign-in routes every account shares: the portal must not go down with the shop (decision 064)', () => {
+    const shared = [
+      '/client/auth/sign-in',
+      '/client/auth/login',
+      '/client/auth/2fa',
+      '/client/auth/logout',
+      '/client/auth/password/change',
+      '/client/auth/password/forgot',
+      '/client/auth/password/reset',
+      '/client/auth/verify-email',
+    ];
+    for (const scope of ['store', 'checkout', 'api_orders', 'all'] as const) {
+      for (const path of shared) {
+        expect(maintenanceRefusal(on(scope), request('POST', path), NOW), `${scope} ${path}`).toBeUndefined();
+      }
+    }
+    // The shop's own routes of the same account stay covered, as before.
+    expect(maintenanceRefusal(on('store'), request('POST', '/store/v1/auth/login'), NOW)).toBeDefined();
+  });
+
   it('refuses nothing while maintenance is off', () => {
     expect(
       maintenanceRefusal(MAINTENANCE_OFF, request('POST', '/api/index.php', 'placeimeiorder'), NOW),

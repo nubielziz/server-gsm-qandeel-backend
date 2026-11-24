@@ -1,4 +1,4 @@
-// Drizzle queries on `blocklist_entries` (risk module): the staff list, one entry, the writes of the routes and of the customer block,
+// Drizzle queries on `blocklist_entries` (risk module): the staff list, one entry, the writes of the routes and of the account block,
 // and the match against a set of values at checkout.
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
@@ -70,7 +70,7 @@ export async function findBlocklistRow(db: DbExecutor, id: number): Promise<Bloc
  * Adds entries, skipping any whose kind and value already exist.
  *
  * Why: RESOLUTIONS b2c-5: `ON CONFLICT (kind, value_hash) DO NOTHING`. An existing entry (from a risk refund, a chargeback, a manual
- * add or another customer's block) is kept unchanged and not linked to this customer.
+ * add or another account's block) is kept unchanged and not linked to this account.
  *
  * @param db the caller's transaction
  * @param rows the entries to add
@@ -141,18 +141,19 @@ export async function deleteEntry(db: DbExecutor, id: number): Promise<Blocklist
 }
 
 /**
- * Deletes the manual entries one customer's block added.
+ * Deletes the manual entries one account's block added.
  *
- * Why: RESOLUTIONS b2c-5: unblocking lifts only what the block added: `WHERE customer_id = :id AND source = 'manual'`.
+ * Why: RESOLUTIONS b2c-5: unblocking lifts only what the block added: `WHERE account_id = :id AND source = 'manual'` (decision 064: the
+ * column names the account, of any rank).
  *
  * @param db the caller's transaction
- * @param customerId the customer
+ * @param accountId the account
  * @returns the deleted entries
  */
-export async function deleteManualEntriesOfCustomer(db: DbExecutor, customerId: number): Promise<BlocklistEntry[]> {
+export async function deleteManualEntriesOfAccount(db: DbExecutor, accountId: number): Promise<BlocklistEntry[]> {
   return db
     .delete(blocklistEntries)
-    .where(and(eq(blocklistEntries.customerId, customerId), eq(blocklistEntries.source, 'manual')))
+    .where(and(eq(blocklistEntries.accountId, accountId), eq(blocklistEntries.source, 'manual')))
     .returning();
 }
 

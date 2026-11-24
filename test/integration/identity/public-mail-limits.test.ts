@@ -1,6 +1,7 @@
-// Integration tests of decision 052, rule three: the mails a visitor can ask for (merchant and customer forgot password, the customer
-// sign-in link) are capped per recipient (five an hour per kind, apart from the mails staff send; beyond it the answer is the same
-// 204 and nothing is sent), and asking again does not void the link sent before (at most three work at once; the oldest goes first).
+// Integration tests of decision 052, rule three: the mails a visitor can ask for (forgot password of a merchant rank and of a retail rank, the
+// sign-in link of a retail account) are capped per account (five an hour per kind, apart from the mails staff send; beyond it the answer is the
+// same 204 and nothing is sent), and asking again does not void the link sent before (at most three work at once; the oldest goes first). Every
+// link belongs to the one subject type of accounts (decision 064); the mail family is chosen by the rank.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
@@ -60,7 +61,7 @@ afterEach(() => mock.restore());
 /** An address in a network of its own, so the per-network counter never refuses. */
 const stranger = () => `${freshClientPrefix()}::1`;
 const outboxCount = async (type: string) => (await testDb()).db.$count(s.outboxEvents, eq(s.outboxEvents.type, type));
-const liveTokens = async (subjectType: 'client' | 'customer', subjectId: number) =>
+const liveTokens = async (subjectType: 'account', subjectId: number) =>
   (await testDb()).db
     .select()
     .from(s.authTokens)
@@ -76,7 +77,7 @@ const liveTokens = async (subjectType: 'client' | 'customer', subjectId: number)
 interface MailFlow {
   readonly name: string;
   readonly event: string;
-  readonly subjectType: 'client' | 'customer';
+  readonly subjectType: 'account';
   readonly account: () => Promise<{ id: number; email: string }>;
   readonly ask: (email: string) => Promise<LightMyRequestResponse>;
   readonly links: () => string[];
@@ -92,7 +93,7 @@ const FLOWS: readonly MailFlow[] = [
   {
     name: 'merchant forgot password',
     event: 'merchant.password_reset',
-    subjectType: 'client',
+    subjectType: 'account',
     account: () => makeMerchant(t),
     ask: (email) => new MerchantPortal(t, stranger()).forgot(email),
     links: () =>
@@ -105,7 +106,7 @@ const FLOWS: readonly MailFlow[] = [
   {
     name: 'customer forgot password',
     event: 'customer.password_reset',
-    subjectType: 'customer',
+    subjectType: 'account',
     account: () => makeCustomer(t),
     ask: (email) => new StoreClient(t, stranger()).forgot(email),
     links: () =>
@@ -118,7 +119,7 @@ const FLOWS: readonly MailFlow[] = [
   {
     name: 'customer sign-in link',
     event: 'customer.magic_link',
-    subjectType: 'customer',
+    subjectType: 'account',
     account: () => makeCustomer(t),
     ask: (email) => new StoreClient(t, stranger()).magicLink(email),
     links: () =>

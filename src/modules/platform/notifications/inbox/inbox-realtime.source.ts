@@ -11,8 +11,8 @@ import {
   RealtimeSources,
   type StreamViewer,
 } from '../../../../infra/realtime';
-import type { NotificationRecipientType } from '../../db/schema';
-import { audienceOf, recipientOf } from '../notification-foreign-reads';
+import type { NotificationAudience, NotificationRecipientType } from '../../db/schema';
+import { recipientOf } from '../notification-foreign-reads';
 import { INBOX_TOPIC } from './inbox-doorbell';
 import {
   NOTIFICATION_CREATED_EVENT,
@@ -43,20 +43,26 @@ const RECOUNT_BATCH = 500;
 /** The most account viewers remembered per type for a `recount` (the oldest is forgotten first). */
 const MAX_WATCHED = 100_000;
 
-const RECIPIENT_TYPES: readonly NotificationRecipientType[] = ['staff', 'client', 'customer'];
+const RECIPIENT_TYPES: readonly NotificationRecipientType[] = ['staff', 'account'];
 const isRecipientType = (value: unknown): value is NotificationRecipientType =>
   typeof value === 'string' && (RECIPIENT_TYPES as readonly string[]).includes(value);
 const isId = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+/**
+ * The audience key of an owner's streams: `u:<kind>:<id>`, the key the hub gives a viewer of that kind and the session doorbell names for a
+ * subject (decision 064: an account of either rank is one kind, so a merchant's stream and a shopper's stream share one key space and a key
+ * is never the key of another kind with the same number).
+ */
 const keyOf = (owner: InboxOwner) => `u:${owner.type}:${owner.id}`;
 
-/** The inbox of a viewer: staff, merchants and customers have one; the holder of a ticket link has none. */
+/** The inbox of a viewer: staff and accounts have one; the holder of a ticket link has none. */
 function ownerOf(viewer: StreamViewer): InboxOwner | undefined {
   return viewer.kind === 'ticket' ? undefined : { type: viewer.kind, id: viewer.id };
 }
 
-/** What the viewer's saved account says: the `{{name}}` of a broadcast. */
+/** What the viewer's saved account says: the `{{name}}` of a broadcast, and the audience of its rank. */
 interface Saved {
   readonly name: string;
+  readonly audience: NotificationAudience;
 }
 
 /**
@@ -249,11 +255,11 @@ export class InboxRealtimeSource implements RealtimeSource, OnModuleInit {
     };
   }
 
-  /** The reader of the inbox lists: the audience and the account's name. */
+  /** The reader of the inbox lists: the audience of the viewer's rank and the account's name. */
   private readerOf(viewer: StreamViewer): InboxReader {
     const saved = this.saved.get(viewer);
     return {
-      audience: audienceOf(viewer.kind === 'ticket' ? 'customer' : viewer.kind),
+      audience: saved?.audience ?? (viewer.kind === 'staff' ? 'staff' : 'customer'),
       name: saved?.name ?? viewer.name,
     };
   }
@@ -269,7 +275,10 @@ export class InboxRealtimeSource implements RealtimeSource, OnModuleInit {
     let loading = this.loading.get(viewer);
     if (!loading) {
       loading = recipientOf(this.db.db, owner.type, owner.id).then((recipient) => {
-        this.saved.set(viewer, { name: recipient?.name ?? viewer.name });
+        this.saved.set(viewer, {
+          name: recipient?.name ?? viewer.name,
+          audience: recipient?.audience ?? (owner.type === 'staff' ? 'staff' : 'customer'),
+        });
       });
       this.loading.set(viewer, loading);
     }

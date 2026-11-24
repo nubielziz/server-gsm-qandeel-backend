@@ -1,7 +1,8 @@
 // Seeder of the risk module (feature 18): the demo's risk rules and policies, blocklist, data requests and the risk
 // assessments of the storefront orders the rules held, mapped as the frontend mocks map them (src/features/risk/mocks/seed.ts and
-// src/features/customers/mocks/store.ts of the frontend): the same ids, kinds, displays, reasons and statuses. Runs after the customers,
-// storefront and b2c seeders (the customers, the TAC catalogue and the storefront orders the assessments point at).
+// src/features/accounts/mocks/seed.ts of the frontend): the same ids, kinds, displays, reasons and statuses. A demo customer `cN` is the
+// account `100 + N`, so the buyers of the held orders and the accounts of the data requests carry those numbers (decision 064). Runs after the
+// customers, storefront and b2c seeders (the retail accounts, the TAC catalogue and the storefront orders the assessments point at).
 import { and, inArray, ne, or, sql } from 'drizzle-orm';
 import type { AppConfig } from '../../src/config';
 import { TokenService } from '../../src/infra/crypto';
@@ -13,6 +14,7 @@ import {
   blockHashInput,
   normalizeBlockValue,
 } from '../../src/modules/risk';
+import { accountIdOfDemo } from './account-ids';
 import { type DemoSeed, demoNumericId, demoRows, toDate } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
 
@@ -127,7 +129,7 @@ export async function seedRisk(db: DbExecutor, demo: DemoSeed, config?: AppConfi
  * Seeds the risk assessments of the demo's reviewed-by-rules storefront orders.
  *
  * Why: the console's Risk page lists the orders whose newest assessment says `review` and nobody decided, and the six latest decisions.
- * The ids are the demo's: the assessment of `SF-20490` is 20490 (the frontend mock's `id` too). An order that was not seeded (its customer
+ * The ids are the demo's: the assessment of `SF-20490` is 20490 (the frontend mock's `id` too). An order that was not seeded (its account
  * or service is missing) is skipped. A held assessment puts its order in the review queue (`pending` and `held`), but only on the run that
  * inserts it, so a decision made later in a development database is not undone by seeding again.
  */
@@ -145,10 +147,10 @@ async function seedAssessments(
       ? []
       : (
           await db
-            .select({ id: s.orders.id, customerId: s.orders.customerId })
+            .select({ id: s.orders.id, accountId: s.orders.accountId })
             .from(s.orders)
             .where(inArray(s.orders.id, orderIds))
-        ).map((row) => [row.id, row.customerId]),
+        ).map((row) => [row.id, row.accountId]),
   );
   const had = new Set(
     orderIds.length === 0
@@ -162,7 +164,7 @@ async function seedAssessments(
   );
   const rows = reviewed.flatMap((order) => {
     const id = demoNumericId(order.id);
-    if (stored.get(id) !== demoNumericId(order.cid!)) return [];
+    if (stored.get(id) !== accountIdOfDemo(order.cid!)) return [];
     // The assessment is made when the payment is captured, like the order's `paid` line.
     const at = toDate(order.events.find((event) => event.k === 'paid')?.ts ?? order.created + 2000)!;
     const decidedAt = toDate(order.risk.reviewedAt);
@@ -171,7 +173,7 @@ async function seedAssessments(
         id,
         checkoutSessionId: id,
         orderId: id,
-        customerId: demoNumericId(order.cid!),
+        accountId: accountIdOfDemo(order.cid!),
         score: order.risk.score,
         decision: 'review' as const,
         signals: order.risk.signals,
@@ -242,16 +244,16 @@ async function seedDataRequests(
   demo: DemoSeed,
   staffIds: ReadonlyMap<string, number>,
 ): Promise<SeedReport> {
-  // The customers seeder wrote the demo's customers by their demo ids; a request needs its customer.
-  const existing = new Set((await db.select({ id: s.customers.id }).from(s.customers)).map((row) => row.id));
+  // The customers seeder wrote the demo's retail accounts under their numbers (`c4` is account 104); a request needs its account.
+  const existing = new Set((await db.select({ id: s.clients.id }).from(s.clients)).map((row) => row.id));
   const handler = staffIds.get('Rami K.') ?? null;
-  const requests = demoRows<DemoRequest>(demo, 'dsr').filter((request) => existing.has(demoNumericId(request.cid)));
+  const requests = demoRows<DemoRequest>(demo, 'dsr').filter((request) => existing.has(accountIdOfDemo(request.cid)));
   const report = await insertRows(
     db,
     s.dataRequests,
     requests.map((request) => ({
       id: demoNumericId(request.id),
-      customerId: demoNumericId(request.cid),
+      accountId: accountIdOfDemo(request.cid),
       kind: request.kind,
       // The demo says `done`, the API says `completed` (B51).
       status: request.status === 'done' ? ('completed' as const) : ('open' as const),

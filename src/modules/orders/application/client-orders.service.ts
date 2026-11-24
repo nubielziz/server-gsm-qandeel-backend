@@ -1,5 +1,6 @@
 // ClientOrdersService: the merchant portal's order use cases (map domain D, stage 5): place an order (or a bulk of IMEIs), cancel an
-// order that was never sent, and ask for a verification. Reads are OrderReadService. Every call acts for the signed-in merchant only.
+// order that was never sent, and ask for a verification. Reads are OrderReadService. Every call acts for the signed-in account only, on its
+// orders of the merchant doors (a merchant is an account of a merchant rank, decision 064).
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { JsonObject } from '../../../common/contract';
@@ -27,8 +28,9 @@ export interface PlaceOrderInput {
  *
  * Why: scenario manual step 3 and decision 025: the merchant orders through the shared placement path (price, price guard,
  * duplicate rule, hold, dispatch row), cancels an order that was never sent when its service allows it (posts `reject`: the hold
- * goes back to the wallet) and asks once for the verification of a completed order inside the service's window. A merchant acts on
- * its own orders only: another merchant's id is `404`, never `403`.
+ * goes back to the wallet) and asks once for the verification of a completed order inside the service's window. An account acts on
+ * its own orders of the merchant doors only: another account's id, and the account's own store order (paid first, in the shop), are `404`,
+ * never `403`.
  *
  * Side effects: each call is one transaction on `orders`, `order_events`, the ledger, `outbox_events`. No audit row: merchant routes
  * write none (B121).
@@ -51,16 +53,17 @@ export class ClientOrdersService {
    * same call as without a key (the key is not written to `orders.idempotency_key`: a bulk makes several orders, and the
    * `idempotency_keys` row alone guards the portal).
    *
-   * @param clientId the signed-in merchant
+   * @param accountId the signed-in account (a merchant rank)
    * @param input the service, the IMEI or IMEIs, the quantity and the custom fields
    * @param source where the order comes from (`portal`)
    * @param key the `Idempotency-Key`, when the merchant sent one
    * @returns the placed orders as the merchant sees them, in the order of the IMEIs, and whether they are the stored answer of an
    *   earlier request with the key (nothing was placed this time)
-   * @throws {AppError} see {@link OrderPlacement.place}; `IDEMPOTENCY_KEY_REUSED`, `IDEMPOTENCY_IN_PROGRESS`; all items are placed or none is
+   * @throws {AppError} see {@link OrderPlacement.place} (a retail rank is `403 RANK_NOT_ALLOWED`); `IDEMPOTENCY_KEY_REUSED`,
+   *   `IDEMPOTENCY_IN_PROGRESS`; all items are placed or none is
    */
   async place(
-    clientId: number,
+    accountId: number,
     input: PlaceOrderInput,
     source: 'portal' = 'portal',
     key?: string,
@@ -73,17 +76,17 @@ export class ClientOrdersService {
     return this.db.runInTransaction(async ({ tx }) => {
       const work = async () => {
         const placed = await this.placement.place(tx, {
-          clientId,
+          accountId,
           source,
           serviceId: input.serviceId,
           quantity: input.quantity,
           items,
           fileId: input.fileId,
-          actor: { type: 'client', id: clientId },
+          actor: { type: 'account', id: accountId },
         });
         const now = this.clock.now();
         const rows = await Promise.all(
-          placed.map((order) => findOrderRow(tx, { kind: 'merchant', clientId }, order.id)),
+          placed.map((order) => findOrderRow(tx, { kind: 'merchant', accountId }, order.id)),
         );
         return {
           status: 201,
@@ -96,7 +99,7 @@ export class ClientOrdersService {
       }
       const stored = await this.idempotency.run(
         tx,
-        { clientId, key, scope: 'portal', requestHash: this.idempotency.hashOf('portal', input) },
+        { accountId, key, scope: 'portal', requestHash: this.idempotency.hashOf('portal', input) },
         work,
       );
       return { orders: (stored.body as unknown as { orders: MerchantOrderView[] }).orders, replayed: stored.replayed };
@@ -106,15 +109,15 @@ export class ClientOrdersService {
   /**
    * Cancels an order that was never sent to a supplier (not even once).
    *
-   * @param clientId the signed-in merchant
+   * @param accountId the signed-in account (a merchant rank)
    * @param orderId the order
-   * @throws {AppError} `NOT_FOUND` (unknown or another merchant's), `ORDER_NOT_OPEN`, `ALREADY_SENT` (the supplier has the order, its send
+   * @throws {AppError} `NOT_FOUND` (unknown, another account's, or the account's own store order), `ORDER_NOT_OPEN`, `ALREADY_SENT` (the supplier has the order, its send
    *   is in flight, or the order was claimed for a supplier call once: it has a `dispatch` event; decision 044), `INVALID_TRANSITION` (the service does not allow cancellation, or the order is already being
    *   worked on)
    */
-  async cancel(clientId: number, orderId: number): Promise<void> {
+  async cancel(accountId: number, orderId: number): Promise<void> {
     await this.db.runInTransaction(async ({ tx }) => {
-      const row = await findOrderRow(tx, { kind: 'merchant', clientId }, orderId);
+      const row = await findOrderRow(tx, { kind: 'merchant', accountId }, orderId);
       if (!row) throw new AppError('NOT_FOUND', { detail: 'No order with this id.' });
       // The machine's own refusals (closed, already sent) answer first; the service's switch only judges what the machine allows.
       if (!row.allowCancel && canCancelByState(row)) {
@@ -122,9 +125,9 @@ export class ClientOrdersService {
       }
       await this.transitions.apply(tx, {
         orderId,
-        onlyClientId: clientId,
+        onlyClientId: accountId,
         action: { kind: 'cancel' },
-        actor: { type: 'client', id: clientId },
+        actor: { type: 'account', id: accountId },
         reason: MERCHANT_CANCEL_REASON,
       });
     });
@@ -133,15 +136,15 @@ export class ClientOrdersService {
   /**
    * Asks for the verification of a completed order.
    *
-   * @param clientId the signed-in merchant
+   * @param accountId the signed-in account (a merchant rank)
    * @param orderId the order
    * @throws {AppError} `NOT_FOUND`, `ORDER_NOT_COMPLETED`, `INVALID_TRANSITION` (already asked, the service does not allow it, or
    *   the verification window has passed)
    */
-  async verify(clientId: number, orderId: number): Promise<void> {
+  async verify(accountId: number, orderId: number): Promise<void> {
     const now = this.clock.now();
     await this.db.runInTransaction(async ({ tx }) => {
-      const row = await findOrderRow(tx, { kind: 'merchant', clientId }, orderId);
+      const row = await findOrderRow(tx, { kind: 'merchant', accountId }, orderId);
       if (!row) throw new AppError('NOT_FOUND', { detail: 'No order with this id.' });
       if (row.order.status === 'completed' && row.order.verificationStatus === null && !canVerify(row, now)) {
         throw new AppError('INVALID_TRANSITION', {
@@ -152,9 +155,9 @@ export class ClientOrdersService {
       }
       await this.transitions.apply(tx, {
         orderId,
-        onlyClientId: clientId,
+        onlyClientId: accountId,
         action: { kind: 'requestVerification' },
-        actor: { type: 'client', id: clientId },
+        actor: { type: 'account', id: accountId },
       });
     });
   }

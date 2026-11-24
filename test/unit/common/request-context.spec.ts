@@ -18,16 +18,27 @@ describe('request context', () => {
 
   it('keeps what a guard recorded for everything the request starts afterwards', async () => {
     await runInRequestContext('r2', async () => {
-      setRequestActor({ type: 'client', id: 12, name: 'Zain Mobile Hub' }, '203.0.113.5');
+      setRequestActor({ type: 'account', id: 12, name: 'Zain Mobile Hub' }, '203.0.113.5');
       await new Promise((resolve) => setImmediate(resolve));
       countAuditRecord();
       countAuditRecord();
       expect(getRequestContext()).toMatchObject({
         requestId: 'r2',
-        actor: { type: 'client', id: 12, name: 'Zain Mobile Hub' },
+        actor: { type: 'account', id: 12, name: 'Zain Mobile Hub' },
         ip: '203.0.113.5',
         auditRecords: 2,
       });
+    });
+  });
+
+  it('records an account of either rank with the one type word account (decision 064)', () => {
+    runInRequestContext('r3', () => {
+      // The actor type is the closed pair of the stored words: a customer or a client cannot be recorded any more.
+      const retail = { type: 'account', id: 31, name: 'Lina S.' } as const;
+      setRequestActor(retail, '203.0.113.6');
+      expect(getRequestContext()?.actor).toEqual(retail);
+      // @ts-expect-error the old words are not actors of a request any more
+      setRequestActor({ type: 'customer', id: 31, name: 'Lina S.' }, '203.0.113.6');
     });
   });
 

@@ -125,7 +125,9 @@ export interface MaintenanceRequest {
  * Why: `store` is the whole storefront API; `checkout` is only starting a checkout (opening a session and starting the
  * payment of one, or paying it from the store balance (feature 21), so nothing is created and nothing is held); `api_orders` is placing an order over Dhru;
  * `all` is the three. Everything else (admin, merchant portal, webhooks, health, metrics, docs, reads and cancellations of
- * running orders) is in no scope. A Dhru request counts only once its action is known and is a placement.
+ * running orders) is in no scope. A Dhru request counts only once its action is known and is a placement. The sign-in routes every
+ * account shares live on `/client/auth/*`, outside the storefront API, so store maintenance never covers them: the portal must not go
+ * down with the shop (decision 064).
  *
  * @param request method and path (and the Dhru action when known)
  * @returns the scopes that cover the request; empty when maintenance never refuses it

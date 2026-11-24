@@ -13,9 +13,9 @@ import { TrackingCustomerPorts } from './tracking-customer-port';
  * Why: `GET /store/v1/orders/:token` has no account behind it: the token in the path (128 random bits, unique, decision 010) is the
  * whole credential. The identity guard checks the token's shape and rate limits lookups per address (30 a minute); this resolver finds
  * the row by its keyed hash (decision 054; an order placed before is found by its plain token until the seal pass ran) and compares
- * the stored form with the presented one in constant time. A merchant order has no token, so it can never be opened this way. The order
- * of an anonymized customer opens nothing (the customers module answers through `TrackingCustomerPorts`): after the erasure its link is
- * an unknown link, for the status, the result and the receipt alike.
+ * the stored form with the presented one in constant time. An order held from a wallet has no token, so it can never be opened this way.
+ * The order of an anonymized account opens nothing (the customers module answers through `TrackingCustomerPorts`): after the erasure its
+ * link is an unknown link, for the status, the result and the receipt alike.
  *
  * Side effects: none (reads only).
  */
@@ -40,7 +40,7 @@ export class TrackingTokenResolver implements CapabilityTokenResolver, OnModuleI
    * Looks the token up.
    *
    * @param token a token of the right shape
-   * @returns the order it opens, or `null` for a token that names none or an order whose customer was anonymized
+   * @returns the order it opens, or `null` for a token that names none or an order whose buyer account was anonymized
    */
   async resolve(token: string): Promise<CapabilityGrant | null> {
     const hash = this.vault.hashOf('tracking', token);
@@ -51,7 +51,7 @@ export class TrackingTokenResolver implements CapabilityTokenResolver, OnModuleI
         ? this.tokens.equals(row.tokenHash, hash)
         : row.token !== null && this.tokens.equals(row.token, token);
     if (!granted) return null;
-    if (row.customerId !== null && (await this.customers.get().isErased(this.db.db, row.customerId))) return null;
+    if (await this.customers.get().isErased(this.db.db, row.accountId)) return null;
     return { id: row.id };
   }
 }

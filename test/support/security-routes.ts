@@ -350,10 +350,9 @@ export const PLACEHOLDER_URLS: Readonly<Record<string, string>> = {
 
 function seen(principal: Principal | undefined): z.infer<typeof Seen> {
   if (principal?.kind === 'staff') return { ok: true, kind: 'staff', id: principal.staffId, stage: principal.stage };
-  if (principal?.kind === 'merchant')
-    return { ok: true, kind: 'merchant', id: principal.clientId, stage: principal.stage };
-  if (principal?.kind === 'customer')
-    return { ok: true, kind: 'customer', id: principal.customerId, stage: principal.stage };
+  // one principal for every account: what a handler sees of the rank is its kind (`merchant` or `retail`)
+  if (principal?.kind === 'account')
+    return { ok: true, kind: principal.rank.kind, id: principal.accountId, stage: principal.stage };
   return { ok: true, kind: null, id: null, stage: null };
 }
 

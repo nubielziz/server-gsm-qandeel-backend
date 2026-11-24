@@ -3,8 +3,8 @@
 import { parseIpAddress, signInNetworkKey } from '../../../common/ip-address';
 
 /**
- * The two places a sign-in email is counted apart: the console (`staff`), and the shop, where the merchant login, the customer login and
- * the smart sign-in share one form and one count (`shop`).
+ * The two places a sign-in email is counted apart: the console (`staff`), and the shop (`shop`), where the three sign-in routes of the
+ * accounts (decision 064: one use case, one budget, one lock) share one count.
  */
 export type SignInScope = 'staff' | 'shop';
 

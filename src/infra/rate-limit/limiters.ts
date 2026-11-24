@@ -31,10 +31,10 @@ export interface LimiterConfig {
  * success; `sign-in-code` the account (the authenticator code steps, never counted in process memory, decision 052); `sign-in-familiar` scope + email + network, hashed (the attempts a familiar network is still allowed while an email is locked, decision 052); `token` the client IP; `supplier` the
  * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-intake` the client address key of an incoming webhook (decision 053); `upload` the client IP; `ticket-email`
  * the hashed email address of a public ticket form, the typed one or the order's customer's (`RateLimitService.compositeKey`);
- * `wallet-topup` the customer id; `help-vote` the client address key (IPv4, or the IPv6 /64) + help article id (`RateLimitService.compositeKey`); `media` the client IP; `account-mail` an account and a kind of
+ * `wallet-topup` the account (`a:<accountId>`); `help-vote` the client address key (IPv4, or the IPv6 /64) + help article id (`RateLimitService.compositeKey`); `media` the client IP; `account-mail` an account and a kind of
  * mail (`accountMailKey`); `broadcast-email` the constant `all` (one budget for the whole system,
  * feature 23); `stream-connect` the first cap key of a live stream (`session:<id>`, decision 037); `ticket-chat` the client IP;
- * `ticket-message` the ticket id; `ticket-open` the account (`customer:<id>` or `client:<id>`) (feature 28); `search-suggest` the client IP (feature 29).
+ * `ticket-message` the ticket id; `ticket-open` the account (`account:<id>`) (feature 28); `search-suggest` the client IP (feature 29).
  *
  * @see docs/decisions/021-rate-limiting.md
  */
@@ -54,7 +54,7 @@ export const RATE_LIMITERS = {
     windowSeconds: 15 * 60,
     blockSeconds: 15 * 60,
     description:
-      'Staff, merchant and customer sign-in, forgot password and sign-in link: attempts per email and network (the IPv4 address or the IPv6 /64); the sixth locks that pair for 15 minutes; a success resets it.',
+      'Staff and account sign-in (every rank), forgot password and sign-in link: attempts per email and network (the IPv4 address or the IPv6 /64); the sixth locks that pair for 15 minutes; a success resets it.',
   },
   'sign-in-code': {
     points: 5,
@@ -62,7 +62,7 @@ export const RATE_LIMITERS = {
     blockSeconds: 15 * 60,
     failClosed: true,
     description:
-      'Authenticator codes of the staff and merchant sign-in and of the merchant 2FA enable and disable: attempts per account; the sixth locks the code step of that account for 15 minutes; a success resets it. Never counted in process memory: while the cache Redis cannot be reached the code is refused (decision 052).',
+      'Authenticator codes of the staff and account sign-in and of the account 2FA enable and disable: attempts per account; the sixth locks the code step of that account for 15 minutes; a success resets it. Never counted in process memory: while the cache Redis cannot be reached the code is refused (decision 052).',
   },
   'sign-in-familiar': {
     points: 5,
@@ -108,13 +108,13 @@ export const RATE_LIMITERS = {
     points: 5,
     windowSeconds: 60 * 60,
     description:
-      'Account emails that staff or a merchant ask for (password link, verification, email change): five an hour per account and kind, so nobody can mail-bomb an inbox or use up the mail quota. Also the mails a visitor can ask for (the sign-in link, forgot password: kinds sign_in_link and forgot_password), per account: a request beyond the budget sends nothing and answers as usual (decision 052).',
+      'Account emails that staff or the account itself ask for (password link, verification, email change): five an hour per account and kind, so nobody can mail-bomb an inbox or use up the mail quota. Also the mails a visitor can ask for (the sign-in link, forgot password: kinds sign_in_link and forgot_password), per account: a request beyond the budget sends nothing and answers as usual (decision 052).',
   },
   'wallet-topup': {
     points: 10,
     windowSeconds: 10 * 60,
     description:
-      'New store balance top-ups (POST /store/v1/me/wallet/top-ups): attempts per customer id; a hint only, the daily limits are SQL (feature 21).',
+      'New store balance top-ups (POST /store/v1/me/wallet/top-ups): attempts per account (`a:<accountId>`); a hint only, the daily limits are SQL (feature 21).',
   },
   'help-vote': {
     points: 1,
@@ -144,7 +144,7 @@ export const RATE_LIMITERS = {
     points: 5,
     windowSeconds: 60 * 60,
     description:
-      'Tickets a signed-in customer or merchant opens without Turnstile (POST /store/v1/me/tickets, POST /client/tickets): per account an hour (feature 28).',
+      'Tickets a signed-in account opens without Turnstile (POST /store/v1/me/tickets, POST /client/tickets): per account (`account:<id>`) an hour (feature 28).',
   },
   'search-suggest': {
     points: 1200,

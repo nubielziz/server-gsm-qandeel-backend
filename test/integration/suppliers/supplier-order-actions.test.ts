@@ -237,7 +237,7 @@ describe('POST /admin/orders/:id/dispatch', () => {
     expect((await post(orderId, 'dispatch')).body).toMatchObject({ code: 'ORDER_NOT_OPEN' });
     const held = await insertOrderRow(world.db, {
       serviceId,
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
       status: 'pending',
       dispatchState: 'held',
     });
@@ -248,7 +248,7 @@ describe('POST /admin/orders/:id/dispatch', () => {
   it('says NO_SUPPLIER when the service has no active link and the order has no supplier', async () => {
     const manual = await insertOrderRow(world.db, {
       serviceId: world.manual.serviceId,
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
       status: 'pending',
       dispatchState: 'manual',
     });
@@ -265,7 +265,7 @@ describe('POST /admin/orders/:id/dispatch', () => {
 
     const unassigned = await insertOrderRow(world.db, {
       serviceId,
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
       status: 'pending',
       dispatchState: 'manual',
       imei: IMEIS[1],
@@ -277,7 +277,7 @@ describe('POST /admin/orders/:id/dispatch', () => {
     await freshRoute('25.0000');
     const manual = await insertOrderRow(world.db, {
       serviceId,
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
       status: 'pending',
       dispatchState: 'manual',
       unitPrice: '17.2800',

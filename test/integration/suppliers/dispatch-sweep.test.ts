@@ -354,7 +354,7 @@ describe('an order that never had a dispatch request', () => {
     // Inserted straight into the table, as a seeded demo order is: no outbox row, no timeline.
     const seeded = await insertOrderRow(world.db, {
       serviceId: world.auto.serviceId,
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
       status: 'pending',
       dispatchState: 'pending',
       placedAt: old,
@@ -380,7 +380,7 @@ describe('an order that never had a dispatch request', () => {
 describe('orders the sweep never touches', () => {
   it('leaves needs_attention, manual, held, operator, sent and closed orders alone', async () => {
     const old = new Date(clock.nowMs() - 3 * DISPATCH_REQUEUE_MAX_AGE_MS);
-    const common = { serviceId: world.auto.serviceId, clientId: world.merchant.id, placedAt: old, sentAt: old };
+    const common = { serviceId: world.auto.serviceId, accountId: world.merchant.id, placedAt: old, sentAt: old };
     const rows = [
       { status: 'pending', dispatchState: 'needs_attention' },
       { status: 'pending', dispatchState: 'manual', sentAt: null },

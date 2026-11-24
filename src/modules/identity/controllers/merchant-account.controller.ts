@@ -1,10 +1,8 @@
 // HTTP controller of the merchant portal's account area (map domain A, stage 2): profile, password and two-factor sign-in. Thin: the
-// rules live in the application services.
+// rules live in the application services behind the ports (decision 064).
 import { Body, Controller, Header } from '@nestjs/common';
 import { type BodyOf, type ResultOf, Route } from '../../../common/contract';
 import { MerchantAccountService } from '../application/merchant-account.service';
-import { MerchantPasswordService } from '../application/merchant-password.service';
-import { MerchantTwoFactorService } from '../application/merchant-two-factor.service';
 import {
   merchantChangePassword,
   merchantDisableTwoFactor,
@@ -12,15 +10,15 @@ import {
   merchantSetupTwoFactor,
   merchantUpdateProfile,
 } from '../contracts/merchant-account.contracts';
-import { CurrentMerchant } from '../security/access-state';
-import type { MerchantPrincipal } from '../security/principal';
-import { wireMe } from './merchant-auth.controller';
+import { AccountOwnPassword, AccountTwoFactorSetup } from '../ports/account-auth';
+import { CurrentAccount, type AccountPrincipal } from '../ports/account-principal';
 
 /**
  * The merchant portal's account routes.
  *
- * Why: B130 to B134. A merchant manages its own profile, password and authenticator. Every route is open to a
- * merchant waiting for approval (B153). Answers that carry a secret say `Cache-Control: no-store`.
+ * Why: B130 to B134. A merchant manages its own profile, password and authenticator. The password and the authenticator are the use
+ * cases every account shares (`AccountOwnPassword`, `AccountTwoFactorSetup`); an account without a password is refused with 409. Answers
+ * that carry a secret say `Cache-Control: no-store`.
  *
  * @route PATCH /client/profile
  * @route POST /client/security/password
@@ -32,84 +30,84 @@ import { wireMe } from './merchant-auth.controller';
 export class MerchantAccountController {
   constructor(
     private readonly account: MerchantAccountService,
-    private readonly passwords: MerchantPasswordService,
-    private readonly twoFactor: MerchantTwoFactorService,
+    private readonly passwords: AccountOwnPassword,
+    private readonly twoFactor: AccountTwoFactorSetup,
   ) {}
 
   /**
    * Updates the profile.
    *
-   * @param merchant the signed-in merchant
+   * @param account the signed-in account
    * @param body the fields to change
-   * @returns the merchant after the change
+   * @returns the account after the change
    * @route PATCH /client/profile
    */
   @Route(merchantUpdateProfile)
-  async updateProfile(
-    @CurrentMerchant() merchant: MerchantPrincipal,
+  updateProfile(
+    @CurrentAccount() account: AccountPrincipal,
     @Body() body: BodyOf<typeof merchantUpdateProfile>,
   ): Promise<ResultOf<typeof merchantUpdateProfile>> {
-    return wireMe(await this.account.updateProfile(merchant, body));
+    return this.account.updateProfile(account, body);
   }
 
   /**
    * Changes the password.
    *
-   * @param merchant the signed-in merchant
+   * @param account the signed-in account
    * @param body the current and the new password
    * @route POST /client/security/password
    */
   @Route(merchantChangePassword)
   @Header('Cache-Control', 'no-store')
   async changePassword(
-    @CurrentMerchant() merchant: MerchantPrincipal,
+    @CurrentAccount() account: AccountPrincipal,
     @Body() body: BodyOf<typeof merchantChangePassword>,
   ): Promise<void> {
-    await this.passwords.change(merchant, body);
+    await this.passwords.change(account, body);
   }
 
   /**
    * Starts the authenticator setup.
    *
-   * @param merchant the signed-in merchant
+   * @param account the signed-in account
    * @returns the secret, the `otpauth://` link and the QR code
    * @route POST /client/security/2fa/setup
    */
   @Route(merchantSetupTwoFactor)
   @Header('Cache-Control', 'no-store')
-  setupTwoFactor(@CurrentMerchant() merchant: MerchantPrincipal): Promise<ResultOf<typeof merchantSetupTwoFactor>> {
-    return this.twoFactor.setup(merchant);
+  setupTwoFactor(@CurrentAccount() account: AccountPrincipal): Promise<ResultOf<typeof merchantSetupTwoFactor>> {
+    return this.twoFactor.setup(account);
   }
 
   /**
    * Turns two-factor sign-in on.
    *
-   * @param merchant the signed-in merchant
+   * @param account the signed-in account
    * @param body the code
    * @route POST /client/security/2fa/enable
    */
   @Route(merchantEnableTwoFactor)
   @Header('Cache-Control', 'no-store')
   async enableTwoFactor(
-    @CurrentMerchant() merchant: MerchantPrincipal,
+    @CurrentAccount() account: AccountPrincipal,
     @Body() body: BodyOf<typeof merchantEnableTwoFactor>,
   ): Promise<void> {
-    await this.twoFactor.enable(merchant, body.code);
+    await this.twoFactor.enable(account, body.code);
   }
 
   /**
    * Turns two-factor sign-in off.
    *
-   * @param merchant the signed-in merchant
+   * @param account the signed-in account
    * @param body the code
    * @route POST /client/security/2fa/disable
    */
   @Route(merchantDisableTwoFactor)
   @Header('Cache-Control', 'no-store')
   async disableTwoFactor(
-    @CurrentMerchant() merchant: MerchantPrincipal,
+    @CurrentAccount() account: AccountPrincipal,
     @Body() body: BodyOf<typeof merchantDisableTwoFactor>,
   ): Promise<void> {
-    await this.twoFactor.disable(merchant, body.code);
+    await this.twoFactor.disable(account, body.code);
   }
 }

@@ -1,10 +1,12 @@
 // Integration tests of the risk review queue and the decisions on a held order (feature 18, GET /admin/risk/queue and POST
 // /admin/risk/orders/:id/approve and /refund; scenario b2c-paid): what the queue shows, release to dispatch or the manual queue,
-// the refund with its ledger move and blocklist entries, the refusals, the race between two reviewers and the permissions.
+// the refund with its ledger move and blocklist entries, the refusals, the race between two reviewers and the permissions. The buyer is an
+// account row (a guest row of the retail rank for a guest checkout); the queue card keeps its `customer` key and names the account.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { AuditService } from '@src/modules/platform';
+import { makeAccount } from '../../support/accounts';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -14,6 +16,7 @@ import { ledgerTotals } from '../../support/money';
 import {
   type OrdersWorld,
   eventsOf,
+  insertOrderRow,
   ledgerOf,
   orderRow,
   ordersWorld,
@@ -90,7 +93,7 @@ describe('GET /admin/risk/queue', () => {
       paymentMethod: 'card',
       signals: ['Disposable email domain', 'IP country differs from card country'],
       customer: {
-        id: held.customerId,
+        id: held.accountId,
         name: 'Jack Turner',
         country: 'GB',
         history: { earlierOrders: 0, refunds: 0, disputes: 0 },
@@ -100,18 +103,18 @@ describe('GET /admin/risk/queue', () => {
     expect(res.body.held[0].fxRate).toMatch(/^1(\.0+)?$/);
   });
 
-  it('masks a held order’s customer address without customers:read, and shows it in full with it (decision 047)', async () => {
+  it('masks a held order’s buyer address without clients:read, and shows it in full with it (decisions 047 and 064)', async () => {
     const held = await insertHeldOrder(world, { imei: '353890113898412' });
     const queueOf = async (api: AdminApi) => (await api.get('/admin/risk/queue')).body.held[0].customer;
     const masked = await queueOf(staff);
-    expect(masked.id).toBe(held.customerId);
+    expect(masked.id).toBe(held.accountId);
     expect(masked.email).toMatch(/^.{2}•••@.+$/);
     expect(masked.name).toBe('Jack Turner');
-    const reader = await adminWith(t, ['risk:read', 'customers:read']);
+    const reader = await adminWith(t, ['risk:read', 'clients:read']);
     const full = await queueOf(reader);
     expect(full.email).not.toContain('•');
     expect(full.email.replace(/^(.{2}).*(@.*)$/, '$1•••$2')).toBe(masked.email);
-    expect((await queueOf(await adminWith(t, ['risk:*', 'customers:*']))).email).toBe(full.email);
+    expect((await queueOf(await adminWith(t, ['risk:*', 'clients:*']))).email).toBe(full.email);
   });
 
   it('lists the oldest payment first, leaves out an order that is not held, and counts the buyer’s earlier orders', async () => {
@@ -120,18 +123,16 @@ describe('GET /admin/risk/queue', () => {
     const older = await insertHeldOrder(world, { createdAt: new Date('2026-11-08T08:00:00.000Z') });
     await insertHeldOrder(world, { dispatchState: 'pending' });
     // Two earlier orders of the newer order's buyer, so its history says 2.
-    await db.insert(s.orders).values(
-      [1, 2].map((day) => ({
-        customerId: newer.customerId,
+    for (const day of [1, 2]) {
+      await insertOrderRow(db, {
+        accountId: newer.accountId,
         serviceId: world.auto.serviceId,
-        type: 'imei' as const,
-        source: 'store' as const,
+        source: 'store',
         unitPrice: '5.0000',
         totalPrice: '5.0000',
-        currency: 'USD',
         createdAt: new Date(`2026-11-0${day}T10:00:00.000Z`),
-      })),
-    );
+      });
+    }
     const res = await staff.get('/admin/risk/queue');
     expect(res.body.held.map((row: { orderId: number }) => row.orderId)).toEqual([older.orderId, newer.orderId]);
     expect(res.body.held[1].customer.history.earlierOrders).toBe(2);
@@ -142,32 +143,28 @@ describe('GET /admin/risk/queue', () => {
     const first = await insertHeldOrder(world, { createdAt: new Date('2026-11-08T08:00:00.000Z') });
     // The same buyer holds a second and a third order later; one earlier order was delivered.
     const second = await insertHeldOrder(world, {
-      customerId: first.customerId,
+      customerId: first.accountId,
       createdAt: new Date('2026-11-08T09:00:00.000Z'),
     });
     const third = await insertHeldOrder(world, {
-      customerId: first.customerId,
+      customerId: first.accountId,
       createdAt: new Date('2026-11-08T10:00:00.000Z'),
     });
-    await db.insert(s.orders).values({
-      customerId: first.customerId,
+    await insertOrderRow(db, {
+      accountId: first.accountId,
       serviceId: world.auto.serviceId,
-      type: 'imei',
       source: 'store',
       unitPrice: '5.0000',
       totalPrice: '5.0000',
-      currency: 'USD',
       createdAt: new Date('2026-11-05T10:00:00.000Z'),
     });
     // And an order of theirs that came after all of them.
-    await db.insert(s.orders).values({
-      customerId: first.customerId,
+    await insertOrderRow(db, {
+      accountId: first.accountId,
       serviceId: world.auto.serviceId,
-      type: 'imei',
       source: 'store',
       unitPrice: '5.0000',
       totalPrice: '5.0000',
-      currency: 'USD',
       createdAt: new Date('2026-11-08T11:00:00.000Z'),
     });
     const history = (await staff.get('/admin/risk/queue')).body.held.map(
@@ -361,20 +358,20 @@ describe('POST /admin/risk/orders/:id/refund', () => {
     const events = await eventsOf(db, held.orderId);
     expect(events.slice(-2).map((event) => event.type)).toEqual(['risk', 'refund']);
     expect(events.at(-2)!.data).toMatchObject({ reason: 'Card owner did not match the IMEI buyer' });
-    // The blocklist entries are the caller's manual entries and are not linked to a customer.
+    // The blocklist entries are the caller's manual entries and are not linked to an account.
     const entries = await blocklistRows(db);
     expect(entries.map((entry) => entry.kind).sort()).toEqual(['email', 'imei']);
     for (const entry of entries) {
       expect(entry).toMatchObject({
         source: 'manual',
         createdBy: staff.staffId,
-        customerId: null,
+        accountId: null,
         reason: 'Card owner did not match the IMEI buyer',
       });
     }
-    // The customer is not blocked by this route (B77).
-    const [customer] = await db.select().from(s.customers).where(eq(s.customers.id, held.customerId));
-    expect(customer!.status).toBe('active');
+    // The account is not blocked by this route (B77).
+    const [account] = await db.select().from(s.clients).where(eq(s.clients.id, held.accountId));
+    expect(account!.status).toBe('active');
     const [audit] = await auditRows(db, 'order', held.orderId);
     expect(audit).toMatchObject({ action: 'refunded after risk review', after: { risk_decision: 'refunded' } });
     // The audit row names the entries it added by kind and mask: no readable IMEI, no full email.
@@ -386,13 +383,16 @@ describe('POST /admin/risk/orders/:id/refund', () => {
     }
   });
 
-  describe('the blocks of a guest order (decision 050)', () => {
+  describe('the blocks of a guest order (decisions 050 and 064)', () => {
     const labels = async () =>
       (await blocklistRows(world.db)).map((entry) => [entry.kind, entry.guestOnly] as const).sort();
     const refundWithEmailBlock = (orderId: number) =>
       staff.post(`/admin/risk/orders/${orderId}/refund`, { blockEmail: true });
     const refundAudit = async (orderId: number) =>
       (await auditRows(world.db, 'order', orderId)).find((row) => row.action === 'refunded after risk review')!;
+    /** A login account that holds the email (retail rank, no password: it signs in by link), with the columns that say how it came to be. */
+    const loginAccount = (email: string, columns: Partial<typeof s.clients.$inferInsert> = {}) =>
+      makeAccount({ rank: 'retail', db: world.db, email, password: null, ...columns });
 
     it('adds the card that paid a guest order when its email is blocked, and blocks the email everywhere when no account existed before', async () => {
       const held = await insertHeldOrder(world, { cardFingerprint: 'fp_x' });
@@ -408,13 +408,13 @@ describe('POST /admin/risk/orders/:id/refund', () => {
       expect((audit.after as Record<string, unknown>)['emailScope']).toBeUndefined();
     });
 
-    it('limits the email to guest checkouts when an account of that email existed before the order, and says so', async () => {
+    it('limits the email to guest checkouts when a login account of that email existed before the order, and says so', async () => {
       const at = new Date(clock.nowMs());
-      const held = await insertHeldOrder(world, {
-        cardFingerprint: 'fp_x',
-        createdAt: at,
-        customer: { emailVerifiedAt: new Date(at.getTime() - DAY) },
-      });
+      const email = 'owner@example.com';
+      // The guest row of the checkout is not the login account: they are two rows of one email (decision 064).
+      const owner = await loginAccount(email, { emailVerifiedAt: new Date(at.getTime() - DAY) });
+      const held = await insertHeldOrder(world, { cardFingerprint: 'fp_x', createdAt: at, customer: { email } });
+      expect(held.accountId).not.toBe(owner.id);
       expect((await refundWithEmailBlock(held.orderId)).status).toBe(204);
       expect(await labels()).toEqual([
         ['card', false],
@@ -424,17 +424,18 @@ describe('POST /admin/risk/orders/:id/refund', () => {
       expect(entries.find((entry) => entry.kind === 'email')!.reason).toEndWith(' (guest checkouts only)');
       expect(entries.find((entry) => entry.kind === 'card')!.reason).not.toContain('guest checkouts only');
       expect((await refundAudit(held.orderId)).after).toMatchObject({ emailScope: 'guest checkouts' });
+      // The account keeps its use: nothing here changes its status.
+      expect((await world.db.select().from(s.clients).where(eq(s.clients.id, owner.id)))[0]!.status).toBe('active');
     });
 
-    it('limits the email too when staff made the account, and does not when the email was verified only after the order', async () => {
+    it('limits the email too when staff made the login account, and does not when its holder proved the mailbox only after the order', async () => {
       const at = new Date(clock.nowMs());
-      const byStaff = await insertHeldOrder(world, { createdAt: at, customer: { createdBy: staff.staffId } });
+      await loginAccount('staff-made@example.com', { createdBy: staff.staffId });
+      const byStaff = await insertHeldOrder(world, { createdAt: at, customer: { email: 'staff-made@example.com' } });
       expect((await refundWithEmailBlock(byStaff.orderId)).status).toBe(204);
       expect(await labels()).toEqual([['email', true]]);
-      const later = await insertHeldOrder(world, {
-        createdAt: at,
-        customer: { emailVerifiedAt: new Date(at.getTime() + DAY) },
-      });
+      await loginAccount('proved-later@example.com', { emailVerifiedAt: new Date(at.getTime() + DAY) });
+      const later = await insertHeldOrder(world, { createdAt: at, customer: { email: 'proved-later@example.com' } });
       expect((await refundWithEmailBlock(later.orderId)).status).toBe(204);
       expect(await labels()).toEqual([
         ['email', false],
@@ -442,8 +443,29 @@ describe('POST /admin/risk/orders/:id/refund', () => {
       ]);
     });
 
+    it('blocks the email everywhere when the login account of that email never proved the mailbox and no staff made it', async () => {
+      await loginAccount('unproven@example.com');
+      const held = await insertHeldOrder(world, { customer: { email: 'unproven@example.com' } });
+      expect((await refundWithEmailBlock(held.orderId)).status).toBe(204);
+      expect(await labels()).toEqual([['email', false]]);
+    });
+
+    it('limits the email when the buyer row of the order is the login account itself (a claimed guest order)', async () => {
+      const at = new Date(clock.nowMs());
+      const held = await insertHeldOrder(world, {
+        createdAt: at,
+        customer: { hasAccount: true, emailVerifiedAt: new Date(at.getTime() - DAY) },
+      });
+      expect((await refundWithEmailBlock(held.orderId)).status).toBe(204);
+      expect(await labels()).toEqual([['email', true]]);
+    });
+
     it('blocks the email everywhere and adds no card for a signed-in order', async () => {
-      const held = await insertHeldOrder(world, { cardFingerprint: 'fp_x', openedSignedIn: true });
+      const held = await insertHeldOrder(world, {
+        cardFingerprint: 'fp_x',
+        openedSignedIn: true,
+        customer: { hasAccount: true },
+      });
       expect((await refundWithEmailBlock(held.orderId)).status).toBe(204);
       expect(await labels()).toEqual([['email', false]]);
       expect((await refundAudit(held.orderId)).after).not.toHaveProperty('emailScope');
@@ -482,7 +504,7 @@ describe('POST /admin/risk/orders/:id/refund', () => {
     // The same IMEI is one entry; each email is its own.
     const entries = await blocklistRows(db);
     expect(entries.map((entry) => entry.kind).sort()).toEqual(['email', 'email', 'imei']);
-    expect(entries.every((entry) => entry.customerId === null)).toBe(true);
+    expect(entries.every((entry) => entry.accountId === null && entry.retiredCustomerId === null)).toBe(true);
   });
 
   it('does not fail the refund because one value cannot be blocked (a malformed email is skipped)', async () => {

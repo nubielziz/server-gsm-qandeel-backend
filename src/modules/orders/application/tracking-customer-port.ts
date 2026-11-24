@@ -1,24 +1,25 @@
-// The seam the orders module keeps for the customers module, which sits above it in the import graph (decision 032): whether the customer of
-// an order was anonymized, so the order's tracking link opens nothing after the erasure. Orders cannot import customers (customers imports
+// The seam the orders module keeps for the customers module, which sits above it in the import graph (decision 032): whether the buyer account
+// of an order was anonymized, so the order's tracking link opens nothing after the erasure. Orders cannot import customers (customers imports
 // orders), so the customers module registers its implementation at boot, like money's storefront ports.
 import { Injectable } from '@nestjs/common';
 import type { DbExecutor } from '../../../infra/db';
 
 /**
- * What the orders module asks of the customers module about the customer of a storefront order.
+ * What the orders module asks of the customers module about the buyer of a storefront order.
  *
- * Why: after staff anonymize a customer, the tracking link of the customer's orders (the status, the result and the receipt) answers as an
- * unknown link. The customer's status is the customers module's table.
+ * Why: after staff anonymize an account, the tracking link of its shop orders (the status, the result and the receipt) answers as an
+ * unknown link. The buyer is an account of any rank (decision 064): a login account or a guest row, and its status is the identity
+ * module's table, read through the customers module.
  */
 export interface TrackingCustomerPort {
   /**
-   * Tells whether a customer is anonymized or gone.
+   * Tells whether an account is anonymized or gone.
    *
    * @param db the database or the caller's transaction
-   * @param customerId the customer of the order
-   * @returns true when the customer was anonymized or no longer exists
+   * @param accountId the buyer account of the order
+   * @returns true when the account was anonymized or no longer exists
    */
-  isErased(db: DbExecutor, customerId: number): Promise<boolean>;
+  isErased(db: DbExecutor, accountId: number): Promise<boolean>;
 }
 
 /**

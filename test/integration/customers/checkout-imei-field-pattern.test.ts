@@ -76,7 +76,8 @@ const open = (payload: Record<string, unknown>) =>
 /** Asserts that nothing was opened. */
 async function expectNothingOpened(): Promise<void> {
   expect(await db.select().from(s.checkoutSessions)).toHaveLength(0);
-  expect(await db.select().from(s.customers)).toHaveLength(0);
+  // No guest row was made for the typed address either (a guest is an account row without a login).
+  expect(await db.select().from(s.clients).where(eq(s.clients.hasAccount, false))).toHaveLength(0);
 }
 
 describe('the pattern of a field keyed imei on a storefront checkout', () => {

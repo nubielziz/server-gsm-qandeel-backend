@@ -1,4 +1,4 @@
-// The money integrity check of the nightly and the manual run (job `ledger_integrity`, scenario system-integrity steps 1, 2 and 7): the four
+// The money integrity check of the nightly and the manual run (job `ledger_integrity`, scenario system-integrity steps 1, 2 and 7): the five
 // checks of the console's Integrity tab. It reuses money's account comparison and never corrects anything.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
@@ -12,6 +12,7 @@ import {
   accountRef,
   checkResult,
   entryLabel,
+  rankFindingLabel,
 } from '../domain/integrity';
 import {
   accountFacts,
@@ -19,6 +20,7 @@ import {
   paymentsWithoutEntry,
   stuckHolds,
   unbalancedEntries,
+  walletsOffRank,
 } from '../infra/integrity-reads.repository';
 import { money } from '../infra/sibling-modules';
 
@@ -29,7 +31,7 @@ export interface IntegrityOutcome {
 }
 
 /**
- * Runs the four money integrity checks.
+ * Runs the five money integrity checks.
  *
  * Why: the nightly job and `POST /admin/system/integrity/run` both end here. The checks only read: a difference is put right by a staff
  * member with a reversing entry in Finance (scenario system-integrity step 3), never by this job (decision 024). The account comparison is
@@ -50,19 +52,20 @@ export class LedgerIntegrityCheck {
   /**
    * Runs the checks.
    *
-   * @returns the four checks in the map's order and how much was looked at
+   * @returns the checks in order (the map's four, then `wallets_follow_rank`) and how much was looked at
    * @throws whatever the database or the comparison throws: the run is then recorded as failed and the console shows every check `unknown`
    */
   async run(): Promise<IntegrityOutcome> {
     const now = this.clock.now();
     const db = this.db.db;
     const { compareLedgerBalances } = await money();
-    const [report, entries, transactions, holds, payments] = await Promise.all([
+    const [report, entries, transactions, holds, payments, offRank] = await Promise.all([
       compareLedgerBalances(this.db, now),
       unbalancedEntries(db),
       countTransactions(db),
       stuckHolds(db, now),
       paymentsWithoutEntry(db),
+      walletsOffRank(db),
     ]);
 
     const entryFindings: Finding[] = entries.rows.map((row) => ({
@@ -99,7 +102,7 @@ export class LedgerIntegrityCheck {
       kind: 'hold',
       id: row.orderId,
       ref: `#${row.orderId}`,
-      label: `Order #${row.orderId} · ${row.merchantName}`,
+      label: `Order #${row.orderId} · ${row.accountName}`,
       difference: null,
       ageSeconds: Math.max(0, Math.floor((now.getTime() - row.heldAt.getTime()) / 1000)),
       lastEntryAt: null,
@@ -115,12 +118,23 @@ export class LedgerIntegrityCheck {
       lastEntryAt: null,
     }));
 
+    const rankFindings: Finding[] = offRank.rows.map((row) => ({
+      kind: 'account',
+      id: row.id,
+      ref: accountRef(row.kind, row.ownerId),
+      label: rankFindingLabel(row.problem, row.kind, row.ownerId, row.ownerName),
+      difference: row.difference,
+      ageSeconds: null,
+      lastEntryAt: null,
+    }));
+
     return {
       checks: [
         checkResult('entries_balanced', entries.total, entryFindings, entries.difference),
         checkResult('accounts_match_lines', report.differences.length, accountFindings, accountsDifference),
         checkResult('stuck_holds', holds.total, holdFindings, null),
         checkResult('payments_without_entry', payments.total, paymentFindings, payments.difference),
+        checkResult('wallets_follow_rank', offRank.total, rankFindings, offRank.difference),
       ],
       totals: {
         accountsChecked: report.accountsChecked,

@@ -23,7 +23,12 @@ const rule = (
   id = nextId++,
 ): ActiveIpRule => ({ id, kind, scope, cidr, expiresAt });
 
-function decide(rules: ActiveIpRule[], ip: string | undefined, audience: IpAudience, restricted = false) {
+function decide(
+  rules: ActiveIpRule[],
+  ip: string | undefined,
+  audience: IpAudience | readonly IpAudience[],
+  restricted = false,
+) {
   const compiled = compileIpRules({ version: 'v', restricted, rules });
   return decideIpAccess(compiled, ip === undefined ? undefined : parseIpAddress(ip), audience, NOW);
 }
@@ -44,6 +49,21 @@ describe('block rules', () => {
     }
     expect(decide([store], '203.0.113.9', 'store').decision).toBe('refused');
     expect(decide([everywhere], '198.51.100.231', 'store').decision).toBe('refused');
+  });
+
+  it('refuse a request with two audiences when a rule covers either one (the shared sign-in routes, decision 064)', () => {
+    const store = rule('block', 'store', '203.0.113.9');
+    const api = rule('block', 'api', '203.0.113.10');
+    const everywhere = rule('block', 'all', '198.51.100.231');
+    const both = ['store', 'other'] as const;
+    expect(decide([store], '203.0.113.9', both)).toEqual({ decision: 'refused', rule: store, reason: 'blocked' });
+    expect(decide([everywhere], '198.51.100.231', both).decision).toBe('refused');
+    // A rule of a scope neither audience has does not apply, and an address no rule covers passes.
+    expect(decide([api], '203.0.113.10', both).decision).toBe('allowed');
+    expect(decide([store], '8.8.8.8', both).decision).toBe('allowed');
+    // The audience `other` alone is covered by "all" rules only, as before: a store rule never reaches the merchant portal.
+    expect(decide([store], '203.0.113.9', 'other').decision).toBe('allowed');
+    expect(decide([store], '203.0.113.9', ['other']).decision).toBe('allowed');
   });
 
   it('ignore a rule past its expiry, and keep one that has not expired yet', () => {

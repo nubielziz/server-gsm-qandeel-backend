@@ -1,16 +1,15 @@
 // A stand-in for the merchant portal in tests: it keeps the cookies and the CSRF token the way a browser and the portal's API
-// client do, sends the Origin header, and offers the merchants, TOTP secrets and emailed links the sign-in tests need.
-import { randomUUID } from 'node:crypto';
-import { spyOn } from 'bun:test';
+// client do, sends the Origin header, and offers the merchant-rank accounts, TOTP secrets and emailed links the sign-in tests need.
 import type { LightMyRequestResponse } from 'fastify';
-import { eq } from 'drizzle-orm';
 import { CacheKeys } from '@src/infra/cache';
-import { PasswordHasher } from '@src/infra/crypto';
-import { onCommit, schema as s } from '@src/infra/db';
+import { schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
-import { MerchantAuthTokens } from '@src/modules/identity';
+import { TURNSTILE_DUMMY_TOKEN, TURNSTILE_HEADER } from '@src/infra/turnstile';
 import { CLIENT_TOTP_AAD, TotpService } from '@src/modules/identity/application/totp.service';
 import type { Client } from '@src/modules/identity/db/schema';
+import { accountLinks, captureAccountLinks } from './account-links';
+import { ACCOUNT_SESSION_COOKIE } from './account-sessions';
+import { accountRow, makeAccount } from './accounts';
 import type { TestApp } from './app';
 import { testDb } from './db';
 
@@ -18,8 +17,8 @@ import { testDb } from './db';
 export const PORTAL_ORIGIN = 'https://portal.example.com';
 /** The password of every merchant `makeMerchant` creates unless told otherwise. */
 export const MERCHANT_PASSWORD = 'correct-horse-battery';
-/** The name of the session cookie (not secure in tests). */
-export const CLIENT_SESSION_COOKIE = 'gsm_client_session';
+/** The name of the session cookie (not secure in tests): the one cookie of every account. */
+export const CLIENT_SESSION_COOKIE = ACCOUNT_SESSION_COOKIE;
 /** The readable CSRF cookie. */
 export const CLIENT_CSRF_COOKIE = 'csrf_token_client';
 
@@ -31,7 +30,12 @@ export interface PortalCallOptions {
   readonly csrf?: boolean | string;
   /** Send the session cookie (default true). */
   readonly cookies?: boolean;
-  /** More request headers (an `x-turnstile-token`). */
+  /**
+   * Send the anti-bot token: `true` the dummy token of the development verifier, a text that text, `false` nothing. The default is
+   * `false`, except on `forgot`, whose route always checks the token (decision 064).
+   */
+  readonly turnstile?: boolean | string;
+  /** More request headers; an `x-turnstile-token` here wins over `turnstile`. */
   readonly headers?: Readonly<Record<string, string>>;
 }
 
@@ -70,7 +74,10 @@ export class MerchantPortal {
     payload?: unknown,
     options: PortalCallOptions = {},
   ): Promise<LightMyRequestResponse> {
-    const headers: Record<string, string> = { ...options.headers };
+    const headers: Record<string, string> = {};
+    const turnstile = options.turnstile ?? false;
+    if (turnstile) headers[TURNSTILE_HEADER] = turnstile === true ? TURNSTILE_DUMMY_TOKEN : turnstile;
+    Object.assign(headers, options.headers);
     const origin = options.origin ?? true;
     if (origin) headers.origin = origin === true ? PORTAL_ORIGIN : origin;
     if ((options.cookies ?? true) && this.jar.size > 0) {
@@ -129,9 +136,9 @@ export class MerchantPortal {
     return this.call('POST', '/client/auth/verify-email/resend', undefined, options);
   }
 
-  /** `POST /client/auth/password/forgot`. */
+  /** `POST /client/auth/password/forgot`, with the anti-bot token unless `options.turnstile` says otherwise. */
   forgot(email: string, options?: PortalCallOptions): Promise<LightMyRequestResponse> {
-    return this.call('POST', '/client/auth/password/forgot', { email }, options);
+    return this.call('POST', '/client/auth/password/forgot', { email }, { turnstile: true, ...options });
   }
 
   /** `POST /client/auth/password/reset`. */
@@ -193,76 +200,52 @@ export type MerchantOverrides = Partial<typeof s.clients.$inferInsert> & {
   readonly twofa?: boolean;
 };
 
-/** Creates an active merchant with a password and no 2FA, unless told otherwise. */
+/**
+ * Creates an active account of the merchant rank with a password and no 2FA, unless told otherwise.
+ *
+ * Why: a merchant is a merchant-rank row of the one account table (decision 064); this is `makeAccount({ rank: 'merchant' })` with the old
+ * option names and the authenticator secret.
+ *
+ * @param t the running test app
+ * @param overrides the columns to change, `noPassword`, `password`, `twofa`
+ * @returns the id, the email, the base32 secret and the stored row
+ */
 export async function makeMerchant(t: TestApp, overrides: MerchantOverrides = {}): Promise<MadeMerchant> {
-  const { db } = await testDb();
   const { noPassword, password, twofa, ...columns } = overrides;
-  const existing = await db.select({ id: s.clientGroups.id }).from(s.clientGroups).limit(1);
-  const groupId =
-    existing[0]?.id ??
-    (
-      await db.insert(s.clientGroups).values({ name: 'Standard', isDefault: true }).returning({ id: s.clientGroups.id })
-    )[0]!.id;
   const totp = t.app.get(TotpService);
   const secret = totp.newSecret();
-  const unique = randomUUID();
-  const [row] = await db
-    .insert(s.clients)
-    .values({
-      username: `merchant-${unique}`,
-      email: `merchant-${unique}@example.com`,
-      name: 'Test Merchant',
-      groupId,
-      referralCode: `REF-${unique}`,
-      status: 'active',
-      passwordHash: noPassword ? null : await t.app.get(PasswordHasher).hash(password ?? MERCHANT_PASSWORD),
-      twofaEnabled: twofa === true,
-      totpSecretEnc: twofa === true ? totp.seal(secret, CLIENT_TOTP_AAD) : null,
-      ...columns,
-    })
-    .returning();
-  return { id: row!.id, email: row!.email, secret, row: row! };
+  const made = await makeAccount(t, {
+    rank: 'merchant',
+    password: noPassword ? null : (password ?? MERCHANT_PASSWORD),
+    twofaEnabled: twofa === true,
+    totpSecretEnc: twofa === true ? totp.seal(secret, CLIENT_TOTP_AAD) : null,
+    ...columns,
+  });
+  return { id: made.id, email: made.email, secret, row: made.row };
 }
 
-/** Reads a merchant row back. */
-export async function clientRow(id: number): Promise<Client> {
-  const { db } = await testDb();
-  const [row] = await db.select().from(s.clients).where(eq(s.clients.id, id));
-  return row!;
-}
+/** Reads an account row back (the same read as `accountRow`). */
+export const clientRow = accountRow;
 
-/** A link that was created for an email. */
+/** A link that was created for an account's email. */
 export interface EmailedLink {
-  /** The mail it belongs to: `email_verification`, `password_reset` or `invited`. */
+  /** The mail it belongs to: `email_verification`, `password_reset`, `invited` or `magic_link`. */
   readonly kind: string;
+  readonly accountId: number;
+  /** The same number as `accountId`, under the name the old helper used. */
   readonly clientId: number;
   readonly token: string;
 }
 
-const emailed: EmailedLink[] = [];
-const MAIL_KIND = { verify_email: 'email_verification', reset: 'password_reset', invite: 'invited' } as const;
-
 /**
  * Starts recording the links the app creates for emails (call it in `beforeEach`, and `mock.restore()` in `afterEach`).
  *
- * Why: the token exists in clear text only in the request that created it (decision 019), and the outbox carries ids only, so a
- * test that follows an emailed link takes the token from the token service as it is issued. It does not depend on the log level,
- * which one process shares between test files.
+ * Why: see {@link captureAccountLinks}: the token service is one for every rank.
  *
  * @param t the running test app
  */
 export function captureEmailedLinks(t: TestApp): void {
-  emailed.length = 0;
-  const tokens = t.app.get(MerchantAuthTokens);
-  const issue = tokens.issue.bind(tokens);
-  spyOn(tokens, 'issue').mockImplementation(async (work, input) => {
-    const issued = await issue(work, input);
-    // Recorded at the commit: a link of a run that is rolled back on purpose (an email that gets no mail) was never sent.
-    onCommit(
-      () => void emailed.push({ kind: MAIL_KIND[input.purpose], clientId: input.clientId, token: issued.token }),
-    );
-    return issued;
-  });
+  captureAccountLinks(t);
 }
 
 /**
@@ -271,7 +254,7 @@ export function captureEmailedLinks(t: TestApp): void {
  * @returns a copy of the list
  */
 export function emailedLinks(): EmailedLink[] {
-  return [...emailed];
+  return accountLinks().map((link) => ({ ...link, clientId: link.accountId }));
 }
 
 /**

@@ -4,19 +4,39 @@
     "content-type": "application/json"
   },
   "body": {
-    "username": "harvest-sample",
     "email": "harvest.sample@example.com",
+    "emailVerifiedAt": null,
     "name": "Harvest sample",
-    "company": "Harvest sample",
     "phone": "",
     "country": "GB",
-    "groupId": 1,
-    "status": "active",
-    "emailVerifiedAt": null,
-    "createdAt": "2026-10-31T12:00:00.000Z",
+    "company": "",
     "address": "",
     "taxId": "",
     "internalNotes": "",
+    "username": null,
+    "status": "active",
+    "hasAccount": true,
+    "createdAt": "2026-10-31T12:00:00.000Z",
+    "createdBy": {
+      "id": 1,
+      "name": "Rami K."
+    },
+    "currencyCode": "GBP",
+    "marketingOptIn": false,
+    "suspension": null,
+    "anonymizedAt": null,
+    "lastLoginAt": null,
+    "id": 132,
+    "rank": {
+      "id": 4,
+      "name": "Storefront retail",
+      "kind": "retail",
+      "discountPercent": "0.0000",
+      "creditAllowed": false
+    },
+    "invitationPending": true,
+    "ordersCount": 0,
+    "lastOrderAt": null,
     "security": {
       "hasPassword": false,
       "mustChangePassword": false,
@@ -28,7 +48,6 @@
       "linkSentAt": "2026-10-31T12:00:00.000Z",
       "verificationSentAt": null
     },
-    "suspension": null,
     "stats": {
       "orders": 0,
       "spend": "0.0000",
@@ -37,17 +56,13 @@
       "successRate": null,
       "lastOrderAt": null
     },
-    "id": 21,
-    "group": {
-      "id": 1,
-      "name": "Standard",
-      "discountPercent": "0.0000"
-    },
     "wallet": {
+      "kind": "store",
       "balance": "0.0000",
       "reserved": "0.0000",
       "creditLimit": "0.0000",
-      "available": "0.0000"
+      "available": "0.0000",
+      "frozen": false
     }
   }
 }

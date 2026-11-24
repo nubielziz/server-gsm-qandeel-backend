@@ -86,7 +86,7 @@ describe.skipIf(!existsSync(demoStatePath()))('the money seed with the demo merc
 
     const accounts = await db.select().from(s.ledgerAccounts);
     const figure = (kind: string, clientId: number) =>
-      accounts.find((row) => row.kind === kind && row.ownerType === 'client' && row.ownerId === clientId);
+      accounts.find((row) => row.kind === kind && row.ownerType === 'account' && row.ownerId === clientId);
     const wallets = demo.state.wallet as Record<string, number>;
     const holds = demo.state.hold as Record<string, number>;
     for (const merchant of merchants) {

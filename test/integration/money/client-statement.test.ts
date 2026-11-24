@@ -1,6 +1,7 @@
 // Integration tests of the client statement PDF (feature 11): GET /admin/reports/client-statement/:clientId makes the official account
-// statement of a merchant from the wallet ledger. It needs reports:read, answers 404 for an unknown merchant, starts with %PDF, honours
-// the period (UTC days, both included), shows opening and closing balances that match the wallet, never reads a cache and writes an audit row.
+// statement of the account's live wallet from the ledger (the merchant wallet of a merchant rank, the store balance of the retail rank:
+// decision 064). It needs reports:read, answers 404 for an unknown account, starts with %PDF, honours the period (UTC days, both included),
+// shows opening and closing balances that match the wallet, never reads a cache and writes an audit row.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { Money } from '@src/common/money';
@@ -8,11 +9,13 @@ import { schema as s } from '@src/infra/db';
 import { adjust, deposit, postTransaction } from '@src/modules/money';
 import { ClientStatementService } from '@src/modules/money/application/client-statement.service';
 import { PdfRenderer, type PdfDocument } from '@src/modules/platform';
+import { makeAccount } from '../../support/accounts';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { insertInvoiceRow } from '../../support/billing';
 import { TestClock } from '../../support/clock';
+import { fundCustomer } from '../../support/customer-wallet';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { type TestMerchant, insertWalletMerchant } from '../../support/money';
 import { pdfFontNames } from '../../support/pdf';
@@ -276,7 +279,7 @@ describe('GET /admin/reports/client-statement/:clientId', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       action: 'exported statement of',
-      entityType: 'merchant',
+      entityType: 'account',
       entityId: merchant.id,
       entityLabel: 'Zain Mobile Hub',
       actorId: staff.staffId,
@@ -444,6 +447,45 @@ describe('GET /admin/reports/client-statement/:clientId', () => {
     expect((await wrong.get(URL(merchant.id))).status).toBe(403);
     expect((await staff.anonymous('GET', URL(merchant.id))).status).toBe(401);
     expect((await download(URL(merchant.id))).status).toBe(200);
+  });
+
+  it('a retail account gets the statement of its store balance, the live wallet: its lines, its top-ups and no credit limit', async () => {
+    const { db } = await testDb();
+    const account = await makeAccount({ rank: 'retail', name: 'Daniel Rivera' });
+    await fundCustomer(db, account.id, '25', new Date('2026-11-02T09:00:00.000Z'));
+    await insertInvoiceRow(db, account.id, {
+      number: 'INV-2026-0201',
+      walletKind: 'customer_wallet',
+      legacyClientId: null,
+      status: 'paid',
+      amount: '25.0000',
+      paidAt: new Date('2026-11-02T09:00:00.000Z'),
+      createdAt: new Date('2026-11-02T08:00:00.000Z'),
+    });
+    // An invoice of the merchant wallet (from before a rank change) is not the store balance's.
+    await insertInvoiceRow(db, account.id, {
+      number: 'INV-2026-0202',
+      createdAt: new Date('2026-11-01T08:00:00.000Z'),
+    });
+
+    const { status, document } = await download(URL(account.id));
+    expect(status).toBe(200);
+    const facts = factsOf(document);
+    expect(facts).toMatchObject({
+      Account: `Daniel Rivera (#${account.id})`,
+      'Opening balance': '0.0000 USD',
+      'Total credits': '25.0000 USD',
+      'Closing balance': '25.0000 USD',
+    });
+    expect(facts.Merchant).toBeUndefined();
+    expect(facts['Credit limit']).toBeUndefined();
+    const tables = (document?.blocks ?? []).flatMap((block) =>
+      block.kind === 'table' ? [block.rows.map((row) => [...row])] : [],
+    );
+    expect(tables[0]?.map((row) => [row[2], row[5], row[6]])).toEqual([['deposit', '25.0000', '25.0000']]);
+    expect(tables[1]?.map((row) => row[0])).toEqual(['INV-2026-0201']);
+    const [audit] = await db.select().from(s.auditLogs);
+    expect(audit?.after).toMatchObject({ wallet: 'store', lines: 1, invoices: 1, closing: '25.0000' });
   });
 
   it('also needs wallet:read: 403 with reports:read alone, and nothing is written (decision 046)', async () => {

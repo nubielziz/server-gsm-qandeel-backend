@@ -5,6 +5,7 @@ import { Module } from '@nestjs/common';
 import { RealtimeHubModule } from '../../infra/realtime';
 import { CustomerDirectoryModule } from '../customers';
 import { StoredFiles } from '../platform';
+import { SupportGuestClaimParticipant } from './application/guest-claim.participant';
 import { StoreTicketService } from './application/store-ticket.service';
 import { TicketAttachmentService } from './application/ticket-attachment.service';
 import { TicketEvents } from './application/ticket-events';
@@ -24,7 +25,11 @@ import { TicketRealtimeSource } from './realtime/ticket-realtime.source';
  * customers module's directory (the guest customer of a new address), the identity guard's resolver registry and the API's real-time hub
  * (the ticket stream), which a database-less test app does not have. The ticket source lives here because the hub is API-only; it serves
  * every stream (staff, merchants, customers and ticket links). `TicketThreadService` and the read and attachment services are
- * exported for the account surfaces of slice B2.
+ * exported for the account surfaces of slice B2. The account rows come from identity's global `AccountDirectory` and the rank kinds from
+ * the catalog's global `RankGroupReads` (decision 064).
+ *
+ * Side effects at boot (API process only): `SupportGuestClaimParticipant` registers `support` with identity's `GuestClaimParticipants`:
+ * the tickets and messages of a guest row move to the account that claims it.
  */
 @Module({
   imports: [CustomerDirectoryModule, RealtimeHubModule],
@@ -39,6 +44,7 @@ import { TicketRealtimeSource } from './realtime/ticket-realtime.source';
     TicketThreadService,
     TicketReadService,
     TicketRealtimeSource,
+    SupportGuestClaimParticipant,
   ],
   exports: [TicketThreadService, TicketReadService, TicketAttachmentService, TicketEvents],
 })

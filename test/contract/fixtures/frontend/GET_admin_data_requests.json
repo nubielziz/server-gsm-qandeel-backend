@@ -7,7 +7,7 @@
   "body": [
     {
       "id": 31,
-      "customerId": 4,
+      "accountId": 104,
       "kind": "export",
       "status": "completed",
       "requestedAt": "2026-10-19T12:00:00.000Z",
@@ -16,11 +16,11 @@
       "handledBy": 1,
       "fileId": null,
       "createdAt": "2026-10-19T12:00:00.000Z",
-      "customerName": "Emma Dubois"
+      "accountName": "Emma Dubois"
     },
     {
       "id": 32,
-      "customerId": 16,
+      "accountId": 116,
       "kind": "erasure",
       "status": "open",
       "requestedAt": "2026-10-28T12:00:00.000Z",
@@ -29,7 +29,7 @@
       "handledBy": null,
       "fileId": null,
       "createdAt": "2026-10-28T12:00:00.000Z",
-      "customerName": "Mia Schneider"
+      "accountName": "Mia Schneider"
     }
   ]
 }

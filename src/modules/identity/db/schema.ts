@@ -1,4 +1,4 @@
-// Identity tables (map domain A): staff, roles, merchants, sessions, one-time tokens, API keys, IP rules.
+// Identity tables (map domain A): staff, roles, accounts (merchants, retail accounts, guests), the legacy id map, sessions, one-time tokens, API keys, IP rules.
 // Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import {
@@ -9,6 +9,7 @@ import {
   integer,
   pgTable,
   text,
+  unique,
   uniqueIndex,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
@@ -26,6 +27,7 @@ import {
   updatedAt,
 } from '../../../infra/db/columns';
 import { clientGroups } from '../../catalog/db/schema';
+import { currencies } from '../../money/db/schema';
 
 /**
  * Staff account states: `invited` until the first sign-in, then `active`, or `suspended` (reversible).
@@ -38,12 +40,12 @@ export const STAFF_STATUSES = ['invited', 'active', 'suspended'] as const;
 export type StaffStatus = (typeof STAFF_STATUSES)[number];
 
 /**
- * Merchant account states: `active`, `suspended`, or `pending`.
+ * Account states: `active`, `suspended` (a reversible pause), `blocked` (fraud) or `anonymized` (final).
  *
- * Why: the console's merchant wire enum (GET /admin/clients). Since decision 062 no code writes `pending` (staff-made merchants are inserted
- * `active`, and there is no public sign-up): the value stays for the rows written before, until the migration of the accounts model removes it.
+ * Why: one account type for merchants and customers (decision 064): the four states of the old customer table, and no `pending` (the
+ * expand migration converts every pending row to `suspended` before it narrows `clients_status_check` to this list).
  */
-export const CLIENT_STATUSES = ['active', 'suspended', 'pending'] as const;
+export const CLIENT_STATUSES = ['active', 'suspended', 'blocked', 'anonymized'] as const;
 
 /** One value of {@link CLIENT_STATUSES}. */
 export type ClientStatus = (typeof CLIENT_STATUSES)[number];
@@ -70,11 +72,12 @@ export const KYC_SUBMISSION_STATUSES = ['pending', 'approved', 'rejected'] as co
 export type KycSubmissionStatus = (typeof KYC_SUBMISSION_STATUSES)[number];
 
 /**
- * Who a session or one-time token belongs to: staff, a merchant (`client`) or a storefront customer.
+ * Who a session or one-time token belongs to: a staff member or an account (a merchant or a retail account, told apart by its rank).
  *
- * Why: MISMATCHES B9: the sessions table holds all three subjects (decision 018).
+ * Why: MISMATCHES B9: the sessions table holds every subject (decision 018); decision 064 gives merchants and customers the one word
+ * `account`, and the expand migration rewrites the old rows to it.
  */
-export const SUBJECT_TYPES = ['staff', 'client', 'customer'] as const;
+export const SUBJECT_TYPES = ['staff', 'account'] as const;
 
 /** One value of {@link SUBJECT_TYPES}. */
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
@@ -101,6 +104,16 @@ export const SESSION_STAGES = ['pending_password', 'pending_totp_setup', 'pendin
 
 /** One value of {@link SESSION_STAGES}. */
 export type SessionStage = (typeof SESSION_STAGES)[number];
+
+/**
+ * The two kinds of id the legacy map names: an id of the old merchant table or of the old customer table.
+ *
+ * Why: decision 064: both kinds of id become account ids, and old history (audit, order events, ledger postings) still carries them.
+ */
+export const LEGACY_ACCOUNT_TYPES = ['client', 'customer'] as const;
+
+/** One value of {@link LEGACY_ACCOUNT_TYPES}. */
+export type LegacyAccountType = (typeof LEGACY_ACCOUNT_TYPES)[number];
 
 /**
  * An IP rule either allows or blocks an address range.
@@ -221,36 +234,38 @@ export type Role = typeof roles.$inferSelect;
 export type NewRole = typeof roles.$inferInsert;
 
 /**
- * B2B merchants; username is the Dhru username.
+ * The accounts: merchants and retail customers in one table, told apart by their rank (`group_id`), plus guests (`has_account` false).
+ * A merchant's `username` is its Dhru username; a retail account and a guest have none.
  *
- * Why: The B2B merchants who order through Dhru and the portal (routes /admin/clients, /client/*).
+ * Why: decision 064 (one account type): one table, one id for every buyer. Merchants kept their ids; every customer of the old table was
+ * copied here with a new id. The rank decides what an account may do, never a second table.
  */
 export const clients = pgTable(
   'clients',
   {
     id: pk(),
-    /** the Dhru username; unique case-insensitively */
-    username: text().notNull(),
-    /** unique case-insensitively */
+    /** the Dhru username, unique case-insensitively; null for a retail account or a guest, generated when the rank becomes a merchant rank */
+    username: text(),
+    /** unique case-insensitively among the rows with a login, and separately among the guest rows (`clients_login_email_uq`, `clients_guest_email_uq`) */
     email: text().notNull(),
-    /** null until the merchant accepts the invitation */
+    /** null until the account's owner chooses a password (an invitation or a sign-in link), and always null for a guest */
     passwordHash: text(),
     name: text().notNull(),
     company: text().notNull().default(''),
     phone: text().notNull().default(''),
     country: text().notNull().default(''),
     groupId: fk((): AnyPgColumn => clientGroups.id).notNull(),
-    /** every writer passes it (`active` for a merchant staff make, decision 062); the default is the old one and nothing relies on it */
-    status: text().$type<ClientStatus>().notNull().default('pending'),
+    /** see {@link CLIENT_STATUSES}; a new row is active unless the writer says otherwise */
+    status: text().$type<ClientStatus>().notNull().default('active'),
     /** retired (decision 061): unread and unwritten, it keeps its default until the migration of the accounts model drops it */
     kycStatus: text().$type<KycStatus>().notNull().default('none'),
     /** retired (decision 062): unread and unwritten, dropped by the migration of the accounts model */
     referredById: fk((): AnyPgColumn => clients.id),
     /**
-     * retired (decision 062): read by nothing; it stays NOT NULL and unique until the migration of the accounts model drops it, so a
-     * new row still carries a value (its own username)
+     * retired (decision 062): read by nothing; it stays unique until the contract migration of the accounts model drops it, but it is
+     * nullable now (a row copied from a customer has no value)
      */
-    referralCode: text().notNull(),
+    referralCode: text(),
     /** optional TOTP for merchants (decision 018); while `twofa_enabled` is false it is the pending secret of a setup */
     totpSecretEnc: text(),
     /** false while the secret is only pending, or when the merchant has none; schema addition B116 (feature 2b) */
@@ -305,12 +320,32 @@ export const clients = pgTable(
     taxId: text().notNull().default(''),
     /** staff-only notes, at most 2000 characters; never on a `/client` route (feature 20) */
     internalNotes: text().notNull().default(''),
+    /**
+     * true for an account that can sign in; false for a guest: the row a signed-out checkout, a support form or a link request
+     * leaves for an email address (no password, no second step, no username: `clients_guest_check`). A guest always holds the retail
+     * rank, and only `AccountDirectory` writes guest rows.
+     */
+    hasAccount: boolean().notNull().default(true),
+    /** the display currency the account chose; null for none */
+    currency: text().references((): AnyPgColumn => currencies.code, { onDelete: 'restrict' }),
+    /** true once the account agreed to marketing mail (the consent record keeps the proof) */
+    marketingOptIn: boolean().notNull().default(false),
+    /** when the account was anonymized (set exactly when the status is `anonymized`: `clients_anonymized_check`) */
+    anonymizedAt: timestampTz(),
+    /** the staff member who created the account; null for a self-made account and for the merchants that existed before this column */
+    createdBy: fk((): AnyPgColumn => staffUsers.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     uniqueIndex('clients_username_uq').on(lower(t.username)),
-    uniqueIndex('clients_email_uq').on(lower(t.email)),
+    // One email, one login: the rows with a login and the guest rows are separate sets, so a guest never blocks a sign-up.
+    uniqueIndex('clients_login_email_uq')
+      .on(lower(t.email))
+      .where(sql`${t.hasAccount}`),
+    uniqueIndex('clients_guest_email_uq')
+      .on(lower(t.email))
+      .where(sql`not ${t.hasAccount}`),
     uniqueIndex('clients_referral_code_uq').on(t.referralCode),
     // Retired with the column (decision 062); it goes with it.
     uniqueIndex('clients_telegram_chat_uq')
@@ -318,7 +353,15 @@ export const clients = pgTable(
       .where(sql`${t.telegramChatId} is not null`),
     check('clients_status_check', inList(t.status, CLIENT_STATUSES)),
     check('clients_kyc_status_check', inList(t.kycStatus, KYC_STATUSES)),
+    // A guest can never sign in: no password, no second step, no username.
+    check(
+      'clients_guest_check',
+      sql`${t.hasAccount} or (${t.passwordHash} is null and not ${t.twofaEnabled} and ${t.totpSecretEnc} is null and ${t.username} is null)`,
+    ),
+    check('clients_anonymized_check', sql`(${t.status} = 'anonymized') = (${t.anonymizedAt} is not null)`),
     index('clients_group_id_idx').on(t.groupId),
+    index('clients_currency_idx').on(t.currency),
+    index('clients_created_by_idx').on(t.createdBy),
     index('clients_status_idx').on(t.status),
     index('clients_name_idx').on(t.name),
     index('clients_referred_by_id_idx').on(t.referredById),
@@ -333,9 +376,48 @@ export type Client = typeof clients.$inferSelect;
 export type NewClient = typeof clients.$inferInsert;
 
 /**
- * Sign-in sessions for staff, merchants and customers (magic link).
+ * The map from every id the system used before accounts became one type to the account that holds it today: one row for each merchant
+ * that existed when the accounts were merged and one for each customer.
  *
- * Why: Opaque sign-in sessions for staff, merchants and customers, stored as keyed hashes (decisions 018, 019).
+ * Why: decision 064: append-only history (audit rows, order events, ledger postings) keeps the old words and ids, and is read through this
+ * map, so an old customer id never names another person. `merged` is true for a customer that was joined to a merchant row by an approved
+ * pair. A merchant row maps to itself. Accounts made later have no row.
+ *
+ * Append-only: a trigger rejects UPDATE and DELETE (the expand migration), the table has no `updated_at`, and the application role
+ * gets no UPDATE or DELETE on it (`APPEND_ONLY_TABLES`). It is never dropped.
+ */
+export const accountLegacyIds = pgTable(
+  'account_legacy_ids',
+  {
+    id: pk(),
+    legacyType: text().$type<LegacyAccountType>().notNull(),
+    /** the id the old table gave: polymorphic by `legacy_type`, so no foreign key */
+    legacyId: bigId().notNull(),
+    accountId: fk((): AnyPgColumn => clients.id).notNull(),
+    /** true for a customer joined to a merchant row (the account is the merchant's id) */
+    merged: boolean().notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('account_legacy_ids_type_check', inList(t.legacyType, LEGACY_ACCOUNT_TYPES)),
+    // A merchant keeps its id, so the map of a merchant row is the identity.
+    check('account_legacy_ids_client_check', sql`${t.legacyType} <> 'client' or ${t.accountId} = ${t.legacyId}`),
+    check('account_legacy_ids_merged_check', sql`not ${t.merged} or ${t.legacyType} = 'customer'`),
+    unique('account_legacy_ids_legacy_uq').on(t.legacyType, t.legacyId),
+    index('account_legacy_ids_account_idx').on(t.accountId),
+  ],
+);
+
+/** A row read from `account_legacy_ids`. */
+export type AccountLegacyId = typeof accountLegacyIds.$inferSelect;
+
+/** A row to insert into `account_legacy_ids`. */
+export type NewAccountLegacyId = typeof accountLegacyIds.$inferInsert;
+
+/**
+ * Sign-in sessions for staff and accounts.
+ *
+ * Why: Opaque sign-in sessions for staff and accounts, stored as keyed hashes (decisions 018, 019, 064).
  */
 export const sessions = pgTable(
   'sessions',
@@ -344,7 +426,7 @@ export const sessions = pgTable(
     /** HMAC-SHA256 of the cookie token (decision 019), hex */
     tokenHash: text().notNull(),
     subjectType: text().$type<SubjectType>().notNull(),
-    /** polymorphic: staff_users, clients or customers by subject_type */
+    /** polymorphic: staff_users or clients (an account id) by subject_type */
     subjectId: bigId().notNull(),
     /** schema addition B116 */
     stage: text().$type<SessionStage>().notNull(),
@@ -377,7 +459,7 @@ export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
 
 /**
- * One-time tokens for invite and password-reset links for merchants, customers and staff, and for link sign-in and
+ * One-time tokens for invite and password-reset links for accounts and staff, and for link sign-in and
  * email verification: hash only, valid for one hour and one use.
  *
  * Why: Single-use invite, reset, magic-link and verification tokens, hash only, valid one hour (decisions 010, 019).
@@ -388,7 +470,7 @@ export const authTokens = pgTable(
     id: pk(),
     purpose: text().$type<AuthTokenPurpose>().notNull(),
     subjectType: text().$type<SubjectType>().notNull(),
-    /** polymorphic: staff_users, clients or customers by subject_type */
+    /** polymorphic: staff_users or clients (an account id) by subject_type */
     subjectId: bigId().notNull(),
     tokenHash: text().notNull(),
     expiresAt: timestampTz().notNull(),

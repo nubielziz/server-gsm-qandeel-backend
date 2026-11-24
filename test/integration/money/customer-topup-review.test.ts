@@ -65,7 +65,7 @@ async function inReview(name = 'Daniel Rivera') {
   );
   expect(created.statusCode).toBe(201);
   const { db } = await testDb();
-  const fileId = await insertProofFile(db, customer.id, { ownerType: 'customer' });
+  const fileId = await insertProofFile(db, customer.id, { ownerType: 'account' });
   const attached = await store.call(
     'POST',
     `/store/v1/me/wallet/top-ups/${created.json().id}/receipt`,
@@ -103,12 +103,13 @@ describe('the Deposits wire with customer top-ups', () => {
       feeAmount: '1.5000',
       netAmount: '48.5000',
       client: null,
-      // Decision 047: this caller does not hold customers:read, so the address comes masked.
+      // Decision 047: this caller does not hold clients:read, so the address comes masked.
       customer: {
         id: customer.id,
         name: 'Daniel Rivera',
         email: maskCustomerEmail(customer.email),
-        walletBalance: null,
+        // The live wallet of a retail rank is the store balance: zero until the first credit.
+        walletBalance: '0.0000',
       },
       gateway: { id: cliq, name: 'CliQ transfer' },
       note: 'First top-up of this customer.',
@@ -120,9 +121,9 @@ describe('the Deposits wire with customer top-ups', () => {
     expect((await staff.get('/admin/payments?owner=merchant')).body.map((p: { id: number }) => p.id)).not.toContain(
       paymentId,
     );
-    expect((await staff.get(`/admin/payments?customerId=${customer.id}`)).total).toBe(1);
-    // Searching the address needs customers:read as well (decision 047); the name is searched for everybody.
-    const reader = await adminWith(t, ['payments:read', 'customers:read']);
+    expect((await staff.get(`/admin/payments?accountId=${customer.id}`)).total).toBe(1);
+    // Searching the address needs clients:read as well (decision 047); the name is searched for everybody.
+    const reader = await adminWith(t, ['payments:read', 'clients:read']);
     expect((await reader.get(`/admin/payments?q=${encodeURIComponent(customer.email.slice(0, 18))}`)).body[0].id).toBe(
       paymentId,
     );
@@ -132,7 +133,7 @@ describe('the Deposits wire with customer top-ups', () => {
 });
 
 describe('the customer address in the payment answers (decision 047)', () => {
-  it("masks the customer's address in the payment answers, and q does not match it, without customers:read", async () => {
+  it("masks the customer's address in the payment answers, and q does not match it, without clients:read", async () => {
     const { customer, paymentId } = await inReview();
     const masked = maskCustomerEmail(customer.email);
     const emailOf = (res: { body: unknown }): string[] =>
@@ -142,9 +143,9 @@ describe('the customer address in the payment answers (decision 047)', () => {
     // List and single read.
     expect(emailOf(await staff.get('/admin/payments'))).toEqual([masked]);
     expect(emailOf(await staff.get(`/admin/payments/${paymentId}`))).toEqual([masked]);
-    // q with the full address finds nothing for payments:read + payments:approve, and finds the payment with customers:read added.
+    // q with the full address finds nothing for payments:read + payments:approve, and finds the payment with clients:read added.
     expect((await staff.get(`/admin/payments?q=${encodeURIComponent(customer.email)}`)).body).toEqual([]);
-    const withRead = await adminWith(t, ['payments:read', 'payments:approve', 'customers:read']);
+    const withRead = await adminWith(t, ['payments:read', 'payments:approve', 'clients:read']);
     expect(emailOf(await withRead.get(`/admin/payments?q=${encodeURIComponent(customer.email)}`))).toEqual([
       customer.email,
     ]);
@@ -155,7 +156,7 @@ describe('the customer address in the payment answers (decision 047)', () => {
     expect(emailOf(approved)).toEqual([masked]);
   });
 
-  it('masks the address in the reject answer, and shows it in full to a caller with customers:read', async () => {
+  it('masks the address in the reject answer, and shows it in full to a caller with clients:read', async () => {
     const first = await inReview();
     const rejected = await staff.post(`/admin/payments/${first.paymentId}/reject`, {
       reason: 'The slip is not readable.',
@@ -163,7 +164,7 @@ describe('the customer address in the payment answers (decision 047)', () => {
     expect(rejected.status).toBe(200);
     expect(rejected.body.customer.email).toBe(maskCustomerEmail(first.customer.email));
     const second = await inReview('Second Buyer');
-    const reader = await adminWith(t, ['payments:read', 'payments:approve', 'customers:read']);
+    const reader = await adminWith(t, ['payments:read', 'payments:approve', 'clients:read']);
     const answer = await reader.post(`/admin/payments/${second.paymentId}/reject`, {
       reason: 'The slip is not readable.',
     });
@@ -229,7 +230,7 @@ describe('POST /admin/payments/:id/approve for a customer top-up', () => {
     const { db } = await testDb();
     await db.insert(s.ledgerAccounts).values({
       kind: 'customer_wallet',
-      ownerType: 'customer',
+      ownerType: 'account',
       ownerId: customer.id,
       currency: 'USD',
       frozenAt: new Date(),

@@ -2,10 +2,12 @@
 // Conventions: decisions 011, 024, 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   check,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   unique,
@@ -26,7 +28,7 @@ import {
   timestampTz,
   updatedAt,
 } from '../../../infra/db/columns';
-import { checkoutSessions, customers } from '../../customers/db/schema';
+import { checkoutSessions, retiredCustomers } from '../../customers/db/schema';
 import { clients, staffUsers } from '../../identity/db/schema';
 import { orders } from '../../orders/db/schema';
 import { files } from '../../platform/db/schema';
@@ -35,8 +37,9 @@ import { files } from '../../platform/db/schema';
  * The 16 ledger account kinds: 11 system accounts, `owner_capital` (equity, counterpart of opening balances), and the
  * per-owner `client_wallet`, `client_hold`, `supplier_prepaid` and `customer_wallet`.
  *
- * Why: decision 024 (the map's 14 accounts plus owner_capital, MISMATCHES B35); feature 21 adds the storefront customer's
- * store balance `customer_wallet` (a liability, one per customer, USD).
+ * Why: decision 024 (the map's 14 accounts plus owner_capital, MISMATCHES B35); feature 21 adds the store balance
+ * `customer_wallet` (a liability, USD). Decision 064: the wallet kind follows the account's rank (a merchant rank has `client_wallet`
+ * and `client_hold`, a retail rank has `customer_wallet`), and the owner of every one of them is an account.
  */
 export const LEDGER_ACCOUNT_KINDS = [
   'fee_income',
@@ -61,21 +64,24 @@ export const LEDGER_ACCOUNT_KINDS = [
 export type LedgerAccountKind = (typeof LEDGER_ACCOUNT_KINDS)[number];
 
 /**
- * Who owns a per-owner ledger account.
+ * Who owns a per-owner ledger account: an account (of any rank) or a supplier.
  *
- * Why: the console's ledger wire enum; decision 024 only creates client and supplier accounts today.
+ * Why: the console's ledger wire enum; decision 064 rewrote the owner words `client` and `customer` to `account` (the ledger account rows
+ * are mutable, so the expand migration rewrites them in place; no entry or transaction row changes).
  */
-export const LEDGER_OWNER_TYPES = ['client', 'supplier', 'customer'] as const;
+export const LEDGER_OWNER_TYPES = ['account', 'supplier'] as const;
 
 /** One value of {@link LEDGER_OWNER_TYPES}. */
 export type LedgerOwnerType = (typeof LEDGER_OWNER_TYPES)[number];
 
 /**
- * What a ledger transaction points at through `ref_id`.
+ * Every word `ledger_transactions.ref_type` may hold, the old ones included: what a ledger transaction points at through `ref_id`.
  *
  * Why: decision 024 and MISMATCHES B34: the map lists four, the console finds deposits and commission batches too.
  * RESOLUTIONS money-1 drops `ledger_transaction`: a reversal points at the original's own `ref_type` and `ref_id`. Feature 21
- * adds `customer` (a staff adjustment of a customer's store balance; sent as `system` like `client`).
+ * adds `customer` (a staff adjustment of a customer's store balance; sent as `system` like `client`). The table is append-only, so the
+ * rows written before decision 064 keep `client` and `customer` (read through `account_legacy_ids`) and the CHECK only gained `account`.
+ * New rows may write {@link CURRENT_LEDGER_REF_TYPES} only.
  */
 export const LEDGER_REF_TYPES = [
   'order',
@@ -89,20 +95,83 @@ export const LEDGER_REF_TYPES = [
   'client',
   'customer',
   'system',
+  'account',
 ] as const;
 
-/** One value of {@link LEDGER_REF_TYPES}. */
+/** One value of {@link LEDGER_REF_TYPES}: what a stored row may say. */
 export type LedgerRefType = (typeof LEDGER_REF_TYPES)[number];
 
 /**
- * Who posted a ledger transaction.
+ * The `ref_type` words a new ledger transaction may write (`ledger_transactions_ref_type_current_check`, added NOT VALID).
  *
- * Why: the console's ledger wire enum (GET /admin/ledger/transactions).
+ * Why: decision 064: the pointer to a buyer is `account`, never the old `client` or `customer`.
  */
-export const LEDGER_ACTOR_TYPES = ['staff', 'client', 'customer', 'system'] as const;
+export const CURRENT_LEDGER_REF_TYPES = [
+  'order',
+  'payment',
+  'invoice',
+  'refund',
+  'dispute',
+  'accrual',
+  'supplier',
+  'system',
+  'account',
+] as const;
 
-/** One value of {@link LEDGER_ACTOR_TYPES}. */
+/** One value of {@link CURRENT_LEDGER_REF_TYPES}: what a writer may pass. */
+export type CurrentLedgerRefType = (typeof CURRENT_LEDGER_REF_TYPES)[number];
+
+/**
+ * Every word `ledger_transactions.created_by_type` may hold, the old ones included: who posted a ledger transaction.
+ *
+ * Why: the console's ledger wire enum (GET /admin/ledger/transactions). Append-only, like {@link LEDGER_REF_TYPES}: old rows keep
+ * `client` and `customer`; new rows may write {@link CURRENT_LEDGER_ACTOR_TYPES} only.
+ */
+export const LEDGER_ACTOR_TYPES = ['staff', 'client', 'customer', 'system', 'account'] as const;
+
+/** One value of {@link LEDGER_ACTOR_TYPES}: what a stored row may say. */
 export type LedgerActorType = (typeof LEDGER_ACTOR_TYPES)[number];
+
+/**
+ * The `created_by_type` words a new ledger transaction may write (`ledger_transactions_created_by_type_current_check`, added NOT VALID).
+ *
+ * Why: decision 064: an account is one word.
+ */
+export const CURRENT_LEDGER_ACTOR_TYPES = ['staff', 'account', 'system'] as const;
+
+/** One value of {@link CURRENT_LEDGER_ACTOR_TYPES}: what a writer may pass. */
+export type CurrentLedgerActorType = (typeof CURRENT_LEDGER_ACTOR_TYPES)[number];
+
+/**
+ * The two wallet kinds an invoice can top up (or, for a manual invoice, settle): the merchant wallet and the retail store balance.
+ *
+ * Why: decision 064: an invoice carries the wallet kind of its account's rank when it was made, so a later rank change never
+ * re-reads old invoices as the other kind.
+ */
+export const INVOICE_WALLET_KINDS = ['client_wallet', 'customer_wallet'] as const;
+
+/** One value of {@link INVOICE_WALLET_KINDS}. */
+export type InvoiceWalletKind = (typeof INVOICE_WALLET_KINDS)[number];
+
+/**
+ * The two kinds of rank, as the rank history stores them: `retail` (any rank that is not a merchant rank) and `merchant`.
+ *
+ * Why: decision 064: the rank-change history keeps the kind of both ranks as they were, so it stays true after a rank is renamed or deleted.
+ */
+export const RANK_KINDS = ['retail', 'merchant'] as const;
+
+/** One value of {@link RANK_KINDS}: a rank kind as the history stores it (the identity module's `RankKind` has the same two words). */
+export type StoredRankKind = (typeof RANK_KINDS)[number];
+
+/**
+ * What a staff wallet action does: freeze the wallet, unfreeze it, or set the credit limit.
+ *
+ * Why: decision 064: these three actions carry an `Idempotency-Key` stored in `wallet_action_keys`.
+ */
+export const WALLET_ACTIONS = ['freeze', 'unfreeze', 'credit_limit'] as const;
+
+/** One value of {@link WALLET_ACTIONS}. */
+export type WalletAction = (typeof WALLET_ACTIONS)[number];
 
 /**
  * Invoice kinds: wallet top-up, manual, B2C tax receipt and statement.
@@ -238,11 +307,11 @@ export const REFUND_STATUSES = ['requested', 'processing', 'completed', 'failed'
 export type RefundStatus = (typeof REFUND_STATUSES)[number];
 
 /**
- * Who asked for a refund.
+ * Who asked for a refund: a staff member, an account or the system.
  *
- * Why: the console's refund wire enum.
+ * Why: the console's refund wire enum; decision 064 rewrote the word `customer` to `account` (refund rows are mutable).
  */
-export const REFUND_REQUESTER_TYPES = ['staff', 'customer', 'system'] as const;
+export const REFUND_REQUESTER_TYPES = ['staff', 'account', 'system'] as const;
 
 /** One value of {@link REFUND_REQUESTER_TYPES}. */
 export type RefundRequesterType = (typeof REFUND_REQUESTER_TYPES)[number];
@@ -309,7 +378,7 @@ export const ledgerAccounts = pgTable(
     kind: text().$type<LedgerAccountKind>().notNull(),
     /** null for system accounts */
     ownerType: text().$type<LedgerOwnerType>(),
-    /** polymorphic: clients or suppliers by owner_type; null for system accounts */
+    /** polymorphic: clients (an account id) or suppliers by owner_type; null for system accounts */
     ownerId: bigId(),
     currency: text()
       .references((): AnyPgColumn => currencies.code, { onDelete: 'restrict' })
@@ -318,9 +387,9 @@ export const ledgerAccounts = pgTable(
     balance: money().notNull().default('0'),
     /** merchant credit limit on client_wallet accounts; zero on every other kind (`ledger_accounts_overdraft_kind_check`) */
     overdraftLimit: money().notNull().default('0'),
-    /** when a customer_wallet was put on hold (staff or a top-up dispute); null when not frozen, always null on other kinds (feature 21) */
+    /** when a wallet (a `customer_wallet` or a `client_wallet`) was put on hold (staff or a top-up dispute); null when not frozen, always null on other kinds (feature 21, decision 064) */
     frozenAt: timestampTz(),
-    /** why the customer_wallet is on hold (staff note or the dispute); empty when not frozen (feature 21) */
+    /** why the wallet is on hold (staff note or the dispute); empty when not frozen (feature 21) */
     frozenReason: text().notNull().default(''),
     /** incremented with every posting */
     version: integer().notNull().default(0),
@@ -335,15 +404,17 @@ export const ledgerAccounts = pgTable(
     check('ledger_accounts_owner_check', sql`(${t.ownerType} is null) = (${t.ownerId} is null)`),
     check(
       'ledger_accounts_kind_owner_check',
-      sql`(${t.kind} in ('client_wallet', 'client_hold') and ${t.ownerType} is not distinct from 'client')
+      sql`(${t.kind} in ('client_wallet', 'client_hold', 'customer_wallet') and ${t.ownerType} is not distinct from 'account')
  or (${t.kind} = 'supplier_prepaid' and ${t.ownerType} is not distinct from 'supplier')
- or (${t.kind} = 'customer_wallet' and ${t.ownerType} is not distinct from 'customer')
  or (${t.kind} not in ('client_wallet', 'client_hold', 'supplier_prepaid', 'customer_wallet') and ${t.ownerType} is null)`,
     ),
     check('ledger_accounts_overdraft_check', sql`${t.overdraftLimit} >= 0`),
     index('ledger_accounts_currency_idx').on(t.currency),
-    // Feature 21: only a customer wallet can be frozen; only a merchant wallet has a credit limit.
-    check('ledger_accounts_frozen_check', sql`${t.frozenAt} is null or ${t.kind} = 'customer_wallet'`),
+    // Feature 21, widened by decision 064: only a wallet (of either kind) can be frozen; only a merchant wallet has a credit limit.
+    check(
+      'ledger_accounts_frozen_check',
+      sql`${t.frozenAt} is null or ${t.kind} in ('customer_wallet', 'client_wallet')`,
+    ),
     check('ledger_accounts_overdraft_kind_check', sql`${t.overdraftLimit} = 0 or ${t.kind} = 'client_wallet'`),
     index('ledger_accounts_customer_wallet_idx')
       .on(t.balance)
@@ -381,7 +452,7 @@ export const ledgerTransactions = pgTable(
     memo: text().notNull().default(''),
     idempotencyKey: text().notNull(),
     createdByType: text().$type<LedgerActorType>().notNull(),
-    /** staff_users, clients or customers by created_by_type; null when the system posted */
+    /** staff_users or clients (an account id) by created_by_type; a `client` or `customer` row of before decision 064 is read through `account_legacy_ids`; null when the system posted */
     createdById: bigId(),
     createdAt: createdAt(),
   },
@@ -389,6 +460,9 @@ export const ledgerTransactions = pgTable(
     uniqueIndex('ledger_transactions_idempotency_key_uq').on(t.idempotencyKey),
     check('ledger_transactions_ref_type_check', inList(t.refType, LEDGER_REF_TYPES)),
     check('ledger_transactions_created_by_type_check', inList(t.createdByType, LEDGER_ACTOR_TYPES)),
+    // Added NOT VALID by the expand migration: the rows of before stay, a new row writes the current words only.
+    check('ledger_transactions_ref_type_current_check', inList(t.refType, CURRENT_LEDGER_REF_TYPES)),
+    check('ledger_transactions_created_by_type_current_check', inList(t.createdByType, CURRENT_LEDGER_ACTOR_TYPES)),
     index('ledger_transactions_ref_idx').on(t.refType, t.refId),
     index('ledger_transactions_kind_idx').on(t.kind, t.createdAt.desc()),
     index('ledger_transactions_created_idx').on(t.createdAt.desc()),
@@ -439,17 +513,32 @@ export type NewLedgerEntry = typeof ledgerEntries.$inferInsert;
 /**
  * Top-up invoices and statements, and B2C tax receipts with a PDF copy.
  *
- * Why: Wallet top-up invoices, statements and B2C tax receipts (routes /admin/invoices, /client/invoices).
+ * Why: Wallet top-up invoices, statements and B2C tax receipts (routes /admin/invoices, /client/invoices). Decision 064: every
+ * invoice belongs to an account (`account_id`), and a top-up or manual invoice also says which wallet kind it fills (`wallet_kind`).
  */
 export const invoices = pgTable(
   'invoices',
   {
     id: pk(),
     number: text().notNull(),
-    /** B2B invoices */
-    clientId: fk((): AnyPgColumn => clients.id),
-    /** B2C receipts */
-    customerId: fk((): AnyPgColumn => customers.id),
+    /** the account the invoice is for (any rank) */
+    accountId: fk((): AnyPgColumn => clients.id).notNull(),
+    /**
+     * the wallet a top-up or manual invoice fills, fixed when it was made (`client_wallet` or `customer_wallet`); null for a receipt or
+     * a statement
+     */
+    walletKind: text().$type<InvoiceWalletKind>(),
+    /**
+     * the merchant of a merchant invoice (the same value as `account_id`): written during the expand release for the readers of the old
+     * image, never read (the SQL column is `client_id`); the contract migration drops it
+     */
+    legacyClientId: bigint('client_id', { mode: 'number' }).references((): AnyPgColumn => clients.id, {
+      onDelete: 'restrict',
+    }),
+    /** the old customer id: retired (decision 064), unread and unwritten (the SQL column is `customer_id`); the contract migration drops it */
+    retiredCustomerId: bigint('customer_id', { mode: 'number' }).references((): AnyPgColumn => retiredCustomers.id, {
+      onDelete: 'restrict',
+    }),
     orderId: fk((): AnyPgColumn => orders.id),
     kind: text().$type<InvoiceKind>().notNull(),
     amount: money().notNull(),
@@ -475,7 +564,7 @@ export const invoices = pgTable(
     description: text().notNull().default(''),
     /** where the merchant pays an open top-up invoice of an automatic gateway (the hosted checkout); null otherwise (feature 8, B163) */
     checkoutUrl: text(),
-    /** the customer's `Idempotency-Key` of a store top-up: a retry with it finds the invoice (feature 21); null otherwise */
+    /** the account's `Idempotency-Key` of a top-up: a retry with it finds the invoice (feature 21, decision 064); null otherwise */
     idempotencyKey: text(),
     /** what that top-up asked for (gateway and amount): the same key with another request is refused (feature 21) */
     requestFingerprint: text(),
@@ -487,15 +576,28 @@ export const invoices = pgTable(
   (t) => [
     uniqueIndex('invoices_number_uq').on(t.number),
     uniqueIndex('invoices_customer_key_uq')
-      .on(t.customerId, t.idempotencyKey)
+      .on(t.retiredCustomerId, t.idempotencyKey)
+      .where(sql`${t.idempotencyKey} is not null`),
+    uniqueIndex('invoices_account_key_uq')
+      .on(t.accountId, t.idempotencyKey)
       .where(sql`${t.idempotencyKey} is not null`),
     check('invoices_kind_check', inList(t.kind, INVOICE_KINDS)),
     check('invoices_status_check', inList(t.status, INVOICE_STATUSES)),
-    index('invoices_client_created_idx').on(t.clientId, t.createdAt.desc()),
+    // A top-up or manual invoice names its wallet kind, every other kind has none, and a manual invoice is always a merchant one.
+    check(
+      'invoices_wallet_kind_check',
+      sql`(${t.walletKind} is null or ${inList(t.walletKind, INVOICE_WALLET_KINDS)})
+ and ((${t.kind} in ('topup', 'manual')) = (${t.walletKind} is not null))
+ and (${t.kind} <> 'manual' or ${t.walletKind} = 'client_wallet')`,
+    ),
+    // While the old column lasts it repeats the account.
+    check('invoices_client_account_check', sql`${t.legacyClientId} is null or ${t.legacyClientId} = ${t.accountId}`),
+    index('invoices_client_created_idx').on(t.legacyClientId, t.createdAt.desc()),
+    index('invoices_account_created_idx').on(t.accountId, t.createdAt.desc()),
     index('invoices_status_created_idx').on(t.status, t.createdAt.desc()),
     index('invoices_created_idx').on(t.createdAt.desc()),
     check('invoices_amount_check', sql`${t.amount} >= 0 and ${t.fee} >= 0`),
-    index('invoices_customer_id_idx').on(t.customerId),
+    index('invoices_customer_id_idx').on(t.retiredCustomerId),
     index('invoices_order_id_idx').on(t.orderId),
     index('invoices_currency_idx').on(t.currency),
     index('invoices_gateway_id_idx').on(t.gatewayId),
@@ -581,7 +683,12 @@ export const payments = pgTable(
   {
     id: pk(),
     invoiceId: fk((): AnyPgColumn => invoices.id),
-    customerId: fk((): AnyPgColumn => customers.id),
+    /** the account that pays: the owner of the invoice for a top-up, the buyer of the order for an order payment (decision 064) */
+    accountId: fk((): AnyPgColumn => clients.id).notNull(),
+    /** the old customer id: retired (decision 064), unread and unwritten (the SQL column is `customer_id`); the contract migration drops it */
+    retiredCustomerId: bigint('customer_id', { mode: 'number' }).references((): AnyPgColumn => retiredCustomers.id, {
+      onDelete: 'restrict',
+    }),
     orderId: fk((): AnyPgColumn => orders.id),
     purpose: text().$type<PaymentPurpose>().notNull(),
     /** null only for a payment from the customer's store balance (`method_type 'balance'`, feature 21) */
@@ -647,7 +754,8 @@ export const payments = pgTable(
  or (${t.purpose} = 'order' and ${inList(t.methodType, ORDER_METHODS)})`,
     ),
     index('payments_purpose_status_created_idx').on(t.purpose, t.status, t.createdAt.desc()),
-    index('payments_customer_id_idx').on(t.customerId),
+    index('payments_customer_id_idx').on(t.retiredCustomerId),
+    index('payments_account_id_idx').on(t.accountId),
     check('payments_amount_check', sql`${t.amount} > 0 and ${t.feeAmount} >= 0`),
     index('payments_invoice_id_idx').on(t.invoiceId),
     index('payments_order_id_idx').on(t.orderId),
@@ -724,9 +832,19 @@ export const refunds = pgTable(
     id: pk(),
     paymentId: fk((): AnyPgColumn => payments.id),
     orderId: fk((): AnyPgColumn => orders.id),
-    customerId: fk((): AnyPgColumn => customers.id),
-    /** Retired (decision 062): nothing ever wrote it and nothing reads it; the accounts migration drops it. */
-    clientId: fk((): AnyPgColumn => clients.id),
+    /**
+     * the account the refund goes back to: the account of its payment (an orderless return of a held payment included); null only for
+     * a refund without a payment (the retired merchant rows). Written by every refund writer with the account of the payment.
+     */
+    accountId: fk((): AnyPgColumn => clients.id),
+    /** the old customer id: retired (decision 064), unread and unwritten (the SQL column is `customer_id`); the contract migration drops it */
+    retiredCustomerId: bigint('customer_id', { mode: 'number' }).references((): AnyPgColumn => retiredCustomers.id, {
+      onDelete: 'restrict',
+    }),
+    /** Retired (decision 062): nothing ever wrote it and nothing reads it (the SQL column is `client_id`); the contract migration drops it. */
+    retiredClientId: bigint('client_id', { mode: 'number' }).references((): AnyPgColumn => clients.id, {
+      onDelete: 'restrict',
+    }),
     amount: money().notNull(),
     currency: text()
       .references((): AnyPgColumn => currencies.code, { onDelete: 'restrict' })
@@ -738,7 +856,7 @@ export const refunds = pgTable(
     /** the gateway's reference, kept as text */
     gatewayRefundId: text(),
     requestedByType: text().$type<RefundRequesterType>().notNull(),
-    /** customers or staff_users by requested_by_type; null for the system */
+    /** clients (an account id) or staff_users by requested_by_type; null for the system */
     requestedById: bigId(),
     approvedBy: fk((): AnyPgColumn => staffUsers.id),
     ledgerTxId: fk((): AnyPgColumn => ledgerTransactions.id),
@@ -764,11 +882,9 @@ export const refunds = pgTable(
     check('refunds_send_attempt_check', sql`${t.sendAttempt} >= 1`),
     check('refunds_status_check', inList(t.status, REFUND_STATUSES)),
     check('refunds_method_check', inList(t.method, REFUND_METHODS)),
-    // A storefront refund always points at its payment and order (RESOLUTIONS money-12).
-    check(
-      'refunds_storefront_refs_check',
-      sql`${t.customerId} is null or (${t.paymentId} is not null and ${t.orderId} is not null)`,
-    ),
+    // A refund names an account exactly when it names a payment; whether it names an order is `order_id` alone (an orderless return of a
+    // held payment has a payment and an account but no order).
+    check('refunds_account_refs_check', sql`(${t.paymentId} is null) = (${t.accountId} is null)`),
     check('refunds_requested_by_type_check', inList(t.requestedByType, REFUND_REQUESTER_TYPES)),
     index('refunds_status_created_idx').on(t.status, t.createdAt.desc()),
     index('refunds_created_idx').on(t.createdAt.desc()),
@@ -776,8 +892,9 @@ export const refunds = pgTable(
     check('refunds_requester_check', sql`(${t.requestedByType} = 'system') = (${t.requestedById} is null)`),
     index('refunds_payment_id_idx').on(t.paymentId),
     index('refunds_order_id_idx').on(t.orderId),
-    index('refunds_customer_id_idx').on(t.customerId),
-    index('refunds_client_id_idx').on(t.clientId),
+    index('refunds_customer_id_idx').on(t.retiredCustomerId),
+    index('refunds_client_id_idx').on(t.retiredClientId),
+    index('refunds_account_id_idx').on(t.accountId),
     index('refunds_currency_idx').on(t.currency),
     index('refunds_approved_by_idx').on(t.approvedBy),
     index('refunds_ledger_tx_id_idx').on(t.ledgerTxId),
@@ -801,7 +918,12 @@ export const disputes = pgTable(
     id: pk(),
     paymentId: fk((): AnyPgColumn => payments.id).notNull(),
     orderId: fk((): AnyPgColumn => orders.id),
-    customerId: fk((): AnyPgColumn => customers.id),
+    /** the account of the disputed payment */
+    accountId: fk((): AnyPgColumn => clients.id).notNull(),
+    /** the old customer id: retired (decision 064), unread and unwritten (the SQL column is `customer_id`); the contract migration drops it */
+    retiredCustomerId: bigint('customer_id', { mode: 'number' }).references((): AnyPgColumn => retiredCustomers.id, {
+      onDelete: 'restrict',
+    }),
     /** the gateway's reference, kept as text; unique per payment */
     gatewayDisputeId: text().notNull(),
     reasonCode: text().notNull(),
@@ -827,7 +949,8 @@ export const disputes = pgTable(
     index('disputes_evidence_due_idx').on(t.evidenceDueAt),
     check('disputes_amount_check', sql`${t.amount} > 0 and ${t.fee} >= 0`),
     index('disputes_order_id_idx').on(t.orderId),
-    index('disputes_customer_id_idx').on(t.customerId),
+    index('disputes_customer_id_idx').on(t.retiredCustomerId),
+    index('disputes_account_id_idx').on(t.accountId),
     index('disputes_currency_idx').on(t.currency),
     index('disputes_ledger_tx_id_idx').on(t.ledgerTxId),
   ],
@@ -904,3 +1027,108 @@ export const creditLimitRaises = pgTable(
 
 /** A row read from `credit_limit_raises`. */
 export type CreditLimitRaise = typeof creditLimitRaises.$inferSelect;
+
+/**
+ * The history of rank changes: one row per change of an account's rank, with the money that moved when the change crossed from one wallet
+ * kind to the other.
+ *
+ * Why: decision 064: a rank change is one staff action (`POST /admin/clients/:id/rank`, Owner only, with an `Idempotency-Key`) that also
+ * ends sessions, revokes API keys and, across kinds, moves the balance in one ledger transaction. This row is its record, and the key makes
+ * a retry change nothing. The two rank ids carry no foreign key on purpose: the row keeps its meaning after a rank is renamed or deleted,
+ * so it also stores the name and kind of both ranks as they were.
+ *
+ * Append-only: a trigger rejects UPDATE and DELETE (the expand migration), the table has no `updated_at`, and the application role gets
+ * no UPDATE or DELETE on it (`APPEND_ONLY_TABLES`).
+ */
+export const accountRankChanges = pgTable(
+  'account_rank_changes',
+  {
+    id: pk(),
+    accountId: fk((): AnyPgColumn => clients.id).notNull(),
+    /** client_groups.id before the change; no foreign key (see the table) */
+    fromGroupId: bigId().notNull(),
+    /** the name of that rank at the time of the change */
+    fromGroupName: text().notNull(),
+    /** client_groups.id after the change; no foreign key (see the table) */
+    toGroupId: bigId().notNull(),
+    /** the name of that rank at the time of the change */
+    toGroupName: text().notNull(),
+    /** the kind of the old rank: `retail` or `merchant` (the stored kind `b2b` is `merchant`) */
+    fromKind: text().$type<StoredRankKind>().notNull(),
+    /** the kind of the new rank */
+    toKind: text().$type<StoredRankKind>().notNull(),
+    /** the balance moved to the other wallet kind; zero when the kind stayed the same or the wallet was empty */
+    movedAmount: money().notNull().default('0'),
+    /** the posting that moved the balance; null exactly when nothing moved */
+    ledgerTransactionId: fk((): AnyPgColumn => ledgerTransactions.id),
+    /** the `Idempotency-Key` header of the request: unique for the account */
+    idempotencyKey: text().notNull(),
+    sessionsEnded: integer().notNull().default(0),
+    apiKeysRevoked: integer().notNull().default(0),
+    staffId: fk((): AnyPgColumn => staffUsers.id).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check(
+      'account_rank_changes_kind_check',
+      sql`${inList(t.fromKind, RANK_KINDS)} and ${inList(t.toKind, RANK_KINDS)}`,
+    ),
+    check('account_rank_changes_groups_check', sql`${t.fromGroupId} <> ${t.toGroupId}`),
+    // Money only moves when the kind changes.
+    check(
+      'account_rank_changes_amount_check',
+      sql`${t.movedAmount} >= 0 and (${t.fromKind} <> ${t.toKind} or ${t.movedAmount} = 0)`,
+    ),
+    check('account_rank_changes_transaction_check', sql`(${t.movedAmount} = 0) = (${t.ledgerTransactionId} is null)`),
+    unique('account_rank_changes_key_uq').on(t.accountId, t.idempotencyKey),
+    index('account_rank_changes_account_idx').on(t.accountId, t.createdAt.desc()),
+    index('account_rank_changes_ledger_transaction_id_idx').on(t.ledgerTransactionId),
+    index('account_rank_changes_staff_id_idx').on(t.staffId),
+  ],
+);
+
+/** A row read from `account_rank_changes`. */
+export type AccountRankChange = typeof accountRankChanges.$inferSelect;
+
+/** A row to insert into `account_rank_changes`. */
+export type NewAccountRankChange = typeof accountRankChanges.$inferInsert;
+
+/**
+ * The `Idempotency-Key` of a staff freeze, unfreeze or credit-limit change, with the first answer.
+ *
+ * Why: decision 064: these wallet actions are retried by the console. A request whose key is already stored for the account replays the
+ * stored `response` when the action and the request hash match and is refused otherwise; it never applies the change again, so a retried
+ * freeze that arrives after a later unfreeze changes nothing. The row is written in the transaction of the change and kept (staff actions
+ * are rare and the row is part of the account's history). It is not the order portal's `idempotency_keys` table, which is per merchant and
+ * purged after seven days.
+ *
+ * Append-only: a trigger rejects UPDATE and DELETE (the expand migration), the table has no `updated_at`, and the application role gets
+ * no UPDATE or DELETE on it (`APPEND_ONLY_TABLES`).
+ */
+export const walletActionKeys = pgTable(
+  'wallet_action_keys',
+  {
+    id: pk(),
+    accountId: fk((): AnyPgColumn => clients.id).notNull(),
+    action: text().$type<WalletAction>().notNull(),
+    /** the header as sent (1 to 100 printable characters) */
+    idempotencyKey: text().notNull(),
+    /** keyed hash of the action and the validated body: the same key with another request is refused */
+    requestHash: text().notNull(),
+    /** the first answer (the account wallet view), replayed */
+    response: jsonb().$type<Record<string, unknown>>().notNull(),
+    staffId: fk((): AnyPgColumn => staffUsers.id).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('wallet_action_keys_action_check', inList(t.action, WALLET_ACTIONS)),
+    unique('wallet_action_keys_key_uq').on(t.accountId, t.idempotencyKey),
+    index('wallet_action_keys_staff_idx').on(t.staffId),
+  ],
+);
+
+/** A row read from `wallet_action_keys`. */
+export type WalletActionKey = typeof walletActionKeys.$inferSelect;
+
+/** A row to insert into `wallet_action_keys`. */
+export type NewWalletActionKey = typeof walletActionKeys.$inferInsert;

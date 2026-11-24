@@ -308,7 +308,7 @@
           "account": {
             "id": 9,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 11,
             "ownerName": "Istanbul GSM Care"
           },
@@ -347,7 +347,7 @@
           "account": {
             "id": 11,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 8,
             "ownerName": "Casablanca Unlock"
           },
@@ -398,7 +398,7 @@
           "account": {
             "id": 13,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 3,
             "ownerName": "Phone Doctor FZE"
           },
@@ -437,7 +437,7 @@
           "account": {
             "id": 14,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 6,
             "ownerName": "Erbil Mobile Parts"
           },
@@ -476,7 +476,7 @@
           "account": {
             "id": 15,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 10,
             "ownerName": "Karachi Unlock Hub"
           },
@@ -515,7 +515,7 @@
           "account": {
             "id": 16,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 15,
             "ownerName": "Doha Phone Lab"
           },
@@ -554,7 +554,7 @@
           "account": {
             "id": 17,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 9,
             "ownerName": "Lagos Gadget Fix"
           },
@@ -605,7 +605,7 @@
           "account": {
             "id": 18,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 12,
             "ownerName": "Jeddah Tech Bar"
           },
@@ -644,7 +644,7 @@
           "account": {
             "id": 19,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 7,
             "ownerName": "Tripoli Repair Group"
           },
@@ -683,7 +683,7 @@
           "account": {
             "id": 20,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 4,
             "ownerName": "Basra Unlock Center"
           },
@@ -722,7 +722,7 @@
           "account": {
             "id": 21,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 19,
             "ownerName": "Tunis Fix Point"
           },
@@ -761,7 +761,7 @@
           "account": {
             "id": 22,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 1,
             "ownerName": "Zain Mobile Hub"
           },
@@ -800,7 +800,7 @@
           "account": {
             "id": 23,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 2,
             "ownerName": "Al-Noor Telecom"
           },
@@ -839,7 +839,7 @@
           "account": {
             "id": 24,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 5,
             "ownerName": "Cairo GSM Lab"
           },
@@ -878,7 +878,7 @@
           "account": {
             "id": 19,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 7,
             "ownerName": "Tripoli Repair Group"
           },
@@ -917,7 +917,7 @@
           "account": {
             "id": 14,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 6,
             "ownerName": "Erbil Mobile Parts"
           },
@@ -956,7 +956,7 @@
           "account": {
             "id": 23,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 2,
             "ownerName": "Al-Noor Telecom"
           },
@@ -983,7 +983,7 @@
           "account": {
             "id": 13,
             "kind": "client_wallet",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 3,
             "ownerName": "Phone Doctor FZE"
           },
@@ -995,7 +995,7 @@
           "account": {
             "id": 25,
             "kind": "client_hold",
-            "ownerType": "client",
+            "ownerType": "account",
             "ownerId": 3,
             "ownerName": "Phone Doctor FZE"
           },

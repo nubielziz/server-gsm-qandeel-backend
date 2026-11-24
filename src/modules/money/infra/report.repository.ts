@@ -1,16 +1,20 @@
 // Drizzle queries of the five reports (stage 11, routes /admin/reports/*): profit from settled orders, wallet exposure from the ledger
-// accounts, supplier spend and speed from orders and the supplier call log, top merchants from orders. Every query adds up in SQL;
-// the money stays text until the service turns it into `Money`.
+// accounts (merchant wallets and store balances), supplier spend and speed from orders and the supplier call log, top accounts from orders.
+// Every query adds up in SQL; the money stays text until the service turns it into `Money`.
 //
 // DEVIATION to resolve later: decision 016 wants the reads of other modules' tables through the owning module's public service. orders,
-// clients, services, suppliers and the supplier call log export no reader for these figures, so this file reads them with plain selects,
-// like the other modules' foreign-read files. Nothing outside this file knows; the ledger accounts are the money module's own.
+// clients, client_groups, services, suppliers and the supplier call log export no reader for these figures, so this file reads them with
+// plain selects, like the other modules' foreign-read files. Nothing outside this file knows; the ledger accounts are the money module's own.
+//
+// The door of an order is `orders.source` (decision 064): `store` is the prepaid door of the shop, every other value a merchant door. The
+// orders module's `prepaidOrderSql` says the same; money does not import the orders barrel (orders imports money: a load cycle, decision
+// 032), so the one comparison is written here. No reader infers the kind of buyer from a null column.
 import { type SQL, and, asc, desc, eq, gte, inArray, lt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import { ledgerAccounts } from '../db/schema';
 import { BASE_CURRENCY } from '../domain/accounts';
-import type { ProfitGroup } from '../domain/report-figures';
+import type { ProfitGroup, TopScope, WalletBalances } from '../domain/report-figures';
 
 /** One group of settled orders with its sums, money as text. */
 export interface ProfitSums {
@@ -49,9 +53,10 @@ const takenBack = (orderId: unknown): SQL => sql`(
  *
  * Why: `GET /admin/reports/profit`: revenue is the order's selling price without VAT, cost the supplier cost, both stored on the
  * order; only orders that are `completed` now count (a refunded or reopened order is not revenue), by the time they completed. A
- * delivered storefront order stays `completed` when it is refunded or charged back, so its revenue is the price less what the books
- * took back of it ({@link takenBack}), never below zero; the supplier cost stays. A storefront order has no merchant (key `0`,
- * "Storefront customers") and an order no supplier executed has none (key `0`, "No supplier").
+ * delivered storefront order (the `store` door) stays `completed` when it is refunded or charged back, so its revenue is the price less
+ * what the books took back of it ({@link takenBack}), never below zero; the supplier cost stays. A storefront order belongs to no merchant
+ * door (key `0`, "Storefront customers"; the merchant split names the buyer's account of every other door) and an order no supplier
+ * executed has none (key `0`, "No supplier").
  *
  * @param db the database
  * @param groupBy what to split by
@@ -61,6 +66,7 @@ const takenBack = (orderId: unknown): SQL => sql`(
  */
 export async function profitSums(db: DbExecutor, groupBy: ProfitGroup, start: Date, end: Date): Promise<ProfitSums[]> {
   const o = s.orders;
+  const storeDoor = eq(o.source, 'store');
   const group = {
     day: {
       key: sql<string>`to_char(${o.completedAt} at time zone 'UTC', 'YYYY-MM-DD')`,
@@ -72,8 +78,8 @@ export async function profitSums(db: DbExecutor, groupBy: ProfitGroup, start: Da
       label: sql<string>`coalesce(${s.suppliers.name}, 'No supplier')`,
     },
     client: {
-      key: sql<string>`coalesce(${o.clientId}, 0)::text`,
-      label: sql<string>`coalesce(${s.clients.name}, 'Storefront customers')`,
+      key: sql<string>`(case when ${storeDoor} then 0 else ${o.accountId} end)::text`,
+      label: sql<string>`(case when ${storeDoor} then 'Storefront customers' else ${s.clients.name} end)`,
     },
   }[groupBy];
   return db
@@ -82,19 +88,19 @@ export async function profitSums(db: DbExecutor, groupBy: ProfitGroup, start: Da
       label: group.label,
       orders: sql<number>`count(*)::int`,
       revenue: REVENUE(
-        sql`case when ${o.customerId} is null then ${o.totalPrice} else greatest(${o.totalPrice} - ${takenBack(o.id)}, 0) end`,
+        sql`case when ${storeDoor} then greatest(${o.totalPrice} - ${takenBack(o.id)}, 0) else ${o.totalPrice} end`,
       ),
       cost: REVENUE(o.totalCost),
     })
     .from(o)
     .innerJoin(s.services, eq(s.services.id, o.serviceId))
     .leftJoin(s.suppliers, eq(s.suppliers.id, o.supplierId))
-    .leftJoin(s.clients, eq(s.clients.id, o.clientId))
+    .leftJoin(s.clients, eq(s.clients.id, o.accountId))
     .where(and(eq(o.status, 'completed'), gte(o.completedAt, start), lt(o.completedAt, end)))
     .groupBy(sql`1`, sql`2`);
 }
 
-/** The wallet of one merchant in the exposure report, money as text. */
+/** The wallet of one merchant in the exposure report, money as text (`clientId` is the account id). */
 export interface WalletFigures {
   readonly clientId: number;
   readonly name: string;
@@ -103,7 +109,7 @@ export interface WalletFigures {
   readonly overdraftLimit: string;
 }
 
-/** The exposure report's totals over every merchant with a wallet, money as text. */
+/** The exposure report's totals over every merchant-rank account with a wallet, money as text. */
 export interface ExposureTotals {
   readonly clients: number;
   readonly balance: string;
@@ -113,14 +119,29 @@ export interface ExposureTotals {
   readonly inOverdraft: number;
 }
 
+/** The store balances of the exposure report: the live wallets of retail-rank accounts, money as text. */
+export interface StoreBalanceFigures {
+  /** How many store balances exist (one per retail-rank account that has one). */
+  readonly accounts: number;
+  readonly balance: string;
+  /** How many are below zero (only a chargeback clawback can take one there). */
+  readonly negative: number;
+  /** How many staff or a dispute keep on hold. */
+  readonly frozen: number;
+}
+
 const hold = alias(ledgerAccounts, 'merchant_hold');
+
+/** The stored group kind that gives merchant rights; `rankKindOf` of the identity module reads the same word, and every other kind is retail. */
+const MERCHANT_GROUP_KIND = 'b2b';
 
 /**
  * Adds up the merchants' wallets: balance, held for open orders, credit limit and credit in use.
  *
- * Why: `GET /admin/reports/wallet-exposure`: the balance is the `client_wallet` account (negative while credit is used), reserved is
- * the `client_hold` account, the limit is the wallet's `overdraft_limit`, credit in use is `max(0, -balance)`. The totals cover every
- * merchant that has a wallet, not only the rows that are listed.
+ * Why: `GET /admin/reports/wallet-exposure`: the balance is the `client_wallet` account of an account with a merchant rank (negative
+ * while credit is used), reserved is its `client_hold` account, the limit is the wallet's `overdraft_limit`, credit in use is
+ * `max(0, -balance)`. The merchant wallet of an account that moved to a retail rank is the inactive kind (it holds zero after a rank change) and is not
+ * counted. The totals cover every such wallet, not only the rows that are listed.
  *
  * @param db the database
  * @returns the totals
@@ -137,16 +158,52 @@ export async function exposureTotals(db: DbExecutor): Promise<ExposureTotals> {
       inOverdraft: sql<number>`(count(*) filter (where ${wallet.balance} < 0))::int`,
     })
     .from(wallet)
+    .innerJoin(s.clients, eq(s.clients.id, wallet.ownerId))
+    .innerJoin(
+      s.clientGroups,
+      and(eq(s.clientGroups.id, s.clients.groupId), eq(s.clientGroups.kind, MERCHANT_GROUP_KIND)),
+    )
     .leftJoin(
       hold,
       and(
-        eq(hold.ownerType, 'client'),
+        eq(hold.ownerType, 'account'),
         eq(hold.ownerId, wallet.ownerId),
         eq(hold.kind, 'client_hold'),
         eq(hold.currency, wallet.currency),
       ),
     )
-    .where(and(eq(wallet.ownerType, 'client'), eq(wallet.kind, 'client_wallet'), eq(wallet.currency, BASE_CURRENCY)));
+    .where(and(eq(wallet.ownerType, 'account'), eq(wallet.kind, 'client_wallet'), eq(wallet.currency, BASE_CURRENCY)));
+  return row!;
+}
+
+/**
+ * Adds up the store balances: how many there are, what they hold, how many are below zero and how many are on hold.
+ *
+ * Why: `GET /admin/reports/wallet-exposure` answers `storeBalances` beside `totals` (the console reads it so): the `customer_wallet`
+ * accounts of accounts whose rank is not a merchant rank, in the base currency. The merchant figures never include them, so a store
+ * balance (money owed to retail buyers, never credit) is not mixed with a merchant's credit exposure.
+ *
+ * @param db the database
+ * @returns the totals; all zero when no store balance exists
+ */
+export async function storeBalanceTotals(db: DbExecutor): Promise<StoreBalanceFigures> {
+  const wallet = ledgerAccounts;
+  const [row] = await db
+    .select({
+      accounts: sql<number>`count(*)::int`,
+      balance: REVENUE(wallet.balance),
+      negative: sql<number>`(count(*) filter (where ${wallet.balance} < 0))::int`,
+      frozen: sql<number>`(count(*) filter (where ${wallet.frozenAt} is not null))::int`,
+    })
+    .from(wallet)
+    .innerJoin(s.clients, eq(s.clients.id, wallet.ownerId))
+    .innerJoin(
+      s.clientGroups,
+      and(eq(s.clientGroups.id, s.clients.groupId), ne(s.clientGroups.kind, MERCHANT_GROUP_KIND)),
+    )
+    .where(
+      and(eq(wallet.ownerType, 'account'), eq(wallet.kind, 'customer_wallet'), eq(wallet.currency, BASE_CURRENCY)),
+    );
   return row!;
 }
 
@@ -155,7 +212,7 @@ export async function exposureTotals(db: DbExecutor): Promise<ExposureTotals> {
  *
  * @param db the database
  * @param limit how many rows to return
- * @returns the wallets, ties by merchant id
+ * @returns the wallets (merchant-rank accounts only), ties by account id
  */
 export async function largestWallets(db: DbExecutor, limit: number): Promise<WalletFigures[]> {
   const wallet = ledgerAccounts;
@@ -169,16 +226,20 @@ export async function largestWallets(db: DbExecutor, limit: number): Promise<Wal
     })
     .from(wallet)
     .innerJoin(s.clients, eq(s.clients.id, wallet.ownerId))
+    .innerJoin(
+      s.clientGroups,
+      and(eq(s.clientGroups.id, s.clients.groupId), eq(s.clientGroups.kind, MERCHANT_GROUP_KIND)),
+    )
     .leftJoin(
       hold,
       and(
-        eq(hold.ownerType, 'client'),
+        eq(hold.ownerType, 'account'),
         eq(hold.ownerId, wallet.ownerId),
         eq(hold.kind, 'client_hold'),
         eq(hold.currency, wallet.currency),
       ),
     )
-    .where(and(eq(wallet.ownerType, 'client'), eq(wallet.kind, 'client_wallet'), eq(wallet.currency, BASE_CURRENCY)))
+    .where(and(eq(wallet.ownerType, 'account'), eq(wallet.kind, 'client_wallet'), eq(wallet.currency, BASE_CURRENCY)))
     .orderBy(desc(wallet.balance), asc(s.clients.id))
     .limit(limit);
   return rows;
@@ -262,68 +323,107 @@ export async function supplierCallFigures(db: DbExecutor, since: Date): Promise<
   return new Map(rows.map(({ supplierId, ...figures }) => [supplierId, figures]));
 }
 
-/** One merchant of the top list, money as text. */
-export interface TopClientFigures {
+/** One account of the top list, money as text; the rank is as stored, the service turns its kind into the wire word. */
+export interface TopAccountFigures {
   readonly id: number;
   readonly name: string;
   readonly country: string;
+  readonly rankId: number;
+  readonly rankName: string;
+  /** The stored `client_groups.kind` of the account's rank. */
+  readonly rankGroupKind: string;
+  /** False for a guest row (it has no login and no wallet). */
+  readonly hasAccount: boolean;
   readonly orders: number;
   readonly spend: string;
   readonly profit: string;
 }
 
 /**
- * Ranks the merchants that ordered since a moment by what they spent.
+ * Ranks the accounts that ordered since a moment by what they spent.
  *
- * Why: `GET /admin/reports/top-clients` (MISMATCHES B88): orders created in the window (every status); spend is the price of the
- * non-rejected ones; profit is price minus cost of the completed ones; merchants waiting for approval are left out, and so are
- * merchants with no order in the window. Highest spend first, ties by merchant id.
+ * Why: `GET /admin/reports/top-clients` (decision 064): the one Top accounts list of the dashboard. Every account with an
+ * order created in the window is a candidate, whatever its rank, guests included (a guest checkout is an account row without a login);
+ * anonymized accounts are left out. `scope` is the door of the order: `b2c` counts the `store` door, `b2b` every other door, `all`
+ * both, so an account that crossed ranks counts the orders of each door it used. Spend is the price (before VAT) of the non-rejected
+ * orders, profit is price minus cost of the completed ones. Highest spend first, ties by account id.
  *
  * @param db the database
  * @param since the start of the window
- * @param limit how many merchants to return
- * @returns the ranked merchants
+ * @param limit how many accounts to return
+ * @param scope which doors count
+ * @returns the ranked accounts
  */
-export async function topClientFigures(db: DbExecutor, since: Date, limit: number): Promise<TopClientFigures[]> {
+export async function topAccountFigures(
+  db: DbExecutor,
+  since: Date,
+  limit: number,
+  scope: TopScope,
+): Promise<TopAccountFigures[]> {
   const o = s.orders;
   const spend = sql`coalesce(sum(${o.totalPrice}) filter (where ${o.status} <> 'rejected'), 0)`;
+  const door = scope === 'b2c' ? eq(o.source, 'store') : scope === 'b2b' ? ne(o.source, 'store') : undefined;
   return db
     .select({
       id: s.clients.id,
       name: s.clients.name,
       country: s.clients.country,
+      rankId: s.clientGroups.id,
+      rankName: s.clientGroups.name,
+      rankGroupKind: s.clientGroups.kind,
+      hasAccount: s.clients.hasAccount,
       orders: sql<number>`count(${o.id})::int`,
       spend: sql<string>`${spend}::numeric(18,4)::text`,
       profit: sql<string>`coalesce(sum(${o.totalPrice} - ${o.totalCost}) filter (where ${o.status} = 'completed'), 0)::numeric(18,4)::text`,
     })
     .from(o)
-    .innerJoin(s.clients, eq(s.clients.id, o.clientId))
-    .where(and(gte(o.createdAt, since), ne(s.clients.status, 'pending')))
-    .groupBy(s.clients.id, s.clients.name, s.clients.country)
+    .innerJoin(s.clients, eq(s.clients.id, o.accountId))
+    .innerJoin(s.clientGroups, eq(s.clientGroups.id, s.clients.groupId))
+    .where(and(gte(o.createdAt, since), ne(s.clients.status, 'anonymized'), door))
+    .groupBy(
+      s.clients.id,
+      s.clients.name,
+      s.clients.country,
+      s.clients.hasAccount,
+      s.clientGroups.id,
+      s.clientGroups.name,
+      s.clientGroups.kind,
+    )
     .orderBy(desc(spend), asc(s.clients.id))
     .limit(limit);
 }
 
 /**
- * Reads the wallet balances of some merchants.
+ * Reads the wallet balances of some accounts, both kinds.
+ *
+ * Why: the top list shows the balance of the `live` wallet, which depends on the rank (the service picks it with `liveWalletBalance`); a
+ * wallet of the inactive kind holds zero but is returned too, so the caller never needs a second read.
  *
  * @param db the database
- * @param clientIds the merchants
- * @returns the `client_wallet` balance by merchant id, as text; a merchant without a wallet has no entry
+ * @param accountIds the accounts
+ * @returns the balances by account id, as text, keyed by ledger kind; an account without a wallet has no entry
  */
-export async function walletBalances(db: DbExecutor, clientIds: readonly number[]): Promise<Map<number, string>> {
-  if (clientIds.length === 0) return new Map();
+export async function walletBalances(
+  db: DbExecutor,
+  accountIds: readonly number[],
+): Promise<Map<number, WalletBalances>> {
+  if (accountIds.length === 0) return new Map();
   const wallet = ledgerAccounts;
   const rows = await db
-    .select({ clientId: wallet.ownerId, balance: wallet.balance })
+    .select({ accountId: wallet.ownerId, kind: wallet.kind, balance: wallet.balance })
     .from(wallet)
     .where(
       and(
-        eq(wallet.ownerType, 'client'),
-        eq(wallet.kind, 'client_wallet'),
+        eq(wallet.ownerType, 'account'),
+        inArray(wallet.kind, ['client_wallet', 'customer_wallet']),
         eq(wallet.currency, BASE_CURRENCY),
-        inArray(wallet.ownerId, [...clientIds]),
+        inArray(wallet.ownerId, [...accountIds]),
       ),
     );
-  return new Map(rows.flatMap((row) => (row.clientId === null ? [] : [[row.clientId, row.balance] as const])));
+  const byAccount = new Map<number, WalletBalances>();
+  for (const row of rows) {
+    if (row.accountId === null || (row.kind !== 'client_wallet' && row.kind !== 'customer_wallet')) continue;
+    byAccount.set(row.accountId, { ...byAccount.get(row.accountId), [row.kind]: row.balance });
+  }
+  return byAccount;
 }

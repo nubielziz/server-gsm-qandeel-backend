@@ -1,9 +1,10 @@
 # Architecture
 
-The GSM backend sells IMEI, Server, Remote and File services to B2B merchants (prepaid wallet; Dhru Fusion v6.1
-and the merchant portal) and to B2C storefront customers (pay first, then dispatch). Both channels share **one
-order engine, one supplier layer and one double-entry ledger**. Decisions referenced as (D0xx) live in
-`docs/decisions/`.
+The GSM backend sells IMEI, Server, Remote and File services to accounts of two kinds of rank: merchants (prepaid or
+credit wallet; Dhru Fusion v6.1 and the merchant portal) and retail buyers (storefront; pay first, then dispatch).
+Merchants and retail buyers are **one account type in one table, told apart by the rank of the account** (decision 064).
+Both doors share **one order engine, one supplier layer and one double-entry ledger**. Decisions referenced as (D0xx)
+live in `docs/decisions/`.
 
 ## 1. Shape
 
@@ -40,28 +41,53 @@ One Nest module per map domain (`scripts/module-map.mjs` is the source; `docs/sl
 
 | Module | Domain | Owns (tables) | Main surfaces | Endpoints |
 |---|---|---|---|---|
-| identity | A | staff_users, roles, clients, sessions, auth_tokens, api_keys, kyc_submissions, ip_rules | admin, client | 59 |
+| identity | A | staff_users, roles, clients (every account), account_legacy_ids, sessions, auth_tokens, api_keys, ip_rules (kyc_submissions: retired, unread) | admin, client, store | 59 |
 | catalog | B | client_groups, service_categories, services, service_fields/options, group/client prices, pricing_rules, inventory_codes, tac_catalog | admin, client, dhru | 41 |
 | suppliers | C | suppliers, supplier_services, service_supplier_links, supplier_api_logs | admin, supplier calls | 18 |
 | orders | D | orders, order_events | admin, client, dhru, store, events | 34 |
-| money | E | ledger (accounts, transactions, entries), currencies, invoices, payment_gateways, payments, withdrawal_requests, refunds, disputes, tax_rates | admin, client, dhru, hooks, events | 55 |
+| money | E | ledger (accounts, transactions, entries), currencies, invoices, payment_gateways, payments, refunds, disputes, tax_rates, account_rank_changes, wallet_action_keys (withdrawal_requests: retired, unread) | admin, client, store, dhru, hooks, events | 55 |
 | commissions | F | commission_plans, assignments, accruals (retired, decision 062: the schema only) | none | 0 |
 | platform | G | settings, notification_templates, notifications, outbox_events, audit_logs, files (webhook_endpoints and webhook_deliveries are retired, unread) | admin, client, system | 20 |
 | health | G | service_checks, alert_rules, alert_events, incidents, job_runs | admin, system | 33 |
 | storefront | H | service_listings, content_pages, help_articles, legal_documents | admin, store | 25 |
-| customers | I | customers, customer_credentials, checkout_sessions, consent_records | admin, store | 28 |
+| customers | I | checkout_sessions, consent_records (customers and customer_credentials: retired and frozen, unread) | admin, store | 28 |
 | support | J | support_tickets, ticket_messages, reply_templates | admin, store | 14 |
 | risk | K | risk_assessments, blocklist_entries, data_requests | admin, store | 14 |
 
 **Boundaries.** A module reads and writes only its own tables. Other modules call its public service exported from
 `src/modules/<id>/index.ts` (enforced by an ESLint boundary rule). Cross-module foreign keys stay in the database.
 A use case that spans modules runs in one DB transaction passed explicitly (`tx`) to each public service it calls.
+**Ports and registries** (decision 064): a module may have a `ports/` folder of abstract classes that other modules inject as Nest tokens (the
+owning module implements them and the wiring binds them with `useExisting`) and small registries that modules fill at boot (rank change checks,
+account create checks, guest claim participants, the account list's SQL fragments). A registry throws on a repeated name and on a read before
+registration, so a missing entry is a boot error; the API refuses to start while one is missing. Pure helpers that modules share (the wallet kind
+of a rank kind, the order door) sit in the owner's `domain/` folder.
 
 **Inside a module**: `controllers/` (HTTP only, thin, one per surface) → `application/` (use cases, transaction
 boundary, authorization of ownership) → `domain/` (pure functions: pricing, state transitions, risk thresholds,
 ledger lines; unit-tested) → `infra/` (Drizzle repositories, external clients). `contracts/` holds the zod route
 contracts, `jobs/` the processors the worker registers, `db/schema.ts` the owned tables, `README.md` the module's
 purpose, tables, routes, jobs, events, cache keys, permissions and scenarios.
+
+### 2.1 Accounts and ranks (decision 064)
+
+- **One accounts table, `clients`.** A merchant and a retail buyer are the same kind of row; the **rank** (`client_groups`, kinds `b2b` and
+  `b2c_retail`) says which: only `b2b` is a merchant, anything else has retail rights. A guest (`has_account = false`) is a retail row without a
+  login. Email is unique among login rows and, separately, among guest rows; `AccountDirectory` is the only reader of an account by email.
+- **One stored type word, `account`**, in every (type, id) pair. Old append-only rows keep their words and are read through
+  `account_legacy_ids`; NOT VALID `*_current_check` constraints refuse the old words in new rows. An old customer number is never an account id.
+- **One buyer column, `account_id`**; the door of an order is `orders.source` (`store` is the shop's door), never the rank held today.
+- **One live wallet of the kind of the rank** (`client_wallet` and `client_hold` for a merchant rank, `customer_wallet` for the retail rank);
+  the rank changes only through `POST /admin/clients/:id/rank` (money module, Owner only, idempotent), which moves the balance in one journal.
+- **A default-deny rank gate** on every session route (merchant-session routes serve merchant ranks, customer-session routes the retail rank,
+  `rank: 'any'` only for the routes pinned in `test/contract/rank-open-routes.ts`); the refusal is 403 `RANK_NOT_ALLOWED` and never ends a session.
+- **One lock order for the money paths of an account:** the account row (`FOR UPDATE` by the rank change, status writers, the guest claim and
+  erasure; `FOR KEY SHARE` by every path that reads the rank kind to move money), then the rows of the path (order, invoice, payment, dispute),
+  then the advisory locks (`topup:<accountId>`, `upload-quota:account:<id>`, fingerprint and stock locks), then the ledger accounts `FOR UPDATE`
+  in id order. The one named exception is `api-keys:<accountId>`, taken before the account row by both key creations. Staff adjustments take
+  `wallet-adjust:staff:<staffId>` first.
+- The expand migration is assembled (`scripts/accounts-merge`), the old customer tables are frozen until the contract release, and the old
+  customer routes answer 410 `ROUTE_RETIRED`; `docs/OPERATIONS.md` holds the release order.
 
 ## 3. Request pipeline
 
@@ -82,9 +108,11 @@ a contract is refused:
 4. **Rate limit**: per IP (D021), and every incoming webhook per address (`webhook-intake`, D053); per-principal limits run in step 5 once the
    principal is known. A fourth stage, **`upload-session`** (D053), follows: a multipart body of a route that signs in with a session cookie is read
    only when the request carries a live session of the route's audience (`401` before the body is read otherwise).
-5. **Authentication** by surface: staff session cookie (admin), merchant session cookie (client), customer session or
-   capability token (store), username + apiaccesskey with allowed IPs (Dhru),
-   signature + replay window (webhooks), network or token (`/metrics`).
+5. **Authentication** by surface: staff session cookie (admin), the one account session cookie (client and store: every account, whatever
+   its rank) or a capability token (store links), username + apiaccesskey with allowed IPs and a merchant rank (Dhru),
+   signature + replay window (webhooks), network or token (`/metrics`). Behind a session the one handler checks, in this order: a live session
+   (401), a status that may act (403 `ACCOUNT_SUSPENDED`), the session stage (401), the **rank** of the route (403 `RANK_NOT_ALLOWED`), then CSRF,
+   permission and anti-bot below.
 6. **CSRF** on every cookie-authenticated mutation (`403 CSRF_FAILED`); a mutation without a session on `/admin` or `/client` (and the
    `/store/v1` sign-in routes) needs an `Origin` of its surface, and an `originCheck` GET needs `Sec-Fetch-Site: same-origin` or such an `Origin`.
 7. **Permission**: the contract's `permission` (`resource:action`; `x:*` and `*` grant all actions of a resource); some use cases also ask for a second permission (decision 046).
@@ -117,12 +145,15 @@ endpoint are in `docs/contract/ALIGNMENT.md`.
 (replay returns the first result), accounts locked `FOR UPDATE` in id order, wallet overdraft guard, `balance_after`
 written in the same transaction, append-only enforced by triggers, zero-sum enforced by a deferred constraint trigger.
 Each of the map's money events that can still be posted (12 of its 13; `commission` is retired) has one line builder with a unit test. Balances and holds are never cached.
+A wallet is owned by (`account`, id): the live wallet follows the kind of the account's rank, a change of rank moves the balance in one `wallet_transfer`
+journal, and every money path of an account follows the lock order of section 2.1 (decision 064).
 Manual money is limited (D049): a staff member's credits are capped over 24 hours, a staff-issued invoice is approved by someone else,
 one receipt backs one payment, and the shop charges only in currencies whose rate is fresh and was not held.
 
 ## 6. Orders
 
-One engine for B2B and B2C (decision 025 holds the exact statuses and transitions). Every transition is a guarded
+One engine for both doors (decision 025 holds the exact statuses and transitions; the door is `orders.source`, and the buyer of every order is an
+account, decision 064). Every transition is a guarded
 update (`UPDATE … WHERE id = $1 AND status = $2`) plus an `order_events` row in the same transaction. B2B: price
 resolved at placement, the hold posted (`order` event) before dispatch; completion posts `complete`, rejection posts
 `reject`. B2C: a checkout session locks price, tax and FX; the order is created only when the gateway webhook confirms
@@ -155,8 +186,8 @@ risk decisions, idempotency results.
 
 ## 9. Security
 
-Staff, merchant and customer sessions are opaque random tokens in httpOnly, Secure, SameSite cookies, stored hashed
-(D019); CSRF and the sign-in steps follow the frontend contract (decision 018). Passwords argon2id (D007); TOTP and
+Staff and account sessions (one session cookie for every account of any rank; its readable CSRF cookie is named by the rank kind) are opaque random
+tokens in httpOnly, Secure, SameSite cookies, stored hashed (D019); CSRF and the sign-in steps follow the frontend contract (decision 018). Passwords argon2id (D007); TOTP and
 supplier/gateway credentials AES-256-GCM with key ids; API keys and one-time tokens stored as keyed hashes; the shop's link tokens as a keyed hash and an encrypted copy; stored lookups keyed with their own key (D054); incoming webhooks verified with replay protection; parameterized SQL only; no stack traces in production
 errors; logs redacted at every depth, database failures logged as SQLSTATE and names only (D012, D054). Admin guards are enforced server-side: no self-suspension or self role change, at
 least one active Owner, no self-lockout through IP rules, IP ranges no wider than /16, and a privilege ceiling: nobody grants,
@@ -168,8 +199,8 @@ keeps a budget of five attempts per 15 minutes); temporary passwords expire afte
 recipient (decision 052). The production stack keeps its tiers apart (decision 055): the database, both Redis instances, the object store
 and the search engine are on internal networks that only the API, the worker and the tools reach; both Redis instances need a password;
 the API trusts the client address from Caddy's and the site's two fixed addresses only; and the application connects with its own
-database role, which cannot rewrite the ledger, the order events or the audit log, change the schema or empty a table. Staff see storefront
-customers' addresses masked outside the Customers pages unless they may read customers, open a stored file only with the read permission
+database role, which cannot rewrite the ledger, the order events or the audit log, change the schema or empty a table. Staff see the addresses of accounts
+masked unless they may read accounts (`clients:read`, for every rank), open a stored file only with the read permission
 of every record that uses it, and cannot switch off the emails that protect accounts (decision 047).
 
 ## 10. Observability and testing

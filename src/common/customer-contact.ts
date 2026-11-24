@@ -1,11 +1,11 @@
-// How staff answers outside the Customers pages show a storefront customer's email address (decision 047): masked unless the caller may
-// read customers. Pure; the modules that build those answers share it.
+// How staff answers outside the Accounts pages show an account's email address (decisions 047 and 064): masked unless the caller may
+// read accounts. Pure; the modules that build those answers share it.
 
 /**
- * What a staff caller may see of a storefront customer's contact details outside the Customers pages.
+ * What a staff caller may see of an account's contact details outside the Accounts pages.
  *
- * Why: decision 047: the address is personal data, so a staff answer carries it in full only for a caller whose role grants `customers:read`
- * (identity's `customerContactOf` decides it); everybody else reads the masked form.
+ * Why: decisions 047 and 064: the address is personal data, so a staff answer carries it in full only for a caller whose role grants
+ * `clients:read` (identity's `customerContactOf` decides it), for an account of any rank; everybody else reads the masked form.
  */
 export type CustomerContact = 'full' | 'masked';
 
@@ -30,9 +30,9 @@ export function maskCustomerEmail(email: string): string {
 }
 
 /**
- * Chooses the form of a customer's address for a caller.
+ * Chooses the form of an account's address for a caller.
  *
- * Why: decision 047, rule A: every staff answer outside the Customers pages passes a customer's address through this.
+ * Why: decision 047, rule A: every staff answer outside the Accounts pages passes an account's address through this.
  *
  * @param contact what the caller may see
  * @param email the stored address
@@ -43,12 +43,12 @@ export function customerEmailIn(contact: CustomerContact, email: string): string
 }
 
 /**
- * The label of a customer in a staff answer: the name, or the masked address when the name is empty.
+ * The label of an account in a staff answer: the name, or the masked address when the name is empty.
  *
  * Why: decision 047, rule B: a name never falls back to the full address, for any caller.
  *
- * @param name the customer's name (may be empty)
- * @param email the customer's address
+ * @param name the account's name (may be empty)
+ * @param email the account's address
  * @returns the name, or the masked address
  */
 export function customerNameForStaff(name: string, email: string): string {

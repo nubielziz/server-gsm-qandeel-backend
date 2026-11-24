@@ -2,6 +2,7 @@
 import { type CustomerContact } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import type { SessionStage } from '../db/schema';
+import type { AccountPrincipal } from '../ports/account-principal';
 import type { CapabilityAccessKind } from './machine/capability-tokens';
 import { grants, grantsEverything, uncoveredPermissions } from './permission-grammar';
 import type { SessionView } from './session.types';
@@ -31,43 +32,27 @@ export interface StaffPrincipal extends PermissionHolder {
 }
 
 /**
- * A signed-in merchant (client portal).
+ * A signed-in merchant, by its old name: the principal of every account (see {@link AccountPrincipal}).
  *
- * Why: portal handlers act on the merchant's own records only, by this id.
+ * Why: there is one account type and one session principal (decision 064). The merchant controllers keep reading `clientId` (the same
+ * value as `accountId`) until the contract release removes this name. The `kind` of the principal is `account`; the rank kind
+ * (`merchant` or `retail`) is `principal.rank.kind`.
  */
-export interface MerchantPrincipal {
-  readonly kind: 'merchant';
-  readonly clientId: number;
-  readonly stage: SessionStage;
-  readonly ip: string;
-  readonly session: SessionView;
-}
-
-/**
- * A signed-in storefront customer.
- *
- * Why: account routes act on the customer's own records only, by this id.
- */
-export interface CustomerPrincipal {
-  readonly kind: 'customer';
-  readonly customerId: number;
-  readonly stage: SessionStage;
-  readonly ip: string;
-  readonly session: SessionView;
-}
+export type MerchantPrincipal = AccountPrincipal;
 
 /**
  * The callers authenticated by a session cookie.
  *
- * Why: the three subjects share one session service (decision 018).
+ * Why: staff and accounts share one session service (decision 018); a former customer is an account of the retail rank (decision 064).
  */
-export type SessionPrincipal = StaffPrincipal | MerchantPrincipal | CustomerPrincipal;
+export type SessionPrincipal = StaffPrincipal | AccountPrincipal;
 
 /**
  * A merchant's API key (Dhru with username and `apiaccesskey`).
  *
- * Why: decision 018: it resolves an `api_keys` row, and the orders, wallet and catalog handlers act for `clientId`; the key id
- * goes into the order's `api_key_id`. The key itself is never kept.
+ * Why: decision 018: it resolves an `api_keys` row, and the orders, wallet and catalog handlers act for `clientId` (an account id: a
+ * merchant is an account of a merchant rank, decision 064); the key id goes into the order's `api_key_id`. The key itself is never
+ * kept.
  */
 export interface ApiKeyPrincipal {
   readonly kind: 'api-key';
@@ -202,9 +187,9 @@ export function requireOwner(caller: PermissionHolder, detail: string): void {
  *
  * Why: decision 049 and its extension judge these per staff account, so each account has to stand for one person:
  * - `wallet:adjust`: the 24-hour credit sums of merchant wallets and of customer balances, and a single debit above the limit
- *   (`WalletService.adjust`, `CustomerWallets.adjust` in the money module);
+ *   (`AccountWalletAdmin.adjust` in the money module);
  * - `wallet:credit_limit`: the raised part of a credit limit counts in the same merchant sum, at an invitation too
- *   (`WalletService.setCreditLimit`, `MerchantAccounts.open`);
+ *   (`AccountWalletAdmin.setCreditLimit`, `MerchantAccounts.open`);
  * - `payments:approve`: the 24-hour sum of transfer receipt approvals, and the payment of a manual invoice is approved by someone
  *   other than its issuer (`PaymentReviewService.approve`);
  * - `invoices:create`: the issuer of a manual invoice, whom that approval rule names (`InvoiceAdminService.issue`).
@@ -232,20 +217,21 @@ export function grantsPerPersonMoney(permissions: readonly string[]): boolean {
 }
 
 /**
- * The permission of the Customers pages, which also decides whether other staff answers show a customer's address in full.
+ * The permission of the Accounts pages, which also decides whether other staff answers show an account's address in full.
  *
- * Why: decision 047: the address is personal data; outside the Customers pages only a role that may read customers sees it unmasked.
+ * Why: decisions 047 and 064: the address is personal data; outside the Accounts pages only a role that may read accounts sees it
+ * unmasked, whatever the rank of the account (merchants' addresses in ticket views and session lists included).
  */
-export const CUSTOMER_CONTACT_PERMISSION = 'customers:read';
+export const CUSTOMER_CONTACT_PERMISSION = 'clients:read';
 
 /**
- * What a staff caller may see of a storefront customer's contact details outside the Customers pages.
+ * What a staff caller may see of an account's contact details outside the Accounts pages.
  *
- * Why: decision 047, rule A: every staff answer that carries a customer's address passes it through `customerEmailIn(contact, …)`;
+ * Why: decision 047, rule A: every staff answer that carries an account's address passes it through `customerEmailIn(contact, …)`;
  * this is the one place that decides the form from the caller's role.
  *
  * @param caller the signed-in staff member (or the permissions of a role)
- * @returns `'full'` when the role grants `customers:read` (also through `customers:*` or `*`), else `'masked'`
+ * @returns `'full'` when the role grants `clients:read` (also through `clients:*` or `*`), else `'masked'`
  */
 export function customerContactOf(caller: PermissionHolder): CustomerContact {
   return grants(caller.permissions, CUSTOMER_CONTACT_PERMISSION) ? 'full' : 'masked';

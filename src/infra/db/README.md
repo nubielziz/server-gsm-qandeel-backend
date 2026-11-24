@@ -97,8 +97,9 @@ await this.db.runInTransaction(async ({ tx, afterCommit }) => {
   triggers or change the schema. `db:migrate` and `setup` connect with `DATABASE_OWNER_URL` (the owner; only the migrate service
   has it) and, after the migrations, run the **grants step** (`grants.ts`, `applyApplicationGrants`): it creates the role or sets its
   password and attributes (no superuser, createdb, createrole, replication or bypassrls) and grants `CONNECT`, `USAGE` on schema
-  `public`, `SELECT, INSERT, UPDATE, DELETE` on every table minus `UPDATE, DELETE` on the four append-only tables
-  (`ledger_entries`, `ledger_transactions`, `order_events`, `audit_logs`), no `TRUNCATE`, `REFERENCES` or `TRIGGER`, `USAGE, SELECT`
+  `public`, `SELECT, INSERT, UPDATE, DELETE` on every table minus `UPDATE, DELETE` on the seven append-only tables
+  (`APPEND_ONLY_TABLES`: `ledger_entries`, `ledger_transactions`, `order_events`, `audit_logs`, `account_legacy_ids`, `account_rank_changes`,
+  `wallet_action_keys`), no `TRUNCATE`, `REFERENCES` or `TRIGGER`, `USAGE, SELECT`
   on every sequence, and the read of `drizzle.__drizzle_migrations`. It runs on every migrate, so new tables are covered, and refuses a
   role that is a superuser or owns a table. The role is created or altered with a SCRAM-SHA-256 verifier computed in the process
   (`scramSha256Verifier`: PBKDF2-HMAC-SHA-256, 4096 rounds, a random 16-byte salt), never with the plain password, so a failing statement
@@ -114,7 +115,8 @@ await this.db.runInTransaction(async ({ tx, afterCommit }) => {
 
 ## Integrity enforced by the database (custom migration `0001`)
 
-- `ledger_entries`, `ledger_transactions`, `order_events` and `audit_logs` refuse `UPDATE` and `DELETE`
+- `ledger_entries`, `ledger_transactions`, `order_events` and `audit_logs` (migration `0001`), and `account_legacy_ids`, `account_rank_changes` and
+  `wallet_action_keys` (migration `0066`, decision 064) refuse `UPDATE` and `DELETE`
   (trigger `<table>_append_only`, SQLSTATE `23514`, constraint `<table>_append_only`). `TRUNCATE` is not blocked.
 - `ledger_entries_zero_sum`: a `DEFERRABLE INITIALLY DEFERRED` constraint trigger on insert, update and delete checks at
   commit that the entries of a transaction sum to zero and that their accounts share one currency (decision 024;
@@ -122,6 +124,39 @@ await this.db.runInTransaction(async ({ tx, afterCommit }) => {
   `ledger_entries_single_currency`.
 - Not enforced by the database: appending a balanced pair of lines to an older ledger transaction. `postTransaction`
   always creates a new header with its lines, and it is the only writer of ledger rows.
+
+## The one account type in the database (decision 064)
+
+- **One accounts table, `clients`.** Merchants and customers are rows of it, told apart by the rank (`client_groups.kind`, closed to `b2b` and
+  `b2c_retail`). `has_account` is false for a guest. Email is unique among login rows (`clients_login_email_uq` on `lower(email)`) and, separately,
+  among guest rows (`clients_guest_email_uq`, `WHERE NOT has_account`); `clients_status_check` allows `active`, `suspended`, `blocked` and `anonymized` only.
+  Only `identity/accounts/account-directory.repository.ts` compares `clients.email` (a tooling test fails elsewhere).
+- **The type word, `account`.** Mutable (type, id) columns hold `account` only (narrowed checks: `SUBJECT_TYPES`, `LEDGER_OWNER_TYPES`,
+  `FILE_OWNER_TYPES`, ...). Append-only tables keep the words they were written with: their checks were widened, and a **NOT VALID**
+  `*_current_check` (`audit_logs_actor_type`, `order_events_actor_type`, `ledger_transactions_created_by_type`, `ledger_transactions_ref_type`)
+  refuses the old words in new rows. These four stay NOT VALID for ever (validating one scans the history it exists to tolerate); a tooling
+  test checks the text of the migration and `pg_constraint.convalidated`. Old rows are read through the append-only map `account_legacy_ids`
+  (`legacy_type` `client` or `customer`, `legacy_id`, `account_id`, `merged`).
+- **Buyer columns.** `orders`, `invoices`, `payments`, `disputes` and `data_requests` have `account_id NOT NULL`; `refunds`, `checkout_sessions`,
+  `risk_assessments` and `blocklist_entries` have it nullable. The door of an order is `orders.source` (`orders_door_check`: `(source = 'store') = (client_id IS NULL)`;
+  `orders_hold_buyer_check`). The old `client_id` is `legacyClientId` in TypeScript and the `customer_id` columns `retiredCustomerId`, so the compiler finds
+  every reader; they are written or read by nobody and are dropped by the contract release. `invoices.wallet_kind` names the wallet kind of a top-up.
+- **New append-only tables** (all three in `APPEND_ONLY_TABLES`, each with its `<table>_append_only` trigger): `account_legacy_ids` (identity),
+  `account_rank_changes` (the rank history; the two rank ids carry no foreign key, so a deleted rank never blocks) and `wallet_action_keys` (the idempotency
+  keys of staff freeze, unfreeze and credit-limit actions, unique on `(account_id, idempotency_key)`).
+- **Retired tables.** `customers` and `customer_credentials` (TypeScript `retiredCustomers`, `retiredCustomerCredentials`) stay, unread; the
+  `forbid_retired_write()` triggers `customers_retired` and `customer_credentials_retired` refuse every write (`TRUNCATE` still works for `db:reset`). The
+  module map's `retiredTables` seam is empty in the expand release; the contract release fills it and drops the tables.
+- **The expand migration is assembled, never edited by hand** (`0066_accounts_expand.sql`): `bun run db:generate --name accounts_expand`, then
+  `bun scripts/accounts-merge/assemble.ts expand` sorts every generated statement into its phase by `scripts/accounts-merge/expand/phase-map.json` (a
+  statement the map does not name stops the script), adds the hand-written statements of `scripts/accounts-merge/expand/phases/*.sql`, appends
+  `NOT VALID` where the map says, and writes the markers `-- accounts-merge:phase:<n>:begin` and `:end`. The snapshot stays the generated one, so
+  `bun run db:check` passes. Phase 0 is a preflight that reads only and stops the whole migration (nothing changes: all pending migrations run in one
+  transaction) with `accounts merge stopped, nothing changed: <findings>` (SQLSTATE `23514`, constraint `accounts_merge_preflight`);
+  `bun scripts/accounts-merge-check.ts` runs it read only against a database. A second `db:migrate` applies nothing and every phase is a no-op on an
+  empty database. The realistic data of the dry run is `scripts/accounts-merge/fixture.sql`. `0067_account_permissions.sql` is data only and guarded: it
+  stops with the constraint `account_permissions_guard` and names the stored roles that hold the merchant and customer permissions unevenly.
+  The order of a release that runs these is in `docs/OPERATIONS.md`, "Release with decision 064".
 
 ## A data migration that refuses: `0035` (English only, decision 039)
 
@@ -159,8 +194,9 @@ owning module's `db/schema.ts` and a named `CHECK`; a new value needs a migratio
 
 - identity: `auth_tokens.purpose` (`invite`, `reset`, `verify_email`, `magic_link`; staff use `STAFF_TOKEN_PURPOSES`, the
   subset `invite` and `reset`)
-- platform: `notifications.recipient_type` (`staff`, `client`, `customer`; the template audience still says `merchant`),
-  `audit_logs.actor_type` (`staff`, `client`, `customer`, `system`) with the new `audit_logs.actor_name` snapshot
+- platform: `notifications.recipient_type` (`staff`, `account`; the template audience still says `merchant`),
+  `audit_logs.actor_type` (the wide list `staff`, `client`, `customer`, `system`, `account`, with the current words `staff`, `account`, `system`
+  enforced by a NOT VALID check) with the new `audit_logs.actor_name` snapshot
 - money: `payments.status` and `payments.method_type` per purpose (top-up: `pending`/`approved`/`rejected` and
   `bank`/`card`/`usdt`/`wise`; order: `pending`/`captured`/`failed`/`refunded`/`partial_refund`/`disputed`/`chargeback`
   and `card`/`wallet`/`crypto`), `refunds.method` (`original`, `manual`), `ledger_transactions.ref_type` (no
@@ -188,10 +224,10 @@ per alert, and `job_runs`, `supplier_api_logs`, `invoices` and `consent_records`
 Still plain `text` because no source fixes the values; each feature that owns one adds the CHECK with its migration
 once the values are known:
 
-- platform: `files.owner_type`, `outbox_events.type` and `aggregate_type`
+- platform: `outbox_events.type` and `aggregate_type`
 - money: `ledger_transactions.kind` (the 13 money events plus reversal kinds), `withdrawal_requests.method` and `status`
   (later phase), `tax_rates.tax_type` and `applies_to`
-- catalog: `client_groups.kind` (`b2c_retail` is known), `tac_catalog.source`
+- catalog: `tac_catalog.source`
 - suppliers: `supplier_services.type`
 - health: `service_checks.component` (shaped by the two key checks above), `alert_rules.metric` (a registry in code),
   `job_runs.job`
@@ -224,21 +260,21 @@ Details the documentation pass recorded next to the schema pass (both apply `doc
 
 - identity: none left (`auth_tokens.purpose` is closed: `invite`, `reset`, `verify_email`, `magic_link`, from the exported
   `AUTH_TOKEN_PURPOSES`)
-- platform: `files.owner_type`, `outbox_events.type` and `aggregate_type` (`audit_logs.actor_type` is closed to
-  `staff | client | customer | system` and `notifications.recipient_type` to `staff | client | customer`; the audit entity
-  type is enforced in code from `AUDIT_ENTITY_TYPES`, with no CHECK)
+- platform: `outbox_events.type` and `aggregate_type` (`files.owner_type` is closed to `staff | account` by `files_owner_type_check`;
+  `audit_logs.actor_type` is closed to the wide list `staff | client | customer | system | account` and `notifications.recipient_type`
+  to `staff | account`; the audit entity type is enforced in code from `AUDIT_ENTITY_TYPES`, with no CHECK)
 - money: `ledger_transactions.kind` (the 13 money events plus reversal kinds), `withdrawal_requests.method` and `status`,
   `tax_rates.tax_type` and `applies_to` (`payments.status` and `method_type` are closed per purpose, `refunds.method` to
   `original | manual`)
-- catalog: `client_groups.kind` (`b2c_retail` is known), `tac_catalog.source` (`services.price_mode` is closed to `fixed` and
-  `duplicate_rule` to `allow | block_open`)
+- catalog: `tac_catalog.source` (`client_groups.kind` is closed to `b2b | b2c_retail` by the rank kind checks of decision 064: a rank of
+  kind `b2b` is a merchant, any other kind is retail; `services.price_mode` is closed to `fixed` and `duplicate_rule` to `allow | block_open`)
 - orders: none left (`orders.verification_status` is `NULL | requested | accepted | refunded`; `order_events.type` is a
   closed list)
 - suppliers: `supplier_services.type` (`suppliers.driver` is `dhru | rest` and `param_format` is derived from it)
 - health: `service_checks.component`, `alert_rules.metric` (a registry in code), `job_runs.job` (`alert_events.subject_type`
   is closed)
 - commissions: `commission_plans.basis` and `period`, `commission_assignments.scope`
-- customers: none left (`checkout_sessions.status`, `consent_records.subject_type` and `purpose` are closed lists)
+- customers: none left (`checkout_sessions.status`, `consent_records.subject_type` (`account`) and `purpose` are closed lists)
 - storefront: `help_articles.category` (`legal_documents.type` is closed)
 
 The resolutions of the pre-Phase-3 audit (`docs/contract/RESOLUTIONS.md`) closed the vocabularies struck from this list; the

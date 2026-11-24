@@ -108,7 +108,7 @@ describe('idempotency_purge', () => {
   });
 
   it('touches nothing else: an old order stays as it is, and so does its updated_at', async () => {
-    await insertOrderRow(world.db, { clientId: world.merchant.id, serviceId: world.auto.serviceId });
+    await insertOrderRow(world.db, { accountId: world.merchant.id, serviceId: world.auto.serviceId });
     await storeAnswer('keep-orders');
     clock.advance(IDEMPOTENCY_WINDOW_DAYS * DAY + HOUR);
     const before = await db.select().from(s.orders).orderBy(s.orders.id);

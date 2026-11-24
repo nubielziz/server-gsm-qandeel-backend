@@ -57,6 +57,14 @@
         "count": 0,
         "difference": "0.0000",
         "findings": []
+      },
+      {
+        "key": "wallets_follow_rank",
+        "label": "Every wallet follows the rank of its account",
+        "status": "pass",
+        "count": 0,
+        "difference": "0.0000",
+        "findings": []
       }
     ]
   }

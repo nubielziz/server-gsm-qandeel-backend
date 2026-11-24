@@ -4,9 +4,20 @@
     "content-type": "application/json"
   },
   "body": {
+    "kind": "merchant",
+    "currency": "USD",
     "balance": "1209.7500",
     "reserved": "71.2300",
     "creditLimit": "10.0000",
-    "available": "1219.7500"
+    "available": "1219.7500",
+    "creditAllowed": true,
+    "adjustApprovalLimit": "10000.0000",
+    "frozen": null,
+    "enabled": true,
+    "pendingTopUps": {
+      "count": 0,
+      "amount": "0.0000"
+    },
+    "openDisputes": 0
   }
 }

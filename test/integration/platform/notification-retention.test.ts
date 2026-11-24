@@ -38,7 +38,7 @@ async function item(values: Partial<typeof s.notificationInbox.$inferInsert> = {
   const [row] = await db
     .insert(s.notificationInbox)
     .values({
-      recipientType: 'customer',
+      recipientType: 'account',
       recipientId: personId,
       event: 'order.completed',
       category: 'order',
@@ -54,7 +54,7 @@ async function logRow(status: 'queued' | 'sent' | 'failed'): Promise<number> {
   const [row] = await db
     .insert(s.notifications)
     .values({
-      recipientType: 'customer',
+      recipientType: 'account',
       recipientId: personId,
       channel: 'email',
       event: 'order.completed',
@@ -147,7 +147,7 @@ describe('the retention job', () => {
   it('works through a backlog in batches of 1000', async () => {
     await db.insert(s.notificationInbox).values(
       Array.from({ length: 2500 }, () => ({
-        recipientType: 'customer' as const,
+        recipientType: 'account' as const,
         recipientId: personId,
         event: 'order.completed',
         category: 'order' as const,

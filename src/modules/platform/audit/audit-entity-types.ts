@@ -32,7 +32,9 @@ export const CONSOLE_AUDIT_ENTITY_TYPES = [
 /**
  * Every entity type `AuditService.record` accepts: the console's words plus the backend additions.
  *
- * Why: RESOLUTIONS identity-platform-15. Table to word: `clients` is `merchant`, `staff_users` `staff`, `checkout_sessions`
+ * Why: RESOLUTIONS identity-platform-15. Table to word: `clients` is `account` (decision 064: one word for every merchant and customer;
+ * `merchant` and `customer` stay in the list only so the rows written before it can be read and filtered, and no writer uses them: a
+ * tooling test forbids it), `staff_users` `staff`, `checkout_sessions`
  * `checkout`, `legal_documents` `legal`, blocklist entries `blocklist`, `settings` `setting`, `commission_plans` `plan` (retired,
  * decision 062: only old rows carry it, and the word stays so they can still be read and filtered), `withdrawal_requests` `withdrawal`, `support_tickets` `ticket`, `ledger_accounts` `ledger_account` (the system accounts `bun run setup`
  * opens, P4b). The list is enforced in code with no database CHECK, so the
@@ -40,6 +42,8 @@ export const CONSOLE_AUDIT_ENTITY_TYPES = [
  */
 export const AUDIT_ENTITY_TYPES = [
   ...CONSOLE_AUDIT_ENTITY_TYPES,
+  // Decision 064: every staff change of an account (merchant or retail rank), the rank change included.
+  'account',
   'role',
   'client_group',
   'category',
@@ -76,6 +80,22 @@ export const AUDIT_ENTITY_TYPES = [
 
 /** One value of {@link AUDIT_ENTITY_TYPES}. */
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
+
+/**
+ * Every word a stored audit entity can use for an account: the current word and the two of before the accounts were merged.
+ *
+ * Why: decision 064. An old merchant's rows say `merchant` (the same number as the account) and an old customer's rows say `customer` (the old
+ * customer number, which is not the account id), so a filter on the entity type `account` reads all three; the id side goes through
+ * `accountHistorySql`.
+ */
+export const ACCOUNT_ENTITY_WORDS = ['account', 'merchant', 'customer'] as const;
+
+/**
+ * Every word a stored audit actor can use for an account: the current word and the two of before the accounts were merged.
+ *
+ * Why: decision 064, as {@link ACCOUNT_ENTITY_WORDS}, for the `actor_type` column.
+ */
+export const ACCOUNT_ACTOR_WORDS = ['account', 'client', 'customer'] as const;
 
 /**
  * Tells whether a text is an audit entity type.

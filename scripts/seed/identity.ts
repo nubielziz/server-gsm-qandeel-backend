@@ -1,14 +1,15 @@
-// Seeder of the identity module: the 6 roles, the 6 staff members, the IP rules, and the 20 merchants (with the demo client
+// Seeder of the identity module: the 6 roles, the 6 staff members, the IP rules, and the 20 merchant accounts (with the demo client
 // groups they sit in) of the frontend demo. Mirrors the frontend mocks (src/mocks/roles.ts, staff.ts, ipRules.ts and
-// src/features/merchants/mocks/seed.ts); the development sign-in credentials are dev-credentials.ts (P2.6). The wallets of the
-// merchants are feature 3's seed (money.ts).
+// src/features/accounts/mocks/seed.ts); the development sign-in credentials are dev-credentials.ts (P2.6). The wallets of the
+// merchants are feature 3's seed (money.ts); the retail accounts are customers.ts.
 import { and, eq, sql } from 'drizzle-orm';
 import type { AppConfig } from '../../src/config';
 import { hashToken } from '../../src/infra/crypto';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
 import { OWNER_ROLE_NAME, OWNER_ROLE_PERMISSIONS } from '../../src/modules/identity';
+import { accountIdOfDemo } from './account-ids';
 import { type DemoSeed, demoNumericId, demoRows, toDate, toMoney } from './demo-state';
-import { type SeedReport, insertRows, syncIdentity } from './helpers';
+import { type SeedReport, insertRows, syncAccountIdentity, syncIdentity } from './helpers';
 
 /** The demo's role keys, in id order. */
 export type RoleKey = 'owner' | 'admin' | 'finance' | 'support' | 'risk' | 'viewer';
@@ -33,10 +34,11 @@ const ROLE_MATRIX: Record<RoleKey, readonly number[]> = {
   viewer: [1, 1, 1, 1, 1, 1, 0, 0, 1],
 };
 
-// The permission areas behind each demo area: Orders, Customers, Support, Risk, Money, Catalog, Settings, Admins, System.
+// The permission areas behind each demo area: Orders, Accounts, Support, Risk, Money, Catalog, Settings, Admins, System. The Accounts
+// area is the one accounts table (`clients`), its wallets, its ranks (`groups`) and the API keys of its merchant ranks (decision 064).
 const AREA_PERMISSIONS: ReadonlyArray<readonly string[]> = [
   ['orders', 'inventory', 'files'],
-  ['customers', 'clients', 'wallet', 'groups', 'api_keys'],
+  ['clients', 'wallet', 'groups', 'api_keys'],
   ['support'],
   ['risk'],
   ['ledger', 'payments', 'invoices', 'refunds', 'disputes', 'reports'],
@@ -46,11 +48,16 @@ const AREA_PERMISSIONS: ReadonlyArray<readonly string[]> = [
   ['system', 'alerts', 'incidents'],
 ];
 
+// What the manage level of an area grants besides `<prefix>:*` for each of its prefixes, by area number: the privacy permission of the data
+// requests belongs to the Accounts area (`customers:privacy`), after the area's own prefixes.
+const MANAGE_EXTRAS: Readonly<Record<number, readonly string[]>> = { 1: ['customers:privacy'] };
+
 /**
  * The permission strings of a built-in role.
  *
  * Why: the exact lists the frontend mock grants (`permissionsOf` in src/mocks/roles.ts): the owner has `*`, the others
- * `dashboard:read` plus `area:*` where they manage and `area:read` where they only view.
+ * `dashboard:read` plus `area:*` where they manage and `area:read` where they only view; the manage level of the Accounts area adds
+ * `customers:privacy` last. `customers:*` is granted to nobody any more.
  *
  * @param key the role key
  * @returns the permissions in the order the mock writes them
@@ -63,6 +70,7 @@ export function permissionsOf(key: RoleKey): string[] {
       if (level === 2) granted.add(`${permissionArea}:*`);
       else if (level === 1) granted.add(`${permissionArea}:read`);
     }
+    if (level === 2) for (const extra of MANAGE_EXTRAS[area] ?? []) granted.add(extra);
   });
   return [...granted];
 }
@@ -116,8 +124,8 @@ interface DemoMerchant {
 const DAY_MS = 86_400_000;
 
 /**
- * The demo's client groups with the ids and values the frontend mock gives them (`GROUPS` in
- * src/features/merchants/mocks/seed.ts): three merchant groups and the storefront's retail group (`b2c_retail`).
+ * The demo's client groups (the ranks) with the ids and values the frontend mock gives them (`RANKS` in
+ * src/features/accounts/mocks/seed.ts): three merchant ranks and the storefront's retail rank (`b2c_retail`).
  *
  * Why: `clients.group_id` needs a group, and no other seeder creates them yet (the catalog feature's seeder takes this list
  * over). Note: the frontend mock gives Standard `overdraft_allowed = false` while its merchants have a credit limit above
@@ -227,25 +235,36 @@ function usernameOf(name: string): string {
 const INVITED_MERCHANT_ID = 18;
 
 /**
- * Seeds the demo merchants.
+ * The reason a merchant that was still waiting for approval carries as a suspended account (decision 064: no account is `pending` any more;
+ * the same words as the frontend mock's `FORMER_PENDING_REASON`).
+ */
+const FORMER_PENDING_REASON = 'Waiting for approval before the accounts were merged';
+
+/**
+ * Seeds the demo merchants as accounts of a merchant rank, with their rows of the legacy id map.
  *
- * Why: the console's merchant pages and every later feature (orders, wallets, prices) start from the same 20 merchants, with
- * the ids, names, groups and statuses the frontend mock gives them (`m3` is 3). No
- * password is stored: a merchant sets one through the invitation or forgot-password link. The wallet (ledger accounts, credit
- * limit, balance) is feature 3's seed; the credit limits of the demo are not written here.
+ * Why: the console's account pages and every later feature (orders, wallets, prices) start from the same 20 merchants, with the ids, names,
+ * ranks and statuses the frontend mock gives them (`m3` is account 3, decision 064). The one demo merchant that was still `pending` is a
+ * suspended account with the reason the migration gives (no account is pending any more). No password is stored: a merchant sets one
+ * through the invitation or forgot-password link. The wallet (ledger accounts, credit limit, balance) is feature 3's seed; the credit
+ * limits of the demo are not written here. Every merchant keeps its number, so its row of `account_legacy_ids` maps the number to itself.
+ *
+ * Side effects: inserts `clients` and `account_legacy_ids` rows (idempotent), moves the accounts' id sequence to the highest demo number.
  *
  * @param db the transaction to write with
  * @param demo the loaded frontend demo state
- * @returns the report of `clients`
+ * @returns the reports of `clients` and `account_legacy_ids`
  */
-export async function seedMerchants(db: DbExecutor, demo: DemoSeed): Promise<SeedReport> {
+export async function seedMerchants(db: DbExecutor, demo: DemoSeed): Promise<SeedReport[]> {
+  const merchants = demoRows<DemoMerchant>(demo, 'merchants');
   const report = await insertRows(
     db,
     s.clients,
-    demoRows<DemoMerchant>(demo, 'merchants').map((merchant) => {
-      const id = demoNumericId(merchant.id);
+    merchants.map((merchant) => {
+      const id = accountIdOfDemo(merchant.id);
       const created = demo.now - merchant.joined * DAY_MS;
       const username = usernameOf(merchant.name);
+      const former = merchant.status === 'pending';
       return {
         id,
         username,
@@ -255,19 +274,29 @@ export async function seedMerchants(db: DbExecutor, demo: DemoSeed): Promise<See
         phone: '',
         country: merchant.cc,
         groupId: GROUP_IDS[merchant.group],
-        status: merchant.status,
-        // Retired column (decision 062): NOT NULL and unique until the accounts migration, read by nothing; the username fills it, as
-        // `POST /admin/clients` does. The demo's referral links (`referred_by_id`) are no longer seeded.
+        status: merchant.status === 'pending' ? ('suspended' as const) : merchant.status,
+        suspendedAt: former ? new Date(created) : null,
+        suspendedReason: former ? FORMER_PENDING_REASON : null,
+        // Retired column (decision 062): read by nothing, and nullable since decision 064 (a retail account has none); the username fills it
+        // for a merchant, as it always did. The demo's referral links (`referred_by_id`) are no longer seeded.
         referralCode: username,
-        // A merchant who accepted the invitation has proven the email; pending ones and the invited one have not yet.
-        emailVerifiedAt:
-          merchant.status === 'pending' || id === INVITED_MERCHANT_ID ? null : new Date(created + 3_600_000),
+        // A merchant who accepted the invitation has proven the email; the former pending one and the invited one have not yet.
+        emailVerifiedAt: former || id === INVITED_MERCHANT_ID ? null : new Date(created + 3_600_000),
         createdAt: new Date(created),
       };
     }),
   );
-  await syncIdentity(db, s.clients);
-  return report;
+  // A merchant keeps its number, so the map says "client n is account n"; the map is append-only and a repeat run adds nothing.
+  const legacy = await insertRows(
+    db,
+    s.accountLegacyIds,
+    merchants.map((merchant) => {
+      const id = accountIdOfDemo(merchant.id);
+      return { legacyType: 'client' as const, legacyId: id, accountId: id };
+    }),
+  );
+  await syncAccountIdentity(db);
+  return [report, legacy];
 }
 
 /**
@@ -358,10 +387,10 @@ export async function seedIdentity(db: DbExecutor, demo: DemoSeed, config?: AppC
 
   for (const table of [s.roles, s.staffUsers, s.ipRules]) await syncIdentity(db, table);
   const clientGroups = await seedClientGroups(db, demo.now);
-  const clients = await seedMerchants(db, demo);
+  const accounts = await seedMerchants(db, demo);
   // The keys are stored as keyed hashes, so they need the token pepper: without a configuration there are none.
   const apiKeys = config ? [await seedApiKeys(db, demo, config)] : [];
-  return [roles, staff, ipRules, loopback, clientGroups, clients, ...apiKeys];
+  return [roles, staff, ipRules, loopback, clientGroups, ...accounts, ...apiKeys];
 }
 
 /** What the demo merchant carries about its API access: the key, the allowed addresses and the last time it was seen. */

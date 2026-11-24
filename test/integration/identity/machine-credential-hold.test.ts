@@ -8,6 +8,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
+// The identity barrel loads before the editor's own file: that file reaches the money barrel, whose module loads the identity module
+// files that import the editor, so a process that starts with the editor's file meets the class before it exists.
+import '@src/modules/identity';
 import { ClientDetailsEditor } from '@src/modules/identity/application/client-details-editor';
 import {
   STAFF_SET_EMAIL_HOLD,
@@ -33,6 +36,7 @@ import {
 } from '../../support/merchant-portal';
 import { mailbox, notificationRows, sendAllQueued, tokenIn } from '../../support/notifications';
 import { freshClientIp } from '../../support/pipeline-routes';
+import { TURNSTILE_TEST_TOKEN } from '../../support/store';
 
 const clock = new TestClock('2026-11-11T09:00:00.000Z');
 let t: TestApp;
@@ -85,7 +89,8 @@ async function signedInWithStaffPassword(merchant: { id: number; email: string }
 /** Sets a password from the reset link mailed to the merchant's address. */
 async function resetFromMailedLink(email: string, password: string): Promise<void> {
   const owner = new MerchantPortal(t, freshClientIp());
-  expect((await owner.forgot(email)).statusCode).toBe(204);
+  // The forgot route always needs the anti-bot token (the merchant rollout switch does not govern it).
+  expect((await owner.forgot(email, { headers: { 'x-turnstile-token': TURNSTILE_TEST_TOKEN } })).statusCode).toBe(204);
   const link = emailedLinks().findLast((l) => l.kind === 'password_reset');
   expect(link).toBeDefined();
   expect((await owner.reset(link!.token, password)).statusCode).toBe(204);
@@ -222,7 +227,7 @@ async function signedIn(email: string): Promise<MerchantPortal> {
 async function accountTrail(merchantId: number) {
   const { db } = await testDb();
   const client = (table: typeof s.authTokens | typeof s.sessions) =>
-    and(eq(table.subjectType, 'client'), eq(table.subjectId, merchantId));
+    and(eq(table.subjectType, 'account'), eq(table.subjectId, merchantId));
   return {
     tokens: await db.select().from(s.authTokens).where(client(s.authTokens)).orderBy(s.authTokens.id),
     sessions: await db.select().from(s.sessions).where(client(s.sessions)).orderBy(s.sessions.id),
@@ -231,7 +236,7 @@ async function accountTrail(merchantId: number) {
     audit: await db
       .select()
       .from(s.auditLogs)
-      .where(and(eq(s.auditLogs.entityType, 'merchant'), eq(s.auditLogs.entityId, merchantId)))
+      .where(and(eq(s.auditLogs.entityType, 'account'), eq(s.auditLogs.entityId, merchantId)))
       .orderBy(s.auditLogs.id),
   };
 }
@@ -300,7 +305,7 @@ describe('the hold of an email address and an Owner', () => {
     const { db } = await testDb();
     await db.insert(s.authTokens).values({
       purpose: 'reset',
-      subjectType: 'client',
+      subjectType: 'account',
       subjectId: merchant.id,
       tokenHash: 'open-reset-before-the-change',
       expiresAt: new Date(clock.nowMs() + 3_600_000),
@@ -376,7 +381,7 @@ describe('the notice of a new API key', () => {
     const { db } = await testDb();
     const rows = await notificationRows(db);
     expect(rows.map((row) => row.event)).toEqual(['merchant.portal_api_key_created']);
-    expect(rows[0]).toMatchObject({ recipientType: 'client', recipientId: merchant.id, channel: 'email' });
+    expect(rows[0]).toMatchObject({ recipientType: 'account', recipientId: merchant.id, channel: 'email' });
 
     // The stored templates of the test database are the ones the migrations installed: this event has none, so the shipped text is sent.
     await sendAllQueued(t);

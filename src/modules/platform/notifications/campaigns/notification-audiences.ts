@@ -1,11 +1,11 @@
 // The registry of audience providers (feature 23, plan section 5.2): identity registers the staff and merchant providers, customers the
-// customer provider, at boot. Platform imports no module (decision 032), so the SQL over `staff_users`, `clients` and `customers` lives
-// with the module that owns each table, behind this interface.
+// retail provider, at boot. Platform imports no module (decision 032), so the SQL over `staff_users` and `clients` (a merchant rank and the
+// other ranks are two questions about one table) lives with the module that owns each, behind this interface.
 import { Injectable } from '@nestjs/common';
 import { type SQL, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../../infra/db';
-import type { NotificationCampaignPurpose, NotificationRecipientType } from '../../db/schema';
-import type { TypeSelection } from './audience-spec';
+import type { NotificationCampaignPurpose } from '../../db/schema';
+import type { AudienceKind, TypeSelection } from './audience-spec';
 
 /** The channels of a campaign. */
 export type CampaignChannel = 'in_app' | 'email';
@@ -20,7 +20,7 @@ export interface AudienceQuery extends TypeSelection {
 /** One eligible person of an audience, with the channels that may reach them. */
 export interface AudienceMember {
   readonly id: number;
-  /** Can see an inbox (customers: has an account). */
+  /** Can see an inbox (retail: has an account that can sign in; a guest has none). */
   readonly inApp: boolean;
   /** May be emailed for this purpose (merchants: the announcement email switch). */
   readonly email: boolean;
@@ -34,18 +34,19 @@ export interface AudienceCounts {
   readonly reachable: number;
   readonly inApp: number;
   readonly email: number;
-  /** Customers left out by a marketing purpose (no consent); 0 for the other types. */
+  /** Retail accounts and guests left out by a marketing purpose (no consent); 0 for the other groups. */
   readonly noConsent: number;
 }
 
 /**
- * Selects and counts the people of one recipient type.
+ * Selects and counts the people of one group (staff, the accounts of a merchant rank, or the other accounts and the guests).
  *
  * Why: plan 5.2: each owning module answers for its table with one predicate used by `count`, `page` and `member`, so the
- * preview, the fan-out and the send-time check can never disagree about who is in.
+ * preview, the fan-out and the send-time check can never disagree about who is in. Both account groups read the one table of
+ * accounts and keep only their own rank kind, so a person added by hand is found by exactly one of them.
  */
 export interface AudienceProvider {
-  readonly type: NotificationRecipientType;
+  readonly kind: AudienceKind;
   /**
    * Counts the audience.
    *
@@ -84,7 +85,7 @@ export const NO_COUNTS: AudienceCounts = {
   noConsent: 0,
 };
 
-/** The SQL of one provider's per-person flags, over its own table. */
+/** The SQL of one provider's per-person flags, over the table it reads. */
 export interface AudienceFlagsSql {
   readonly inApp: SQL;
   readonly email: SQL;
@@ -107,7 +108,7 @@ export function reachableSql(flags: AudienceFlagsSql, channels: readonly Campaig
 /**
  * The select fields of {@link AudienceProvider.count}, built from a provider's flags.
  *
- * Why: the three providers count the same way (plan 5.2: one predicate for count, page and member); only their flags differ.
+ * Why: the providers count the same way (plan 5.2: one predicate for count, page and member); only their flags differ.
  *
  * @param flags the provider's flag expressions
  * @param channels the campaign's channels
@@ -137,56 +138,56 @@ export function memberQuery(purpose: NotificationCampaignPurpose, id: number): A
 }
 
 /**
- * The providers of the audiences, by recipient type.
+ * The providers of the audiences, by group of people.
  *
  * Why: platform cannot import identity or customers (decision 032); they register here in `onModuleInit`, like the notification
  * events (`support-events.module.ts`). Provided by the global `NotificationEventsModule`, so the API and the worker share one.
  */
 @Injectable()
 export class NotificationAudiences {
-  private readonly providers = new Map<NotificationRecipientType, AudienceProvider>();
+  private readonly providers = new Map<AudienceKind, AudienceProvider>();
 
   /**
    * Adds a provider.
    *
-   * @param provider the provider of one type
-   * @throws {Error} when the type already has one (a boot-time mistake)
+   * @param provider the provider of one group
+   * @throws {Error} when the group already has one (a boot-time mistake)
    */
   register(provider: AudienceProvider): void {
-    if (this.providers.has(provider.type))
-      throw new Error(`An audience provider for "${provider.type}" is already registered.`);
-    this.providers.set(provider.type, provider);
+    if (this.providers.has(provider.kind))
+      throw new Error(`An audience provider for "${provider.kind}" is already registered.`);
+    this.providers.set(provider.kind, provider);
   }
 
   /**
-   * Finds the provider of a type.
+   * Finds the provider of a group.
    *
-   * @param type `staff`, `client` or `customer`
+   * @param kind `staff`, `merchant` or `retail`
    * @returns the provider
    * @throws {Error} when no module registered one (the module is not loaded in this process)
    */
-  get(type: NotificationRecipientType): AudienceProvider {
-    const provider = this.providers.get(type);
-    if (!provider) throw new Error(`No audience provider is registered for "${type}".`);
+  get(kind: AudienceKind): AudienceProvider {
+    const provider = this.providers.get(kind);
+    if (!provider) throw new Error(`No audience provider is registered for "${kind}".`);
     return provider;
   }
 
   /**
-   * Tells whether a type has a provider.
+   * Tells whether a group has a provider.
    *
-   * @param type the recipient type
+   * @param kind the group
    * @returns true when one is registered
    */
-  has(type: NotificationRecipientType): boolean {
-    return this.providers.has(type);
+  has(kind: AudienceKind): boolean {
+    return this.providers.has(kind);
   }
 
   /**
-   * Lists the registered types.
+   * Lists the registered groups.
    *
-   * @returns the types, in registration order
+   * @returns the groups, in registration order
    */
-  types(): NotificationRecipientType[] {
+  kinds(): AudienceKind[] {
     return [...this.providers.keys()];
   }
 }

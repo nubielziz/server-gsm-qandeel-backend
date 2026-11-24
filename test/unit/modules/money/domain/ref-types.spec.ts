@@ -1,4 +1,4 @@
-// Unit tests of the reference-type wire mapping (resolution money-1): the wire set stays a subset of the console's eight words.
+// Unit tests of the reference-type wire mapping (resolution money-1, decision 064): the wire set stays a subset of the console's eight words.
 import { describe, expect, it } from 'bun:test';
 import { LEDGER_REF_TYPES } from '@src/modules/money/db/schema';
 import { WIRE_REF_TYPES, storedRefTypesOf, toWireRefType } from '@src/modules/money/domain/ref-types';
@@ -7,10 +7,13 @@ import { WIRE_REF_TYPES, storedRefTypesOf, toWireRefType } from '@src/modules/mo
 const CONSOLE_REF_TYPES = ['order', 'payment', 'invoice', 'refund', 'dispute', 'accrual', 'supplier', 'system'];
 
 describe('toWireRefType', () => {
-  it("sends a manual adjustment's stored `client` or `customer` as `system` and every other value unchanged", () => {
+  it("sends a manual adjustment's stored `account` (new rows) or `client` and `customer` (older rows) as `system` and every other value unchanged", () => {
+    expect(toWireRefType('account')).toBe('system');
     expect(toWireRefType('client')).toBe('system');
     expect(toWireRefType('customer')).toBe('system');
-    for (const stored of LEDGER_REF_TYPES.filter((type) => type !== 'client' && type !== 'customer'))
+    for (const stored of LEDGER_REF_TYPES.filter(
+      (type) => type !== 'account' && type !== 'client' && type !== 'customer',
+    ))
       expect(toWireRefType(stored)).toBe(stored);
   });
 
@@ -21,8 +24,8 @@ describe('toWireRefType', () => {
 });
 
 describe('storedRefTypesOf', () => {
-  it('matches stored `system`, `client` and `customer` for the wire word `system`', () => {
-    expect(storedRefTypesOf('system')).toEqual(['system', 'client', 'customer']);
+  it('matches stored `system`, `account`, `client` and `customer` for the wire word `system`', () => {
+    expect(storedRefTypesOf('system')).toEqual(['system', 'account', 'client', 'customer']);
   });
 
   it('matches itself for every other word, and every stored type is reachable from a wire word', () => {

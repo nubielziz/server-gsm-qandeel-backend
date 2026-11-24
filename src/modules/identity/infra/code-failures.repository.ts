@@ -6,9 +6,9 @@ import type { DbExecutor } from '../../../infra/db';
 import { clients, staffUsers } from '../db/schema';
 import { CODE_FAILURE_WINDOW_MS, MAX_FAILED_CODES } from '../domain/code-step-lock';
 
-/** The account whose code step is counted: a staff member (`staff`) or a merchant (`client`). */
+/** The person whose code step is counted: a staff member (`staff`) or an account of any rank (`account`, a row of `clients`). */
 export interface CodeStepAccount {
-  readonly type: 'staff' | 'client';
+  readonly type: 'staff' | 'account';
   readonly id: number;
 }
 
@@ -92,7 +92,7 @@ function charged(
  * closed step opens again), or by `clearCodeFailures`.
  *
  * @param db the database (the count must be visible to parallel attempts at once, so not the caller's transaction)
- * @param account the staff member or merchant
+ * @param account the staff member or account
  * @param now the clock's time
  * @returns the count after this attempt, or `undefined` when the account is gone
  */
@@ -128,7 +128,7 @@ export async function chargeCodeAttempt(
  * stays counted, the start of the 24 hours goes too, so they begin with the first counted wrong code.
  *
  * @param db the database
- * @param account the staff member or merchant
+ * @param account the staff member or account
  */
 export async function giveBackCodeAttempt(db: DbExecutor, account: CodeStepAccount): Promise<void> {
   if (account.type === 'staff') {
@@ -147,7 +147,7 @@ export async function giveBackCodeAttempt(db: DbExecutor, account: CodeStepAccou
  * cleared the count in the meantime finds no row to close.
  *
  * @param db the transaction that writes the audit row
- * @param account the staff member or merchant
+ * @param account the staff member or account
  * @param now the clock's time
  * @returns when the 24 hours of the closed count began, or `undefined` when this call closed nothing
  */
@@ -195,7 +195,7 @@ export async function markCodeStepClosed(
  * were guessed for. Called in the transaction that stores the password or the reset.
  *
  * @param db the transaction that stores the new password or the reset
- * @param account the staff member or merchant
+ * @param account the staff member or account
  */
 export async function clearCodeFailures(db: DbExecutor, account: CodeStepAccount): Promise<void> {
   const cleared = { totpFailures: 0, totpFailuresSince: null, totpLockedAt: null };

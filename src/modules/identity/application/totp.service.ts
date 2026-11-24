@@ -7,7 +7,7 @@ import { EncryptionService } from '../../../infra/crypto';
 
 /** The additional authenticated data of the encrypted column: a copy in another column does not decrypt (decision 019). */
 export const STAFF_TOTP_AAD = 'staff_users.totp_secret_enc';
-/** The additional authenticated data of `clients.totp_secret_enc` (merchant 2FA, feature 2b): a staff secret does not decrypt there. */
+/** The additional authenticated data of `clients.totp_secret_enc` (two-step sign-in of an account, feature 2b): a staff secret does not decrypt there. */
 export const CLIENT_TOTP_AAD = 'clients.totp_secret_enc';
 /** The name an authenticator app shows for the account. */
 export const TOTP_ISSUER = 'IMEI-HUB';

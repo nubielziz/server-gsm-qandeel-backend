@@ -13,6 +13,7 @@ import {
   type OrderVerificationStatus,
 } from '@src/modules/orders';
 import { type AdminApi, adminWith } from '../../support/admin-api';
+import { makeAccount } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { MINUTE, TestClock } from '../../support/clock';
@@ -42,28 +43,32 @@ afterAll(async () => {
 
 const ids = (rows: Array<{ id: number }>): number[] => rows.map((row) => row.id);
 
-/** Orders in each state of the console's tabs: three merchants' orders and two storefront ones. */
+/** Orders in each state of the console's tabs: five orders held from merchant wallets and two shop orders of one guest account. */
 async function seedStates() {
   const { db, merchant, other, auto, manual } = world;
-  const [customer] = await db
-    .insert(s.customers)
-    .values({ email: 'Hannah.Weber@example.com', name: 'Hannah Weber' })
-    .returning({ id: s.customers.id });
-  const customerId = customer!.id;
+  // The buyer of the shop orders: a guest row of the one retail rank (a checkout typed with an address, no login).
+  const buyer = await makeAccount({
+    rank: 'retail',
+    guest: true,
+    email: 'Hannah.Weber@example.com',
+    name: 'Hannah Weber',
+    db,
+  });
+  const buyerId = buyer.id;
   const pending = await insertOrderRow(db, {
-    clientId: merchant.id,
+    accountId: merchant.id,
     serviceId: auto.serviceId,
     imei: IMEIS[0],
     dispatchState: 'pending',
   });
   const manualOrder = await insertOrderRow(db, {
-    clientId: merchant.id,
+    accountId: merchant.id,
     serviceId: manual.serviceId,
     imei: IMEIS[1],
     dispatchState: 'manual',
   });
   const attention = await insertOrderRow(db, {
-    clientId: other.id,
+    accountId: other.id,
     serviceId: auto.serviceId,
     imei: IMEIS[2],
     status: 'processing',
@@ -72,7 +77,7 @@ async function seedStates() {
     supplierRef: 'NG-77',
   });
   const verifying = await insertOrderRow(db, {
-    clientId: other.id,
+    accountId: other.id,
     serviceId: auto.serviceId,
     imei: IMEIS[3],
     status: 'completed',
@@ -81,7 +86,7 @@ async function seedStates() {
     completedAt: new Date(),
   });
   const held = await insertOrderRow(db, {
-    customerId,
+    accountId: buyerId,
     serviceId: auto.serviceId,
     imei: IMEIS[4],
     source: 'store',
@@ -89,14 +94,14 @@ async function seedStates() {
     currency: 'USD',
   });
   const processing = await insertOrderRow(db, {
-    clientId: merchant.id,
+    accountId: merchant.id,
     serviceId: auto.serviceId,
     imei: '111',
     status: 'processing',
     dispatchState: 'sent',
   });
   const completed = await insertOrderRow(db, {
-    customerId,
+    accountId: buyerId,
     serviceId: auto.serviceId,
     imei: '222',
     source: 'store',
@@ -104,20 +109,20 @@ async function seedStates() {
     dispatchState: 'done',
   });
   const rejected = await insertOrderRow(db, {
-    clientId: other.id,
+    accountId: other.id,
     serviceId: manual.serviceId,
     imei: '333',
     status: 'rejected',
     dispatchState: 'done',
   });
-  return { pending, manualOrder, attention, verifying, held, processing, completed, rejected, customerId };
+  return { pending, manualOrder, attention, verifying, held, processing, completed, rejected, buyerId };
 }
 
 describe('GET /admin/orders: shape and queues', () => {
   it('sends the console row: joined names, derived queue, review reason, attempts and the main input as a string', async () => {
     const { db, merchant, auto } = world;
     const order = await insertOrderRow(db, {
-      clientId: merchant.id,
+      accountId: merchant.id,
       serviceId: auto.serviceId,
       imei: null,
       status: 'processing',
@@ -158,8 +163,13 @@ describe('GET /admin/orders: shape and queues', () => {
         slaMinutes: 60,
         category: 'Carrier unlock',
       },
-      client: { id: merchant.id, name: 'Cairo GSM Lab' },
-      customer: null,
+      account: {
+        id: merchant.id,
+        name: 'Cairo GSM Lab',
+        email: expect.stringContaining('•'),
+        rank: { id: expect.any(Number), name: expect.any(String), kind: 'merchant' },
+        guest: false,
+      },
       supplier: { id: auto.supplierId },
       supplierRef: 'NG-77',
       result: { code: 'x', comment: null, fileId: null },
@@ -168,6 +178,25 @@ describe('GET /admin/orders: shape and queues', () => {
       sentAt: null,
     });
     expect(res.body[0].createdAt).toBe(order.createdAt.toISOString());
+    // One buyer field replaces the two of the old model: nothing is sent under the old names (decision 064, no compatibility fields).
+    expect(res.body[0]).not.toHaveProperty('client');
+    expect(res.body[0]).not.toHaveProperty('customer');
+  });
+
+  it('names the buyer of a shop order the same way: a guest row of the retail rank, whatever door the order came through', async () => {
+    const o = await seedStates();
+    const row = (await staff.get(`/admin/orders/${o.held.id}`)).body;
+    expect(row).toMatchObject({
+      source: 'store',
+      channel: 'b2c',
+      account: {
+        id: o.buyerId,
+        name: 'Hannah Weber',
+        rank: { id: expect.any(Number), name: expect.any(String), kind: 'retail' },
+        guest: true,
+      },
+    });
+    expect(row).not.toHaveProperty('customer');
   });
 
   it('derives the five queues and filters by them', async () => {
@@ -199,7 +228,7 @@ describe('GET /admin/orders: shape and queues', () => {
       {
         orderId: o.verifying.id,
         type: 'verification',
-        actorType: 'client',
+        actorType: 'account',
         actorId: world.other.id,
         data: { reason: 'The merchant asked for the result to be checked' },
       },
@@ -227,7 +256,8 @@ describe('GET /admin/orders: shape and queues', () => {
       .insert(s.orders)
       .values(
         combos.map(([status, dispatchState, verificationStatus], index) => ({
-          clientId: merchant.id,
+          accountId: merchant.id,
+          legacyClientId: merchant.id,
           serviceId: auto.serviceId,
           type: 'imei' as const,
           source: 'portal' as const,
@@ -265,17 +295,24 @@ describe('GET /admin/orders: shape and queues', () => {
 });
 
 describe('GET /admin/orders: filters, search, sorts and ranges', () => {
-  it('filters by status (repeat for IN), type, merchant, customer, supplier and channel', async () => {
+  it('filters by status (repeat for IN), type, account, rank, supplier and channel', async () => {
     const o = await seedStates();
-    const { merchant, other, auto } = world;
+    const { db, merchant, other, auto } = world;
     const get = async (query: string) =>
       ids((await staff.get(`/admin/orders?${query}&_sort=id&_order=asc&_end=100`)).body);
     expect(await get('status=completed')).toEqual([o.verifying.id, o.completed.id]);
     expect(await get('status=completed&status=rejected')).toEqual([o.verifying.id, o.completed.id, o.rejected.id]);
     expect(await get('type=imei')).toHaveLength(8);
+    // `accountId` lists the orders of an account of either rank, through every door; `clientId` is only another name for it.
+    expect(await get(`accountId=${other.id}`)).toEqual([o.attention.id, o.verifying.id, o.rejected.id]);
     expect(await get(`clientId=${other.id}`)).toEqual([o.attention.id, o.verifying.id, o.rejected.id]);
-    expect(await get(`clientId=${merchant.id}&status=processing`)).toEqual([o.processing.id]);
-    expect(await get(`customerId=${o.customerId}`)).toEqual([o.held.id, o.completed.id]);
+    expect(await get(`accountId=${merchant.id}&status=processing`)).toEqual([o.processing.id]);
+    expect(await get(`accountId=${o.buyerId}`)).toEqual([o.held.id, o.completed.id]);
+    // `rankId` is the rank the buyer holds now.
+    const rankOf = async (id: number) =>
+      (await db.select({ groupId: s.clients.groupId }).from(s.clients).where(eq(s.clients.id, id)))[0]!.groupId;
+    expect(await get(`rankId=${await rankOf(o.buyerId)}`)).toEqual([o.held.id, o.completed.id]);
+    expect(await get(`rankId=${await rankOf(merchant.id)}`)).toEqual([o.pending.id, o.manualOrder.id, o.processing.id]);
     expect(await get(`supplierId=${auto.supplierId}`)).toEqual([o.attention.id]);
     expect(await get('channel=b2c')).toEqual([o.held.id, o.completed.id]);
     expect(await get('channel=b2b')).toHaveLength(6);
@@ -305,7 +342,7 @@ describe('GET /admin/orders: filters, search, sorts and ranges', () => {
     for (const [index, price] of ['30.0000', '10.0000', '20.0000'].entries()) {
       rows.push(
         await insertOrderRow(db, {
-          clientId: merchant.id,
+          accountId: merchant.id,
           serviceId: auto.serviceId,
           imei: String(index),
           totalPrice: price,
@@ -324,9 +361,16 @@ describe('GET /admin/orders: filters, search, sorts and ranges', () => {
     const page = await staff.get('/admin/orders?_start=1&_end=2');
     expect(ids(page.body)).toEqual([rows[1]!.id]);
     expect(page.total).toBe(3);
-    const none = await staff.get(`/admin/orders?clientId=${world.other.id}`);
+    const none = await staff.get(`/admin/orders?accountId=${world.other.id}`);
     expect(none.body).toEqual([]);
     expect(none.total).toBe(0);
+  });
+
+  it('answers 422 to the retired customerId filter (the buyer is one account, filter it with accountId)', async () => {
+    const o = await seedStates();
+    const res = await staff.get(`/admin/orders?customerId=${o.buyerId}`);
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe('VALIDATION_FAILED');
   });
 
   it('refuses an unknown sort, an unknown filter value and an unknown parameter with 422', async () => {
@@ -338,6 +382,8 @@ describe('GET /admin/orders: filters, search, sorts and ranges', () => {
       'pastSla=maybe',
       'channel=b2x',
       'clientId=abc',
+      'accountId=abc',
+      'rankId=abc',
     ]) {
       const res = await staff.get(`/admin/orders?${query}`);
       expect(res.status).toBe(422);
@@ -374,7 +420,7 @@ describe('GET /admin/orders?pastSla=true: the one age-only predicate (B92)', () 
 describe('GET /admin/orders/:id and /events', () => {
   it('shows one order like a list row, and answers 404 for an unknown id', async () => {
     const { db, merchant, auto } = world;
-    const order = await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId });
+    const order = await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId });
     const list = (await staff.get('/admin/orders')).body[0];
     const one = await staff.get(`/admin/orders/${order.id}`);
     expect(one.status).toBe(200);
@@ -387,7 +433,7 @@ describe('GET /admin/orders/:id and /events', () => {
 
   it('still reads an order stored with the retired source admin, and sends no client note field', async () => {
     const { db, merchant, auto } = world;
-    const order = await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId, source: 'admin' });
+    const order = await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId, source: 'admin' });
     await db.update(s.orders).set({ clientNote: 'old note' }).where(eq(s.orders.id, order.id));
     const one = await staff.get(`/admin/orders/${order.id}`);
     expect(one.status).toBe(200);
@@ -398,12 +444,12 @@ describe('GET /admin/orders/:id and /events', () => {
 
   it('lists the timeline oldest first with the actor names joined, notes included', async () => {
     const { db, merchant, auto } = world;
-    const order = await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId });
+    const order = await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId });
     await db.insert(s.orderEvents).values([
       {
         orderId: order.id,
         type: 'created',
-        actorType: 'client',
+        actorType: 'account',
         actorId: merchant.id,
         data: { message: 'Order received via Portal' },
       },
@@ -420,8 +466,11 @@ describe('GET /admin/orders/:id and /events', () => {
     const res = await staff.get(`/admin/orders/${order.id}/events`);
     expect(res.status).toBe(200);
     expect(res.body.map((event: { type: string }) => event.type)).toEqual(['created', 'hold', 'ack', 'note']);
-    expect(res.body[0].actor).toEqual({ type: 'client', id: merchant.id, name: 'Cairo GSM Lab' });
+    expect(res.body[0].actor).toEqual({ type: 'account', id: merchant.id, name: 'Cairo GSM Lab' });
+    expect(res.body[0].account).toEqual({ id: merchant.id });
     expect(res.body[1].actor).toEqual({ type: 'system', id: null, name: null });
+    expect(res.body[1].account).toBeNull();
+    expect(res.body[3].account).toBeNull();
     expect(res.body[2].actor).toMatchObject({ type: 'supplier', id: auto.supplierId });
     expect(res.body[2].actor.name).toMatch(/^Supplier /);
     expect(res.body[3].actor).toEqual({ type: 'staff', id: staff.staffId, name: 'Test Staff' });
@@ -431,32 +480,34 @@ describe('GET /admin/orders/:id and /events', () => {
   });
 });
 
-describe('the customer’s address (decision 047)', () => {
-  it("shows a storefront customer's address masked without customers:read and in full with it", async () => {
+describe("the buyer's address (decision 047)", () => {
+  it('shows the address of the buyer account masked without clients:read and in full with it, whatever its rank', async () => {
     const o = await seedStates();
-    const customerEmails = async (api: AdminApi) => {
-      const list = await api.get(`/admin/orders?customerId=${o.customerId}&_sort=id&_order=asc`);
+    const emails = async (api: AdminApi) => {
+      const list = await api.get(`/admin/orders?accountId=${o.buyerId}&_sort=id&_order=asc`);
       const one = await api.get(`/admin/orders/${o.completed.id}`);
       expect(list.status).toBe(200);
       expect(one.status).toBe(200);
-      return [...list.body, one.body].map((row: { customer: { email: string } | null }) => row.customer?.email);
+      return [...list.body, one.body].map((row: { account: { email: string } }) => row.account.email);
     };
-    expect(await customerEmails(staff)).toEqual(Array(3).fill('Ha•••@example.com'));
-    const reader = await adminWith(t, ['orders:read', 'customers:read']);
-    expect(await customerEmails(reader)).toEqual(Array(3).fill('Hannah.Weber@example.com'));
+    expect(await emails(staff)).toEqual(Array(3).fill('Ha•••@example.com'));
+    const reader = await adminWith(t, ['orders:read', 'clients:read']);
+    expect(await emails(reader)).toEqual(Array(3).fill('Hannah.Weber@example.com'));
     // A wildcard of the area, and the owner, read it in full too; the name is not changed for anybody.
-    expect((await customerEmails(await adminWith(t, ['orders:*', 'customers:*'])))[0]).toBe('Hannah.Weber@example.com');
-    expect((await customerEmails(await adminWith(t, ['*'])))[0]).toBe('Hannah.Weber@example.com');
-    expect((await staff.get(`/admin/orders/${o.completed.id}`)).body.customer.name).toBe('Hannah Weber');
-    // A merchant's order has no customer.
-    expect((await staff.get(`/admin/orders/${o.pending.id}`)).body.customer).toBeNull();
+    expect((await emails(await adminWith(t, ['orders:*', 'clients:*'])))[0]).toBe('Hannah.Weber@example.com');
+    expect((await emails(await adminWith(t, ['*'])))[0]).toBe('Hannah.Weber@example.com');
+    expect((await staff.get(`/admin/orders/${o.completed.id}`)).body.account.name).toBe('Hannah Weber');
+    // The address of a merchant's account is masked the same way (one rule for every account).
+    expect((await staff.get(`/admin/orders/${o.pending.id}`)).body.account.email).toContain('•');
+    const full = await adminWith(t, ['orders:read', 'clients:read']);
+    expect((await full.get(`/admin/orders/${o.pending.id}`)).body.account.email).not.toContain('•');
   });
 });
 
 describe('access', () => {
   it('needs orders:read and a session on every read', async () => {
     const { db, merchant, auto } = world;
-    const order = await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId });
+    const order = await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId });
     const nobody = await adminWith(t, ['staff:read']);
     for (const url of [
       '/admin/orders',

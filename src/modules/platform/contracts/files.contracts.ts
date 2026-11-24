@@ -1,6 +1,7 @@
 // Route contracts of the files (map domain G, stages 5 and 7): the downloads `GET /admin/files/:id` for staff and `GET /client/files/:id` for
-// merchants (MISMATCHES B154), which answer `302` to a short-lived presigned link (the console renders a plain link to the first), and the
-// merchant's upload `POST /client/files` (portal, MISMATCHES B157).
+// accounts of a merchant rank (MISMATCHES B154), which answer `302` to a short-lived presigned link (the console renders a plain link to the first),
+// and the uploads `POST /client/files` (merchant ranks, portal, MISMATCHES B157) and `POST /store/v1/files` (retail ranks). The owner of a stored
+// file is the account on both (decision 064).
 import { z } from 'zod';
 import { defineRoute, zId, zIdParam, zIsoDateTime, zUploadedFile } from '../../../common/contract';
 
@@ -14,7 +15,7 @@ export const openAdminFile = defineRoute({
     'evidence or a ticket attachment. Besides `files:read` the caller needs the read permission of every record that uses the file: ' +
     '`clients:read` (an identity document stored earlier), `payments:read` (a payment receipt), `disputes:read` (dispute evidence), `orders:read` (an order’s input ' +
     'or result), `invoices:read` (an invoice PDF), `support:read` (a ticket attachment), `customers:privacy` (a data export); `403 FORBIDDEN` ' +
-    'names the first one missing. A file nothing uses yet needs `clients:read` when a merchant uploaded it (`customers:read` for a customer), and a public picture needs only `files:read`. Every download of an identity document or a ' +
+    'names the first one missing. A file nothing uses yet needs `clients:read` when an account uploaded it (every rank), and a public picture needs only `files:read`. Every download of an identity document or a ' +
     'payment receipt writes an audit row (decision 047). The ' +
     'console renders a plain link, so an error is shown raw in the new tab: the `detail` is readable.',
   tags: ['files'],
@@ -32,9 +33,9 @@ export const openClientFile = defineRoute({
   summary: 'Download one of my files',
   description:
     'Redirects (`302`) to a presigned object-storage link that expires after 5 minutes (`Content-Disposition: attachment` with the ' +
-    "stored file name, `Cache-Control: no-store`). The file must be the merchant's own: an upload of its own (`owner_type client`), or " +
+    "stored file name, `Cache-Control: no-store`). The file must be the caller's own: an upload of its own (`owner_type account`), or " +
     'the input or result file of one of its own orders. Anything else, an unknown id included, is `404` (never `403`, so ids cannot be ' +
-    'probed). A merchant waiting for approval may read its own uploads (B153).',
+    'probed). Only accounts of a merchant rank use this route (`403 RANK_NOT_ALLOWED` for a retail rank).',
   tags: ['files'],
   surface: 'client',
   access: 'merchant-session',
@@ -60,7 +61,7 @@ const UploadBody = z.object({ file: zUploadedFile });
 const UPLOAD_DESCRIPTION =
   'Uploads one file (`multipart/form-data` with one part named `file`, any media type, 1 byte to 25 MiB). The name is reduced to ' +
   'its base name without control characters (at most 200 characters). The object goes to the files bucket and a file owned by the ' +
-  'merchant is recorded with its size and SHA-256. A missing or empty file is `422` on `file`; more than 25 MiB is `413`.';
+  'account is recorded with its size and SHA-256. A missing or empty file is `422` on `file`; more than 25 MiB is `413`.';
 
 const STORED_FILE_EXAMPLE = {
   id: 9001,
@@ -77,8 +78,8 @@ export const uploadClientFile = defineRoute({
   summary: 'Upload a file',
   description:
     `${UPLOAD_DESCRIPTION} The id is what an order ` +
-    'or a bank transfer receipt refers to. A merchant waiting for approval may upload (B153). ' +
-    'A merchant waiting for approval can keep at most 10 uploaded files (50 MiB); an approved merchant can upload 500 files (5 GiB) in 24 hours; over a bound is `422` on `file` with the code `quota` (decision 053). A multipart body is read only when the request carries a live session (`401` before the body is read otherwise).',
+    'or a bank transfer receipt refers to. Only accounts of a merchant rank use this route: a retail rank is refused with `403 RANK_NOT_ALLOWED` before the body is read. ' +
+    'An account of a merchant rank can upload 500 files (5 GiB) in 24 hours; over the bound is `422` on `file` with the code `quota` (decisions 053 and 064: the quota follows the rank kind). A multipart body is read only when the request carries a live session (`401` before the body is read otherwise).',
   tags: ['files'],
   surface: 'client',
   access: 'merchant-session',
@@ -99,7 +100,7 @@ export const uploadClientFile = defineRoute({
 });
 
 /**
- * The largest file a storefront customer may upload (a transfer receipt): 5 MiB.
+ * The largest file an account of a retail rank may upload (a transfer receipt): 5 MiB.
  *
  * Why: plan 21 § 7.1 route 9 and risk K15: the store surface is public, so its upload is small and of three media types only.
  */
@@ -110,12 +111,13 @@ export const uploadStoreFile = defineRoute({
   key: 'POST /store/v1/files',
   summary: 'Upload a receipt',
   description:
-    'Uploads one file from the signed-in customer’s account (`multipart/form-data` with one part named `file`): a PDF, JPEG or PNG ' +
+    'Uploads one file from the signed-in account (`multipart/form-data` with one part named `file`): a PDF, JPEG or PNG ' +
     'of 1 byte to 5 MiB, such as the receipt of a store balance top-up (`POST /store/v1/me/wallet/top-ups/:id/receipt` takes its id). ' +
-    'The file belongs to the customer. Another media type is `422` on `file` (`type`); an empty file `422` (`empty`); a body over ' +
+    'The file belongs to the account. Another media type is `422` on `file` (`type`); an empty file `422` (`empty`); a body over ' +
     '5 MiB is refused before it is parsed, whether or not it declares its length (`413`). Counted against the `upload` limiter (20 a minute ' +
-    'per address). A customer can upload 30 files (100 MiB) in 24 hours, ticket files included (`422` on `file`, `quota`). A multipart body ' +
-    'is read only when the request carries a live session (`401` before the body is read otherwise).',
+    'per address). An account of a retail rank can upload 30 files (100 MiB) in 24 hours, ticket files included (`422` on `file`, `quota`: ' +
+    'the quota follows the rank kind, decision 064). A merchant rank is refused with `403 RANK_NOT_ALLOWED` before the body is read. A multipart ' +
+    'body is read only when the request carries a live session (`401` before the body is read otherwise).',
   tags: ['account'],
   surface: 'store',
   access: 'customer-session',

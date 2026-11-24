@@ -106,28 +106,35 @@ export class CacheKeys {
   }
 
   /**
-   * The cached view of one session: the session row plus the state of its account (decision 018).
+   * The cached view of one session: the session row plus the state of its account and, for an account, its rank (decision 018, decision 064).
+   *
+   * Why: the name carries a version (`:v2`, decision 064). The view of an account session gained the rank, and the accounts migration
+   * revokes every account session and rewrites the subject type, so a view cached by the old code (no rank, subject `client` or
+   * `customer`) must never be read by the new code: the new name makes every old view unreachable at once, with no `SCAN` flush and no
+   * window in which a view without a rank is served. The views of before sit under the name without a version; nothing reads them and
+   * they expire by themselves (a minute). Raise the number when the shape of the view changes again.
    *
    * @param tokenHash the keyed hash of the session token (never the token itself)
-   * @returns `gsm:{env}:identity:session:{tokenHash}`
+   * @returns `gsm:{env}:identity:session:{tokenHash}:v2`
    */
   session(tokenHash: string): CacheKey {
-    return `${this.keyspace}identity:session:${segment('session token hash', tokenHash)}` as CacheKey;
+    return `${this.keyspace}identity:session:${segment('session token hash', tokenHash)}:v2` as CacheKey;
   }
 
   /**
    * The cached view of one API key and the status of its merchant (Dhru authentication, decision 018).
    *
-   * Why: the name carries a version (`:v2`, decision 062). The access rule of a key changed in that release (a key no longer has scopes
-   * to check) and its migration revokes some keys in Postgres only, so a view cached under the old rule must never be read by the new
-   * code. The views of before sit under the name without a version; nothing reads them and they expire by themselves. Raise the number
-   * when the rule that judges a key changes again.
+   * Why: the name carries a version (`:v3`). `:v2` (decision 062) followed a change of the access rule of a key; decision 064 changes it
+   * again (a key works only for an active account of a merchant rank, and its view carries the rank kind), and its migration revokes
+   * some keys in Postgres only, so a view cached under the old rule must never be read by the new code. The views of before sit
+   * under the older names; nothing reads them and they expire by themselves. Raise the number when the rule that judges a key changes
+   * again.
    *
    * @param keyHash the keyed hash of the API key (never the key itself)
-   * @returns `gsm:{env}:identity:api-key:{keyHash}:v2`
+   * @returns `gsm:{env}:identity:api-key:{keyHash}:v3`
    */
   apiKey(keyHash: string): CacheKey {
-    return `${this.keyspace}identity:api-key:${segment('api key hash', keyHash)}:v2` as CacheKey;
+    return `${this.keyspace}identity:api-key:${segment('api key hash', keyHash)}:v3` as CacheKey;
   }
 
   /**
@@ -390,19 +397,19 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
   },
   {
     builder: 'session',
-    pattern: 'gsm:{env}:identity:session:{tokenHash}',
+    pattern: 'gsm:{env}:identity:session:{tokenHash}:v2',
     owner: 'identity',
     ttl: '60 s (a token that matches no live session: 10 s)',
     invalidation:
-      'SessionService deletes it after the commit of a revoke or a rotation, and invalidateSubject(subjectType, subjectId) after a suspension, password change, role change or (feature 20) a staff edit of a merchant details or email',
+      'SessionService deletes it after the commit of a revoke or a rotation, and invalidateSubject(subjectType, subjectId) after a suspension, password change, role change, rank change or (feature 20) a staff edit of an account details or email',
   },
   {
     builder: 'apiKey',
-    pattern: 'gsm:{env}:identity:api-key:{keyHash}:v2',
+    pattern: 'gsm:{env}:identity:api-key:{keyHash}:v3',
     owner: 'identity',
     ttl: '60 s (a key that matches nothing: 10 s)',
     invalidation:
-      'ApiKeyDirectory.invalidate(keyHashes) after the commit of a revoke or an edit of the key (the merchant rename or addresses, and the per-minute limit and addresses staff set, feature 20), invalidateClient(clientId) after a merchant status change',
+      'ApiKeyDirectory.invalidate(keyHashes) after the commit of a revoke or an edit of the key (the merchant rename or addresses, and the per-minute limit and addresses staff set, feature 20), invalidateClient(accountId) after a status change, a rename or a rank change of the account',
   },
   {
     builder: 'webhookEvent',

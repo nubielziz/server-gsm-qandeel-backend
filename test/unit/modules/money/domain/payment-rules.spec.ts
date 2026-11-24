@@ -1,14 +1,18 @@
 // Unit tests of the top-up payment rules: when an automatic payment credits itself, who may review it, and what the job decides.
 import { describe, expect, it } from 'bun:test';
 import {
+  accountLabel,
   aftermathNote,
   autoCreditAtOf,
   bankReferenceProblem,
   closedInvoiceNote,
   confirmationMismatch,
+  creditPlan,
   decideAutoCredit,
   normalizeBankReference,
   reviewRefusal,
+  TOP_UP_OWNER_WORDS,
+  topUpOwnerWord,
   topUpRecordProblem,
   waitingNote,
 } from '@src/modules/money/domain/payment-rules';
@@ -278,5 +282,48 @@ describe('bankReferenceProblem', () => {
     ]) {
       expect(bankReferenceProblem(normalizeBankReference(typed)), JSON.stringify(typed)).toBeUndefined();
     }
+  });
+});
+
+describe('topUpOwnerWord', () => {
+  it('tells the owner of a top-up by the wallet kind its invoice names, never by an empty owner column', () => {
+    expect(topUpOwnerWord('client_wallet')).toBe('merchant');
+    expect(topUpOwnerWord('customer_wallet')).toBe('customer');
+    expect(TOP_UP_OWNER_WORDS).toEqual(['merchant', 'customer']);
+  });
+
+  it('names no owner for an invoice that fills no wallet', () => {
+    expect(topUpOwnerWord(null)).toBeUndefined();
+  });
+});
+
+describe('creditPlan', () => {
+  it('credits the live wallet, and is not a crossing when the invoice named the same kind', () => {
+    expect(creditPlan('client_wallet', 'client_wallet')).toEqual({ wallet: 'client_wallet', crossed: false });
+    expect(creditPlan('customer_wallet', 'customer_wallet')).toEqual({ wallet: 'customer_wallet', crossed: false });
+  });
+
+  it('still credits the live wallet when the account changed kind after the invoice was made, and says so', () => {
+    expect(creditPlan('customer_wallet', 'client_wallet')).toEqual({ wallet: 'customer_wallet', crossed: true });
+    expect(creditPlan('client_wallet', 'customer_wallet')).toEqual({ wallet: 'client_wallet', crossed: true });
+  });
+
+  it('never refuses a credit, whatever the invoice names', () => {
+    expect(creditPlan('client_wallet', null)).toEqual({ wallet: 'client_wallet', crossed: false });
+    expect(creditPlan('customer_wallet', null)).toEqual({ wallet: 'customer_wallet', crossed: false });
+  });
+});
+
+describe('accountLabel', () => {
+  it('names an account by its name, else its email', () => {
+    expect(accountLabel({ name: ' Daniel Rivera ', email: 'd@example.com', status: 'active' }, 7)).toBe(
+      'Daniel Rivera',
+    );
+    expect(accountLabel({ name: '  ', email: 'd@example.com', status: 'active' }, 7)).toBe('d@example.com');
+  });
+
+  it('names a missing or anonymized account by its number, never by its old name', () => {
+    expect(accountLabel(undefined, 7)).toBe('account 7');
+    expect(accountLabel({ name: 'Daniel Rivera', email: 'd@example.com', status: 'anonymized' }, 7)).toBe('account 7');
   });
 });

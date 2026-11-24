@@ -1,6 +1,6 @@
 // Seeder of the money module: the demo currencies, the system ledger accounts of decision 024, the wallets of the demo
-// merchants and the demo's whole ledger history, replayed through postTransaction so the zero-sum and balance rules hold, and
-// the demo's tax rates.
+// merchant accounts and the demo's whole ledger history, replayed through postTransaction so the zero-sum and balance rules hold, and
+// the demo's tax rates. A wallet and a hold are owned by `('account', id)` (decision 064); a merchant keeps its number as its account id.
 // Currencies mirror the frontend's settings mocks (src/features/settings/mocks/seedPayments.ts `currencyRows`); the journals
 // are `journals` of the demo state (the console's mock ledger, src/mocks/ledger.ts).
 import { and, eq, inArray, like, sql } from 'drizzle-orm';
@@ -16,6 +16,7 @@ import {
   postTransaction,
   systemLedgerAccountRows,
 } from '../../src/modules/money';
+import { accountIdOfDemo } from './account-ids';
 import { type DemoSeed, demoNumericId, demoRows, toDate, toMoney } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
 
@@ -149,7 +150,7 @@ interface DemoJournal {
 
 /** The demo merchants that exist in `clients`, with the credit limit their wallet is meant to end with. */
 interface OpenedWallets {
-  /** Merchant ids (numbers) present in `clients`. */
+  /** Merchant account ids (numbers) present in `clients`. */
   readonly present: ReadonlySet<number>;
   /** The limit to leave on each wallet when the history is replayed. */
   readonly limits: ReadonlyMap<number, string>;
@@ -185,7 +186,7 @@ async function openMerchantWallets(db: DbExecutor, demo: DemoSeed): Promise<Open
   const missing: string[] = [];
   const refused: string[] = [];
   for (const merchant of merchants) {
-    const clientId = demoNumericId(merchant.id);
+    const clientId = accountIdOfDemo(merchant.id);
     const allowed = overdraft.get(clientId);
     if (allowed === undefined) {
       missing.push(merchant.id);
@@ -229,8 +230,8 @@ function referenceOf(journal: DemoJournal): Pick<PostTransactionInput, 'refType'
     case 'system':
       return { refType: 'system', refId: 0 };
     case 'withdrawal':
-      // A withdrawal journal has no record of its own: the merchant is the record, as for an adjustment.
-      return { refType: 'client', refId: journal.mid ? demoNumericId(journal.mid) : refId };
+      // A withdrawal journal has no record of its own: the merchant's account is the record, as for an adjustment.
+      return { refType: 'account', refId: journal.mid ? accountIdOfDemo(journal.mid) : refId };
     case 'order':
     case 'payment':
     case 'accrual':
@@ -246,7 +247,7 @@ function linesOf(journal: DemoJournal): LedgerLine[] {
   return journal.entries.flatMap((entry) => {
     const account = {
       kind: entry.acct as LedgerLine['account']['kind'],
-      ...(entry.mid ? { ownerType: 'client' as const, ownerId: demoNumericId(entry.mid) } : {}),
+      ...(entry.mid ? { ownerType: 'account' as const, ownerId: accountIdOfDemo(entry.mid) } : {}),
       ...(entry.sid ? { ownerType: 'supplier' as const, ownerId: demoNumericId(entry.sid) } : {}),
     };
     return [
@@ -268,7 +269,7 @@ function linesOf(journal: DemoJournal): LedgerLine[] {
  */
 async function replayJournals(db: DbExecutor, demo: DemoSeed, wallets: OpenedWallets): Promise<SeedReport> {
   const author = authorOf(demo);
-  const walletOf = and(eq(s.ledgerAccounts.kind, 'client_wallet'), eq(s.ledgerAccounts.ownerType, 'client'));
+  const walletOf = and(eq(s.ledgerAccounts.kind, 'client_wallet'), eq(s.ledgerAccounts.ownerType, 'account'));
   // Journals posted by an earlier run are known by their key: a repeat run touches nothing, not even the wallet limits.
   const done = new Set(
     (
@@ -282,7 +283,7 @@ async function replayJournals(db: DbExecutor, demo: DemoSeed, wallets: OpenedWal
   let skipped = 0;
   const pending: DemoJournal[] = [];
   for (const journal of demoRows<DemoJournal>(demo, 'journals')) {
-    const owners = journal.entries.flatMap((entry) => (entry.mid ? [demoNumericId(entry.mid)] : []));
+    const owners = journal.entries.flatMap((entry) => (entry.mid ? [accountIdOfDemo(entry.mid)] : []));
     if (owners.some((clientId) => !wallets.present.has(clientId))) skipped++;
     else if (done.has(`seed:${journal.id}`)) existing++;
     else pending.push(journal);

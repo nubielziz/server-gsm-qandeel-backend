@@ -2,13 +2,17 @@
 // database. Use cases run the transition it returns inside one guarded UPDATE, write the event, post the money move and
 // write the outbox row when the status changed.
 import type { Order, OrderDispatchState, OrderEventType, OrderStatus, OrderVerificationStatus } from '../db/schema';
+import { isPrepaidOrder } from './door';
 
 /** What the machine needs to know about an order. */
 export interface OrderState {
   readonly status: OrderStatus;
   readonly dispatchState: OrderDispatchState;
   readonly verificationStatus: OrderVerificationStatus | null;
-  /** `b2b` for a merchant's order (`client_id` set), `b2c` for a storefront customer's. */
+  /**
+   * `b2c` for an order paid first through the shop (its `source` is `store`), `b2b` for one held from a merchant wallet (any other door). The
+   * door decides, never the buyer's rank today (decision 064).
+   */
   readonly channel: 'b2b' | 'b2c';
   /** True once the order was completed at least once (`completed_at` is set): a reopened B2C order was delivered. */
   readonly completedBefore: boolean;
@@ -84,7 +88,7 @@ export type OrderQueue = 'pending' | 'manual' | 'needs_attention' | 'verificatio
  * - `complete` / `b2c_deliver`: hold → revenue (B2B) or customer funds → revenue (B2C).
  * - `reject` / `b2c_refund`: the hold goes back before delivery.
  * - `reopen`: revenue back to the hold (B2B) or customer funds (B2C); cogs kept.
- * - `refund`: B2B refund of a completed order, revenue → wallet in one step (reopen + reject), cogs kept.
+ * - `refund`: B2B refund of a completed order, revenue → the account's live wallet in one step (reopen + reject), cogs kept.
  */
 export type OrderMoneyMove = 'complete' | 'b2c_deliver' | 'reject' | 'b2c_refund' | 'reopen' | 'refund';
 
@@ -251,7 +255,7 @@ export function wireDispatchState(state: OrderDispatchState): WireDispatchState 
  *
  * Why: decision 044: one conversion for every use case, job and sweep, so the rule below cannot differ between them.
  *
- * @param order the stored order
+ * @param order the stored order (its `source` tells the door)
  * @param completedBefore true once the order was completed at least once (only a storefront order needs it)
  * @param everDispatched true once the order has a `dispatch` event (only the merchant's cancel asks for it)
  * @param paymentStop what the payment of a storefront order says about releasing or sending it (only the actions of
@@ -259,7 +263,7 @@ export function wireDispatchState(state: OrderDispatchState): WireDispatchState 
  * @returns the machine's view of the order
  */
 export function orderStateOf(
-  order: Pick<Order, 'status' | 'dispatchState' | 'verificationStatus' | 'clientId' | 'sentAt'>,
+  order: Pick<Order, 'status' | 'dispatchState' | 'verificationStatus' | 'source' | 'sentAt'>,
   completedBefore = false,
   everDispatched = false,
   paymentStop?: PaymentStop,
@@ -270,7 +274,7 @@ export function orderStateOf(
     // (decision 044).
     dispatchState: order.dispatchState === 'pending' && order.sentAt !== null ? 'dispatching' : order.dispatchState,
     verificationStatus: order.verificationStatus,
-    channel: order.clientId === null ? 'b2c' : 'b2b',
+    channel: isPrepaidOrder(order) ? 'b2c' : 'b2b',
     completedBefore,
     everDispatched,
     ...(paymentStop === undefined ? {} : { paymentStop }),
@@ -360,7 +364,9 @@ function openAndNotHeld(order: OrderState): OrderRefused | undefined {
  * charged back or refunded in full (`paymentStop`) is not released from its risk hold, sent by staff, sent with a change of supplier,
  * accepted or completed by a staff reply (`INVALID_TRANSITION` with the `payment` flag): staff can still refund or reject it, and a
  * supplier's own answer still completes or rejects an order it already has. A storefront order delivered before and reopened
- * (`completedBefore`) is still delivered again by a staff reply, since its reject is `USE_REFUNDS`.
+ * (`completedBefore`) is still delivered again by a staff reply, since its reject is `USE_REFUNDS`. The machine knows nothing of the buyer's
+ * rank: the use case reads the account's live wallet under its row lock and refuses a reopen of a hold-and-settle order after a crossing
+ * (`buyer-rules`, `409 RANK_CHANGED`), and a refund credits the live wallet.
  *
  * @param order the order as read at the start of the use case
  * @param action what is asked

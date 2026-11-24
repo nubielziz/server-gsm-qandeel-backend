@@ -65,7 +65,9 @@ describe('scenario manual: manual fulfilment by staff', () => {
 
     const row = await orderRow(db, orderId);
     expect(row).toMatchObject({
-      clientId: merchant.id,
+      accountId: merchant.id,
+      // the merchant column still repeats the buyer of a hold-and-settle order until the contract release drops it
+      legacyClientId: merchant.id,
       serviceId: manual.serviceId,
       totalPrice: '5.0000',
       source: 'dhru',
@@ -155,7 +157,7 @@ describe('scenario manual: manual fulfilment by staff', () => {
         (row) => (row.payload as { toStatus: string }).toStatus,
       ),
     ).toEqual(['processing', 'completed']);
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))?.balance).toBe('95.0000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))?.balance).toBe('95.0000');
   });
 
   it('step 10 (getimeiorder): the merchant reads STATUS 4 and the CODE, and the portal shows the same facts', async () => {

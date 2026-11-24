@@ -12,6 +12,7 @@ import { deposit, postTransaction } from '@src/modules/money';
 import { MaintenanceService, NotificationService, OutboxService } from '@src/modules/platform';
 import { TICKET_MAIL_EVENT, TicketMailProcessor } from '@src/modules/support';
 import { type AdminApi, adminWith } from '../../support/admin-api';
+import { RETAIL_GROUP_NAME, ensureRetailGroup } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
@@ -85,12 +86,9 @@ describe('CSV exports carry text as typed (critic G5)', () => {
 
   it("the staff order export: a customer's Arabic name and a supplier's Arabic service name come back byte for byte, as UTF-8", async () => {
     const { db, auto } = world;
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: 'm@example.com', name: NAME })
-      .returning({ id: s.customers.id });
+    const customer = await insertCustomer(db, { email: 'm@example.com', name: NAME });
     const order = await insertOrderRow(db, {
-      customerId: customer!.id,
+      accountId: customer.id,
       serviceId: auto.serviceId,
       imei: IMEIS[1],
       source: 'store',
@@ -105,8 +103,9 @@ describe('CSV exports carry text as typed (critic G5)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('text/csv; charset=utf-8');
     const lines = res.body.split('\r\n');
+    // The staff file ends with the buyer's rank (decision 064).
     expect(lines[1]).toBe(
-      `${order.id},${order.createdAt.toISOString()},b2c,${NAME},${MIXED_SERVICE},${IMEIS[1]},pending,,10.0000,0.0000`,
+      `${order.id},${order.createdAt.toISOString()},b2c,${NAME},${MIXED_SERVICE},${IMEIS[1]},pending,,10.0000,0.0000,${RETAIL_GROUP_NAME}`,
     );
     expect(holdsUtf8(res.rawPayload, `,${NAME},${MIXED_SERVICE},`)).toBe(true);
     expect(res.body).not.toContain('�');
@@ -331,6 +330,8 @@ describe('a ticket message in Arabic round-trips through the store and staff rou
 
   it('the visitor writes Arabic, staff read and answer it, the visitor reads the answer: every byte is kept', async () => {
     const { db } = await testDb();
+    // the reset removed the one retail rank that the migrations insert; the guest the form makes holds it
+    await ensureRetailGroup(db);
     await seedSupportTemplates(db);
     const opened = await send(
       'POST',
@@ -341,7 +342,7 @@ describe('a ticket message in Arabic round-trips through the store and staff rou
     expect(opened.statusCode).toBe(201);
     const [row] = await db.select().from(s.supportTickets);
     expect(row).toMatchObject({ subject: SUBJECT });
-    const [customer] = await db.select().from(s.customers);
+    const [customer] = await db.select().from(s.clients).where(eq(s.clients.email, 'm@mail.example'));
     expect(customer!.name).toBe(NAME);
     // Decision 054: the link token is stored as a keyed hash and an encrypted copy; the receipt mail's link is the visitor's way in.
     const token = revealedToken(t, 'ticket', { enc: row!.tokenEnc, plain: row!.token })!;

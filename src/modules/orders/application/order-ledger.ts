@@ -19,11 +19,13 @@ import {
 } from '../../money';
 import { StorefrontPolicies } from '../../storefront';
 import type { Order } from '../db/schema';
+import { type LiveWalletKind, refundCreditsKind } from '../domain/buyer-rules';
+import { isPrepaidOrder } from '../domain/door';
 import type { OrderMoneyMove } from '../domain/order-machine';
 
-/** Who posts: the ledger records the actor of the transition. */
+/** Who posts: the ledger records the actor of the transition (a person's account, staff, or the system). */
 export interface LedgerActor {
-  readonly type: 'staff' | 'client' | 'customer' | 'system';
+  readonly type: 'staff' | 'account' | 'system';
   readonly id: number | null;
 }
 
@@ -63,6 +65,11 @@ export interface MoveContext {
    * apply. A staff member who rejects or cancels an order has decided to refund it.
    */
   readonly systemDecided?: boolean;
+  /**
+   * The kind of wallet the buyer lives on now, read under the account row lock. Required for the `refund` and `reopen` of a hold-and-settle
+   * order (`readsLiveWallet`): the refund credits that wallet (decision 064). Left out for every other move.
+   */
+  readonly wallet?: LiveWalletKind | undefined;
 }
 
 const memo = (word: string, order: Order): string => `${word} ORD-${order.id}`;
@@ -73,7 +80,7 @@ const memo = (word: string, order: Order): string => `${word} ORD-${order.id}`;
  * Why: decision 024 and 025 and the brief: placement holds the price (`order`), completion settles it (`complete`: hold to
  * revenue, with the cost lines only when a supplier executed the order and no earlier settlement booked the cost of the
  * same supplier acceptance), rejection releases it (`reject`), a reopen moves the revenue back to the hold and a B2B refund
- * moves it to the wallet, both keeping the cost. Keys: `order:<id>:hold`, `order:<id>:settle` (numbered from the second completion), `order:<id>:release`,
+ * moves it to the account's live wallet, both keeping the cost. Keys: `order:<id>:hold`, `order:<id>:settle` (numbered from the second completion), `order:<id>:release`,
  * `order:<id>:refund` (B2C, or `refund:<id>` for an approved refund, posted by `B2cRefunds`; none while `autoRefundFailed` is off and the
  * system rejected the order: a refund request waits for staff instead), and `reverse:<settlement id>` for a reopen or a B2B refund (decision 024). A repeated key posts nothing, so a retried or doubled transition never moves money twice.
  *
@@ -96,18 +103,18 @@ export class OrderLedger {
    *
    * @param tx the placement transaction
    * @param order the stored order (its id is the ledger reference)
-   * @param actor the merchant (or key) placing it
+   * @param actor the account (or its key) placing it
    * @returns what moved
    * @throws {AppError} `INSUFFICIENT_FUNDS` (402) when the wallet cannot cover the price within its credit limit
+   * @throws {RangeError} when the order came through the shop door: a paid-first order is never held from a wallet
    */
   async hold(tx: DbExecutor, order: Order, actor: LedgerActor): Promise<MoveOutcome> {
     const amount = Money.of(order.totalPrice);
-    const clientId = order.clientId;
-    if (clientId === null) throw new RangeError('Only a merchant order is held from a wallet.');
+    const accountId = this.heldBy(order);
     return this.post(
       tx,
       order,
-      holdEvent({ clientId, amount }),
+      holdEvent({ clientId: accountId, amount }),
       `order:${order.id}:hold`,
       memo('Hold for', order),
       actor,
@@ -137,7 +144,7 @@ export class OrderLedger {
         const posting =
           move === 'complete'
             ? complete({
-                clientId: this.merchantOf(order),
+                clientId: this.heldBy(order),
                 price,
                 cost,
                 ...(cost.isZero() ? {} : { supplierId: order.supplierId! }),
@@ -153,7 +160,7 @@ export class OrderLedger {
         return this.post(
           tx,
           order,
-          reject({ clientId: this.merchantOf(order), amount: price }),
+          reject({ clientId: this.heldBy(order), amount: price }),
           `order:${order.id}:release`,
           memo('Release', order),
           context.actor,
@@ -194,10 +201,10 @@ export class OrderLedger {
         }
         const posting: ReversalPosting =
           move === 'refund'
-            ? refund({ clientId: this.merchantOf(order), amount: price })
-            : order.clientId === null
+            ? this.refundPosting(order, price, context)
+            : isPrepaidOrder(order)
               ? reopenB2c({ net: price })
-              : reopen({ clientId: order.clientId, amount: price });
+              : reopen({ clientId: order.accountId, amount: price });
         return this.post(
           tx,
           order,
@@ -217,9 +224,26 @@ export class OrderLedger {
     return Money.of(order.totalCost);
   }
 
-  private merchantOf(order: Order): number {
-    if (order.clientId === null) throw new RangeError('This money move is for a merchant order.');
-    return order.clientId;
+  /** The account a hold-and-settle order is held from (its buyer); a paid-first order has no hold. */
+  private heldBy(order: Order): number {
+    if (isPrepaidOrder(order)) throw new RangeError('This money move is for a hold-and-settle order.');
+    return order.accountId;
+  }
+
+  /**
+   * The refund of a completed hold-and-settle order: the revenue goes back to the account's live wallet (decision 064), through the money module's `refund` with that wallet kind.
+   *
+   * Why: the account may have changed rank since the order, so the merchant wallet is not always where the money belongs: a refund is never
+   * refused for a crossing, it credits the wallet that is live now. The caller read the kind under the account row lock.
+   */
+  private refundPosting(order: Order, price: Money, context: MoveContext): ReversalPosting {
+    const accountId = this.heldBy(order);
+    if (context.wallet === undefined) {
+      throw new Error(
+        `The refund of order ${order.id} needs the live wallet of its account: the use case reads it first.`,
+      );
+    }
+    return refund({ clientId: accountId, amount: price, wallet: refundCreditsKind(context.wallet) });
   }
 
   private async post(

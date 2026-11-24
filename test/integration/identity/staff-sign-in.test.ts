@@ -21,6 +21,7 @@ import {
   StaffAuthTokens,
   csrfTokenFor,
 } from '@src/modules/identity';
+import { makeAccount } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, openSession } from '../../support/auth';
 import { SECOND, TestClock } from '../../support/clock';
@@ -856,10 +857,11 @@ describe('password set by an emailed link (token mode)', () => {
       tokenHash: tokens.hash(odd),
       expiresAt: new Date(clock.nowMs() + 60 * SECOND),
     });
+    // An account's invitation link (subject account) whose subject id equals the staff id: still not a staff link.
     const merchant = tokens.random(32);
     await db.insert(s.authTokens).values({
       purpose: 'invite',
-      subjectType: 'client',
+      subjectType: 'account',
       subjectId: staff.id,
       tokenHash: tokens.hash(merchant),
       expiresAt: new Date(clock.nowMs() + 60 * SECOND),
@@ -928,13 +930,16 @@ describe('password set by an emailed link (token mode)', () => {
 });
 
 describe('sessions of another subject', () => {
-  it('a merchant cookie cannot call the staff routes', async () => {
+  it('an account cookie of either rank cannot call the staff routes', async () => {
     const { db } = await testDb();
     const { insertMerchant } = await import('../../support/auth');
     const merchantId = await insertMerchant(db);
-    const session = await openSession(t, { type: 'client', id: merchantId });
-    const res = await t.app.inject({ method: 'GET', url: '/admin/auth/me', headers: session.headers });
-    expect(res.statusCode).toBe(401);
+    const retail = await makeAccount(t, { rank: 'retail' });
+    for (const id of [merchantId, retail.id]) {
+      const session = await openSession(t, { type: 'account', id });
+      const res = await t.app.inject({ method: 'GET', url: '/admin/auth/me', headers: session.headers });
+      expect(res.statusCode, String(id)).toBe(401);
+    }
   });
 
   it('SessionService sees the rotated session as a staff session', async () => {

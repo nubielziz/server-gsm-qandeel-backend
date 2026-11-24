@@ -51,7 +51,7 @@ async function world() {
     '=HYPERLINK("http://evil.example","pay")',
   );
   await book(deposit({ clientId: other.id, amount: m('999') }), 2, 'd', 'Deposit PAY-2');
-  const session = await openSession(t, { type: 'client', id: mine.id });
+  const session = await openSession(t, { type: 'account', id: mine.id });
   return { db, mine, other, session };
 }
 
@@ -70,7 +70,7 @@ describe('GET /client/wallet', () => {
 
   it('shows another merchant their own wallet, never a neighbour’s', async () => {
     const { other } = await world();
-    const session = await openSession(t, { type: 'client', id: other.id });
+    const session = await openSession(t, { type: 'account', id: other.id });
     const res = await t.app.inject({ method: 'GET', url: '/client/wallet', headers: session.headers });
     expect(res.json().balance).toBe('999.0000');
   });
@@ -161,7 +161,7 @@ describe('GET /client/wallet/statement', () => {
   it('is empty for a merchant without a wallet line, and refuses a staff session', async () => {
     const { db } = await testDb();
     const fresh = await insertWalletMerchant(db, { name: 'New' });
-    const session = await openSession(t, { type: 'client', id: fresh.id });
+    const session = await openSession(t, { type: 'account', id: fresh.id });
     const res = await t.app.inject({ method: 'GET', url: '/client/wallet/statement', headers: session.headers });
     expect(res.json()).toEqual([]);
     expect(res.headers['x-total-count']).toBe('0');

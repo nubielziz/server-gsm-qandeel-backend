@@ -62,7 +62,7 @@ export function uploadProblem(mime: string, bytes: Uint8Array): UploadProblem | 
 
 /** Who sends a message with attachments, as the `files` table names owners. */
 export interface FileOwner {
-  readonly type: 'client' | 'staff' | 'customer';
+  readonly type: 'account' | 'staff';
   readonly id: number;
 }
 
@@ -96,8 +96,8 @@ export type AttachProblem = 'unknown_file' | 'not_yours' | 'type' | 'too_large';
 /**
  * Judges one file a message wants to carry.
  *
- * Why: rule 8 and the plan's § 3.3: the sender attaches only their own uploads (the ticket's customer, the merchant, the staff member),
- * and only PDF, JPEG or PNG of at most 5 MiB (a merchant's portal upload may be any file of 25 MiB). A ticket link's holder attaches only
+ * Why: rule 8 and the plan's § 3.3: the sender attaches only their own uploads (the ticket's requester, an account of any rank, or the staff
+ * member), and only PDF, JPEG or PNG of at most 5 MiB (a merchant rank's portal upload may be any file of 25 MiB). A ticket link's holder attaches only
  * the files uploaded through that ticket ({@link ticketUploadArea}): another file of the same customer is `not_yours` too.
  *
  * @param file the stored file, or `undefined` when the id names none

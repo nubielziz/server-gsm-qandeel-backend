@@ -1,8 +1,10 @@
-// Integration tests of the order link on the storefront ticket form (POST /store/v1/tickets with an `orderToken`, decision 053): the link
-// speaks for the order's customer only when the account itself opened the checkout signed in, or when the customer has no account. A guest
-// checkout can be opened with any address, so its link files the ticket under that address unconfirmed, exactly as a typed address does:
-// not in the account, no ticket token in the answer, a system note for staff, until the link mailed to that address is used. The link of
-// an anonymized customer's order opens nothing.
+// Integration tests of the order link on the storefront ticket form (POST /store/v1/tickets with an `orderToken`, decision 053 and 064): the link
+// speaks for the order's account only when the account itself opened the checkout signed in, or when the buyer row has no login (a guest
+// row). A guest checkout never attaches to a login account any more, so its order belongs to the guest row of the typed address and
+// nothing of it reaches the account. An order placed before decision 064 by a guest checkout typed with a login account's address still
+// belongs to that account: its link files the ticket under that address unconfirmed, exactly as a typed address does: not in the account,
+// no ticket token in the answer, a system note for staff, until the link mailed to that address is used. The link of an anonymized
+// account's order opens nothing.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { asc, eq } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
@@ -86,19 +88,46 @@ async function paidSignedInOrder(client: StoreClient, email: string): Promise<{ 
 }
 
 describe('the order link on the ticket form', () => {
-  it('files the ticket of a guest checkout opened with an account email unconfirmed: no token, not in the account, a note for staff', async () => {
+  it('files the ticket of a guest checkout typed with a login account’s address under the guest row: proven by its link, with its token, and nothing in the account (decision 064)', async () => {
     const holder = await makeCustomer(t, { email: 'valerie.private@mail.example', name: 'Valerie Quillfeather' });
     const paid = await paidOrder(t, clock, world, { email: holder.email });
+    const [order] = await db.select().from(s.orders).where(eq(s.orders.id, paid.orderId));
+    expect(order!.accountId).not.toBe(holder.id);
+
+    const res = await openTicket(paid.trackingToken, 'About my order');
+    expect(res.statusCode).toBe(201);
+    expect(typeof res.json().token).toBe('string');
+    const ticket = await ticketByNumber(res.json().number);
+    expect(ticket).toMatchObject({ requesterType: 'account', requesterId: order!.accountId, orderId: paid.orderId });
+    expect(ticket.requesterProvenAt?.toISOString()).toBe(NOW);
+    expect((await threadOf(ticket.id)).map((m) => [m.authorType, m.isInternal])).toEqual([['account', false]]);
+
+    const account = await customerSession(t, holder.id);
+    const list = await account.call('GET', '/store/v1/me/tickets');
+    expect(list.status).toBe(200);
+    expect((list.body as Array<{ number: string }>).map((row) => row.number)).not.toContain(ticket.number);
+  });
+
+  it('files the ticket of an order placed before decision 064 under the login account it was typed with, unconfirmed: no token, not in the account, a note for staff', async () => {
+    const holder = await makeCustomer(t, { email: 'valerie.private@mail.example', name: 'Valerie Quillfeather' });
+    const client = new StoreClient(t, freshClientIp());
+    expect((await client.login(holder.email)).statusCode).toBe(200);
+    const paid = await paidSignedInOrder(client, holder.email);
+    // An order of the account whose checkout it did not open itself, as the old guest checkout made them.
+    await db
+      .update(s.checkoutSessions)
+      .set({ openedSignedIn: false })
+      .where(eq(s.checkoutSessions.accountId, holder.id));
 
     const res = await openTicket(paid.trackingToken, 'About my account');
     expect(res.statusCode).toBe(201);
     expect(res.json().token).toBeUndefined();
     const ticket = await ticketByNumber(res.json().number);
-    expect(ticket).toMatchObject({ requesterType: 'customer', requesterId: holder.id, orderId: paid.orderId });
+    expect(ticket).toMatchObject({ requesterType: 'account', requesterId: holder.id });
     expect(ticket.requesterProvenAt).toBeNull();
     const thread = await threadOf(ticket.id);
     expect(thread.map((m) => [m.authorType, m.isInternal])).toEqual([
-      ['customer', false],
+      ['account', false],
       ['system', true],
     ]);
     expect(thread[1]!.body).toBe(UNPROVEN_TICKET_NOTE);
@@ -128,7 +157,7 @@ describe('the order link on the ticket form', () => {
     expect(res.json().token).toBe(revealedToken(t, 'ticket', { enc: ticket.tokenEnc, plain: ticket.token }));
     expect(ticket.requesterId).toBe(customer.id);
     expect(ticket.requesterProvenAt?.toISOString()).toBe(NOW);
-    expect((await threadOf(ticket.id)).map((m) => m.authorType)).toEqual(['customer']);
+    expect((await threadOf(ticket.id)).map((m) => m.authorType)).toEqual(['account']);
     const list = await (await customerSession(t, customer.id)).call('GET', '/store/v1/me/tickets');
     expect((list.body as Array<{ number: string }>).map((row) => row.number)).toContain(ticket.number);
   });
@@ -140,14 +169,14 @@ describe('the order link on the ticket form', () => {
     expect(typeof res.json().token).toBe('string');
     const ticket = await ticketByNumber(res.json().number);
     expect(ticket.requesterProvenAt?.toISOString()).toBe(NOW);
-    expect((await threadOf(ticket.id)).map((m) => m.authorType)).toEqual(['customer']);
+    expect((await threadOf(ticket.id)).map((m) => m.authorType)).toEqual(['account']);
   });
 
-  it('opens nothing for the order of an anonymized customer: 422 on orderToken and no ticket', async () => {
+  it('opens nothing for the order of an anonymized account: 422 on orderToken and no ticket', async () => {
     const paid = await paidOrder(t, clock, world, { email: 'erin.erased@mail.example' });
     const [order] = await db.select().from(s.orders).where(eq(s.orders.id, paid.orderId));
     const privacy = await adminWith(t, ['customers:privacy']);
-    expect((await privacy.post(`/admin/customers/${order!.customerId}/anonymize`)).status).toBeLessThan(300);
+    expect((await privacy.post(`/admin/clients/${order!.accountId}/anonymize`)).status).toBeLessThan(300);
 
     const res = await openTicket(paid.trackingToken);
     expect(res.statusCode).toBe(422);

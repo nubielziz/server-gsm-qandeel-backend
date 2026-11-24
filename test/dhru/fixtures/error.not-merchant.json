@@ -1,0 +1,16 @@
+{
+  "action": "accountinfo",
+  "description": "Decision 064: a live key of an account that is not of a merchant rank gets the standard message, like a wrong key.",
+  "request": {
+    "action": "accountinfo"
+  },
+  "credentials": "retail-rank",
+  "response": {
+    "ERROR": [
+      {
+        "MESSAGE": "Authentication Failed"
+      }
+    ],
+    "apiversion": "6.1"
+  }
+}

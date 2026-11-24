@@ -59,7 +59,7 @@ async function world() {
   const groups = await insertDemoGroups(db);
   const { serviceId } = await insertAtt(db);
   const merchant = await insertMerchantIn(db, groups.standard);
-  const session = await openSession(t, { type: 'client', id: merchant });
+  const session = await openSession(t, { type: 'account', id: merchant });
   const get = (url: string, extra: Record<string, string> = {}) =>
     t.app.inject({ method: 'GET', url, headers: { ...session.headers, ...extra } });
   return { db, serviceId, merchant, get };

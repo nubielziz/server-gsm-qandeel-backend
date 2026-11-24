@@ -1,68 +1,89 @@
-// Integration test of the customers module's public directory (feature 17 asks it for the guest customer of a new ticket address): it finds
-// the customer of an email in any case, makes a guest with the injected clock's time, and ends with one customer when two requests race.
+// Integration test of the customers module's public directory (decision 064): what orders, support and money may know about the
+// account behind a shop order link, read from the one account table by account id. It says whether the link speaks for the buyer, whether
+// the account was anonymized, and whom the receipt names. Making a guest row is identity's `AccountDirectory`, never this class.
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
-import { schema as s } from '@src/infra/db';
 import { CustomerDirectory } from '@src/modules/customers';
-import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
+import { type OrdersWorld, ordersWorld } from '../../support/orders';
+import { insertHeldOrder } from '../../support/risk';
+import { makeAccount } from '../../support/store';
 
-const NOW = '2026-11-08T12:00:00.000Z';
-const clock = new TestClock(NOW);
-const directory = new CustomerDirectory(clock);
+const directory = new CustomerDirectory();
+let world: OrdersWorld;
 
 beforeEach(async () => {
-  clock.set(NOW);
   await resetDb();
+  world = await ordersWorld((await testDb()).db);
 });
 afterAll(async () => {
   await resetDb();
   await closeTestDb();
 });
 
-describe('CustomerDirectory.findOrCreateGuest', () => {
-  it('makes an active guest with no account for a new address, stamped with the injected clock', async () => {
+describe('CustomerDirectory.isErased', () => {
+  it('is true for an anonymized account and for an account that is gone, false for any other', async () => {
     const { db } = await testDb();
-    const guest = await db.transaction((tx) =>
-      directory.findOrCreateGuest(tx, { email: 'new@mail.example', name: 'Newcomer' }),
+    const active = await makeAccount({ rank: 'retail' });
+    const merchant = await makeAccount({ rank: 'merchant' });
+    const gone = await makeAccount({
+      rank: 'retail',
+      status: 'anonymized',
+      anonymizedAt: new Date('2026-11-01T00:00:00.000Z'),
+    });
+    expect(await directory.isErased(db, active.id)).toBe(false);
+    expect(await directory.isErased(db, merchant.id)).toBe(false);
+    expect(await directory.isErased(db, gone.id)).toBe(true);
+    expect(await directory.isErased(db, 999_999)).toBe(true);
+  });
+});
+
+describe('CustomerDirectory.orderLinkStanding', () => {
+  it('lets the link of a guest row speak for the buyer: a guest checkout never attaches to a login account', async () => {
+    const { db } = await testDb();
+    const held = await insertHeldOrder(world);
+    expect(await directory.orderLinkStanding(db, { id: held.orderId, customerId: held.accountId })).toBe(
+      'speaks-for-customer',
     );
-    expect(guest).toMatchObject({ email: 'new@mail.example', name: 'Newcomer', status: 'active' });
-    const [row] = await db.select().from(s.customers);
-    expect(row).toMatchObject({ id: guest.id, hasAccount: false, status: 'active' });
-    expect(row!.createdAt.toISOString()).toBe(NOW);
-    expect(row!.updatedAt.toISOString()).toBe(NOW);
   });
 
-  it('returns the customer of a known address in any case and never renames or duplicates them', async () => {
+  it('lets the link speak for a login account only when the account opened the checkout signed in', async () => {
     const { db } = await testDb();
-    const [known] = await db
-      .insert(s.customers)
-      .values({ email: 'Victor@Mail.Example', name: 'Victor Hale' })
-      .returning();
-    const found = await db.transaction((tx) =>
-      directory.findOrCreateGuest(tx, { email: 'victor@mail.example', name: 'Someone else' }),
+    const account = await makeAccount({ rank: 'retail' });
+    const signedIn = await insertHeldOrder(world, { customerId: account.id, openedSignedIn: true });
+    const typed = await insertHeldOrder(world, { customerId: account.id, openedSignedIn: false });
+    expect(await directory.orderLinkStanding(db, { id: signedIn.orderId, customerId: account.id })).toBe(
+      'speaks-for-customer',
     );
-    expect(found).toMatchObject({ id: known!.id, name: 'Victor Hale' });
-    expect(await db.select().from(s.customers)).toHaveLength(1);
+    // An order a guest checkout typed with this address put under the account before the one account type: it proves nothing.
+    expect(await directory.orderLinkStanding(db, { id: typed.orderId, customerId: account.id })).toBe('unconfirmed');
   });
 
-  it('ends with one customer when two requests for a new address race to the unique index', async () => {
+  it('opens nothing for an anonymized account or an account that is gone', async () => {
     const { db } = await testDb();
-    const guests = await Promise.all(
-      [1, 2, 3].map(() =>
-        db.transaction((tx) => directory.findOrCreateGuest(tx, { email: 'race@mail.example', name: '' })),
-      ),
-    );
-    expect(new Set(guests.map((guest) => guest.id)).size).toBe(1);
-    expect(await db.select().from(s.customers)).toHaveLength(1);
+    const gone = await makeAccount({
+      rank: 'retail',
+      status: 'anonymized',
+      anonymizedAt: new Date('2026-11-01T00:00:00.000Z'),
+    });
+    const held = await insertHeldOrder(world, { customerId: gone.id, openedSignedIn: true });
+    expect(await directory.orderLinkStanding(db, { id: held.orderId, customerId: gone.id })).toBe('erased');
+    expect(await directory.orderLinkStanding(db, { id: held.orderId, customerId: 999_999 })).toBe('erased');
+  });
+});
+
+describe('CustomerDirectory.buyerOf', () => {
+  it('names the stored name and address of the account only when it opened the checkout signed in', async () => {
+    const { db } = await testDb();
+    const account = await makeAccount({ rank: 'retail', name: 'Daniel Whitmore' });
+    const signedIn = await insertHeldOrder(world, { customerId: account.id, openedSignedIn: true });
+    const typed = await insertHeldOrder(world, { customerId: account.id, openedSignedIn: false });
+    expect(await directory.buyerOf(db, signedIn.orderId)).toEqual({ name: 'Daniel Whitmore', email: account.email });
+    // Any other checkout prints the address it was opened with and no stored name.
+    expect(await directory.buyerOf(db, typed.orderId)).toEqual({ name: '', email: account.email });
   });
 
-  it('keeps an anonymized customer as found, with their status, so the caller can refuse to write to them', async () => {
+  it('answers nothing for an order without a checkout', async () => {
     const { db } = await testDb();
-    await db.insert(s.customers).values({ email: 'gone@mail.example', name: 'Deleted customer', status: 'anonymized' });
-    const found = await db.transaction((tx) =>
-      directory.findOrCreateGuest(tx, { email: 'gone@mail.example', name: 'X' }),
-    );
-    expect(found.status).toBe('anonymized');
-    expect(await db.select().from(s.customers)).toHaveLength(1);
+    expect(await directory.buyerOf(db, 999_999)).toBeUndefined();
   });
 });

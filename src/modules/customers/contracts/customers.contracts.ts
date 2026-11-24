@@ -11,6 +11,7 @@ import {
   NotesField,
   PasswordModeField,
   PhoneField,
+  retiredNote,
 } from './shared';
 
 /**
@@ -136,6 +137,7 @@ export const listCustomers = defineRoute({
   key: 'GET /admin/customers',
   summary: 'Storefront customers',
   description:
+    retiredNote('GET /admin/clients') +
     'Customers of the storefront (guests and accounts). Filters: `status` (repeat the key for IN), `country`, `hasAccount`. ' +
     '`q` searches name and email. Sort by `name`, `country`, `hasAccount`, `ordersCount`, `totalSpent` (default, highest ' +
     'first), `lastOrderAt` or `status`. `ordersCount` and `lastOrderAt` are worked out from the customer’s orders.',
@@ -154,7 +156,7 @@ export const listCustomers = defineRoute({
     search: ['name', 'email'],
   }),
   success: { status: 200, schema: CustomerSchema },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'VALIDATION_FAILED', 'ROUTE_RETIRED'],
   examples: { response: [sample] },
 });
 
@@ -163,6 +165,7 @@ export const getCustomer = defineRoute({
   key: 'GET /admin/customers/:id',
   summary: 'One customer with the detail figures',
   description:
+    retiredNote('GET /admin/clients/:id') +
     'The list row plus `stats`, `account` (null for a guest), `latestConsents` (the consent evidence of the latest order, null ' +
     'without orders) and `risk` (the highest score and the signals of the customer’s orders, newest first, at most 20).',
   tags: ['customers'],
@@ -171,7 +174,7 @@ export const getCustomer = defineRoute({
   permission: 'customers:read',
   params: z.object({ id: zIdParam }),
   success: { status: 200, schema: CustomerDetailSchema },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'VALIDATION_FAILED', 'ROUTE_RETIRED'],
   examples: { response: detailSample },
 });
 
@@ -180,6 +183,7 @@ export const createCustomer = defineRoute({
   key: 'POST /admin/customers',
   summary: 'Add a customer with an account',
   description:
+    retiredNote('POST /admin/clients') +
     'Creates a customer with an account. `password.mode` `reset_link` emails a one-hour, single-use invitation to choose a ' +
     'password; `temporary_password` makes a 14-character password that the answer shows once (`Cache-Control: no-store`) and ' +
     'the customer must change at the first sign-in; that mode also needs `customers:password` (`403 FORBIDDEN` without it, nothing is created; decision 047). ' +
@@ -199,7 +203,7 @@ export const createCustomer = defineRoute({
     password: z.object({ mode: PasswordModeField }),
   }),
   success: { status: 201, schema: CustomerSchema.extend({ temporaryPassword: z.string().optional() }) },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'VALIDATION_FAILED', 'EMAIL_TAKEN'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'VALIDATION_FAILED', 'EMAIL_TAKEN', 'ROUTE_RETIRED'],
   examples: {
     request: {
       name: 'Daniel Whitmore',
@@ -217,6 +221,7 @@ export const updateCustomer = defineRoute({
   key: 'PATCH /admin/customers/:id',
   summary: 'Edit a customer',
   description:
+    retiredNote('PATCH /admin/clients/:id') +
     'Changes the fields sent: `name`, `email`, `country`, `phone`, `internalNotes` (at most 300 characters). A ' +
     'different email clears `emailVerifiedAt` and voids every link already sent to the customer (they went to the old address); for an account it also sends a new verification email; for an account the change also needs `customers:password` (`403 FORBIDDEN`), ends every session of the customer and emails a security notice to the address before the change (decision 047). A country change ' +
     'derives the currency again (storefront currency of the country, else USD); a new country with no current tax rate is `422` on ' +
@@ -235,6 +240,15 @@ export const updateCustomer = defineRoute({
     internalNotes: NotesField.optional(),
   }),
   success: { status: 200, schema: CustomerSchema },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'ANONYMIZED', 'EMAIL_TAKEN', 'VALIDATION_FAILED'],
+  errors: [
+    'UNAUTHORIZED',
+    'FORBIDDEN',
+    'CSRF_FAILED',
+    'NOT_FOUND',
+    'ANONYMIZED',
+    'EMAIL_TAKEN',
+    'VALIDATION_FAILED',
+    'ROUTE_RETIRED',
+  ],
   examples: { request: { phone: '+447700900124', internalNotes: 'Prefers email.' }, response: sample },
 });

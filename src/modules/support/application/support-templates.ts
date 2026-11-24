@@ -45,7 +45,7 @@ const SHIPPED_IN_0016: readonly DefaultTemplate[] = [
 /**
  * The line migration 0032 appends to the merchant's reply templates.
  *
- * Why: feature 28 gives the merchant portal a ticket page (`/merchant/support/<id>`), so the reply mail links to it.
+ * Why: feature 28 gives a merchant rank a ticket page in the account area (`/account/support/<id>`, decision 064), so the reply mail links to it.
  */
 export const CONVERSATION_LINK_LINE = 'Open the conversation: {{link}}';
 
@@ -86,6 +86,21 @@ export function withConversationLink<T extends TemplateText>(template: T): T {
 export const RECEIPT_BODY =
   'Hello,\n\nWe received your message and opened ticket {{ticketNumber}}. Our team will answer by email.\n\nYou can follow the ticket and add details here: {{link}}\n\nPlease keep this email: the link is private to you.';
 
+/**
+ * The merchant's receipt: the same fixed wording as the customer's, for a merchant rank whose address was typed on the public form.
+ *
+ * Why: decision 064: the public form files a ticket under the login account of the typed address whatever its rank, and the link in
+ * the receipt proves the address, so a merchant rank gets the receipt too. Migration 0016 shipped no merchant receipt: the accounts expand
+ * migration inserts this row ({@link supportMerchantReceiptSql}).
+ */
+export const MERCHANT_RECEIPT_TEMPLATE: DefaultTemplate = {
+  event: 'support.ticket_received',
+  channel: 'email',
+  audience: 'merchant',
+  subject: 'We got your message ({{ticketNumber}})',
+  body: RECEIPT_BODY,
+};
+
 /** The customer's receipt row (event `support.ticket_received`, email) as migration 0016 shipped it. */
 const isReceipt = (template: TemplateText): boolean =>
   template.event === 'support.ticket_received' && template.channel === 'email' && template.audience === 'customer';
@@ -102,11 +117,12 @@ function withReceiptText<T extends TemplateText>(template: T): T {
  * live here and not in the platform's `DEFAULT_TEMPLATES`: that list is checked against its own migration. The merchant's reply carries
  * the conversation link since feature 28 (migration 0032); the receipt holds no typed text since decision 053.
  */
-export const SUPPORT_DEFAULT_TEMPLATES: readonly DefaultTemplate[] = SHIPPED_IN_0016.filter(
-  (template) => template.channel === 'email',
-)
-  .map(withConversationLink)
-  .map(withReceiptText);
+export const SUPPORT_DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
+  ...SHIPPED_IN_0016.filter((template) => template.channel === 'email')
+    .map(withConversationLink)
+    .map(withReceiptText),
+  MERCHANT_RECEIPT_TEMPLATE,
+];
 
 const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
 
@@ -141,6 +157,19 @@ export function supportReplyLinkSql(): string {
         `AND "body" = ${quote(t.body)};`,
     )
     .join('--> statement-breakpoint\n');
+}
+
+/**
+ * Writes the insert of the merchant's receipt template: the one row the accounts expand migration adds (decision 064).
+ *
+ * Why: a missing template sends nothing (RULES settings 10), and the receipt of a merchant rank is what confirms its address on the public
+ * form. The row is new, so the statement is the plain `INSERT ... ON CONFLICT DO NOTHING` of {@link templatesInsertSql} (a text staff
+ * edited later is never overwritten, and a second run changes nothing). The migration holds exactly this statement; a spec keeps them equal.
+ *
+ * @returns one `INSERT` statement
+ */
+export function supportMerchantReceiptSql(): string {
+  return templatesInsertSql([MERCHANT_RECEIPT_TEMPLATE]);
 }
 
 /**

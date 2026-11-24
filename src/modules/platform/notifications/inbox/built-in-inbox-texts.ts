@@ -52,7 +52,7 @@ export const BUILT_IN_INBOX_TEXTS: readonly InboxTextDefinition[] = [
     audience: 'merchant',
     event: 'wallet.low_balance',
     category: 'wallet',
-    link: '/merchant/wallet',
+    link: '/account/wallet',
     text: {
       title: 'Low wallet balance',
       body: 'Your available balance is {{available}} {{currency}}, below your alert of {{threshold}} {{currency}}.',
@@ -62,7 +62,7 @@ export const BUILT_IN_INBOX_TEXTS: readonly InboxTextDefinition[] = [
     audience: 'merchant',
     event: 'invoice.paid',
     category: 'billing',
-    link: '/merchant/invoices',
+    link: '/account/invoices',
     text: {
       title: 'Invoice {{invoiceNumber}} paid',
       body: '{{amount}} {{currency}} was credited to your wallet.',

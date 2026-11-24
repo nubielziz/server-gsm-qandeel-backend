@@ -47,7 +47,7 @@ function canonical(value: unknown): string {
  * is read, and when there is none the placement runs and its answer is stored before the commit, so the orders and the answer exist
  * together or not at all (nothing is stored for a refusal: the key may be tried again). The same key with the same body replays the
  * stored status and body; with another body it is `409 IDEMPOTENCY_KEY_REUSED`; while another request with the key
- * still runs it is `409 IDEMPOTENCY_IN_PROGRESS`. Keys are per merchant and remembered for exactly 7 days (`IDEMPOTENCY_WINDOW_DAYS`, B166):
+ * still runs it is `409 IDEMPOTENCY_IN_PROGRESS`. Keys are per account (the stored column `client_id` holds the account id: a merchant kept its id) and remembered for exactly 7 days (`IDEMPOTENCY_WINDOW_DAYS`, B166):
  * the row's `created_at` is the clock's time, and a stored answer older than the window (the same strict `<` as the job) is forgotten here,
  * under the lock, before anything else: its row is deleted and the request runs as a first one. The daily job `idempotency_purge` only
  * cleans the keys nobody sends again.
@@ -79,21 +79,21 @@ export class IdempotencyStore {
    * Runs a placement under a key, or replays what the key stored.
    *
    * @param tx the transaction the placement runs in
-   * @param request the merchant, the key, the scope and the hash of the body
+   * @param request the account (a merchant rank), the key, the scope and the hash of the body
    * @param work places the orders and returns the answer to send; not called on a replay
    * @returns the answer and whether it was replayed
    * @throws {AppError} `IDEMPOTENCY_IN_PROGRESS` (409, with `Retry-After`), `IDEMPOTENCY_KEY_REUSED` (409), and whatever `work` throws
    */
   async run(
     tx: Transaction,
-    request: { clientId: number; key: string; scope: IdempotencyScope; requestHash: string },
+    request: { accountId: number; key: string; scope: IdempotencyScope; requestHash: string },
     work: () => Promise<StoredAnswer>,
   ): Promise<IdempotentResult> {
-    if (!(await tryLockIdempotencyKey(tx, request.clientId, request.key))) throw inProgress();
-    let stored = await findIdempotencyRecord(tx, request.clientId, request.key);
+    if (!(await tryLockIdempotencyKey(tx, request.accountId, request.key))) throw inProgress();
+    let stored = await findIdempotencyRecord(tx, request.accountId, request.key);
     if (stored && stored.createdAt < idempotencyCutoff(this.clock.nowMs())) {
       // Past the window: the key is free again, whatever the new request is (same body, another body or the other route).
-      await forgetIdempotencyKey(tx, request.clientId, request.key);
+      await forgetIdempotencyKey(tx, request.accountId, request.key);
       stored = undefined;
     }
     if (stored) {
@@ -107,7 +107,7 @@ export class IdempotencyStore {
     const answer = await work();
     try {
       await insertIdempotencyRecord(tx, {
-        clientId: request.clientId,
+        accountId: request.accountId,
         key: request.key,
         scope: request.scope,
         requestHash: request.requestHash,

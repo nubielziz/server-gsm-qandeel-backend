@@ -1,7 +1,9 @@
 // Rules of the top-up payments (map routes /admin/payments*, the payment webhook and the automatic credit job, stage 8): when an
 // automatic gateway's payment credits itself, who may review it, and what the job decides after it asks the gateway. Pure.
 import { Money } from '../../../common/money';
+import type { InvoiceWalletKind } from '../db/schema';
 import { paymentRef } from './invoice-rules';
+import type { WalletLedgerKind } from './wallet-kinds';
 
 /** Setting key of the minutes an automatic gateway's confirmed top-up waits before it credits itself (user rule 6, default 10). */
 export const AUTO_CREDIT_DELAY_KEY = 'payments.auto_credit_delay_minutes';
@@ -16,6 +18,66 @@ export const MAX_UNCONFIRMED_HOURS = 24;
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
+
+/** The two owner words of a top-up on the wire: the merchant wallet it fills or the store balance it fills. */
+export const TOP_UP_OWNER_WORDS = ['merchant', 'customer'] as const;
+
+/** One value of {@link TOP_UP_OWNER_WORDS}. */
+export type TopUpOwnerWord = (typeof TOP_UP_OWNER_WORDS)[number];
+
+/**
+ * The owner word of a top-up, read from the wallet kind its invoice names.
+ *
+ * Why: decision 064: every account has one owner column (`invoices.account_id`), so what the console calls the merchant deposit or the
+ * store balance top-up is told by the invoice's `wallet_kind`, never by which owner column is empty. The `owner` filter of
+ * `GET /admin/payments` and the `client` / `customer` joins of a row read this word.
+ *
+ * @param walletKind the invoice's `wallet_kind` (`null` for a receipt or a statement, which no top-up pays)
+ * @returns `merchant` for `client_wallet`, `customer` for `customer_wallet`, `undefined` for no wallet
+ */
+export function topUpOwnerWord(walletKind: InvoiceWalletKind | null): TopUpOwnerWord | undefined {
+  if (walletKind === 'client_wallet') return 'merchant';
+  if (walletKind === 'customer_wallet') return 'customer';
+  return undefined;
+}
+
+/**
+ * How an audit label names the account of a top-up: the name, else the email, else the number.
+ *
+ * Why: the audit rows of a deposit, a rejection and a dispute hold name the account in words a staff member reads; an anonymized account
+ * is named by its number (its old name is personal data).
+ *
+ * @param account the account row, if it exists
+ * @param id the account id
+ * @returns the label
+ */
+export function accountLabel(account: { name: string; email: string; status: string } | undefined, id: number): string {
+  if (!account || account.status === 'anonymized') return `account ${id}`;
+  return account.name.trim() || account.email;
+}
+
+/** Which wallet a top-up credits and whether that is not the one its invoice named. */
+export interface CreditPlan {
+  /** The wallet credited: always the live one. */
+  readonly wallet: WalletLedgerKind;
+  /** True when the invoice named the other kind (the account changed rank kind after the top-up was made). */
+  readonly crossed: boolean;
+}
+
+/**
+ * Decides which wallet a top-up credits.
+ *
+ * Why: decision 064: a credit is never refused and always lands on the wallet of the account's rank kind now (read under the account
+ * row lock). A rank change refuses while a live top-up is open, so the kind of the invoice equals the live kind except for a payment of
+ * an automatic invoice that is no longer live and was paid late; then the live wallet is credited and the audit row records both kinds.
+ *
+ * @param live the kind of the account's live wallet (`walletKindOfRank`)
+ * @param invoiceKind the invoice's `wallet_kind`
+ * @returns the wallet to credit and whether it differs from the invoice's
+ */
+export function creditPlan(live: WalletLedgerKind, invoiceKind: InvoiceWalletKind | null): CreditPlan {
+  return { wallet: live, crossed: invoiceKind !== null && invoiceKind !== live };
+}
 
 /**
  * When a confirmed top-up of an automatic gateway credits itself.

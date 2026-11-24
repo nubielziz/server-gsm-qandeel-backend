@@ -174,7 +174,7 @@ describe('GET /admin/ledger/transactions', () => {
       ['fee_income', '-3.0000', '-3.0000'],
     ]);
     expect(deposit.entries[1]!.account).toMatchObject({
-      ownerType: 'client',
+      ownerType: 'account',
       ownerId: zain.id,
       ownerName: 'Zain Mobile Hub',
     });
@@ -204,7 +204,7 @@ describe('GET /admin/ledger/transactions', () => {
   it('sends a manual adjustment as refType system with the merchant as refId, and filters it with system', async () => {
     const { staff, ids, noor } = await world();
     const rows = (await get(staff, '/admin/ledger/transactions?refType=system')).json<Journal[]>();
-    // The stored `system` payout and the stored `client` adjustment both answer to the wire word `system`.
+    // The stored `system` payout and the stored `account` adjustment both answer to the wire word `system` (as the older `client` and `customer` rows do).
     expect(rows.map((row) => row.id).sort()).toEqual([ids.adjust!, ids.payout!].sort());
     expect(rows.find((row) => row.id === ids.adjust)).toMatchObject({ refType: 'system', refId: noor.id });
     const stored = await (
@@ -213,7 +213,7 @@ describe('GET /admin/ledger/transactions', () => {
       .select({ refType: s.ledgerTransactions.refType })
       .from(s.ledgerTransactions)
       .where(eq(s.ledgerTransactions.id, ids.adjust!));
-    expect(stored[0]!.refType).toBe('client');
+    expect(stored[0]!.refType).toBe('account');
   });
 
   it('never sends a reference type the console does not know', async () => {

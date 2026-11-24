@@ -7,7 +7,7 @@
   "body": [
     {
       "id": 48,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 100,
       "channel": "email",
       "event": "order.received",
@@ -23,7 +23,7 @@
     },
     {
       "id": 47,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 101,
       "channel": "email",
       "event": "order.completed",
@@ -39,7 +39,7 @@
     },
     {
       "id": 46,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 102,
       "channel": "email",
       "event": "order.failed",
@@ -55,7 +55,7 @@
     },
     {
       "id": 45,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 103,
       "channel": "email",
       "event": "support.reply",
@@ -71,7 +71,7 @@
     },
     {
       "id": 44,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 104,
       "channel": "email",
       "event": "payment.failed",
@@ -87,7 +87,7 @@
     },
     {
       "id": 43,
-      "recipientType": "client",
+      "recipientType": "account",
       "recipientId": 105,
       "channel": "email",
       "event": "order.completed",
@@ -103,7 +103,7 @@
     },
     {
       "id": 42,
-      "recipientType": "client",
+      "recipientType": "account",
       "recipientId": 106,
       "channel": "email",
       "event": "wallet.low_balance",
@@ -119,7 +119,7 @@
     },
     {
       "id": 41,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 107,
       "channel": "email",
       "event": "order.received",
@@ -135,7 +135,7 @@
     },
     {
       "id": 40,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 108,
       "channel": "email",
       "event": "order.completed",
@@ -151,7 +151,7 @@
     },
     {
       "id": 39,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 100,
       "channel": "email",
       "event": "order.failed",
@@ -167,7 +167,7 @@
     },
     {
       "id": 38,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 101,
       "channel": "email",
       "event": "support.reply",
@@ -183,7 +183,7 @@
     },
     {
       "id": 37,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 102,
       "channel": "email",
       "event": "payment.failed",
@@ -199,7 +199,7 @@
     },
     {
       "id": 36,
-      "recipientType": "client",
+      "recipientType": "account",
       "recipientId": 103,
       "channel": "email",
       "event": "order.completed",
@@ -215,7 +215,7 @@
     },
     {
       "id": 35,
-      "recipientType": "client",
+      "recipientType": "account",
       "recipientId": 104,
       "channel": "email",
       "event": "wallet.low_balance",
@@ -231,7 +231,7 @@
     },
     {
       "id": 34,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 105,
       "channel": "email",
       "event": "order.received",
@@ -247,7 +247,7 @@
     },
     {
       "id": 33,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 106,
       "channel": "email",
       "event": "order.completed",
@@ -263,7 +263,7 @@
     },
     {
       "id": 32,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 107,
       "channel": "email",
       "event": "order.failed",
@@ -279,7 +279,7 @@
     },
     {
       "id": 31,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 108,
       "channel": "email",
       "event": "support.reply",
@@ -295,7 +295,7 @@
     },
     {
       "id": 30,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 100,
       "channel": "email",
       "event": "payment.failed",
@@ -311,7 +311,7 @@
     },
     {
       "id": 29,
-      "recipientType": "client",
+      "recipientType": "account",
       "recipientId": 101,
       "channel": "email",
       "event": "order.completed",
@@ -327,7 +327,7 @@
     },
     {
       "id": 28,
-      "recipientType": "client",
+      "recipientType": "account",
       "recipientId": 102,
       "channel": "email",
       "event": "wallet.low_balance",
@@ -343,7 +343,7 @@
     },
     {
       "id": 27,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 103,
       "channel": "email",
       "event": "order.received",
@@ -359,7 +359,7 @@
     },
     {
       "id": 26,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 104,
       "channel": "email",
       "event": "order.completed",
@@ -375,7 +375,7 @@
     },
     {
       "id": 25,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 105,
       "channel": "email",
       "event": "order.failed",
@@ -391,7 +391,7 @@
     },
     {
       "id": 24,
-      "recipientType": "customer",
+      "recipientType": "account",
       "recipientId": 106,
       "channel": "email",
       "event": "support.reply",

@@ -1,6 +1,7 @@
 // Route contracts of the inbox (feature 23, plan section 10.4; routes beyond the map, scripts/map-additions/23.mjs): four routes on each of
 // the three surfaces, with one shape. The staff console (`/admin/inbox`), the merchant portal (`/client/notifications`) and the storefront
-// account (`/store/v1/me/notifications`) read the same table for different people.
+// account (`/store/v1/me/notifications`) read the same table for different people; a merchant rank and the retail rank are both accounts and
+// each reads its own inbox on its own family (decision 064).
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../../common/contract';
 import { NOTIFICATION_INBOX_CATEGORIES } from '../../db/schema';
@@ -138,7 +139,7 @@ export const listMerchantInbox = defineRoute({
   ...CLIENT,
   key: 'GET /client/notifications',
   summary: 'My notifications',
-  description: `${LIST_DESCRIPTION} Open to a merchant waiting for approval.`,
+  description: `${LIST_DESCRIPTION} A merchant rank only: a retail account reads its own on \`GET /store/v1/me/notifications\`.`,
   query: listQueryOf(),
   success: { status: 200, schema: zInboxItem },
   errors: [...CLIENT_ERRORS],
@@ -179,12 +180,12 @@ export const markAllMerchantInboxRead = defineRoute({
   examples: { request: { upToId: 41 }, response: { updated: 3 } },
 });
 
-/** `GET /store/v1/me/notifications`: the customer's own notifications. */
+/** `GET /store/v1/me/notifications`: the retail account's own notifications. */
 export const listCustomerInbox = defineRoute({
   ...STORE,
   key: 'GET /store/v1/me/notifications',
   summary: 'My notifications',
-  description: LIST_DESCRIPTION,
+  description: `${LIST_DESCRIPTION} The retail rank only: a merchant rank reads its own on \`GET /client/notifications\`.`,
   query: listQueryOf(),
   success: { status: 200, schema: zInboxItem },
   errors: [...STORE_ERRORS],

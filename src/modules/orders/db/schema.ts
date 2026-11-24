@@ -1,10 +1,20 @@
 // Orders tables (map domain D): orders (one engine for B2B and B2C) and their append-only timeline.
 // Conventions: decisions 010, 025, 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
-import { check, index, integer, pgTable, text, unique, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import {
+  bigint,
+  check,
+  index,
+  integer,
+  pgTable,
+  text,
+  unique,
+  uniqueIndex,
+  type AnyPgColumn,
+} from 'drizzle-orm/pg-core';
 import { bigId, createdAt, fk, inList, jsonObject, money, pk, timestampTz, updatedAt } from '../../../infra/db/columns';
 import { SERVICE_TYPES, services, type ServiceType } from '../../catalog/db/schema';
-import { checkoutSessions, customers } from '../../customers/db/schema';
+import { checkoutSessions, retiredCustomers } from '../../customers/db/schema';
 import { apiKeys, clients } from '../../identity/db/schema';
 import { currencies } from '../../money/db/schema';
 import { files } from '../../platform/db/schema';
@@ -55,14 +65,26 @@ export const ORDER_SOURCES = ['dhru', 'v1', 'portal', 'store', 'admin'] as const
 export type OrderSource = (typeof ORDER_SOURCES)[number];
 
 /**
- * Who caused an order event; `system` has no id and `supplier` points at suppliers.id.
+ * Every actor word an order event row may hold, the old ones included; `system` has no id and `supplier` points at suppliers.id.
  *
- * Why: MISMATCHES B13 and the console's order event wire enum.
+ * Why: MISMATCHES B13 and the console's order event wire enum. The table is append-only, so the rows written before decision 064 keep
+ * `client` and `customer` (read through `account_legacy_ids`) and the CHECK only gained `account`. New rows may write
+ * {@link CURRENT_ORDER_EVENT_ACTOR_TYPES} only.
  */
-export const ORDER_EVENT_ACTOR_TYPES = ['staff', 'client', 'customer', 'supplier', 'system'] as const;
+export const ORDER_EVENT_ACTOR_TYPES = ['staff', 'client', 'customer', 'supplier', 'system', 'account'] as const;
 
-/** One value of {@link ORDER_EVENT_ACTOR_TYPES}. */
+/** One value of {@link ORDER_EVENT_ACTOR_TYPES}: what a stored row may say. */
 export type OrderEventActorType = (typeof ORDER_EVENT_ACTOR_TYPES)[number];
+
+/**
+ * The actor words a new order event may write; `order_events_actor_type_current_check` refuses the old ones in new rows.
+ *
+ * Why: decision 064: one word, `account`, for every buyer. The constraint is added NOT VALID, so the old rows stay.
+ */
+export const CURRENT_ORDER_EVENT_ACTOR_TYPES = ['staff', 'account', 'supplier', 'system'] as const;
+
+/** One value of {@link CURRENT_ORDER_EVENT_ACTOR_TYPES}: what a writer may pass. */
+export type CurrentOrderEventActorType = (typeof CURRENT_ORDER_EVENT_ACTOR_TYPES)[number];
 
 /**
  * Where a buyer's verification request stands: `requested`, then `accepted` or `refunded` by staff. Null means none.
@@ -108,20 +130,30 @@ export const ORDER_EVENT_TYPES = [
 export type OrderEventType = (typeof ORDER_EVENT_TYPES)[number];
 
 /**
- * Orders; id equals REFERENCEID. client_id accepts null for storefront (B2C) orders, which fill customer_id instead;
- * exactly one of the two is set.
+ * Orders; id equals REFERENCEID. `account_id` is the buyer of every order; the door is `source` (`store` is a prepaid order, the rest are
+ * hold-and-settle orders).
  *
  * Why: The single order engine for B2B and B2C: id is the Dhru REFERENCEID (decision 025, scenarios success, reject,
- * manual, timeout, b2c-*).
+ * manual, timeout, b2c-*). Decision 064: one buyer column for both doors; `client_id` is still written for hold-and-settle orders, as
+ * the same value, until the contract migration drops it.
  */
 export const orders = pgTable(
   'orders',
   {
     id: pk(),
-    /** B2B buyer; exactly one of client_id and customer_id is set */
-    clientId: fk((): AnyPgColumn => clients.id),
-    /** B2C buyer */
-    customerId: fk((): AnyPgColumn => customers.id),
+    /** the buyer: an account of any rank (the door is `source`, never a null in another column) */
+    accountId: fk((): AnyPgColumn => clients.id).notNull(),
+    /**
+     * the merchant of a hold-and-settle order (the same value as `account_id`; null for a `store` order): written during the expand
+     * release for the readers of the old image, never read (the SQL column is `client_id`); the contract migration drops it
+     */
+    legacyClientId: bigint('client_id', { mode: 'number' }).references((): AnyPgColumn => clients.id, {
+      onDelete: 'restrict',
+    }),
+    /** the old customer id: retired (decision 064), unread and unwritten (the SQL column is `customer_id`); the contract migration drops it */
+    retiredCustomerId: bigint('customer_id', { mode: 'number' }).references((): AnyPgColumn => retiredCustomers.id, {
+      onDelete: 'restrict',
+    }),
     serviceId: fk((): AnyPgColumn => services.id).notNull(),
     type: text().$type<ServiceType>().notNull(),
     source: text().$type<OrderSource>().notNull(),
@@ -188,7 +220,7 @@ export const orders = pgTable(
     check('orders_public_token_form_check', sql`${t.publicToken} is null or ${t.publicTokenHash} is null`),
     check('orders_public_token_enc_check', sql`(${t.publicTokenHash} is null) = (${t.publicTokenEnc} is null)`),
     uniqueIndex('orders_client_idempotency_uq')
-      .on(t.clientId, t.idempotencyKey)
+      .on(t.legacyClientId, t.idempotencyKey)
       .where(sql`${t.idempotencyKey} is not null`),
     check('orders_type_check', inList(t.type, SERVICE_TYPES)),
     check('orders_source_check', inList(t.source, ORDER_SOURCES)),
@@ -202,8 +234,9 @@ export const orders = pgTable(
     index('orders_idempotency_placed_idx')
       .on(t.placedAt)
       .where(sql`${t.idempotencyKey} is not null`),
-    index('orders_client_created_idx').on(t.clientId, t.createdAt.desc()),
-    index('orders_customer_created_idx').on(t.customerId, t.createdAt.desc()),
+    index('orders_client_created_idx').on(t.legacyClientId, t.createdAt.desc()),
+    index('orders_customer_created_idx').on(t.retiredCustomerId, t.createdAt.desc()),
+    index('orders_account_created_idx').on(t.accountId, t.createdAt.desc()),
     index('orders_service_id_idx').on(t.serviceId),
     index('orders_created_idx').on(t.createdAt.desc()),
     index('orders_status_created_idx').on(t.status, t.createdAt.desc()),
@@ -221,7 +254,9 @@ export const orders = pgTable(
     index('orders_verification_idx')
       .on(t.completedAt)
       .where(sql`${t.verificationStatus} is not null`),
-    check('orders_buyer_check', sql`(${t.clientId} is null) <> (${t.customerId} is null)`),
+    // The merchant column, while it lasts, always repeats the buyer; the door decides whether it is set.
+    check('orders_hold_buyer_check', sql`${t.legacyClientId} is null or ${t.legacyClientId} = ${t.accountId}`),
+    check('orders_door_check', sql`(${t.source} = 'store') = (${t.legacyClientId} is null)`),
     check('orders_quantity_check', sql`${t.quantity} > 0`),
     check(
       'orders_amounts_check',
@@ -260,7 +295,7 @@ export const orderEvents = pgTable(
     fromStatus: text().$type<OrderStatus>(),
     toStatus: text().$type<OrderStatus>(),
     actorType: text().$type<OrderEventActorType>().notNull(),
-    /** staff_users, clients, customers or suppliers by actor_type; null for the system */
+    /** staff_users, clients (an account id) or suppliers by actor_type; a `customer` row of before decision 064 is read through `account_legacy_ids`; null for the system */
     actorId: bigId(),
     /** event details, for example the review reason */
     data: jsonObject(),
@@ -271,6 +306,8 @@ export const orderEvents = pgTable(
     check('order_events_from_status_check', inList(t.fromStatus, ORDER_STATUSES)),
     check('order_events_to_status_check', inList(t.toStatus, ORDER_STATUSES)),
     check('order_events_actor_type_check', inList(t.actorType, ORDER_EVENT_ACTOR_TYPES)),
+    // Added NOT VALID by the expand migration: the rows of before stay, a new row writes the current words only.
+    check('order_events_actor_type_current_check', inList(t.actorType, CURRENT_ORDER_EVENT_ACTOR_TYPES)),
     index('order_events_order_idx').on(t.orderId, t.id),
     check('order_events_actor_check', sql`(${t.actorType} = 'system') = (${t.actorId} is null)`),
   ],

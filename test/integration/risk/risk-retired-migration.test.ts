@@ -1,7 +1,8 @@
 // Integration test of the data migration that retires the free IMEI check, two risk signals and the customer risk level: the SQL is run on
-// rows written before it (the rules setting that still names the retired rule, the two retired settings, an IMEI check row, a customer with a
-// risk level) and run again, as a database that already has it would. The table of the log and the risk-level column stay in this step, so the
-// test also proves the migration leaves them, and every other setting and customer, alone. The migration file is found by the end of its name.
+// rows written before it (the rules setting that still names the retired rule, the two retired settings, IMEI check rows) and run again, as a
+// database that already has it would. The table of the log and the risk-level column stay in this step, so the test also proves the migration
+// leaves them, and every other setting, alone. The old customers table is frozen by the accounts merge (decision 064): no customer row can be
+// written any more, so the log rows here carry no customer. The migration file is found by the end of its name.
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -86,30 +87,20 @@ describe('the migration that retires the free IMEI check, two risk signals and t
     expect(await keys()).toEqual(['guestCheckout', 'support.attachmentRetentionDays']);
   });
 
-  it('runs on an empty database, empties the retired log, and leaves the table, the risk-level column and the customers as they are', async () => {
+  it('runs on an empty database, empties the retired log, and leaves the log table and the risk-level column as they are', async () => {
     const { db, pool } = await testDb();
     await migrate();
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: 'a@example.com', name: 'A', riskLevel: 'high' })
-      .returning();
     await db
       .insert(s.imeiChecks)
-      .values({ imeiHash: 'h', imeiEnc: 'e', checkType: 'basic', source: 'storefront_free', customerId: customer!.id });
+      .values({ imeiHash: 'h', imeiEnc: 'e', checkType: 'basic', source: 'storefront_free', retiredCustomerId: null });
     await db.insert(s.imeiChecks).values({ checkType: 'basic', source: 'pre_order' });
     expect(await db.select().from(s.imeiChecks)).toHaveLength(2);
     await migrate();
     expect(await db.select().from(s.imeiChecks)).toHaveLength(0);
-    const [after] = await db.select().from(s.customers).where(eq(s.customers.id, customer!.id));
-    expect(after).toEqual(customer);
-    expect(after!.riskLevel).toBe('high');
     const { rows } = await pool.query<{ count: string }>(
       `select count(*)::text as count from information_schema.columns
         where (table_name = 'customers' and column_name = 'risk_level') or table_name = 'imei_checks' and column_name = 'imei_hash'`,
     );
     expect(rows[0]?.count).toBe('2');
-    // The customer can be deleted now that no log row holds it.
-    await db.delete(s.customers).where(eq(s.customers.id, customer!.id));
-    expect(await db.select().from(s.customers)).toHaveLength(0);
   });
 });

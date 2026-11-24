@@ -1,8 +1,8 @@
-// HTTP controllers of the data-subject requests (map domain K, stage 18): the staff list and the customer's own two requests. Thin: the
-// rules live in DataRequestService.
+// HTTP controllers of the data-subject requests (map domain K, stage 18, decision 064): the staff list and the account's own two requests.
+// Thin: the rules live in DataRequestService.
 import { Body, Controller, Header, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
-import { CurrentStaff, type StaffPrincipal } from '../../identity';
+import { type AccountPrincipal, CurrentAccount, CurrentStaff, type StaffPrincipal } from '../../identity';
 import { DataRequestService } from '../application/data-request.service';
 import {
   getDataRequest,
@@ -11,12 +11,11 @@ import {
   requestMyDataExport,
   updateDataRequest,
 } from '../contracts/data-requests.contracts';
-import { CurrentStoreCustomer, type StoreCustomer } from './store-customer';
 
 /**
  * The console's data requests tab.
  *
- * Why: the privacy law gives a customer a right to a copy of their data and to its erasure, and the shop 30 days to answer.
+ * Why: the privacy law gives a person a right to a copy of their data and to its erasure, and the shop 30 days to answer.
  *
  * @route GET /admin/data-requests
  * @route GET /admin/data-requests/:id
@@ -72,7 +71,9 @@ export class DataRequestsController {
 /**
  * The storefront account's privacy buttons.
  *
- * Why: the customer asks for a copy of their data or for anonymization; the shop answers within 30 days (RESOLUTIONS b2c-13).
+ * Why: an account asks for a copy of its data (any rank) or for anonymization (the retail rank only); the shop answers within 30
+ * days (RESOLUTIONS b2c-13). Both routes are open to every rank (`rank: 'any'`), so a merchant rank can ask for its copy and is told how
+ * to ask for erasure.
  *
  * @route POST /store/v1/me/data-export
  * @route POST /store/v1/me/data-delete
@@ -82,28 +83,28 @@ export class StorePrivacyController {
   constructor(private readonly requests: DataRequestService) {}
 
   /**
-   * Asks for a copy of the customer's data.
+   * Asks for a copy of the account's data.
    *
-   * @param customer the session's customer
+   * @param account the session's account (any rank)
    * @returns the request
    * @route POST /store/v1/me/data-export
    */
   @Route(requestMyDataExport)
   @Header('Cache-Control', 'no-store')
-  requestExport(@CurrentStoreCustomer() customer: StoreCustomer): Promise<ResultOf<typeof requestMyDataExport>> {
-    return this.requests.request(customer.customerId, 'export');
+  requestExport(@CurrentAccount() account: AccountPrincipal): Promise<ResultOf<typeof requestMyDataExport>> {
+    return this.requests.request(account.accountId, 'export');
   }
 
   /**
    * Asks to be anonymized.
    *
-   * @param customer the session's customer
+   * @param account the session's account (any rank; a merchant rank is refused by the use case with nothing stored)
    * @returns the request
    * @route POST /store/v1/me/data-delete
    */
   @Route(requestMyDataErasure)
   @Header('Cache-Control', 'no-store')
-  requestErasure(@CurrentStoreCustomer() customer: StoreCustomer): Promise<ResultOf<typeof requestMyDataErasure>> {
-    return this.requests.request(customer.customerId, 'erasure');
+  requestErasure(@CurrentAccount() account: AccountPrincipal): Promise<ResultOf<typeof requestMyDataErasure>> {
+    return this.requests.request(account.accountId, 'erasure');
   }
 }

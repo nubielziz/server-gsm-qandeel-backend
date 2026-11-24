@@ -1,12 +1,15 @@
 // Integration tests of the file downloads (feature 5, MISMATCHES B154): GET /admin/files/:id and GET /client/files/:id answer 302 to a
-// presigned link that expires after 5 minutes; a merchant reaches only its own files, and anything else is 404. Decision 047: a staff download
-// also needs the read permission of every kind of record that uses the file, and identity documents and payment proofs are audited.
+// presigned link that expires after 5 minutes; an account of a merchant rank reaches only its own files, and anything else is 404. Decision 047: a
+// staff download also needs the read permission of every kind of record that uses the file, and identity documents and payment proofs are audited.
+// Decision 064: the owner of a file is the account, whatever its rank, and one permission (clients:read) opens an upload of any account.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
-import { clearIdentityCaches, insertMerchant } from '../../support/auth';
+import { makeAccount } from '../../support/accounts';
+import { openAccountSession } from '../../support/account-sessions';
+import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
 import { insertGateway, insertInvoiceRow, insertPendingPayment } from '../../support/billing';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
@@ -39,7 +42,11 @@ async function opened(action: string) {
   return world.db.select().from(s.auditLogs).where(eq(s.auditLogs.action, action)).orderBy(s.auditLogs.id);
 }
 
-async function insertFile(ownerType: string, ownerId: number, filename = 'result file.zip'): Promise<number> {
+async function insertFile(
+  ownerType: 'account' | 'staff',
+  ownerId: number,
+  filename = 'result file.zip',
+): Promise<number> {
   const [row] = await world.db
     .insert(s.files)
     .values({
@@ -87,23 +94,26 @@ describe('GET /admin/files/:id', () => {
     expect((await staff.get(`/admin/files/${logo}`)).status).toBe(302);
   });
 
-  it('needs clients:read to open a merchant upload nothing uses yet, and customers:read for a customer upload', async () => {
-    const merchantUpload = await insertFile('client', world.other.id, 'passport-not-submitted.pdf');
+  it('needs clients:read to open an upload nothing uses yet, whatever the rank of the account that owns it', async () => {
+    const merchantUpload = await insertFile('account', world.other.id, 'passport-not-submitted.pdf');
     const denied = await staff.get(`/admin/files/${merchantUpload}`);
     expect(denied.status).toBe(403);
     expect(denied.body.detail).toBe('You need the clients:read permission to do this.');
-    const customer = await insertCustomer(world.db);
-    const customerUpload = await insertFile('customer', customer.id, 'receipt.png');
-    const deniedCustomer = await staff.get(`/admin/files/${customerUpload}`);
-    expect(deniedCustomer.status).toBe(403);
-    expect(deniedCustomer.body.detail).toBe('You need the customers:read permission to do this.');
-    const reader = await adminWith(t, ['files:read', 'clients:read', 'customers:read']);
+    const retail = await makeAccount({ rank: 'retail', db: world.db });
+    const retailUpload = await insertFile('account', retail.id, 'receipt.png');
+    const deniedRetail = await staff.get(`/admin/files/${retailUpload}`);
+    expect(deniedRetail.status).toBe(403);
+    // Decision 064: one permission for every rank (the retail upload used to ask customers:read).
+    expect(deniedRetail.body.detail).toBe('You need the clients:read permission to do this.');
+    const customersOnly = await adminWith(t, ['files:read', 'customers:read']);
+    expect((await customersOnly.get(`/admin/files/${retailUpload}`)).status).toBe(403);
+    const reader = await adminWith(t, ['files:read', 'clients:read']);
     expect((await reader.get(`/admin/files/${merchantUpload}`)).status).toBe(302);
-    expect((await reader.get(`/admin/files/${customerUpload}`)).status).toBe(302);
+    expect((await reader.get(`/admin/files/${retailUpload}`)).status).toBe(302);
   });
 
-  it('needs clients:read to open an identity document stored earlier, and audits every download under the merchant', async () => {
-    const file = await insertFile('client', world.other.id, 'passport.pdf');
+  it('needs clients:read to open an identity document stored earlier, and audits every download under the account', async () => {
+    const file = await insertFile('account', world.other.id, 'passport.pdf');
     const [submission] = await world.db
       .insert(s.kycSubmissions)
       .values({ clientId: world.other.id, fileIds: [file] })
@@ -120,7 +130,8 @@ describe('GET /admin/files/:id', () => {
     expect((await reader.get(`/admin/files/${file}`)).status).toBe(302);
     const [first] = await opened('opened an identity document of');
     expect(first).toMatchObject({
-      entityType: 'merchant',
+      // Decision 064: one word for every account; the stored client number is the account id.
+      entityType: 'account',
       entityId: world.other.id,
       entityLabel: world.other.name,
       actorId: reader.staffId,
@@ -131,7 +142,7 @@ describe('GET /admin/files/:id', () => {
   });
 
   it('needs payments:read to open a payment receipt, and audits it under the payment', async () => {
-    const receipt = await insertFile('client', world.merchant.id, 'receipt.pdf');
+    const receipt = await insertFile('account', world.merchant.id, 'receipt.pdf');
     const gatewayId = await insertGateway(t, world.db);
     const invoice = await insertInvoiceRow(world.db, world.merchant.id);
     const payment = await insertPendingPayment(world.db, invoice, gatewayId, { receiptFileId: receipt });
@@ -159,10 +170,10 @@ describe('GET /admin/files/:id', () => {
     await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId, resultFileId: result });
     const pdf = await insertFile('staff', staff.staffId, 'invoice.pdf');
     await insertInvoiceRow(db, merchant.id, { pdfFileId: pdf });
-    const attachment = await insertFile('client', merchant.id, 'screenshot.png');
+    const attachment = await insertFile('account', merchant.id, 'screenshot.png');
     const customer = await insertCustomer(db);
     const ticket = await insertSupportTicket(db, { requesterId: customer.id });
-    await insertSupportMessage(db, ticket.id, { authorType: 'customer', authorId: customer.id, fileIds: [attachment] });
+    await insertSupportMessage(db, ticket.id, { authorType: 'account', authorId: customer.id, fileIds: [attachment] });
     for (const [file, permission] of [
       [result, 'orders:read'],
       [pdf, 'invoices:read'],
@@ -175,7 +186,7 @@ describe('GET /admin/files/:id', () => {
       expect((await reader.get(`/admin/files/${file}`)).status, permission).toBe(302);
     }
     // A file that is an order's input and an identity document stored earlier needs both: the first missing one (in the order of the kinds) is named.
-    const both = await insertFile('client', merchant.id, 'both.pdf');
+    const both = await insertFile('account', merchant.id, 'both.pdf');
     await insertOrderRow(db, {
       clientId: merchant.id,
       serviceId: auto.serviceId,
@@ -207,7 +218,7 @@ describe('GET /admin/files/:id', () => {
     const evidence = await insertFile('staff', staff.staffId, 'evidence.pdf');
     await db.insert(s.disputes).values({
       paymentId: payment.id,
-      customerId: customer.id,
+      accountId: customer.id,
       gatewayDisputeId: 'dp_evidence',
       reasonCode: 'fraudulent',
       amount: '10.0000',
@@ -217,7 +228,7 @@ describe('GET /admin/files/:id', () => {
     });
     const exported = await insertFile('staff', staff.staffId, 'export.zip');
     await db.insert(s.dataRequests).values({
-      customerId: customer.id,
+      accountId: customer.id,
       kind: 'export',
       status: 'completed',
       dueAt: new Date('2026-12-01T00:00:00.000Z'),
@@ -242,7 +253,7 @@ describe('GET /admin/files/:id', () => {
   });
 
   it('answers 404 for an unknown id, 403 without files:read, 401 without a session and 422 for a bad id', async () => {
-    const id = await insertFile('client', world.merchant.id);
+    const id = await insertFile('account', world.merchant.id);
     const missing = await staff.get('/admin/files/999999');
     expect(missing.status).toBe(404);
     expect(missing.body).toMatchObject({ code: 'NOT_FOUND', detail: 'No file with this id.' });
@@ -254,11 +265,11 @@ describe('GET /admin/files/:id', () => {
 });
 
 describe('GET /client/files/:id', () => {
-  it('redirects a merchant to its own upload, and to the input or result file of its own order', async () => {
+  it('redirects an account to its own upload, and to the input or result file of its own order', async () => {
     const { db, merchant, auto } = world;
-    const upload = await insertFile('client', merchant.id, 'input.bin');
+    const upload = await insertFile('account', merchant.id, 'input.bin');
     const result = await insertFile('staff', staff.staffId, 'result.zip');
-    const input = await insertFile('client', world.other.id, 'someone-elses-name.bin');
+    const input = await insertFile('account', world.other.id, 'someone-elses-name.bin');
     await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId, resultFileId: result });
     const portal = await portalFor(t, merchant.id);
     for (const id of [upload, result]) {
@@ -274,9 +285,9 @@ describe('GET /client/files/:id', () => {
     expect((await portal.get(`/client/files/${input}`)).statusCode).toBe(302);
   });
 
-  it("answers 404 for another merchant's file and an unknown id, never 403", async () => {
+  it("answers 404 for another account's file and an unknown id, never 403", async () => {
     const { other, merchant } = world;
-    const foreign = await insertFile('client', other.id);
+    const foreign = await insertFile('account', other.id);
     const staffFile = await insertFile('staff', staff.staffId);
     const portal = await portalFor(t, merchant.id);
     for (const id of [foreign, staffFile, 999999]) {
@@ -286,18 +297,19 @@ describe('GET /client/files/:id', () => {
     }
   });
 
-  it('lets a merchant waiting for approval read its own uploads (B153) but nothing of its orders', async () => {
+  it('refuses an account of a retail rank: the route serves merchant ranks only, even for its own file', async () => {
     const { db } = world;
-    const pendingId = await insertMerchant(db, { status: 'pending' });
-    const own = await insertFile('client', pendingId, 'document.pdf');
-    const portal = await portalFor(t, pendingId);
-    expect((await portal.get(`/client/files/${own}`)).statusCode).toBe(302);
-    expect((await portal.get('/client/orders')).statusCode).toBe(403);
+    const retail = await makeAccount(t, { rank: 'retail', db });
+    const own = await insertFile('account', retail.id, 'receipt.pdf');
+    const session = await openAccountSession(t, retail.id);
+    const res = await t.app.inject({ method: 'GET', url: `/client/files/${own}`, headers: session.headers });
+    expect(res.statusCode).toBe(403);
+    expect(json(res).code).toBe('RANK_NOT_ALLOWED');
   });
 
-  it('refuses a call without a session and a suspended merchant', async () => {
+  it('refuses a call without a session and a suspended account', async () => {
     const { db, merchant } = world;
-    const id = await insertFile('client', merchant.id);
+    const id = await insertFile('account', merchant.id);
     expect((await t.app.inject({ method: 'GET', url: `/client/files/${id}` })).statusCode).toBe(401);
     const portal = await portalFor(t, merchant.id);
     await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, merchant.id));

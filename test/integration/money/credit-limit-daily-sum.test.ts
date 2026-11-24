@@ -1,6 +1,7 @@
 // Integration tests of the 24-hour sum of what one staff member makes spendable on merchant wallets (decision 049): the part by which a
-// credit limit is raised, on the credit-limit route and at an invitation, counts in the same sum as the staff member's credit adjustments;
-// a lowering counts nothing; an Owner is not limited; the requests of one staff member are judged one after the other.
+// credit limit is raised on the credit-limit route counts in the same sum as the staff member's credit adjustments; a lowering counts
+// nothing; an Owner is not limited; the requests of one staff member are judged one after the other. An invitation with a merchant rank is
+// the Owner's alone (decision 064), so it is never judged against a sum.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { Money } from '@src/common/money';
@@ -34,7 +35,12 @@ const SUM_DETAIL =
   'Credits and credit-limit raises over $10,000 in 24 hours need an owner: yours would come to $10,000.0001.';
 
 const raise = (staff: AdminApi, clientId: number, creditLimit: string) =>
-  staff.patch(`/admin/clients/${clientId}/credit-limit`, { creditLimit });
+  staff.call(
+    'PATCH',
+    `/admin/clients/${clientId}/credit-limit`,
+    { creditLimit },
+    { 'idempotency-key': crypto.randomUUID() },
+  );
 const credit = (staff: AdminApi, clientId: number, amount: string) =>
   staff.post(
     `/admin/clients/${clientId}/wallet/adjust`,
@@ -43,7 +49,7 @@ const credit = (staff: AdminApi, clientId: number, amount: string) =>
   );
 const limitOf = async (clientId: number) => {
   const { db } = await testDb();
-  return (await accountFigures(db, 'client_wallet', { type: 'client', id: clientId }))?.overdraftLimit;
+  return (await accountFigures(db, 'client_wallet', { type: 'account', id: clientId }))?.overdraftLimit;
 };
 const merchants = async (count: number) => {
   const { db } = await testDb();
@@ -176,26 +182,29 @@ describe('POST /admin/clients: a credit limit at an invitation in the same sum',
     return db.select().from(s.clients).where(eq(s.clients.email, email));
   };
 
-  it('counts the limit of a new merchant with later raises, invitations and credits', async () => {
+  it('refuses a staff member who is not an Owner before anything is counted: a merchant rank is given by the Owner only', async () => {
     const { vip } = await creditGroups();
     const [existing] = await merchants(1);
     const staff = await adminWith(t, ['clients:create', 'wallet:credit_limit', 'wallet:adjust', 'groups:update']);
-    expect((await invite(staff, vip, '6000.0000')).status).toBe(201);
-    expect((await raise(staff, existing!.id, '4000.0000')).status).toBe(200);
-    const refused = await invite(staff, vip, '0.0001', 'second@example.com');
+    const refused = await invite(staff, vip, '6000.0000', 'second@example.com');
     expect(refused.status).toBe(403);
-    expect(refused.body).toMatchObject({ code: 'FORBIDDEN', detail: SUM_DETAIL });
+    expect(refused.body.code).toBe('FORBIDDEN');
     expect(await invited('second@example.com')).toHaveLength(0);
+    // The refused invitation counted nothing: the whole sum is still free.
+    expect((await raise(staff, existing!.id, '10000.0000')).status).toBe(200);
     expect((await credit(staff, existing!.id, '0.0001')).body.code).toBe('APPROVAL_REQUIRED');
-    // An invitation without credit is not judged.
-    expect((await invite(staff, vip, '0.0000')).status).toBe(201);
   });
 
-  it('judges two invitations of one staff member at once one after the other', async () => {
+  it("counts an Owner's invitation in no other staff member's sum", async () => {
     const { vip } = await creditGroups();
-    const staff = await adminWith(t, ['clients:create', 'wallet:credit_limit', 'groups:update']);
-    const answers = await Promise.all([invite(staff, vip, '6000.0000'), invite(staff, vip, '6000.0000')]);
-    expect(answers.map((res) => res.status).sort()).toEqual([201, 403]);
+    const [first, second] = await merchants(2);
+    const owner = await adminWith(t, ['*']);
+    expect((await invite(owner, vip, '10000.0000')).status).toBe(201);
+    const staff = await adminWith(t, ['wallet:credit_limit']);
+    // The whole sum of the other staff member is still free, and it is theirs alone.
+    expect((await raise(staff, first!.id, '10000.0000')).status).toBe(200);
+    const refused = await raise(staff, second!.id, '0.0001');
+    expect(refused.body).toMatchObject({ code: 'FORBIDDEN', detail: SUM_DETAIL });
   });
 
   it('does not limit an owner', async () => {

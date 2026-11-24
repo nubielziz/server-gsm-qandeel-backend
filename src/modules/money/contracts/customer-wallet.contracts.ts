@@ -1,11 +1,12 @@
-// Route contracts of the customer store balance (feature 21, plan § 7.1, routes beyond the map in scripts/map-additions/21.mjs): the
-// customer's own wallet and statement on the store, and the staff wallet view, statement, adjust, freeze, unfreeze and list.
+// Route contracts of the store balance of an account (feature 21, plan § 7.1, routes beyond the map in scripts/map-additions/21.mjs, decision
+// 064): the retail account's own wallet and statement on the store, the staff list of store wallets, and the five staff wallet routes of
+// `/admin/customers/:id` that answer 410 `ROUTE_RETIRED` during the expand release (the wallet routes of `/admin/clients/:id` replace them).
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney, zSignedMoney } from '../../../common/contract';
 import { StatementRowSchema } from './wallet.contracts';
 
 /**
- * The `Idempotency-Key` every customer wallet write requires (O15): 1 to 100 printable ASCII characters, no spaces.
+ * The `Idempotency-Key` every store wallet write requires (O15): 1 to 100 printable ASCII characters, no spaces.
  *
  * Why: lead rule L5: a retry of the same dialog or attempt must change nothing twice; the console makes one key per dialog opening.
  */
@@ -35,7 +36,7 @@ const PendingSchema = z.object({
   amount: zMoney.describe('The net the unpaid top-ups would add.'),
 });
 
-/** The customer's store balance (`GET /store/v1/me/wallet`). */
+/** The account's store balance (`GET /store/v1/me/wallet`). */
 export const StoreWalletSchema = z.object({
   enabled: z
     .boolean()
@@ -51,7 +52,7 @@ export const StoreWalletSchema = z.object({
   limits: WalletLimitsSchema,
 });
 
-/** The customer's store balance as staff see it. */
+/** The store balance of an account as the retired customer wallet routes answered it. */
 export const AdminWalletSchema = z.object({
   enabled: z.boolean(),
   currency: z.string(),
@@ -61,13 +62,13 @@ export const AdminWalletSchema = z.object({
   available: zMoney,
   frozen: z.object({ at: zIsoDateTime, reason: z.string() }).nullable(),
   pendingTopUps: PendingSchema,
-  openDisputes: z.number().int().min(0).describe('Open disputes of this customer’s top-ups.'),
+  openDisputes: z.number().int().min(0).describe('Open disputes of this account’s top-ups.'),
   adjustApprovalLimit: zMoney.describe(
     "A staff member's credits to customer balances within 24 hours, and any single debit, above this need an owner (setting wallet.customer.adjust_approval_limit, decision 049).",
   ),
 });
 
-/** One line of the customer's own statement. */
+/** One line of the account's own statement. */
 export const StoreStatementRowSchema = z.object({
   id: zId.describe('The ledger entry id.'),
   transactionId: zId,
@@ -82,12 +83,12 @@ export const StoreStatementRowSchema = z.object({
 /** One wallet of the staff list. */
 export const WalletRowSchema = z.object({
   customer: z.object({
-    id: zId,
+    id: zId.describe('The account id.'),
     name: z.string(),
     email: z
       .string()
       .describe(
-        "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
+        "The account's address; masked (`ja•••@example.com`) unless the caller holds `clients:read` (decision 047).",
       ),
     status: z.string(),
   }),
@@ -162,9 +163,10 @@ export const getMyStoreWallet = defineRoute({
   key: 'GET /store/v1/me/wallet',
   summary: 'My store balance',
   description:
-    'The signed-in customer’s store balance (USD): balance, what can be spent now, the hold state, unpaid top-ups and the top-up ' +
-    'limits. `enabled: false` means the shop switched the balance off: hide Add Funds and Pay from balance, still show a balance. ' +
-    'Never cached (`Cache-Control: no-store`).',
+    'The signed-in account’s store balance (USD): balance, what can be spent now, the hold state, unpaid top-ups and the top-up ' +
+    'limits. Only an account of the retail rank has one: a merchant rank is refused with `403 RANK_NOT_ALLOWED`. `enabled: false` ' +
+    'means the shop switched the balance off: hide Add Funds and Pay from balance, still show a balance. Never cached ' +
+    '(`Cache-Control: no-store`).',
   tags: ['account'],
   surface: 'store',
   access: 'customer-session',
@@ -178,8 +180,9 @@ export const listMyStoreWalletStatement = defineRoute({
   key: 'GET /store/v1/me/wallet/statement',
   summary: 'My store balance statement',
   description:
-    'One row per ledger entry on the signed-in customer’s balance, newest first; `createdAt_gte` and `createdAt_lte` filter by the ' +
-    'posting time. A staff adjustment reads "Balance adjustment" (the staff reason is internal). Never cached.',
+    'One row per ledger entry on the signed-in account’s store balance, newest first; `createdAt_gte` and `createdAt_lte` filter by the ' +
+    'posting time. A staff adjustment reads "Balance adjustment" (the staff reason is internal). Retail rank only (`403 RANK_NOT_ALLOWED` ' +
+    'for a merchant rank). Never cached.',
   tags: ['account'],
   surface: 'store',
   access: 'customer-session',
@@ -189,11 +192,26 @@ export const listMyStoreWalletStatement = defineRoute({
   examples: { response: [storeLine] },
 });
 
+/**
+ * The sentence every retired staff wallet route opens its description with.
+ *
+ * Why: decision 064: a customer is an account of the retail rank and the wallet of every account has one set of staff routes under
+ * `/admin/clients/:id`, so each `/admin/customers/:id/wallet*` address stays registered during the expand release and answers
+ * `410 ROUTE_RETIRED`; the description keeps the old behaviour for the client that still calls it.
+ *
+ * @param replacement the account route that does the work now
+ * @returns the sentence, ending with a space
+ */
+function retiredNote(replacement: string): string {
+  return `Retired with the one account type (decision 064): the route answers \`410 ROUTE_RETIRED\` and changes nothing; use \`${replacement}\`. What follows is the old behaviour, kept for a client that still calls it. `;
+}
+
 /** `GET /admin/customers/:id/wallet`. */
 export const getCustomerWallet = defineRoute({
   key: 'GET /admin/customers/:id/wallet',
   summary: 'A customer store balance',
   description:
+    retiredNote('GET /admin/clients/:id/wallet') +
     'The store balance of a customer: balance, available, the hold with its reason, unpaid top-ups, open top-up disputes and the ' +
     'adjust approval limit. All zero while the customer has no wallet. Never cached.',
   tags: ['customers'],
@@ -202,7 +220,7 @@ export const getCustomerWallet = defineRoute({
   permission: 'wallet:read',
   params: z.object({ id: zIdParam }),
   success: { status: 200, schema: AdminWalletSchema },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'VALIDATION_FAILED', 'ROUTE_RETIRED'],
   examples: { response: adminWallet },
 });
 
@@ -211,6 +229,7 @@ export const listCustomerWalletStatement = defineRoute({
   key: 'GET /admin/customers/:id/wallet/statement',
   summary: 'A customer balance statement',
   description:
+    retiredNote('GET /admin/clients/:id/statement') +
     'One row per ledger entry on the customer’s balance, newest first, with the full memo (staff reasons included). ' +
     '`createdAt_gte` and `createdAt_lte` filter by the posting time.',
   tags: ['customers'],
@@ -220,7 +239,7 @@ export const listCustomerWalletStatement = defineRoute({
   params: z.object({ id: zIdParam }),
   query: statementQuery(),
   success: { status: 200, schema: StatementRowSchema },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'VALIDATION_FAILED', 'ROUTE_RETIRED'],
   examples: { response: [adminLine] },
 });
 
@@ -249,6 +268,7 @@ export const adjustCustomerWallet = defineRoute({
   key: 'POST /admin/customers/:id/wallet/adjust',
   summary: 'Add to or deduct from a customer balance',
   description:
+    retiredNote('POST /admin/clients/:id/wallet/adjust') +
     'Posts a manual adjustment (credit: Dr adjustments / Cr customer_wallet; debit: the mirror) with the reason in the memo, audits it ' +
     'and emails the customer. A credit needs a customer with an account that is not anonymized (`NO_ACCOUNT`, `ANONYMIZED`); a debit ' +
     "never takes the balance below zero (`INSUFFICIENT_FUNDS`). A staff member's credits to customer balances within 24 hours, this " +
@@ -275,6 +295,7 @@ export const adjustCustomerWallet = defineRoute({
     'IDEMPOTENCY_KEY_REUSED',
     'NO_ACCOUNT',
     'ANONYMIZED',
+    'ROUTE_RETIRED',
   ],
   examples: {
     request: { amount: '10.0000', direction: 'credit', reason: 'Goodwill credit for a slow unlock' },
@@ -287,6 +308,7 @@ export const freezeCustomerWallet = defineRoute({
   key: 'POST /admin/customers/:id/wallet/freeze',
   summary: 'Put a customer balance on hold',
   description:
+    retiredNote('POST /admin/clients/:id/wallet/freeze') +
     'Stops paying from the balance and card top-ups; bank top-ups, credits, refunds and staff adjustments still work. Freezing a frozen ' +
     'wallet changes nothing (still audited). Audited and emailed to the customer. The `Idempotency-Key` header is required.',
   tags: ['customers'],
@@ -297,7 +319,7 @@ export const freezeCustomerWallet = defineRoute({
   headers: IdempotencyHeader,
   body: ReasonBody,
   success: { status: 200, schema: AdminWalletSchema },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED', 'ROUTE_RETIRED'],
   examples: {
     request: { reason: 'Checking a disputed top-up' },
     response: {
@@ -313,6 +335,7 @@ export const unfreezeCustomerWallet = defineRoute({
   key: 'POST /admin/customers/:id/wallet/unfreeze',
   summary: 'Lift the hold on a customer balance',
   description:
+    retiredNote('POST /admin/clients/:id/wallet/unfreeze') +
     'Clears the hold. Refused while the balance is below zero (`CONFLICT`: bring it to zero first) or a dispute of one of the ' +
     'customer’s top-ups is open (`OPEN_DISPUTE`). Unfreezing a wallet that is not frozen changes nothing. Audited. The ' +
     '`Idempotency-Key` header is required.',
@@ -324,7 +347,16 @@ export const unfreezeCustomerWallet = defineRoute({
   headers: IdempotencyHeader,
   body: ReasonBody,
   success: { status: 200, schema: AdminWalletSchema },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED', 'CONFLICT', 'OPEN_DISPUTE'],
+  errors: [
+    'UNAUTHORIZED',
+    'FORBIDDEN',
+    'CSRF_FAILED',
+    'NOT_FOUND',
+    'VALIDATION_FAILED',
+    'CONFLICT',
+    'OPEN_DISPUTE',
+    'ROUTE_RETIRED',
+  ],
   examples: { request: { reason: 'The dispute was won' }, response: adminWallet },
 });
 
@@ -333,8 +365,10 @@ export const listCustomerWallets = defineRoute({
   key: 'GET /admin/customer-wallets',
   summary: 'Customer balances',
   description:
-    'Every customer wallet, most recently changed first. `state` filters positive, zero, negative or frozen wallets (repeat it for ' +
-    'several); `q` searches the customer’s name and email (the email only for callers who hold `customers:read`, decision 047).',
+    'Every live store wallet of an account, most recently changed first: the wallet of an account whose rank is a retail rank (the zero ' +
+    'wallet a merchant keeps from before a rank change is not listed). `customer.id` is the account id. `state` filters positive, zero, ' +
+    'negative or frozen wallets (repeat it for several); `q` searches the account’s name and email (the email only for callers who hold ' +
+    '`clients:read`, decision 047).',
   tags: ['finance'],
   surface: 'admin',
   access: 'staff-permission',

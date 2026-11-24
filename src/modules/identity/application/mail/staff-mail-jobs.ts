@@ -57,7 +57,7 @@ export type StaffMailJob = Pick<Job<OutboxJobData>, 'data'> & {
 /**
  * Runs one staff mail job.
  *
- * Why: the same design as `MerchantMailJobs` (feature 12a): the outbox row keeps only the `auth_tokens` id and a token is stored only as a
+ * Why: the same design as `AccountMailJobs` (feature 12a): the outbox row keeps only the `auth_tokens` id and a token is stored only as a
  * hash, so the clear token of the link is made inside this job. The job re-reads everything, checks that the link is still worth sending (not
  * used, not expired, not replaced) and that no mail of this event was delivered, then rotates the placeholder token on the same row and
  * sends the clear link as the `link` secret. Nothing stores or logs it; the `notifications` row (dedupe key `outbox-<event id>:email`)

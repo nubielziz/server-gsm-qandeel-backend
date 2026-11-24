@@ -1,16 +1,23 @@
-// Drizzle queries of the account surfaces of the support chat (feature 28, slice B2): a signed-in customer's or merchant's own tickets, each
-// with the author of its latest public message, and the one check every merchant route starts with (the ticket is theirs). The inbox
-// queries of staff and the live chat's reads are in ticket.repository.ts; nothing here joins a foreign table.
+// Drizzle queries of the account surfaces of the support chat (feature 28, slice B2): a signed-in account's own tickets, each with the author
+// of its latest public message, and the one check every portal route starts with (the ticket is theirs). The inbox queries of staff and the
+// live chat's reads are in ticket.repository.ts; nothing here joins a foreign table.
 import { and, count, desc, eq, inArray, isNotNull, ne, or } from 'drizzle-orm';
 import type { ParsedFilter, ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
+import type { RankKind } from '../../identity';
 import { type SupportTicket, requesterProven, supportTickets, ticketMessages } from '../db/schema';
 import { type WireTicketStatus, fromWireStatus } from '../domain/ticket-status';
 
-/** Who owns the tickets of a list: the signed-in customer or the merchant. */
+/**
+ * Who owns the tickets of a list: the signed-in account, and the rank kind it asks with.
+ *
+ * Why: one account type opens tickets on two surfaces, told apart by the rank kind (decision 064): a retail account reads its tickets as
+ * ticket pages (each opens by its link token), a merchant rank in the portal (each opens by its id). The rank kind comes from the
+ * session's principal, never from a body.
+ */
 export interface TicketOwner {
-  readonly type: 'customer' | 'client';
   readonly id: number;
+  readonly rankKind: RankKind;
 }
 
 /** The sorts of both lists (`GET /store/v1/me/tickets`, `GET /client/tickets`). */
@@ -83,15 +90,17 @@ async function latestPublicMessages(
 }
 
 /**
- * Lists the tickets of one customer or merchant.
+ * Lists the tickets of one account.
  *
- * Why: feature 28, rule 6 and 7: a signed-in customer's tickets are those whose requester is that customer (tickets they filed as a guest
- * with the same address included, once the address was proven, decision 053); a merchant's, those whose requester is that merchant. A customer's ticket without a link token (cleared
- * by an erasure) has no page to open and is left out. The sort is `updatedAt` (default, newest first) or `createdAt`; the only filter is
- * `status`, and there is no search.
+ * Why: feature 28, rules 6 and 7, and decision 064: an account's tickets are those whose requester is that account, whatever its rank
+ * (tickets filed as a guest with the same address included once the address was proven, decision 053). The proof rule applies to every
+ * account (decision 064): a ticket of the public form typed with a login account's address stays off its list until its mailed link is used,
+ * a merchant rank included. A retail account's list holds only tickets that have a link token (a ticket whose token an erasure cleared has
+ * no page to open); the link-less filter is for the shop list only, because a portal ticket has no token and opens by its id. The sort is
+ * `updatedAt` (default, newest first) or `createdAt`; the only filter is `status`, and there is no search.
  *
  * @param db the database or a transaction
- * @param owner the signed-in customer or merchant
+ * @param owner the signed-in account and its rank kind
  * @param query the parsed list request
  * @returns the page of tickets with their latest public message, and the exact total
  */
@@ -104,12 +113,14 @@ export async function listAccountTickets(
     { filters: storedStatusFilters(query.filters), search: undefined },
     LIST_COLUMNS,
     and(
-      eq(supportTickets.requesterType, owner.type),
+      eq(supportTickets.requesterType, 'account'),
       eq(supportTickets.requesterId, owner.id),
-      // A link-less ticket of a customer cannot be opened from the list (either stored form of the link counts, decision 054).
-      owner.type === 'customer' ? or(isNotNull(supportTickets.token), isNotNull(supportTickets.tokenHash)) : undefined,
-      // Decision 053: a ticket opened with a typed address stays off the account until its mailed link is first used.
-      owner.type === 'customer' ? requesterProven() : undefined,
+      // A link-less ticket cannot be opened from the shop list (either stored form of the link counts, decision 054).
+      owner.rankKind === 'retail'
+        ? or(isNotNull(supportTickets.token), isNotNull(supportTickets.tokenHash))
+        : undefined,
+      // Decision 053 for every account: a ticket opened with a typed address stays off the account until its mailed link is used.
+      requesterProven(),
     ),
   );
   const [tickets, [total]] = await Promise.all([
@@ -137,18 +148,20 @@ export async function listAccountTickets(
 }
 
 /**
- * Reads one ticket if it belongs to the owner.
+ * Reads one ticket if it belongs to the account.
  *
- * Why: a merchant addresses a ticket by id and a ticket of someone else is `404`, never `403` (plan § 2, rule 7), so ids cannot be probed.
+ * Why: a portal route addresses a ticket by id, and a ticket of someone else is `404`, never `403` (plan § 2, rule 7), so ids cannot be
+ * probed. A ticket whose requester address is not proven yet is not the account's to read either (decision 053): it reads as
+ * unknown until the mailed link is used.
  *
  * @param db the database or a transaction
- * @param owner the signed-in customer or merchant
+ * @param owner the signed-in account
  * @param id the ticket id of the route
- * @returns the ticket, or `undefined` when there is none with this id or it is somebody else's
+ * @returns the ticket, or `undefined` when there is none with this id, it is somebody else's or its address is not proven
  */
 export async function findOwnedTicket(
   db: DbExecutor,
-  owner: TicketOwner,
+  owner: Pick<TicketOwner, 'id'>,
   id: number,
 ): Promise<SupportTicket | undefined> {
   const [row] = await db
@@ -157,8 +170,9 @@ export async function findOwnedTicket(
     .where(
       and(
         eq(supportTickets.id, id),
-        eq(supportTickets.requesterType, owner.type),
+        eq(supportTickets.requesterType, 'account'),
         eq(supportTickets.requesterId, owner.id),
+        requesterProven(),
       ),
     )
     .limit(1);

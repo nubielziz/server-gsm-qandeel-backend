@@ -47,20 +47,20 @@ beforeAll(async () => {
   staff = await adminWith(t, ['refunds:*', 'orders:read'], { name: 'Layla Haddad' });
   // The story starts with a paid order that waits for the supplier (the dispatch job is queued, nothing is sent yet) and a request.
   paid = await paidOrder(t, clock, world, { serviceId: world.att.serviceId, email: 'jack@mail.example' });
-  const customerId = (await orderRow(world.db, paid.orderId)).customerId!;
+  const accountId = (await orderRow(world.db, paid.orderId)).accountId;
   const [request] = await world.db
     .insert(s.refunds)
     .values({
       paymentId: paid.paymentId,
       orderId: paid.orderId,
-      customerId,
+      accountId,
       amount: paid.charged,
       currency: 'GBP',
       reason: 'I bought the wrong service',
       method: 'original',
       status: 'requested',
-      requestedByType: 'customer',
-      requestedById: customerId,
+      requestedByType: 'account',
+      requestedById: accountId,
     })
     .returning();
   refundId = request!.id;

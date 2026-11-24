@@ -46,6 +46,7 @@ describe('statementFilename', () => {
 
 const data: StatementData = {
   merchant: { id: 12, name: 'Zain Mobile Hub', company: '', country: 'JO' },
+  wallet: 'merchant',
   from: '2026-10-01',
   to: '2026-10-31',
   opening: '10.0000',
@@ -115,5 +116,27 @@ describe('statementDocument', () => {
     expect(
       empty.blocks.filter((block) => block.kind === 'text').map((block) => (block as { text: string }).text),
     ).toEqual(['No wallet activity in this period.', 'No invoices were issued in this period.']);
+  });
+
+  it('draws a store balance as the account statement of the retail rank: the account, no credit limit, the store balance activity', () => {
+    const store = statementDocument({ ...data, wallet: 'store', creditLimit: '0.0000' });
+    const rows = store.blocks.find((block) => block.kind === 'facts');
+    expect(rows?.kind === 'facts' ? Object.fromEntries(rows.rows) : {}).toEqual({
+      Account: 'Zain Mobile Hub (#12)',
+      Company: '-',
+      Country: 'JO',
+      Period: '2026-10-01 to 2026-10-31 (UTC days, both included)',
+      'Opening balance': '10.0000 USD',
+      'Total credits': '100.0000 USD',
+      'Total debits': '30.0000 USD',
+      'Closing balance': '80.0000 USD',
+    });
+    expect(
+      store.blocks.filter((block) => block.kind === 'heading').map((block) => (block as { text: string }).text),
+    ).toEqual(['Store balance activity', 'Invoices issued in this period']);
+    const empty = statementDocument({ ...data, wallet: 'store', lines: [], invoices: [] });
+    expect(empty.blocks.find((block) => block.kind === 'text')).toMatchObject({
+      text: 'No store balance activity in this period.',
+    });
   });
 });

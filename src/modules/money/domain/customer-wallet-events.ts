@@ -1,9 +1,13 @@
-// The money events of the customer store balance (feature 21, plan § 5.4) as pure builders, beyond the map's 13: top-up, balance payment,
+// The money events of the store balance (feature 21, plan § 5.4) as pure builders, beyond the map's 13: top-up, balance payment,
 // refund to the balance, staff adjustment and top-up chargeback. Ledger kinds reuse the console's words so labels and filters work unchanged.
+// The balance belongs to an account (decision 064): every owner reference here is `('account', id)`, and the input keys that still say
+// `customerId` carry an account id.
 import { Decimal } from 'decimal.js';
 import { Money } from '../../../common/money';
-import type { LedgerRefType } from '../db/schema';
+import type { CurrentLedgerRefType } from '../db/schema';
+import { storeWalletAccountOf, walletAccountOf } from './accounts';
 import { type AccountRef, type LedgerLine, creditLine, debitLine } from './ledger-lines';
+import type { WalletLedgerKind } from './wallet-kinds';
 
 /** The ids of the wallet money events. */
 export const WALLET_EVENT_IDS = [
@@ -39,34 +43,43 @@ export const WALLET_EVENT_KINDS: Readonly<Record<WalletEventId, string>> = {
 export interface WalletEventPosting {
   readonly event: WalletEventId;
   readonly kind: string;
-  readonly refType: LedgerRefType;
+  readonly refType: CurrentLedgerRefType;
   readonly lines: readonly LedgerLine[];
 }
 
 const SYSTEM = (kind: AccountRef['kind']): AccountRef => ({ kind });
 
 /**
- * The ledger account of a customer's store balance.
+ * The ledger account of an account's store balance.
  *
- * Why: decision 024's identity `(kind, owner_type, owner_id, currency)`: one USD `customer_wallet` per customer (plan 21 § 5.3).
+ * Why: decision 024's identity `(kind, owner_type, owner_id, currency)` with the one owner word of decision 064: at most one USD
+ * `customer_wallet` per account (plan 21 § 5.3), owned by `('account', accountId)`. An old customer number is never an account id; the
+ * expand migration re-keyed every store balance through the legacy map before this reference is used.
  *
- * @param customerId the customer
+ * @param accountId the account that holds the store balance
  * @returns the account reference
  */
-export function customerWalletAccount(customerId: number): AccountRef {
-  return { kind: 'customer_wallet', ownerType: 'customer', ownerId: customerId };
+export function customerWalletAccount(accountId: number): AccountRef {
+  return storeWalletAccountOf(accountId);
 }
 
-/** Who owns a topped-up wallet: a storefront customer or a merchant. */
-export type TopUpOwner =
-  { readonly type: 'customer'; readonly id: number } | { readonly type: 'client'; readonly id: number };
+/**
+ * Whose wallet a top-up credited: an account and the kind of wallet that top-up reached.
+ *
+ * Why: decision 064: both kinds of account are topped up, and a late credit or a chargeback hits the wallet that is live when it is
+ * posted, so the owner is the account plus the ledger kind read under the account row lock (`client_wallet` or `customer_wallet`).
+ */
+export interface TopUpOwner {
+  /** The account whose wallet it is. */
+  readonly accountId: number;
+  /** The ledger kind of the wallet: `client_wallet` for a merchant rank, `customer_wallet` for any other. */
+  readonly kind: WalletLedgerKind;
+}
 
 const ownerWallet = (owner: TopUpOwner): AccountRef =>
-  owner.type === 'customer'
-    ? customerWalletAccount(owner.id)
-    : { kind: 'client_wallet', ownerType: 'client', ownerId: owner.id };
+  owner.kind === 'customer_wallet' ? customerWalletAccount(owner.accountId) : walletAccountOf(owner.accountId);
 
-function posting(event: WalletEventId, refType: LedgerRefType, ...groups: LedgerLine[][]): WalletEventPosting {
+function posting(event: WalletEventId, refType: CurrentLedgerRefType, ...groups: LedgerLine[][]): WalletEventPosting {
   return { event, kind: WALLET_EVENT_KINDS[event], refType, lines: groups.flat() };
 }
 
@@ -121,32 +134,40 @@ export function b2cWalletPay(input: { customerId: number; net: Money; vat: Money
  * Why: the map's `b2c_refund` with the store balance in place of the gateway (plan 21 § 5.6.7, O10): before delivery the net leaves
  * `customer_funds`, after delivery `revenue`; the VAT share leaves `vat_payable` either way.
  *
- * @param input the customer, the net and VAT paid back, and where the net comes from
- * @returns Dr customer_funds (or revenue) net / Dr vat_payable vat / Cr customer_wallet net + vat; kind `refund`, reference type `order`
+ * Decision 064: a refund always credits the account's live wallet. An order paid from the balance of an account that has since become a
+ * merchant is refunded to its `client_wallet` (`wallet: 'client_wallet'`); the refund key is the same either way.
+ *
+ * @param input the account (the key keeps its old name), the net and VAT paid back, where the net comes from and the live wallet kind
+ *   (`customer_wallet` unless given)
+ * @returns Dr customer_funds (or revenue) net / Dr vat_payable vat / Cr customer_wallet (or client_wallet) net + vat; kind `refund`,
+ *   reference type `order`
  */
 export function b2cWalletRefund(input: {
   customerId: number;
   net: Money;
   vat: Money;
   from?: 'customer_funds' | 'revenue';
+  wallet?: WalletLedgerKind;
 }): WalletEventPosting {
+  const target =
+    input.wallet === 'client_wallet' ? walletAccountOf(input.customerId) : customerWalletAccount(input.customerId);
   return posting(
     'b2c_wallet_refund',
     'order',
     debitLine(SYSTEM(input.from ?? 'customer_funds'), input.net),
     debitLine(SYSTEM('vat_payable'), input.vat),
-    creditLine(customerWalletAccount(input.customerId), input.net.add(input.vat)),
+    creditLine(target, input.net.add(input.vat)),
   );
 }
 
 /**
  * Event `customer_adjust`: staff add to or deduct from a customer's store balance by hand.
  *
- * Why: the map's `adjust` for a customer (plan 21 § 5.6.2). It posts the stored reference type `customer` (the customer is the
- * reference), sent as `system` on the wire like the merchant's `client`.
+ * Why: the map's `adjust` for a customer (plan 21 § 5.6.2). It posts the reference type `account` (decision 064: the account is the
+ * reference, never `customer`), sent as `system` on the wire like the older `customer` and `client` rows.
  *
- * @param input customer, amount and direction
- * @returns credit: Dr adjustments / Cr customer_wallet; debit: the mirror; kind `adjustment`, reference type `customer`
+ * @param input the account (the key keeps its old name), amount and direction
+ * @returns credit: Dr adjustments / Cr customer_wallet; debit: the mirror; kind `adjustment`, reference type `account`
  */
 export function customerAdjust(input: {
   customerId: number;
@@ -157,13 +178,13 @@ export function customerAdjust(input: {
   return input.direction === 'credit'
     ? posting(
         'customer_adjust',
-        'customer',
+        'account',
         debitLine(SYSTEM('adjustments'), input.amount),
         creditLine(wallet, input.amount),
       )
     : posting(
         'customer_adjust',
-        'customer',
+        'account',
         debitLine(wallet, input.amount),
         creditLine(SYSTEM('adjustments'), input.amount),
       );
@@ -175,7 +196,7 @@ export function customerAdjust(input: {
  * Why: O11: the gateway takes the disputed money and its dispute fee from what it owes us; we claw back what the top-up credited (the
  * wallet may go below zero), reverse our fee income and book the dispute fee as a loss. Customers and merchants share it (plan § 5.6.9).
  *
- * @param input the wallet owner, the net clawed back, the top-up fee reversed and the gateway's dispute fee
+ * @param input the wallet owner (the account and the kind of its live wallet), the net clawed back, the top-up fee reversed and the gateway's dispute fee
  * @returns Dr owner wallet net / Dr fee_income fee / Dr chargeback_loss disputeFee / Cr gateway_clearing net + fee + disputeFee; kind
  *   `chargeback`, reference type `dispute`
  */

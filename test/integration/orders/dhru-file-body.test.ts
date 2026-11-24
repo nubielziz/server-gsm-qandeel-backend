@@ -77,7 +77,7 @@ describe('placefileorder with FILEDATA over 1 MiB', () => {
     expect(answer.SUCCESS[0].MESSAGE).toBe('Order received');
     const order = await orderRow(db, Number(answer.SUCCESS[0].REFERENCEID));
     const [file] = await db.select().from(s.files).where(eq(s.files.id, order.inputFileId!));
-    expect(file).toMatchObject({ filename: 'big.bin', size: data.length, ownerType: 'client' });
+    expect(file).toMatchObject({ filename: 'big.bin', size: data.length, ownerType: 'account' });
     expect(file!.sha256).toBe(createHash('sha256').update(data).digest('hex'));
   });
 

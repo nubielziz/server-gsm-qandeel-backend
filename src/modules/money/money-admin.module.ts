@@ -5,6 +5,8 @@ import { Module } from '@nestjs/common';
 import { JobRunsModule } from '../health';
 import { ClientGroupDirectory } from '../catalog';
 import { StoredFiles } from '../platform';
+import { AccountRankChange } from './application/account-rank-change.service';
+import { AccountWalletAdmin } from './application/account-wallet-admin';
 import { ClientStatementService } from './application/client-statement.service';
 import { CurrencyService } from './application/currency.service';
 import { FxRefreshService } from './application/fx-refresh.service';
@@ -36,6 +38,7 @@ import { ReconcileService } from './application/reconcile.service';
 import { ReportService } from './application/report.service';
 import { TaxRateService } from './application/tax-rate.service';
 import { WalletService } from './application/wallet.service';
+import { AccountRankController } from './controllers/account-rank.controller';
 import { B2cReportsController } from './controllers/b2c-reports.controller';
 import { ClientBillingController } from './controllers/client-billing.controller';
 import { CurrenciesController } from './controllers/currencies.controller';
@@ -60,6 +63,7 @@ import { CustomerTopUpsController } from './controllers/customer-topups.controll
 import { CustomerWalletController } from './controllers/customer-wallet.controller';
 import { TopUpScreeningModule } from './top-up-screening.module';
 import { StorefrontMailsModule } from './storefront-mails.module';
+import { WalletErasure } from './ports/wallet-erasure';
 
 /**
  * Provides `/admin/clients/:id/wallet|statement|wallet/adjust|credit-limit`, `/admin/ledger/*`, `/admin/currencies`,
@@ -70,8 +74,10 @@ import { StorefrontMailsModule } from './storefront-mails.module';
  * stage 16: `/admin/refunds`, `/admin/disputes`, `/admin/reports/vat|payments` and `POST /webhooks/disputes/:gateway`, and the close of a
  * storefront payment held for staff (`POST /admin/held-payments/:id/close`, decision 048); it exports
  * what the checkout and the order receipt need (`StorefrontPayments`, `OrderReceipts`); and the customer wallet of feature 21
- * (`/store/v1/me/wallet*` with the top-ups, `/admin/customers/:id/wallet*`, `/admin/customer-wallets`), exporting `CustomerWallets` and `CustomerWalletPayments`
- * for the customers module (anonymize guard, data export, balance payment).
+ * (`/store/v1/me/wallet*` with the top-ups, `/admin/customer-wallets`; the retired `/admin/customers/:id/wallet*` answer 410), exporting
+ * `CustomerWallets` and `CustomerWalletPayments` for the customers module (data export, balance payment). Decision 064 adds the staff
+ * wallet of either kind (`AccountWalletAdmin` behind `/admin/clients/:id/wallet*`) and the rank change (`POST /admin/clients/:id/rank`,
+ * `AccountRankChange`), and binds `WalletErasure` to `CustomerWallets` (exported: the customers module's anonymize asks it).
  *
  * Why: these use cases need the global database, audit, settings and clock providers (and `job_runs` for reconciliation),
  * which a database-less test app does not have; `MerchantAccounts` and `LedgerPoster` (the global `MoneyModule`) need none
@@ -97,6 +103,7 @@ import { StorefrontMailsModule } from './storefront-mails.module';
     B2cReportsController,
     CustomerWalletController,
     CustomerTopUpsController,
+    AccountRankController,
   ],
   providers: [
     WalletService,
@@ -138,7 +145,10 @@ import { StorefrontMailsModule } from './storefront-mails.module';
     CustomerWallets,
     CustomerTopUps,
     CustomerWalletPayments,
+    { provide: WalletErasure, useExisting: CustomerWallets },
+    AccountWalletAdmin,
+    AccountRankChange,
   ],
-  exports: [WalletService, StorefrontPayments, OrderReceipts, CustomerWallets, CustomerWalletPayments],
+  exports: [WalletService, StorefrontPayments, OrderReceipts, CustomerWallets, CustomerWalletPayments, WalletErasure],
 })
 export class MoneyAdminModule {}

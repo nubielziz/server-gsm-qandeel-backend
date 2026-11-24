@@ -14,7 +14,13 @@ export {
 export type { StoredFileView, UploadInput } from './application/file-upload.service';
 export { AuditModule } from './audit/audit.module';
 export { AuditService } from './audit/audit.service';
-export { AUDIT_ENTITY_TYPES, CONSOLE_AUDIT_ENTITY_TYPES, isAuditEntityType } from './audit/audit-entity-types';
+export {
+  ACCOUNT_ACTOR_WORDS,
+  ACCOUNT_ENTITY_WORDS,
+  AUDIT_ENTITY_TYPES,
+  CONSOLE_AUDIT_ENTITY_TYPES,
+  isAuditEntityType,
+} from './audit/audit-entity-types';
 export type { AuditEntityType } from './audit/audit-entity-types';
 export type { AuditEntry } from './audit/audit.service';
 export { REDACTED, isSecretKey, redactForAudit } from './audit/audit-redaction';
@@ -120,13 +126,14 @@ export { auditStaffFileOpening } from './files/file-opening-audit';
 export {
   CUSTOMER_DAILY_QUOTA,
   MERCHANT_DAILY_QUOTA,
-  PENDING_MERCHANT_QUOTA,
   assertUploadQuota,
   quotaExceeded,
   ticketDailyQuota,
+  uploadQuotaFor,
 } from './files/upload-quota';
 export type { UploadQuotaRule } from './files/upload-quota';
 export { lockUploadOwner } from './infra/file.repository';
+export { GUEST_CLAIM_FILES_NAME, moveGuestClaimFiles } from './files/guest-claim-files';
 export { UploadJanitor } from './files/upload-janitor';
 export { UPLOAD_JANITOR_JOB, UploadJanitorProcessor } from './files/upload-janitor.processor';
 export { PlatformRetentionModule } from './jobs/platform-retention.module';

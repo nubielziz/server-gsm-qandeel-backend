@@ -1,4 +1,5 @@
-// ApiKeyAuthenticator: turns a presented merchant API key into a principal (decision 018): the Dhru surface's `username` + `apiaccesskey`.
+// ApiKeyAuthenticator: turns a presented API key into a principal (decision 018): the Dhru surface's `username` + `apiaccesskey`. A key
+// works only for an active account of a merchant rank (decision 064).
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { CLOCK, type Clock } from '../../../../../common/clock';
@@ -23,12 +24,13 @@ export interface ApiKeyCredentials {
 }
 
 /**
- * Authenticates merchant API keys.
+ * Authenticates API keys.
  *
  * Why: decision 018: `username` + `apiaccesskey` (Dhru) resolve an `api_keys` row by keyed hash, then check revoked/expired, the
- * merchant's status, `allowed_ips` (CIDR, IPv4 and IPv6) and the key's per-minute limit (decision 021; the limit is counted only after
- * every other check passed, so a refused call costs the merchant nothing). A key carries no scope: every live key of an active merchant
- * is a Dhru credential. Unknown keys are counted per client address (the `ip` limiter, 300 a minute, under their own key) because Dhru
+ * account's status and rank kind, `allowed_ips` (CIDR, IPv4 and IPv6) and the key's per-minute limit (decision 021; the limit is counted
+ * only after every other check passed, so a refused call costs the merchant nothing). A key carries no scope: every live key of an active
+ * account of a merchant rank is a Dhru credential; a key whose account is not a merchant any more is refused as unauthenticated (decision
+ * 064, a second wall behind the revoke). Unknown keys are counted per client address (the `ip` limiter, 300 a minute, under their own key) because Dhru
  * has no per-IP stage in the pipeline and an unknown key has no per-key limit to hit. Decision 053: that budget is read before the key is
  * looked up, so an address that used it up costs no database lookup: its keys are answered from the key cache alone, so a key in use
  * there (its view is kept fresh by its calls) is still served, and a key the cache does not hold is refused `429`; a bulk placement
@@ -55,8 +57,8 @@ export class ApiKeyAuthenticator {
    * @param request the Fastify request (its address is judged against the key's allowed IPs)
    * @param credentials the key, the Dhru username and the points the call costs
    * @returns the principal: merchant id and key id
-   * @throws {AppError} `UNAUTHORIZED` (401: no, unknown, revoked or expired key, or a username that is not the key's),
-   *   `ACCOUNT_SUSPENDED` (403), `ACCOUNT_PENDING_APPROVAL` (403: merchant not approved, B153), `IP_NOT_ALLOWED` (403),
+   * @throws {AppError} `UNAUTHORIZED` (401: no, unknown, revoked or expired key, a username that is not the key's, or a key of an account
+   *   that is not active or not of a merchant rank), `ACCOUNT_SUSPENDED` (403: suspended or blocked), `IP_NOT_ALLOWED` (403),
    *   `RATE_LIMITED` (429 with `Retry-After`: the key's limit, or too many unknown keys from one address and a key the cache does not
    *   hold, or a username that is not the key's)
    */
@@ -124,7 +126,7 @@ function failureKey(address: IpAddress | undefined): string {
   return `api-key-failures:${ipRateLimitKey(address)}`;
 }
 
-/** Dhru usernames are unique case-insensitively (`clients.username`). */
-function sameUsername(stored: string, presented: string): boolean {
-  return constantTimeEqual(stored.toLowerCase(), presented.trim().toLowerCase());
+/** Dhru usernames are unique case-insensitively (`clients.username`); an account without one (a retail account) matches no username. */
+function sameUsername(stored: string | null, presented: string): boolean {
+  return stored !== null && constantTimeEqual(stored.toLowerCase(), presented.trim().toLowerCase());
 }

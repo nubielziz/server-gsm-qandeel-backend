@@ -1,58 +1,20 @@
-// Merchant wallets (map domain E, stage 3): the wallet view, the statement, manual adjustments and the credit limit. Used by
-// the admin console routes and by the merchant portal's own wallet routes.
-import { Inject, Injectable } from '@nestjs/common';
+// The merchant wallet of an account, read-only (map domain E, stage 3; decision 064): the four figures and the paged statement. Used by the
+// merchant portal's own wallet routes and the Dhru account read. The staff writes and the staff reads of either wallet kind are in
+// account-wallet-admin.ts.
+import { Injectable } from '@nestjs/common';
 import type { z } from 'zod';
-import { CLOCK, type Clock } from '../../../common/clock';
-import type { ParsedListQuery } from '../../../common/contract';
-import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
-import { type StaffPrincipal, isOwner, requireOwner } from '../../identity';
-import { AuditService } from '../../platform';
-import { SettingsReader } from '../../platform';
+import type { DbExecutor } from '../../../infra/db';
 import type { StatementRowSchema } from '../contracts/wallet.contracts';
 import { BASE_CURRENCY, type WalletView, walletViewOf } from '../domain/accounts';
-import { adjust } from '../domain/money-events';
-import {
-  ADJUST_APPROVAL_LIMIT_KEY,
-  ADJUST_WINDOW_MS,
-  adjustmentNeedsOwner,
-  adjustmentRefusalDetail,
-  approvalLimitOf,
-  checkCreditLimit,
-  creditLimitNeedsOwner,
-  creditLimitOwnerDetail,
-  creditLimitRaise,
-  creditSumRefusalDetail,
-} from '../domain/wallet-rules';
-import { lockStaffAdjustments, recordCreditLimitRaise, staffMerchantCreditSince } from '../infra/adjustment.repository';
-import { findMerchant, type MerchantRecord } from '../infra/foreign-directory.repository';
-import { findHeaderByKey } from '../infra/ledger-writer.repository';
-import {
-  type WalletAccounts,
-  findJournal,
-  listAccountEntries,
-  readWalletAccounts,
-  writeCreditLimit,
-} from '../infra/ledger-read.repository';
-import { MerchantAccounts } from './merchant-accounts';
-import { LedgerPoster, type PostedTransaction } from './post-transaction';
-import type { DbExecutor } from '../../../infra/db';
+import { type WalletAccounts, listAccountEntries, readWalletAccounts } from '../infra/ledger-read.repository';
 
 /** A statement line on the wire. */
 export type StatementLine = z.output<typeof StatementRowSchema>;
 
 /** The most lines a CSV export holds. */
 export const STATEMENT_EXPORT_LIMIT = 10_000;
-
-/** What a manual adjustment asks for. */
-export interface AdjustInput {
-  readonly amount: string;
-  readonly direction: 'credit' | 'debit';
-  readonly reason: string;
-  /** The caller's `Idempotency-Key`, if any. */
-  readonly idempotencyKey?: string;
-}
 
 function viewOf(accounts: WalletAccounts): WalletView {
   return walletViewOf({
@@ -62,97 +24,61 @@ function viewOf(accounts: WalletAccounts): WalletView {
   });
 }
 
-const notFound = () => new AppError('NOT_FOUND', { detail: 'No merchant with this id.' });
-
 /**
- * Reads and changes merchant wallets.
+ * Reads the merchant wallet of an account.
  *
- * Why: the console's merchant page shows the four wallet figures and a paged statement, lets staff adjust the wallet with a
- * reason and set the credit limit (RULES merchants 5-6); the portal shows the merchant its own. Balances are never cached
- * (decision 022): every call reads the ledger accounts.
+ * Why: the portal shows a merchant the four wallet figures and a paged statement, and Dhru's `accountinfo` names the same balance (RULES
+ * merchants 5-6). Balances are never cached (decision 022): every call reads the ledger accounts. The account is the merchant of its
+ * session (the rank gate has already refused any other rank), so there is no existence check here; the staff reads of an account of any
+ * rank are `AccountWalletAdmin`'s.
  *
- * Side effects: `adjust` posts a ledger transaction and writes an audit row; `setCreditLimit` updates the wallet account and
- * writes an audit row.
+ * Side effects: none (reads only).
+ *
+ * @see GET /client/wallet, GET /client/wallet/statement
  */
 @Injectable()
 export class WalletService {
-  constructor(
-    private readonly db: DbService,
-    private readonly poster: LedgerPoster,
-    private readonly audit: AuditService,
-    private readonly settings: SettingsReader,
-    private readonly accounts: MerchantAccounts,
-    @Inject(CLOCK) private readonly clock: Clock,
-  ) {}
-
-  /**
-   * The wallet view of a merchant, for staff.
-   *
-   * @param clientId the merchant
-   * @returns the four figures; all zero while the merchant has no accounts
-   * @throws {AppError} `NOT_FOUND` when there is no merchant with this id
-   */
-  async viewForStaff(clientId: number): Promise<WalletView> {
-    if (!(await findMerchant(this.db.db, clientId))) throw notFound();
-    return this.viewOf(this.db.db, clientId);
-  }
+  constructor(private readonly db: DbService) {}
 
   /**
    * The signed-in merchant's own wallet view.
    *
-   * @param clientId the authenticated merchant
-   * @returns the four figures; all zero while the merchant has no accounts
+   * @param accountId the authenticated account (merchant rank)
+   * @returns the four figures; all zero while the account has no merchant wallet
    */
-  viewForMerchant(clientId: number): Promise<WalletView> {
-    return this.viewOf(this.db.db, clientId);
+  viewForMerchant(accountId: number): Promise<WalletView> {
+    return this.viewOf(this.db.db, accountId);
   }
 
   /**
-   * The wallet view of a merchant, without the existence check.
+   * The merchant wallet view of an account, without any check.
    *
    * @param executor the database or a transaction
-   * @param clientId the merchant (already authenticated or checked)
-   * @returns the four figures; all zero while the merchant has no accounts
+   * @param accountId the account (already authenticated or checked)
+   * @returns the four figures; all zero while the account has no merchant wallet
    */
-  async viewOf(executor: DbExecutor, clientId: number): Promise<WalletView> {
-    const accounts = await readWalletAccounts(executor, clientId, BASE_CURRENCY);
+  async viewOf(executor: DbExecutor, accountId: number): Promise<WalletView> {
+    const accounts = await readWalletAccounts(executor, accountId, BASE_CURRENCY);
     return viewOf(accounts);
-  }
-
-  /**
-   * A page of a merchant's statement, for staff.
-   *
-   * @param clientId the merchant
-   * @param query the parsed list request (`createdAt` sort and range)
-   * @returns the lines and the number of lines on the wallet
-   * @throws {AppError} `NOT_FOUND` when there is no merchant with this id
-   */
-  async statementForStaff(
-    clientId: number,
-    query: ParsedListQuery<'createdAt'>,
-  ): Promise<{ rows: StatementLine[]; total: number }> {
-    if (!(await findMerchant(this.db.db, clientId))) throw notFound();
-    return this.statementOf(clientId, query.sort[0]?.order ?? 'desc', query.range);
   }
 
   /**
    * A merchant's statement lines, newest first by default.
    *
-   * Why: `amount` is signed from the merchant side (a deposit is positive, an order hold negative), the wallet being
-   * credit-normal; `balanceAfter` is the wallet balance after the line, which is already the merchant's side (ANSWERS
-   * merchants Q3).
+   * Why: `amount` is signed from the merchant side (a deposit is positive, an order hold negative), the wallet being credit-normal;
+   * `balanceAfter` is the wallet balance after the line, which is already the merchant's side (ANSWERS merchants Q3).
    *
-   * @param clientId the merchant (already authenticated or checked)
+   * @param accountId the authenticated account (merchant rank)
    * @param order the direction of `createdAt`
    * @param range where the page starts and how many lines it holds
    * @returns the lines and the number of lines on the wallet
    */
   async statementOf(
-    clientId: number,
+    accountId: number,
     order: 'asc' | 'desc',
     range: { readonly start: number; readonly limit: number },
   ): Promise<{ rows: StatementLine[]; total: number }> {
-    const { walletId } = await readWalletAccounts(this.db.db, clientId, BASE_CURRENCY);
+    const { walletId } = await readWalletAccounts(this.db.db, accountId, BASE_CURRENCY);
     if (walletId === undefined) return { rows: [], total: 0 };
     const { rows, total } = await listAccountEntries(this.db.db, walletId, order, range);
     return {
@@ -167,224 +93,5 @@ export class WalletService {
         createdAt: row.createdAt.toISOString(),
       })),
     };
-  }
-
-  /**
-   * Adds to or deducts from a merchant wallet by hand.
-   *
-   * Why: the map's `adjust` money event (B30): credit is Dr adjustments / Cr client_wallet and debit is its mirror, with the
-   * reason in the memo, ref type `client`, and the staff member as author. Above the approval limit (setting
-   * `wallet.adjust_approval_limit`) the server refuses: a staff member's credits to merchant wallets count together over a rolling
-   * 24 hours, with the parts by which they raised credit limits, and a debit counts alone; an Owner is not limited (decision 049;
-   * amends ANSWERS merchants Q4). A retry of an accepted
-   * adjustment (its key already has a journal) is not judged again. Allowed for any merchant status.
-   *
-   * Side effects: one ledger transaction (kind `adjustment`), the wallet balance, one audit row; opens the merchant's
-   * accounts when they are missing (the safety fallback of resolution identity-platform-1). Takes the staff member's adjustment
-   * lock until the commit.
-   *
-   * @param caller the staff member who adjusts
-   * @param clientId the merchant
-   * @param input amount, direction, reason and the optional idempotency key
-   * @returns the journal id and the wallet after posting
-   * @throws {AppError} `VALIDATION_FAILED` on `amount` (not above zero), `NOT_FOUND`, `APPROVAL_REQUIRED` (409: above the limit,
-   *   decision 049), `CREDIT_LIMIT_EXCEEDED` (a debit below the credit limit), `IDEMPOTENCY_KEY_REUSED` (the key was used for
-   *   another adjustment)
-   */
-  async adjust(
-    caller: StaffPrincipal,
-    clientId: number,
-    input: AdjustInput,
-  ): Promise<{ transactionId: number; wallet: WalletView }> {
-    const amount = parsePositiveAmount(input.amount);
-    const limit = approvalLimitOf(await this.settings.get(ADJUST_APPROVAL_LIMIT_KEY));
-    const owner = isOwner(caller);
-    return this.db.runInTransaction(async ({ tx }) => {
-      // Lock order: this staff member's adjustment lock first, then (inside the posting) the ledger accounts in id order.
-      await lockStaffAdjustments(tx, caller.staffId);
-      const merchant = await findMerchant(tx, clientId);
-      if (!merchant) throw notFound();
-      const key =
-        input.idempotencyKey === undefined
-          ? `adjust:${clientId}:${crypto.randomUUID()}`
-          : `adjust:${clientId}:${input.idempotencyKey}`;
-      // A retry of an accepted adjustment replays it: it is already part of the sum it would be judged against (decision 049).
-      if (!owner && !(await findHeaderByKey(tx, key))) {
-        const creditedInWindow =
-          input.direction === 'credit'
-            ? await staffMerchantCreditSince(tx, caller.staffId, new Date(this.clock.nowMs() - ADJUST_WINDOW_MS))
-            : Money.zero();
-        const facts = { direction: input.direction, amount, creditedInWindow, limit };
-        if (adjustmentNeedsOwner({ ...facts, owner })) {
-          throw new AppError('APPROVAL_REQUIRED', { detail: adjustmentRefusalDetail(facts) });
-        }
-      }
-      await this.ensureAccounts(tx, merchant);
-      const posted = await this.postAdjustment(tx, caller.staffId, clientId, { ...input, key }, amount);
-      // The wallet row is locked by the posting until commit, so these figures are the posting's own.
-      const after = viewOf(await readWalletAccounts(tx, clientId, BASE_CURRENCY));
-      const wallet = posted.touched.find((account) => account.kind === 'client_wallet');
-      await this.audit.record(tx, {
-        // The demo's phrase (ANSWERS audit Q3); the direction and amount are in `after`.
-        action: posted.replayed ? 'repeated wallet adjustment of' : 'adjusted wallet of',
-        entityType: 'merchant',
-        entityId: clientId,
-        entityLabel: merchant.name,
-        before: { ...after, balance: wallet?.before ?? after.balance },
-        after: {
-          ...after,
-          transactionId: posted.id,
-          amount: amount.toWire(),
-          direction: input.direction,
-          reason: input.reason,
-        },
-      });
-      return { transactionId: posted.id, wallet: after };
-    });
-  }
-
-  /**
-   * Sets the credit limit of a merchant wallet.
-   *
-   * Why: user rule 2: lowering below the credit in use is allowed (new orders are refused until a top-up); a limit above
-   * zero needs a group with `overdraft_allowed` (the same check as `MerchantAccounts.open`). Raising a limit above the approval
-   * limit of adjustments (`wallet.adjust_approval_limit`) is an Owner's decision; lowering one never is (decision 049). The raised part
-   * counts in the caller's 24-hour sum of credits to merchant wallets, and a raise that takes that sum above the approval limit needs an
-   * Owner too; an Owner is not limited. The merchant row is locked first, so a group move of the same merchant and this change wait for
-   * each other (user rule 2). No money moves, so no ledger entry.
-   *
-   * Side effects: updates `ledger_accounts.overdraft_limit` and `version`; opens the merchant's accounts when missing; records a raise
-   * in `credit_limit_raises`; one audit row. Takes the staff member's adjustment lock until the commit.
-   *
-   * @param caller the staff member who sets it
-   * @param clientId the merchant
-   * @param creditLimit the new limit as wire `Money`
-   * @returns the wallet after the change
-   * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` on `creditLimit` (negative, or above zero on a group without credit);
-   *   `FORBIDDEN` (403: above the approval limit and higher than the current limit, or a raise that takes the caller's 24-hour sum
-   *   above the approval limit, and the caller is not an Owner; decision 049)
-   */
-  async setCreditLimit(caller: StaffPrincipal, clientId: number, creditLimit: string): Promise<WalletView> {
-    const ceiling = approvalLimitOf(await this.settings.get(ADJUST_APPROVAL_LIMIT_KEY));
-    return this.db.runInTransaction(async ({ tx }) => {
-      // Lock order: this staff member's adjustment lock, the merchant row (a group move locks it too), the group row, then the
-      // wallet and hold rows in id order.
-      await lockStaffAdjustments(tx, caller.staffId);
-      const merchant = await findMerchant(tx, clientId, { lockMerchant: true });
-      if (!merchant) throw notFound();
-      const limit = checkCreditLimit(creditLimit, merchant.overdraftAllowed);
-      const before = await this.lockedWallet(tx, merchant);
-      const current = Money.of(before.creditLimit);
-      // Decision 049: raising a credit limit above the approval limit of adjustments is an Owner's decision; lowering one never is.
-      if (creditLimitNeedsOwner(limit, current, ceiling)) {
-        requireOwner(caller, creditLimitOwnerDetail(ceiling));
-      }
-      const now = this.clock.now();
-      const raised = creditLimitRaise(limit, current);
-      if (raised.isPositive() && !isOwner(caller)) {
-        // Decision 049: the raised part counts with the caller's credits and raises of the last 24 hours, read under the lock above.
-        const given = await staffMerchantCreditSince(tx, caller.staffId, new Date(now.getTime() - ADJUST_WINDOW_MS));
-        const facts = { direction: 'credit' as const, amount: raised, creditedInWindow: given, limit: ceiling };
-        if (adjustmentNeedsOwner({ ...facts, owner: false })) {
-          requireOwner(caller, creditSumRefusalDetail(ceiling, given.add(raised)));
-        }
-      }
-      const walletId = before.walletId;
-      if (walletId === undefined) throw new Error(`Merchant ${clientId} has no wallet account after opening them.`);
-      await writeCreditLimit(tx, walletId, limit.toWire(), now);
-      if (raised.isPositive()) {
-        await recordCreditLimitRaise(tx, { clientId, staffId: caller.staffId, amount: raised, at: now });
-      }
-      const after = viewOf(await readWalletAccounts(tx, clientId, BASE_CURRENCY));
-      await this.audit.record(tx, {
-        action: 'changed credit limit of',
-        entityType: 'merchant',
-        entityId: clientId,
-        entityLabel: merchant.name,
-        before: { creditLimit: before.creditLimit },
-        after: { creditLimit: after.creditLimit },
-      });
-      return after;
-    });
-  }
-
-  /** Opens the merchant's accounts when they are missing (the safety fallback of resolution identity-platform-1). */
-  private async ensureAccounts(tx: DbExecutor, merchant: MerchantRecord): Promise<WalletAccounts> {
-    const found = await readWalletAccounts(tx, merchant.id, BASE_CURRENCY);
-    if (found.walletId !== undefined) return found;
-    await this.accounts.open(tx, {
-      clientId: merchant.id,
-      currency: BASE_CURRENCY,
-      creditLimit: '0.0000',
-      overdraftAllowed: merchant.overdraftAllowed,
-    });
-    return readWalletAccounts(tx, merchant.id, BASE_CURRENCY);
-  }
-
-  /** Opens the accounts if needed, then locks the wallet and hold rows (in id order) and reads them. */
-  private async lockedWallet(tx: DbExecutor, merchant: MerchantRecord): Promise<WalletAccounts> {
-    await this.ensureAccounts(tx, merchant);
-    return readWalletAccounts(tx, merchant.id, BASE_CURRENCY, true);
-  }
-
-  private async postAdjustment(
-    tx: DbExecutor,
-    staffId: number,
-    clientId: number,
-    input: AdjustInput & { key: string },
-    amount: Money,
-  ): Promise<PostedTransaction> {
-    const memo = `Manual ${input.direction}: ${input.reason}`;
-    try {
-      const posted = await this.poster.post(tx, {
-        ...adjust({ clientId, amount, direction: input.direction }),
-        refId: clientId,
-        idempotencyKey: input.key,
-        currency: BASE_CURRENCY,
-        memo,
-        createdBy: { type: 'staff', id: staffId },
-      });
-      if (posted.replayed) await this.assertSameAdjustment(tx, posted.id, memo, input.direction, amount);
-      return posted;
-    } catch (error) {
-      if (error instanceof AppError && error.code === 'INSUFFICIENT_FUNDS') {
-        // The poster's detail names the resulting balance and the credit limit.
-        throw new AppError('CREDIT_LIMIT_EXCEEDED', { detail: error.detail });
-      }
-      throw error;
-    }
-  }
-
-  /** A key reused for a different adjustment is a client bug: refuse it instead of answering the first one. */
-  private async assertSameAdjustment(
-    tx: DbExecutor,
-    transactionId: number,
-    memo: string,
-    direction: 'credit' | 'debit',
-    amount: Money,
-  ): Promise<void> {
-    const first = await findJournal(tx, transactionId);
-    const walletLine = first?.entries.find((entry) => entry.account.kind === 'client_wallet');
-    // The wallet line is signed debit positive: a credit to the wallet is negative.
-    const expected = direction === 'credit' ? amount.neg() : amount;
-    if (first?.memo !== memo || !walletLine || !Money.of(walletLine.amount).eq(expected)) {
-      throw new AppError('IDEMPOTENCY_KEY_REUSED', {
-        detail: 'This Idempotency-Key was already used for a different adjustment.',
-      });
-    }
-  }
-}
-
-function parsePositiveAmount(text: string): Money {
-  const bad = new AppError('VALIDATION_FAILED', {
-    errors: [{ field: 'amount', code: 'min', message: 'Enter an amount greater than zero.' }],
-  });
-  try {
-    const amount = Money.fromWire(text);
-    if (!amount.isPositive()) throw bad;
-    return amount;
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw bad;
   }
 }

@@ -4,8 +4,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../../../config';
 import type { TransactionContext } from '../../../../infra/db';
-import { NotificationService } from '../../../platform';
+import { CUSTOMER_SECURITY_NOTICE_EVENT, NotificationService } from '../../../platform';
+import type { RankKind } from '../../ports/rank-kind';
 import type { Client } from '../../db/schema';
+import { accountAreaUrl } from '../../domain/public-links';
 import {
   MERCHANT_PORTAL_API_KEY_CREATED_EVENT,
   MERCHANT_REACTIVATED_EVENT,
@@ -40,8 +42,25 @@ export const SECURITY_NOTICE_PHRASES: Readonly<Record<SecurityNoticeKind, string
  */
 export const PORTAL_API_KEY_NOTICE_PHRASE = "A new API key was created in your account's portal.";
 
-/** A merchant as these mails need it. */
-type Recipient = Pick<Client, 'id' | 'name'>;
+/**
+ * The sentence of a retail rank's notice where it differs from {@link SECURITY_NOTICE_PHRASES}: the temporary password also ended every
+ * session, and the account holder chooses a password at the next sign-in. The other kinds read the same for both ranks.
+ */
+const RETAIL_PHRASES: Readonly<Partial<Record<SecurityNoticeKind, string>>> = {
+  temporary_password:
+    'a temporary password was set for your account and every device was signed out; you will choose a new password when you sign in again',
+};
+
+/** The kinds that exist for a retail rank: it holds no API key. */
+const RETAIL_NOTICE_KINDS: readonly SecurityNoticeKind[] = ['temporary_password', 'twofa_reset', 'email_changed'];
+
+/**
+ * An account as these mails need it.
+ *
+ * `rankKind` chooses the family of the security notice (decision 064): `retail` writes `customer.security_notice`, `merchant` or nothing
+ * writes `merchant.security_notice`. The other mails of this class are merchant mails and ignore it.
+ */
+type Recipient = Pick<Client, 'id' | 'name'> & { readonly rankKind?: RankKind };
 
 /**
  * Writes the lifecycle emails of a merchant.
@@ -83,19 +102,22 @@ export class MerchantLifecycleMails {
   reactivated(work: Pick<TransactionContext, 'tx'>, client: Recipient): Promise<void> {
     return this.send(work, MERCHANT_REACTIVATED_EVENT, client, {
       merchantName: client.name,
-      portalUrl: this.config.http.portalBaseUrl,
+      // The merchant pages live under the signed-in area of the shop (decision 064): the retired /merchant path is not linked.
+      portalUrl: accountAreaUrl(this.config.http.storeBaseUrl),
     });
   }
 
   /**
-   * `merchant.security_notice`: staff changed something security-relevant, or staff created an API key.
+   * `merchant.security_notice` (or `customer.security_notice` for a retail rank): staff changed something security-relevant, or staff
+   * created an API key.
    *
    * @param work the caller's transaction
-   * @param client the merchant
-   * @param kind what changed; it decides the sentence
+   * @param client the account; its `rankKind` picks the family (a merchant rank when omitted)
+   * @param kind what changed; it decides the sentence (a retail rank holds no API key: those kinds throw)
    * @param options `to`: the address to write to instead of the merchant's current one (decision 047: the notice of an email change goes
    *   to the address before the change)
    * @returns once the notification and its outbox event are written
+   * @throws {Error} for an API key notice of a retail rank
    */
   securityNotice(
     work: Pick<TransactionContext, 'tx'>,
@@ -103,6 +125,20 @@ export class MerchantLifecycleMails {
     kind: SecurityNoticeKind,
     options: { readonly to?: string } = {},
   ): Promise<void> {
+    if (client.rankKind === 'retail') {
+      if (!RETAIL_NOTICE_KINDS.includes(kind))
+        throw new Error(`The notice "${kind}" does not exist for a retail account.`);
+      return this.send(
+        work,
+        CUSTOMER_SECURITY_NOTICE_EVENT,
+        client,
+        {
+          customerName: client.name.trim() === '' ? 'there' : client.name.trim(),
+          change: RETAIL_PHRASES[kind] ?? SECURITY_NOTICE_PHRASES[kind],
+        },
+        options.to,
+      );
+    }
     return this.send(
       work,
       MERCHANT_SECURITY_NOTICE_EVENT,
@@ -138,7 +174,7 @@ export class MerchantLifecycleMails {
   ): Promise<void> {
     await this.notifications.enqueue(work, {
       event,
-      recipient: { type: 'client', id: client.id },
+      recipient: { type: 'account', id: client.id },
       channel: 'email',
       variables,
       ...(to === undefined ? {} : { to }),

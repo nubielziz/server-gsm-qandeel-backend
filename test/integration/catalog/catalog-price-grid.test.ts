@@ -135,7 +135,7 @@ describe('GET /admin/services/price-grid: the row', () => {
     expect(rows).toHaveLength(2);
     const catalogOf = async (groupId: number) => {
       const merchant = await insertMerchantIn(db, groupId);
-      const session = await openSession(t, { type: 'client', id: merchant });
+      const session = await openSession(t, { type: 'account', id: merchant });
       const res = await t.app.inject({ method: 'GET', url: '/client/services', headers: session.headers });
       expect(res.statusCode).toBe(200);
       return new Map(res.json<Array<{ id: number; price: string }>>().map((row) => [row.id, row.price]));

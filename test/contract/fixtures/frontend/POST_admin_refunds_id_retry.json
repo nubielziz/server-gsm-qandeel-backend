@@ -16,7 +16,7 @@
     "gatewayRefundId": "tx_00000002",
     "note": "Crypto payments cannot be refunded by the gateway. Paid out manually from the treasury wallet.",
     "requestedBy": {
-      "type": "customer",
+      "type": "account",
       "name": null
     },
     "approvedBy": {
@@ -24,7 +24,7 @@
       "name": "Rami K."
     },
     "customer": {
-      "id": 22,
+      "id": 122,
       "name": "Diego Fernandez"
     },
     "order": {

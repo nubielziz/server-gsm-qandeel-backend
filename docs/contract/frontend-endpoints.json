@@ -1,7 +1,7 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
- "frontend": "../worktrees/acc-console-r2",
- "count": 319,
+ "frontend": "../worktrees/acc-console",
+ "count": 312,
  "endpoints": [
   {
    "key": "DELETE /admin/alert-rules/:id",
@@ -47,7 +47,7 @@
   {
    "key": "DELETE /admin/api-keys/:id",
    "fn": "revokeApiKey",
-   "file": "src/features/merchants/api/apiKeys.ts",
+   "file": "src/features/accounts/api/apiKeys.ts",
    "line": 29,
    "params": [
     {
@@ -128,8 +128,8 @@
   },
   {
    "key": "DELETE /admin/client-groups/:id",
-   "fn": "deleteClientGroup",
-   "file": "src/features/merchants/api/groups.ts",
+   "fn": "deleteRank",
+   "file": "src/features/accounts/api/ranks.ts",
    "line": 61,
    "params": [
     {
@@ -169,9 +169,9 @@
   },
   {
    "key": "DELETE /admin/client-prices/:id",
-   "fn": "deleteClientPrice",
-   "file": "src/features/merchants/api/prices.ts",
-   "line": 51,
+   "fn": "deleteAccountPrice",
+   "file": "src/features/accounts/api/prices.ts",
+   "line": 56,
    "params": [
     {
      "name": "id",
@@ -827,7 +827,7 @@
    "key": "DELETE /admin/sessions/:id",
    "fn": "revokeSession",
    "file": "src/features/access/api/sessions.ts",
-   "line": 35,
+   "line": 32,
    "params": [
     {
      "name": "id",
@@ -1723,6 +1723,16 @@
          "nullable": true,
          "optional": true
         },
+        "account": {
+         "object": {
+          "id": {
+           "type": "number",
+           "alias": "Id"
+          }
+         },
+         "nullable": true,
+         "optional": true
+        },
         "before": {
          "anyOf": [
           {
@@ -1858,6 +1868,16 @@
      },
      "entityLabel": {
       "type": "string",
+      "nullable": true,
+      "optional": true
+     },
+     "account": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       }
+      },
       "nullable": true,
       "optional": true
      },
@@ -2105,6 +2125,10 @@
          "type": "number",
          "alias": "Id"
         },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        },
         "reason": {
          "type": "string"
         },
@@ -2113,17 +2137,13 @@
          "nullable": true,
          "alias": "IsoDateTime"
         },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
         "display": {
          "type": "string"
         },
         "kind": {
          "enum": [
-          "email",
           "card",
+          "email",
           "country",
           "imei",
           "device",
@@ -2201,6 +2221,10 @@
       "type": "number",
       "alias": "Id"
      },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
      "reason": {
       "type": "string"
      },
@@ -2209,17 +2233,13 @@
       "nullable": true,
       "alias": "IsoDateTime"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
      "display": {
       "type": "string"
      },
      "kind": {
       "enum": [
-       "email",
        "card",
+       "email",
        "country",
        "imei",
        "device",
@@ -2250,8 +2270,8 @@
   },
   {
    "key": "GET /admin/client-groups",
-   "fn": "listClientGroups",
-   "file": "src/features/merchants/api/groups.ts",
+   "fn": "listRanks",
+   "file": "src/features/accounts/api/ranks.ts",
    "line": 24,
    "params": [
     {
@@ -2344,7 +2364,7 @@
      }
     }
    ],
-   "returnsText": "ListResult<ClientGroup>",
+   "returnsText": "ListResult<Rank>",
    "returns": {
     "object": {
      "data": {
@@ -2381,7 +2401,13 @@
         "kind": {
          "type": "string"
         },
-        "merchantCount": {
+        "rankKind": {
+         "enum": [
+          "retail",
+          "merchant"
+         ]
+        },
+        "accountCount": {
          "type": "number",
          "optional": true
         }
@@ -2396,8 +2422,8 @@
   },
   {
    "key": "GET /admin/client-groups/:id",
-   "fn": "getClientGroup",
-   "file": "src/features/merchants/api/groups.ts",
+   "fn": "getRank",
+   "file": "src/features/accounts/api/ranks.ts",
    "line": 33,
    "params": [
     {
@@ -2430,7 +2456,7 @@
      }
     }
    ],
-   "returnsText": "ClientGroup",
+   "returnsText": "Rank",
    "returns": {
     "object": {
      "id": {
@@ -2464,7 +2490,13 @@
      "kind": {
       "type": "string"
      },
-     "merchantCount": {
+     "rankKind": {
+      "enum": [
+       "retail",
+       "merchant"
+      ]
+     },
+     "accountCount": {
       "type": "number",
       "optional": true
      }
@@ -2473,9 +2505,9 @@
   },
   {
    "key": "GET /admin/client-prices",
-   "fn": "listClientPrices",
-   "file": "src/features/merchants/api/prices.ts",
-   "line": 23,
+   "fn": "listAccountPrices",
+   "file": "src/features/accounts/api/prices.ts",
+   "line": 24,
    "params": [
     {
      "name": "query",
@@ -2567,7 +2599,7 @@
      }
     }
    ],
-   "returnsText": "ListResult<ClientPrice>",
+   "returnsText": "ListResult<AccountPrice>",
    "returns": {
     "object": {
      "data": {
@@ -2577,15 +2609,11 @@
          "type": "number",
          "alias": "Id"
         },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
-        "clientId": {
+        "serviceId": {
          "type": "number",
          "alias": "Id"
         },
-        "serviceId": {
+        "clientId": {
          "type": "number",
          "alias": "Id"
         },
@@ -2595,6 +2623,10 @@
         },
         "note": {
          "type": "string"
+        },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
         },
         "service": {
          "object": {
@@ -2637,9 +2669,9 @@
   },
   {
    "key": "GET /admin/clients",
-   "fn": "listClients",
-   "file": "src/features/merchants/api/clients.ts",
-   "line": 25,
+   "fn": "listAccounts",
+   "file": "src/features/accounts/api/accounts.ts",
+   "line": 40,
    "params": [
     {
      "name": "query",
@@ -2731,7 +2763,7 @@
      }
     }
    ],
-   "returnsText": "ListResult<Client>",
+   "returnsText": "ListResult<AccountRow>",
    "returns": {
     "object": {
      "data": {
@@ -2751,35 +2783,42 @@
         "email": {
          "type": "string"
         },
-        "country": {
-         "type": "string"
-        },
-        "username": {
-         "type": "string"
-        },
-        "company": {
-         "type": "string"
-        },
-        "phone": {
-         "type": "string"
-        },
-        "groupId": {
-         "type": "number",
-         "alias": "Id"
-        },
         "emailVerifiedAt": {
          "type": "string",
          "nullable": true,
          "alias": "IsoDateTime"
         },
+        "phone": {
+         "type": "string"
+        },
+        "country": {
+         "type": "string"
+        },
+        "company": {
+         "type": "string"
+        },
+        "address": {
+         "type": "string"
+        },
+        "taxId": {
+         "type": "string"
+        },
+        "internalNotes": {
+         "type": "string"
+        },
+        "username": {
+         "type": "string",
+         "nullable": true
+        },
         "status": {
          "enum": [
           "active",
           "suspended",
-          "pending"
+          "blocked",
+          "anonymized"
          ]
         },
-        "group": {
+        "rank": {
          "object": {
           "id": {
            "type": "number",
@@ -2788,77 +2827,89 @@
           "name": {
            "type": "string"
           },
+          "kind": {
+           "enum": [
+            "retail",
+            "merchant"
+           ]
+          },
           "discountPercent": {
            "type": "string",
            "alias": "Decimal"
+          },
+          "creditAllowed": {
+           "type": "boolean"
+          }
+         }
+        },
+        "hasAccount": {
+         "type": "boolean"
+        },
+        "invitationPending": {
+         "type": "boolean"
+        },
+        "currencyCode": {
+         "type": "string",
+         "nullable": true
+        },
+        "marketingOptIn": {
+         "type": "boolean"
+        },
+        "createdBy": {
+         "object": {
+          "id": {
+           "type": "number",
+           "alias": "Id"
+          },
+          "name": {
+           "type": "string"
           }
          },
          "nullable": true
         },
-        "wallet": {
+        "suspension": {
          "object": {
-          "balance": {
-           "type": "string",
-           "alias": "Money"
-          },
-          "reserved": {
-           "type": "string",
-           "alias": "Money"
-          },
-          "creditLimit": {
-           "type": "string",
-           "alias": "Money"
-          },
-          "available": {
-           "type": "string",
-           "alias": "Money"
-          }
-         },
-         "nullable": true,
-         "optional": true
-        },
-        "stats": {
-         "object": {
-          "orders": {
-           "type": "number"
-          },
-          "spend": {
-           "type": "string",
-           "alias": "Money"
-          },
-          "profit": {
-           "type": "string",
-           "alias": "Money"
-          },
-          "margin": {
-           "type": "string",
-           "nullable": true,
-           "alias": "Decimal"
-          },
-          "successRate": {
-           "type": "number",
-           "nullable": true
-          },
-          "lastOrderAt": {
+          "at": {
            "type": "string",
            "nullable": true,
            "alias": "IsoDateTime"
+          },
+          "reason": {
+           "type": "string",
+           "nullable": true
+          },
+          "by": {
+           "object": {
+            "id": {
+             "type": "number",
+             "alias": "Id"
+            },
+            "name": {
+             "type": "string"
+            }
+           },
+           "nullable": true
           }
          },
+         "nullable": true
+        },
+        "anonymizedAt": {
+         "type": "string",
          "nullable": true,
-         "optional": true
+         "alias": "IsoDateTime"
         },
-        "address": {
+        "lastLoginAt": {
          "type": "string",
-         "optional": true
+         "nullable": true,
+         "alias": "IsoDateTime"
         },
-        "taxId": {
-         "type": "string",
-         "optional": true
+        "ordersCount": {
+         "type": "number"
         },
-        "internalNotes": {
+        "lastOrderAt": {
          "type": "string",
-         "optional": true
+         "nullable": true,
+         "alias": "IsoDateTime"
         },
         "security": {
          "object": {
@@ -2899,30 +2950,65 @@
            "alias": "IsoDateTime"
           }
          },
+         "nullable": true
+        },
+        "wallet": {
+         "object": {
+          "kind": {
+           "enum": [
+            "merchant",
+            "store"
+           ]
+          },
+          "balance": {
+           "type": "string",
+           "alias": "Money"
+          },
+          "reserved": {
+           "type": "string",
+           "alias": "Money"
+          },
+          "creditLimit": {
+           "type": "string",
+           "alias": "Money"
+          },
+          "available": {
+           "type": "string",
+           "alias": "Money"
+          },
+          "frozen": {
+           "type": "boolean"
+          }
+         },
+         "nullable": true,
          "optional": true
         },
-        "suspension": {
+        "stats": {
          "object": {
-          "at": {
+          "orders": {
+           "type": "number"
+          },
+          "spend": {
+           "type": "string",
+           "alias": "Money"
+          },
+          "profit": {
+           "type": "string",
+           "alias": "Money"
+          },
+          "margin": {
+           "type": "string",
+           "nullable": true,
+           "alias": "Decimal"
+          },
+          "successRate": {
+           "type": "number",
+           "nullable": true
+          },
+          "lastOrderAt": {
            "type": "string",
            "nullable": true,
            "alias": "IsoDateTime"
-          },
-          "reason": {
-           "type": "string",
-           "nullable": true
-          },
-          "by": {
-           "object": {
-            "id": {
-             "type": "number",
-             "alias": "Id"
-            },
-            "name": {
-             "type": "string"
-            }
-           },
-           "nullable": true
           }
          },
          "nullable": true,
@@ -2939,9 +3025,9 @@
   },
   {
    "key": "GET /admin/clients/:id",
-   "fn": "getClient",
-   "file": "src/features/merchants/api/clients.ts",
-   "line": 34,
+   "fn": "getAccount",
+   "file": "src/features/accounts/api/accounts.ts",
+   "line": 60,
    "params": [
     {
      "name": "id",
@@ -2973,7 +3059,7 @@
      }
     }
    ],
-   "returnsText": "Client",
+   "returnsText": "AccountRow",
    "returns": {
     "object": {
      "id": {
@@ -2990,35 +3076,42 @@
      "email": {
       "type": "string"
      },
-     "country": {
-      "type": "string"
-     },
-     "username": {
-      "type": "string"
-     },
-     "company": {
-      "type": "string"
-     },
-     "phone": {
-      "type": "string"
-     },
-     "groupId": {
-      "type": "number",
-      "alias": "Id"
-     },
      "emailVerifiedAt": {
       "type": "string",
       "nullable": true,
       "alias": "IsoDateTime"
      },
+     "phone": {
+      "type": "string"
+     },
+     "country": {
+      "type": "string"
+     },
+     "company": {
+      "type": "string"
+     },
+     "address": {
+      "type": "string"
+     },
+     "taxId": {
+      "type": "string"
+     },
+     "internalNotes": {
+      "type": "string"
+     },
+     "username": {
+      "type": "string",
+      "nullable": true
+     },
      "status": {
       "enum": [
        "active",
        "suspended",
-       "pending"
+       "blocked",
+       "anonymized"
       ]
      },
-     "group": {
+     "rank": {
       "object": {
        "id": {
         "type": "number",
@@ -3027,77 +3120,89 @@
        "name": {
         "type": "string"
        },
+       "kind": {
+        "enum": [
+         "retail",
+         "merchant"
+        ]
+       },
        "discountPercent": {
         "type": "string",
         "alias": "Decimal"
+       },
+       "creditAllowed": {
+        "type": "boolean"
+       }
+      }
+     },
+     "hasAccount": {
+      "type": "boolean"
+     },
+     "invitationPending": {
+      "type": "boolean"
+     },
+     "currencyCode": {
+      "type": "string",
+      "nullable": true
+     },
+     "marketingOptIn": {
+      "type": "boolean"
+     },
+     "createdBy": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "name": {
+        "type": "string"
        }
       },
       "nullable": true
      },
-     "wallet": {
+     "suspension": {
       "object": {
-       "balance": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "reserved": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "creditLimit": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "available": {
-        "type": "string",
-        "alias": "Money"
-       }
-      },
-      "nullable": true,
-      "optional": true
-     },
-     "stats": {
-      "object": {
-       "orders": {
-        "type": "number"
-       },
-       "spend": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "profit": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "margin": {
-        "type": "string",
-        "nullable": true,
-        "alias": "Decimal"
-       },
-       "successRate": {
-        "type": "number",
-        "nullable": true
-       },
-       "lastOrderAt": {
+       "at": {
         "type": "string",
         "nullable": true,
         "alias": "IsoDateTime"
+       },
+       "reason": {
+        "type": "string",
+        "nullable": true
+       },
+       "by": {
+        "object": {
+         "id": {
+          "type": "number",
+          "alias": "Id"
+         },
+         "name": {
+          "type": "string"
+         }
+        },
+        "nullable": true
        }
       },
+      "nullable": true
+     },
+     "anonymizedAt": {
+      "type": "string",
       "nullable": true,
-      "optional": true
+      "alias": "IsoDateTime"
      },
-     "address": {
+     "lastLoginAt": {
       "type": "string",
-      "optional": true
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
-     "taxId": {
-      "type": "string",
-      "optional": true
+     "ordersCount": {
+      "type": "number"
      },
-     "internalNotes": {
+     "lastOrderAt": {
       "type": "string",
-      "optional": true
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
      "security": {
       "object": {
@@ -3138,30 +3243,65 @@
         "alias": "IsoDateTime"
        }
       },
+      "nullable": true
+     },
+     "wallet": {
+      "object": {
+       "kind": {
+        "enum": [
+         "merchant",
+         "store"
+        ]
+       },
+       "balance": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "reserved": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "creditLimit": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "available": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "frozen": {
+        "type": "boolean"
+       }
+      },
+      "nullable": true,
       "optional": true
      },
-     "suspension": {
+     "stats": {
       "object": {
-       "at": {
+       "orders": {
+        "type": "number"
+       },
+       "spend": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "profit": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "margin": {
+        "type": "string",
+        "nullable": true,
+        "alias": "Decimal"
+       },
+       "successRate": {
+        "type": "number",
+        "nullable": true
+       },
+       "lastOrderAt": {
         "type": "string",
         "nullable": true,
         "alias": "IsoDateTime"
-       },
-       "reason": {
-        "type": "string",
-        "nullable": true
-       },
-       "by": {
-        "object": {
-         "id": {
-          "type": "number",
-          "alias": "Id"
-         },
-         "name": {
-          "type": "string"
-         }
-        },
-        "nullable": true
        }
       },
       "nullable": true,
@@ -3172,12 +3312,12 @@
   },
   {
    "key": "GET /admin/clients/:id/api-keys",
-   "fn": "listClientApiKeys",
-   "file": "src/features/merchants/api/apiKeys.ts",
+   "fn": "listAccountApiKeys",
+   "file": "src/features/accounts/api/apiKeys.ts",
    "line": 19,
    "params": [
     {
-     "name": "clientId",
+     "name": "accountId",
      "optional": false,
      "typeText": "number",
      "shape": {
@@ -3214,26 +3354,12 @@
        "type": "number",
        "alias": "Id"
       },
-      "expiresAt": {
-       "type": "string",
-       "nullable": true,
-       "alias": "IsoDateTime"
-      },
-      "createdAt": {
-       "type": "string",
-       "alias": "IsoDateTime"
-      },
-      "name": {
-       "type": "string"
-      },
-      "revokedAt": {
-       "type": "string",
-       "nullable": true,
-       "alias": "IsoDateTime"
-      },
       "clientId": {
        "type": "number",
        "alias": "Id"
+      },
+      "name": {
+       "type": "string"
       },
       "prefix": {
        "type": "string"
@@ -3254,6 +3380,20 @@
       "lastUsedIp": {
        "type": "string"
       },
+      "expiresAt": {
+       "type": "string",
+       "nullable": true,
+       "alias": "IsoDateTime"
+      },
+      "revokedAt": {
+       "type": "string",
+       "nullable": true,
+       "alias": "IsoDateTime"
+      },
+      "createdAt": {
+       "type": "string",
+       "alias": "IsoDateTime"
+      },
       "createdByStaff": {
        "type": "boolean",
        "optional": true
@@ -3263,10 +3403,146 @@
    }
   },
   {
+   "key": "GET /admin/clients/:id/export",
+   "fn": "exportAccountData",
+   "file": "src/features/accounts/api/privacy.ts",
+   "line": 35,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "string",
+   "returns": {
+    "type": "string"
+   }
+  },
+  {
+   "key": "GET /admin/clients/:id/privacy",
+   "fn": "getAccountPrivacy",
+   "file": "src/features/accounts/api/privacy.ts",
+   "line": 13,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "AccountPrivacy",
+   "returns": {
+    "object": {
+     "marketingOptIn": {
+      "type": "boolean"
+     },
+     "latestConsents": {
+      "object": {
+       "orderId": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "records": {
+        "array": {
+         "object": {
+          "purpose": {
+           "type": "string"
+          },
+          "document": {
+           "type": "string",
+           "nullable": true
+          },
+          "at": {
+           "type": "string",
+           "alias": "IsoDateTime"
+          },
+          "ip": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      },
+      "nullable": true
+     },
+     "risk": {
+      "object": {
+       "highestScore": {
+        "type": "number",
+        "nullable": true
+       },
+       "signals": {
+        "array": {
+         "object": {
+          "text": {
+           "type": "string"
+          },
+          "orderId": {
+           "type": "number",
+           "alias": "Id"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
    "key": "GET /admin/clients/:id/statement",
-   "fn": "listClientStatement",
-   "file": "src/features/merchants/api/wallet.ts",
-   "line": 40,
+   "fn": "listAccountStatement",
+   "file": "src/features/accounts/api/wallet.ts",
+   "line": 42,
    "params": [
     {
      "name": "id",
@@ -3398,6 +3674,12 @@
         "createdAt": {
          "type": "string",
          "alias": "IsoDateTime"
+        },
+        "orderId": {
+         "type": "number",
+         "nullable": true,
+         "alias": "Id",
+         "optional": true
         }
        }
       }
@@ -3410,9 +3692,9 @@
   },
   {
    "key": "GET /admin/clients/:id/wallet",
-   "fn": "getClientWallet",
-   "file": "src/features/merchants/api/wallet.ts",
-   "line": 30,
+   "fn": "getAccountWallet",
+   "file": "src/features/accounts/api/wallet.ts",
+   "line": 32,
    "params": [
     {
      "name": "id",
@@ -3444,9 +3726,18 @@
      }
     }
    ],
-   "returnsText": "ClientWallet",
+   "returnsText": "AccountWallet",
    "returns": {
     "object": {
+     "kind": {
+      "enum": [
+       "merchant",
+       "store"
+      ]
+     },
+     "currency": {
+      "type": "string"
+     },
      "balance": {
       "type": "string",
       "alias": "Money"
@@ -3462,6 +3753,102 @@
      "available": {
       "type": "string",
       "alias": "Money"
+     },
+     "creditAllowed": {
+      "type": "boolean"
+     },
+     "adjustApprovalLimit": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "frozen": {
+      "object": {
+       "at": {
+        "type": "string",
+        "alias": "IsoDateTime"
+       },
+       "reason": {
+        "type": "string"
+       }
+      },
+      "nullable": true
+     },
+     "enabled": {
+      "type": "boolean"
+     },
+     "pendingTopUps": {
+      "object": {
+       "count": {
+        "type": "number"
+       },
+       "amount": {
+        "type": "string",
+        "alias": "Money"
+       }
+      }
+     },
+     "openDisputes": {
+      "type": "number"
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/clients/counts",
+   "fn": "getAccountCounts",
+   "file": "src/features/accounts/api/accounts.ts",
+   "line": 50,
+   "params": [
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "AccountCounts",
+   "returns": {
+    "object": {
+     "all": {
+      "type": "number"
+     },
+     "retail": {
+      "type": "number"
+     },
+     "merchant": {
+      "type": "number"
+     },
+     "guests": {
+      "type": "number"
+     },
+     "active": {
+      "type": "number"
+     },
+     "suspended": {
+      "type": "number"
+     },
+     "blocked": {
+      "type": "number"
+     },
+     "anonymized": {
+      "type": "number"
+     },
+     "invitationPending": {
+      "type": "number"
      }
     }
    }
@@ -3568,11 +3955,6 @@
      "data": {
       "array": {
        "object": {
-        "updatedAt": {
-         "type": "string",
-         "alias": "IsoDateTime",
-         "optional": true
-        },
         "id": {
          "type": "number",
          "alias": "Id"
@@ -3580,6 +3962,11 @@
         "createdAt": {
          "type": "string",
          "alias": "IsoDateTime"
+        },
+        "updatedAt": {
+         "type": "string",
+         "alias": "IsoDateTime",
+         "optional": true
         },
         "slug": {
          "type": "string"
@@ -3675,11 +4062,6 @@
    "returnsText": "ContentPage",
    "returns": {
     "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
      "id": {
       "type": "number",
       "alias": "Id"
@@ -3687,6 +4069,11 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime",
+      "optional": true
      },
      "slug": {
       "type": "string"
@@ -4122,737 +4509,6 @@
          "nullable": true
         },
         "updatedAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        }
-       }
-      }
-     },
-     "total": {
-      "type": "number"
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/customers",
-   "fn": "listCustomers",
-   "file": "src/features/customers/api/customers.ts",
-   "line": 30,
-   "params": [
-    {
-     "name": "query",
-     "optional": true,
-     "typeText": "ListQuery",
-     "shape": {
-      "object": {
-       "start": {
-        "type": "number",
-        "optional": true
-       },
-       "end": {
-        "type": "number",
-        "optional": true
-       },
-       "sort": {
-        "array": {
-         "type": "string"
-        },
-        "optional": true
-       },
-       "order": {
-        "array": {
-         "enum": [
-          "asc",
-          "desc"
-         ]
-        },
-        "optional": true
-       },
-       "q": {
-        "type": "string",
-        "optional": true
-       },
-       "filters": {
-        "object": {},
-        "record": {
-         "anyOf": [
-          {
-           "type": "string"
-          },
-          {
-           "type": "number"
-          },
-          {
-           "array": {
-            "anyOf": [
-             {
-              "type": "string"
-             },
-             {
-              "type": "number"
-             },
-             {
-              "type": "boolean"
-             }
-            ]
-           }
-          },
-          {
-           "type": "boolean"
-          }
-         ],
-         "undefinable": true
-        },
-        "optional": true
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "ListResult<Customer>",
-   "returns": {
-    "object": {
-     "data": {
-      "array": {
-       "object": {
-        "createdBy": {
-         "type": "number",
-         "nullable": true,
-         "alias": "Id"
-        },
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
-        "name": {
-         "type": "string"
-        },
-        "email": {
-         "type": "string"
-        },
-        "suspendedAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "lastLoginAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "country": {
-         "type": "string"
-        },
-        "currency": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "phone": {
-         "type": "string"
-        },
-        "emailVerifiedAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "hasAccount": {
-         "type": "boolean"
-        },
-        "marketingOptIn": {
-         "type": "boolean"
-        },
-        "internalNotes": {
-         "type": "string"
-        },
-        "firstOrderAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "totalSpent": {
-         "type": "string",
-         "alias": "Money"
-        },
-        "anonymizedAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "status": {
-         "enum": [
-          "active",
-          "suspended",
-          "blocked",
-          "anonymized"
-         ]
-        },
-        "suspendedReason": {
-         "type": "string",
-         "nullable": true
-        },
-        "suspendedBy": {
-         "type": "number",
-         "nullable": true,
-         "alias": "Id"
-        },
-        "ordersCount": {
-         "type": "number"
-        },
-        "lastOrderAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "currencyCode": {
-         "type": "string",
-         "nullable": true,
-         "optional": true
-        }
-       }
-      }
-     },
-     "total": {
-      "type": "number"
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/customers/:id",
-   "fn": "getCustomer",
-   "file": "src/features/customers/api/customers.ts",
-   "line": 40,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "CustomerDetail",
-   "returns": {
-    "object": {
-     "createdBy": {
-      "type": "number",
-      "nullable": true,
-      "alias": "Id"
-     },
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "name": {
-      "type": "string"
-     },
-     "email": {
-      "type": "string"
-     },
-     "suspendedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "lastLoginAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "country": {
-      "type": "string"
-     },
-     "currency": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "phone": {
-      "type": "string"
-     },
-     "emailVerifiedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "hasAccount": {
-      "type": "boolean"
-     },
-     "marketingOptIn": {
-      "type": "boolean"
-     },
-     "internalNotes": {
-      "type": "string"
-     },
-     "firstOrderAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "totalSpent": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "anonymizedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "status": {
-      "enum": [
-       "active",
-       "suspended",
-       "blocked",
-       "anonymized"
-      ]
-     },
-     "suspendedReason": {
-      "type": "string",
-      "nullable": true
-     },
-     "suspendedBy": {
-      "type": "number",
-      "nullable": true,
-      "alias": "Id"
-     },
-     "ordersCount": {
-      "type": "number"
-     },
-     "lastOrderAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "currencyCode": {
-      "type": "string",
-      "nullable": true,
-      "optional": true
-     },
-     "stats": {
-      "object": {
-       "orders": {
-        "type": "number"
-       },
-       "spent": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "lastOrderAt": {
-        "type": "string",
-        "nullable": true,
-        "alias": "IsoDateTime"
-       },
-       "refunds": {
-        "type": "number"
-       },
-       "tickets": {
-        "type": "number"
-       },
-       "disputes": {
-        "type": "number"
-       }
-      }
-     },
-     "account": {
-      "object": {
-       "emailVerified": {
-        "type": "boolean"
-       },
-       "mustChangePassword": {
-        "type": "boolean"
-       },
-       "passwordChangedAt": {
-        "type": "string",
-        "nullable": true,
-        "alias": "IsoDateTime"
-       },
-       "resetSentAt": {
-        "type": "string",
-        "nullable": true,
-        "alias": "IsoDateTime"
-       },
-       "activeSessions": {
-        "type": "number"
-       },
-       "lastIp": {
-        "type": "string",
-        "nullable": true
-       }
-      },
-      "nullable": true
-     },
-     "latestConsents": {
-      "object": {
-       "orderId": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "records": {
-        "array": {
-         "object": {
-          "purpose": {
-           "type": "string"
-          },
-          "document": {
-           "type": "string",
-           "nullable": true
-          },
-          "at": {
-           "type": "string",
-           "alias": "IsoDateTime"
-          },
-          "ip": {
-           "type": "string"
-          }
-         }
-        }
-       }
-      },
-      "nullable": true
-     },
-     "risk": {
-      "object": {
-       "highestScore": {
-        "type": "number",
-        "nullable": true
-       },
-       "signals": {
-        "array": {
-         "object": {
-          "text": {
-           "type": "string"
-          },
-          "orderId": {
-           "type": "number",
-           "alias": "Id"
-          }
-         }
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/customers/:id/export",
-   "fn": "exportCustomerData",
-   "file": "src/features/customers/api/privacy.ts",
-   "line": 11,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "string",
-   "returns": {
-    "type": "string"
-   }
-  },
-  {
-   "key": "GET /admin/customers/:id/wallet",
-   "fn": "getCustomerWallet",
-   "file": "src/features/customers/api/wallet.ts",
-   "line": 33,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "CustomerWallet",
-   "returns": {
-    "object": {
-     "enabled": {
-      "type": "boolean"
-     },
-     "currency": {
-      "type": "string"
-     },
-     "balance": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "reserved": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "creditLimit": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "available": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "frozen": {
-      "object": {
-       "at": {
-        "type": "string",
-        "alias": "IsoDateTime"
-       },
-       "reason": {
-        "type": "string"
-       }
-      },
-      "nullable": true
-     },
-     "pendingTopUps": {
-      "object": {
-       "count": {
-        "type": "number"
-       },
-       "amount": {
-        "type": "string",
-        "alias": "Money"
-       }
-      }
-     },
-     "openDisputes": {
-      "type": "number"
-     },
-     "adjustApprovalLimit": {
-      "type": "string",
-      "alias": "Money"
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/customers/:id/wallet/statement",
-   "fn": "listCustomerWalletStatement",
-   "file": "src/features/customers/api/wallet.ts",
-   "line": 43,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "query",
-     "optional": true,
-     "typeText": "ListQuery",
-     "shape": {
-      "object": {
-       "start": {
-        "type": "number",
-        "optional": true
-       },
-       "end": {
-        "type": "number",
-        "optional": true
-       },
-       "sort": {
-        "array": {
-         "type": "string"
-        },
-        "optional": true
-       },
-       "order": {
-        "array": {
-         "enum": [
-          "asc",
-          "desc"
-         ]
-        },
-        "optional": true
-       },
-       "q": {
-        "type": "string",
-        "optional": true
-       },
-       "filters": {
-        "object": {},
-        "record": {
-         "anyOf": [
-          {
-           "type": "string"
-          },
-          {
-           "type": "number"
-          },
-          {
-           "array": {
-            "anyOf": [
-             {
-              "type": "string"
-             },
-             {
-              "type": "number"
-             },
-             {
-              "type": "boolean"
-             }
-            ]
-           }
-          },
-          {
-           "type": "boolean"
-          }
-         ],
-         "undefinable": true
-        },
-        "optional": true
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "ListResult<WalletStatementRow>",
-   "returns": {
-    "object": {
-     "data": {
-      "array": {
-       "object": {
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "transactionId": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "kind": {
-         "type": "string"
-        },
-        "memo": {
-         "type": "string"
-        },
-        "amount": {
-         "type": "string",
-         "alias": "Money"
-        },
-        "balanceAfter": {
-         "type": "string",
-         "alias": "Money"
-        },
-        "createdAt": {
          "type": "string",
          "alias": "IsoDateTime"
         }
@@ -5574,30 +5230,6 @@
       },
       "nullable": true
      },
-     "topCustomers": {
-      "array": {
-       "object": {
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "name": {
-         "type": "string"
-        },
-        "country": {
-         "type": "string"
-        },
-        "orders": {
-         "type": "number"
-        },
-        "spend": {
-         "type": "string",
-         "alias": "Money"
-        }
-       }
-      },
-      "nullable": true
-     },
      "navCounts": {
       "object": {
        "orders": {
@@ -5652,8 +5284,8 @@
   {
    "key": "GET /admin/data-requests",
    "fn": "listDataRequests",
-   "file": "src/features/customers/api/dataRequests.ts",
-   "line": 21,
+   "file": "src/features/accounts/api/dataRequests.ts",
+   "line": 23,
    "params": [
     {
      "name": "query",
@@ -5755,28 +5387,12 @@
          "type": "number",
          "alias": "Id"
         },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
-        "dueAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "customerId": {
+        "accountId": {
          "type": "number",
          "alias": "Id"
         },
-        "requestedAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "completedAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
+        "accountName": {
+         "type": "string"
         },
         "kind": {
          "enum": [
@@ -5787,10 +5403,25 @@
         "status": {
          "enum": [
           "open",
-          "rejected",
+          "in_progress",
           "completed",
-          "in_progress"
+          "rejected"
          ]
+        },
+        "requestedAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
+        },
+        "dueAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
+        },
+        "completedAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
         },
         "handledBy": {
          "type": "number",
@@ -5802,8 +5433,9 @@
          "nullable": true,
          "alias": "Id"
         },
-        "customerName": {
-         "type": "string"
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
         }
        }
       }
@@ -5817,8 +5449,8 @@
   {
    "key": "GET /admin/data-requests/:id",
    "fn": "getDataRequest",
-   "file": "src/features/customers/api/dataRequests.ts",
-   "line": 30,
+   "file": "src/features/accounts/api/dataRequests.ts",
+   "line": 32,
    "params": [
     {
      "name": "id",
@@ -5857,28 +5489,12 @@
       "type": "number",
       "alias": "Id"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "dueAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "customerId": {
+     "accountId": {
       "type": "number",
       "alias": "Id"
      },
-     "requestedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "completedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
+     "accountName": {
+      "type": "string"
      },
      "kind": {
       "enum": [
@@ -5889,10 +5505,25 @@
      "status": {
       "enum": [
        "open",
-       "rejected",
+       "in_progress",
        "completed",
-       "in_progress"
+       "rejected"
       ]
+     },
+     "requestedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "dueAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "completedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
      "handledBy": {
       "type": "number",
@@ -5904,8 +5535,9 @@
       "nullable": true,
       "alias": "Id"
      },
-     "customerName": {
-      "type": "string"
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
      }
     }
    }
@@ -6016,10 +5648,6 @@
          "type": "number",
          "alias": "Id"
         },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
         "amount": {
          "type": "string",
          "alias": "Money"
@@ -6028,9 +5656,18 @@
          "type": "string",
          "alias": "Money"
         },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        },
         "orderId": {
          "type": "number",
          "alias": "Id"
+        },
+        "resolvedAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
         },
         "reasonCode": {
          "type": "string"
@@ -6041,11 +5678,6 @@
          "alias": "IsoDateTime"
         },
         "submittedAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "resolvedAt": {
          "type": "string",
          "nullable": true,
          "alias": "IsoDateTime"
@@ -6161,10 +5793,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
      "amount": {
       "type": "string",
       "alias": "Money"
@@ -6173,9 +5801,18 @@
       "type": "string",
       "alias": "Money"
      },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
      "orderId": {
       "type": "number",
       "alias": "Id"
+     },
+     "resolvedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
      "reasonCode": {
       "type": "string"
@@ -6186,11 +5823,6 @@
       "alias": "IsoDateTime"
      },
      "submittedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "resolvedAt": {
       "type": "string",
       "nullable": true,
       "alias": "IsoDateTime"
@@ -6261,7 +5893,7 @@
    "key": "GET /admin/files/:id",
    "fn": "orderFileUrl",
    "file": "src/features/orders/api/orders.ts",
-   "line": 63,
+   "line": 64,
    "params": [
     {
      "name": "fileId",
@@ -6380,11 +6012,6 @@
      "data": {
       "array": {
        "object": {
-        "updatedAt": {
-         "type": "string",
-         "alias": "IsoDateTime",
-         "optional": true
-        },
         "id": {
          "type": "number",
          "alias": "Id"
@@ -6395,6 +6022,11 @@
         },
         "sort": {
          "type": "number"
+        },
+        "updatedAt": {
+         "type": "string",
+         "alias": "IsoDateTime",
+         "optional": true
         },
         "category": {
          "type": "string"
@@ -6462,11 +6094,6 @@
    "returnsText": "HelpArticle",
    "returns": {
     "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
      "id": {
       "type": "number",
       "alias": "Id"
@@ -6477,6 +6104,11 @@
      },
      "sort": {
       "type": "number"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime",
+      "optional": true
      },
      "category": {
       "type": "string"
@@ -6579,12 +6211,12 @@
         "enum": [
          "order",
          "payment",
-         "wallet",
+         "account",
          "billing",
+         "wallet",
          "marketing",
          "announcement",
          "support",
-         "account",
          "alert"
         ],
         "optional": true
@@ -6627,12 +6259,12 @@
          "enum": [
           "order",
           "payment",
-          "wallet",
+          "account",
           "billing",
+          "wallet",
           "marketing",
           "announcement",
           "support",
-          "account",
           "alert"
          ]
         },
@@ -7245,7 +6877,7 @@
    "key": "GET /admin/invoices",
    "fn": "listInvoices",
    "file": "src/features/finance/api/invoices.ts",
-   "line": 21,
+   "line": 22,
    "params": [
     {
      "name": "query",
@@ -7350,10 +6982,6 @@
          "type": "number",
          "alias": "Id"
         },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
         "amount": {
          "type": "string",
          "alias": "Money"
@@ -7394,10 +7022,14 @@
          "nullable": true,
          "alias": "IsoDateTime"
         },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        },
         "kind": {
          "enum": [
-          "manual",
           "topup",
+          "manual",
           "receipt"
          ]
         },
@@ -7465,7 +7097,7 @@
    "key": "GET /admin/invoices/:id",
    "fn": "getInvoice",
    "file": "src/features/finance/api/invoices.ts",
-   "line": 30,
+   "line": 31,
    "params": [
     {
      "name": "id",
@@ -7507,10 +7139,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
      "amount": {
       "type": "string",
       "alias": "Money"
@@ -7551,10 +7179,14 @@
       "nullable": true,
       "alias": "IsoDateTime"
      },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
      "kind": {
       "enum": [
-       "manual",
        "topup",
+       "manual",
        "receipt"
       ]
      },
@@ -7718,6 +7350,10 @@
          "type": "number",
          "alias": "Id"
         },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        },
         "cidr": {
          "type": "string"
         },
@@ -7738,10 +7374,6 @@
         "lastHitAt": {
          "type": "string",
          "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "createdAt": {
-         "type": "string",
          "alias": "IsoDateTime"
         },
         "kind": {
@@ -7828,6 +7460,10 @@
       "type": "number",
       "alias": "Id"
      },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
      "cidr": {
       "type": "string"
      },
@@ -7848,10 +7484,6 @@
      "lastHitAt": {
       "type": "string",
       "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "createdAt": {
-      "type": "string",
       "alias": "IsoDateTime"
      },
      "kind": {
@@ -8051,9 +7683,6 @@
      "data": {
       "array": {
        "object": {
-        "kind": {
-         "type": "string"
-        },
         "id": {
          "type": "number",
          "alias": "Id"
@@ -8061,6 +7690,9 @@
         "createdAt": {
          "type": "string",
          "alias": "IsoDateTime"
+        },
+        "kind": {
+         "type": "string"
         },
         "memo": {
          "type": "string"
@@ -8078,6 +7710,7 @@
           "dispute",
           "accrual",
           "supplier",
+          "account",
           "system"
          ]
         },
@@ -8085,10 +7718,11 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
+            "client",
             "customer",
+            "account",
             "system",
-            "client"
+            "staff"
            ]
           },
           "id": {
@@ -8119,18 +7753,17 @@
            },
            "account": {
             "object": {
-             "kind": {
-              "type": "string"
-             },
              "id": {
               "type": "number",
               "alias": "Id"
              },
+             "kind": {
+              "type": "string"
+             },
              "ownerType": {
               "enum": [
-               "customer",
                "supplier",
-               "client"
+               "account"
               ],
               "nullable": true
              },
@@ -8196,9 +7829,6 @@
    "returnsText": "LedgerTransaction",
    "returns": {
     "object": {
-     "kind": {
-      "type": "string"
-     },
      "id": {
       "type": "number",
       "alias": "Id"
@@ -8206,6 +7836,9 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
+     },
+     "kind": {
+      "type": "string"
      },
      "memo": {
       "type": "string"
@@ -8223,6 +7856,7 @@
        "dispute",
        "accrual",
        "supplier",
+       "account",
        "system"
       ]
      },
@@ -8230,10 +7864,11 @@
       "object": {
        "type": {
         "enum": [
-         "staff",
+         "client",
          "customer",
+         "account",
          "system",
-         "client"
+         "staff"
         ]
        },
        "id": {
@@ -8264,18 +7899,17 @@
         },
         "account": {
          "object": {
-          "kind": {
-           "type": "string"
-          },
           "id": {
            "type": "number",
            "alias": "Id"
           },
+          "kind": {
+           "type": "string"
+          },
           "ownerType": {
            "enum": [
-            "customer",
             "supplier",
-            "client"
+            "account"
            ],
            "nullable": true
           },
@@ -8292,6 +7926,64 @@
         }
        }
       }
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/legacy-accounts/:type/:id",
+   "fn": "findLegacyAccount",
+   "file": "src/features/accounts/api/accounts.ts",
+   "line": 129,
+   "params": [
+    {
+     "name": "type",
+     "optional": false,
+     "typeText": "LegacyAccountType",
+     "shape": {
+      "enum": [
+       "merchant",
+       "client",
+       "customer"
+      ]
+     }
+    },
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "LegacyAccount",
+   "returns": {
+    "object": {
+     "accountId": {
+      "type": "number",
+      "alias": "Id"
      }
     }
    }
@@ -8924,9 +8616,8 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
-            "customer",
-            "client"
+            "account",
+            "staff"
            ]
           },
           "id": {
@@ -8942,9 +8633,8 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
-            "customer",
-            "client"
+            "account",
+            "staff"
            ]
           },
           "id": {
@@ -9177,9 +8867,8 @@
         },
         "recipientType": {
          "enum": [
-          "staff",
-          "customer",
-          "client"
+          "account",
+          "staff"
          ]
         },
         "recipientId": {
@@ -9331,11 +9020,6 @@
      "data": {
       "array": {
        "object": {
-        "updatedAt": {
-         "type": "string",
-         "alias": "IsoDateTime",
-         "optional": true
-        },
         "id": {
          "type": "number",
          "alias": "Id"
@@ -9343,6 +9027,11 @@
         "createdAt": {
          "type": "string",
          "alias": "IsoDateTime"
+        },
+        "updatedAt": {
+         "type": "string",
+         "alias": "IsoDateTime",
+         "optional": true
         },
         "isActive": {
          "type": "boolean"
@@ -9361,9 +9050,9 @@
         },
         "audience": {
          "enum": [
-          "staff",
+          "merchant",
           "customer",
-          "merchant"
+          "staff"
          ]
         },
         "sentLast30Days": {
@@ -9419,11 +9108,6 @@
    "returnsText": "NotificationTemplate",
    "returns": {
     "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
      "id": {
       "type": "number",
       "alias": "Id"
@@ -9431,6 +9115,11 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime",
+      "optional": true
      },
      "isActive": {
       "type": "boolean"
@@ -9449,9 +9138,9 @@
      },
      "audience": {
       "enum": [
-       "staff",
+       "merchant",
        "customer",
-       "merchant"
+       "staff"
       ]
      },
      "sentLast30Days": {
@@ -9564,11 +9253,6 @@
      "data": {
       "array": {
        "object": {
-        "updatedAt": {
-         "type": "string",
-         "alias": "IsoDateTime",
-         "optional": true
-        },
         "id": {
          "type": "number",
          "alias": "Id"
@@ -9576,6 +9260,11 @@
         "createdAt": {
          "type": "string",
          "alias": "IsoDateTime"
+        },
+        "updatedAt": {
+         "type": "string",
+         "alias": "IsoDateTime",
+         "optional": true
         },
         "recipientType": {
          "type": "string"
@@ -9688,11 +9377,6 @@
    "returnsText": "NotificationLogEntry",
    "returns": {
     "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
      "id": {
       "type": "number",
       "alias": "Id"
@@ -9700,6 +9384,11 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime",
+      "optional": true
      },
      "recipientType": {
       "type": "string"
@@ -9771,7 +9460,7 @@
    "key": "GET /admin/orders",
    "fn": "listOrders",
    "file": "src/features/orders/api/orders.ts",
-   "line": 24,
+   "line": 25,
    "params": [
     {
      "name": "query",
@@ -9873,13 +9562,13 @@
          "type": "number",
          "alias": "Id"
         },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
         "taxAmount": {
          "type": "string",
          "alias": "Money"
+        },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
         },
         "currency": {
          "type": "string"
@@ -9919,10 +9608,10 @@
         },
         "status": {
          "enum": [
-          "pending",
+          "completed",
           "rejected",
-          "processing",
-          "completed"
+          "pending",
+          "processing"
          ]
         },
         "queue": {
@@ -9975,19 +9664,7 @@
           }
          }
         },
-        "client": {
-         "object": {
-          "id": {
-           "type": "number",
-           "alias": "Id"
-          },
-          "name": {
-           "type": "string"
-          }
-         },
-         "nullable": true
-        },
-        "customer": {
+        "account": {
          "object": {
           "id": {
            "type": "number",
@@ -9998,9 +9675,28 @@
           },
           "email": {
            "type": "string"
+          },
+          "rank": {
+           "object": {
+            "id": {
+             "type": "number",
+             "alias": "Id"
+            },
+            "name": {
+             "type": "string"
+            },
+            "kind": {
+             "enum": [
+              "retail",
+              "merchant"
+             ]
+            }
+           }
+          },
+          "guest": {
+           "type": "boolean"
           }
-         },
-         "nullable": true
+         }
         },
         "supplier": {
          "object": {
@@ -10074,7 +9770,7 @@
    "key": "GET /admin/orders/:id",
    "fn": "getOrder",
    "file": "src/features/orders/api/orders.ts",
-   "line": 34,
+   "line": 35,
    "params": [
     {
      "name": "id",
@@ -10113,13 +9809,13 @@
       "type": "number",
       "alias": "Id"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
      "taxAmount": {
       "type": "string",
       "alias": "Money"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
      },
      "currency": {
       "type": "string"
@@ -10159,10 +9855,10 @@
      },
      "status": {
       "enum": [
-       "pending",
+       "completed",
        "rejected",
-       "processing",
-       "completed"
+       "pending",
+       "processing"
       ]
      },
      "queue": {
@@ -10215,19 +9911,7 @@
        }
       }
      },
-     "client": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       }
-      },
-      "nullable": true
-     },
-     "customer": {
+     "account": {
       "object": {
        "id": {
         "type": "number",
@@ -10238,9 +9922,28 @@
        },
        "email": {
         "type": "string"
+       },
+       "rank": {
+        "object": {
+         "id": {
+          "type": "number",
+          "alias": "Id"
+         },
+         "name": {
+          "type": "string"
+         },
+         "kind": {
+          "enum": [
+           "retail",
+           "merchant"
+          ]
+         }
+        }
+       },
+       "guest": {
+        "type": "boolean"
        }
-      },
-      "nullable": true
+      }
      },
      "supplier": {
       "object": {
@@ -10308,7 +10011,7 @@
    "key": "GET /admin/orders/:id/events",
    "fn": "listOrderEvents",
    "file": "src/features/orders/api/orders.ts",
-   "line": 44,
+   "line": 45,
    "params": [
     {
      "name": "id",
@@ -10371,11 +10074,12 @@
        "object": {
         "type": {
          "enum": [
-          "staff",
+          "client",
           "customer",
           "supplier",
+          "account",
           "system",
-          "client"
+          "staff"
          ]
         },
         "id": {
@@ -10388,6 +10092,15 @@
          "nullable": true
         }
        }
+      },
+      "account": {
+       "object": {
+        "id": {
+         "type": "number",
+         "alias": "Id"
+        }
+       },
+       "nullable": true
       }
      }
     }
@@ -10397,7 +10110,7 @@
    "key": "GET /admin/orders/export",
    "fn": "exportOrders",
    "file": "src/features/orders/api/orders.ts",
-   "line": 54,
+   "line": 55,
    "params": [
     {
      "name": "query",
@@ -10919,7 +10632,7 @@
    "key": "GET /admin/payments",
    "fn": "listPayments",
    "file": "src/features/finance/api/payments.ts",
-   "line": 24,
+   "line": 26,
    "params": [
     {
      "name": "query",
@@ -11021,13 +10734,13 @@
          "type": "number",
          "alias": "Id"
         },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
         "amount": {
          "type": "string",
          "alias": "Money"
+        },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
         },
         "feeAmount": {
          "type": "string",
@@ -11052,9 +10765,9 @@
         },
         "status": {
          "enum": [
+          "rejected",
           "pending",
-          "approved",
-          "rejected"
+          "approved"
          ]
         },
         "methodType": {
@@ -11209,7 +10922,7 @@
    "key": "GET /admin/payments/:id",
    "fn": "getPayment",
    "file": "src/features/finance/api/payments.ts",
-   "line": 34,
+   "line": 36,
    "params": [
     {
      "name": "id",
@@ -11248,13 +10961,13 @@
       "type": "number",
       "alias": "Id"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
      "amount": {
       "type": "string",
       "alias": "Money"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
      },
      "feeAmount": {
       "type": "string",
@@ -11279,9 +10992,9 @@
      },
      "status": {
       "enum": [
+       "rejected",
        "pending",
-       "approved",
-       "rejected"
+       "approved"
       ]
      },
      "methodType": {
@@ -12749,9 +12462,9 @@
         },
         "state": {
          "enum": [
+          "blocked",
           "review",
-          "ready",
-          "blocked"
+          "ready"
          ]
         },
         "blockedReason": {
@@ -12844,7 +12557,7 @@
    "key": "GET /admin/queues",
    "fn": "queuesBoardUrl",
    "file": "src/features/dashboard/api/dashboard.ts",
-   "line": 57,
+   "line": 58,
    "params": [],
    "returnsText": "string",
    "returns": {
@@ -12957,16 +12670,16 @@
          "type": "number",
          "alias": "Id"
         },
-        "reason": {
-         "type": "string"
+        "amount": {
+         "type": "string",
+         "alias": "Money"
         },
         "createdAt": {
          "type": "string",
          "alias": "IsoDateTime"
         },
-        "amount": {
-         "type": "string",
-         "alias": "Money"
+        "reason": {
+         "type": "string"
         },
         "orderId": {
          "type": "number",
@@ -12979,10 +12692,10 @@
         },
         "status": {
          "enum": [
-          "failed",
-          "rejected",
-          "processing",
           "completed",
+          "rejected",
+          "failed",
+          "processing",
           "requested"
          ]
         },
@@ -13014,9 +12727,9 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
-            "customer",
-            "system"
+            "account",
+            "system",
+            "staff"
            ]
           },
           "name": {
@@ -13155,16 +12868,16 @@
       "type": "number",
       "alias": "Id"
      },
-     "reason": {
-      "type": "string"
+     "amount": {
+      "type": "string",
+      "alias": "Money"
      },
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "amount": {
-      "type": "string",
-      "alias": "Money"
+     "reason": {
+      "type": "string"
      },
      "orderId": {
       "type": "number",
@@ -13177,10 +12890,10 @@
      },
      "status": {
       "enum": [
-       "failed",
-       "rejected",
-       "processing",
        "completed",
+       "rejected",
+       "failed",
+       "processing",
        "requested"
       ]
      },
@@ -13212,9 +12925,9 @@
       "object": {
        "type": {
         "enum": [
-         "staff",
-         "customer",
-         "system"
+         "account",
+         "system",
+         "staff"
         ]
        },
        "name": {
@@ -13535,12 +13248,12 @@
   },
   {
    "key": "GET /admin/reports/client-statement/:clientId",
-   "fn": "downloadClientStatement",
-   "file": "src/features/merchants/api/wallet.ts",
-   "line": 85,
+   "fn": "downloadAccountStatement",
+   "file": "src/features/accounts/api/wallet.ts",
+   "line": 143,
    "params": [
     {
-     "name": "clientId",
+     "name": "accountId",
      "optional": false,
      "typeText": "number",
      "shape": {
@@ -13578,7 +13291,7 @@
    "key": "GET /admin/reports/funnel",
    "fn": "getFunnel",
    "file": "src/features/finance/api/reports.ts",
-   "line": 56,
+   "line": 58,
    "params": [
     {
      "name": "query",
@@ -13741,13 +13454,13 @@
          "type": "number",
          "alias": "Id"
         },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
         "amount": {
          "type": "string",
          "alias": "Money"
+        },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
         },
         "feeAmount": {
          "type": "string",
@@ -13842,8 +13555,8 @@
       "object": {
        "groupBy": {
         "enum": [
-         "supplier",
          "client",
+         "supplier",
          "day",
          "service"
         ]
@@ -13883,8 +13596,8 @@
     "object": {
      "groupBy": {
       "enum": [
-       "supplier",
        "client",
+       "supplier",
        "day",
        "service"
       ]
@@ -14027,7 +13740,7 @@
    "key": "GET /admin/reports/top-clients",
    "fn": "getTopClients",
    "file": "src/features/dashboard/api/dashboard.ts",
-   "line": 44,
+   "line": 45,
    "params": [
     {
      "name": "params",
@@ -14044,6 +13757,13 @@
        },
        "limit": {
         "type": "number"
+       },
+       "scope": {
+        "enum": [
+         "all",
+         "b2c",
+         "b2b"
+        ]
        }
       }
      }
@@ -14057,7 +13777,7 @@
      }
     }
    ],
-   "returnsText": "TopClient[]",
+   "returnsText": "TopAccount[]",
    "returns": {
     "array": {
      "object": {
@@ -14070,6 +13790,26 @@
       },
       "country": {
        "type": "string"
+      },
+      "rank": {
+       "object": {
+        "id": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "name": {
+         "type": "string"
+        },
+        "kind": {
+         "enum": [
+          "retail",
+          "merchant"
+         ]
+        }
+       }
+      },
+      "hasAccount": {
+       "type": "boolean"
       },
       "orders": {
        "type": "number"
@@ -14094,7 +13834,7 @@
    "key": "GET /admin/reports/vat",
    "fn": "getVatReport",
    "file": "src/features/finance/api/reports.ts",
-   "line": 45,
+   "line": 47,
    "params": [
     {
      "name": "query",
@@ -14192,7 +13932,7 @@
    "key": "GET /admin/reports/wallet-exposure",
    "fn": "getWalletExposure",
    "file": "src/features/finance/api/reports.ts",
-   "line": 35,
+   "line": 37,
    "params": [
     {
      "name": "init",
@@ -14243,6 +13983,23 @@
         "alias": "Money"
        },
        "inOverdraft": {
+        "type": "number"
+       }
+      }
+     },
+     "storeBalances": {
+      "object": {
+       "accounts": {
+        "type": "number"
+       },
+       "balance": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "negative": {
+        "type": "number"
+       },
+       "frozen": {
         "type": "number"
        }
       }
@@ -15944,6 +15701,9 @@
         "name": {
          "type": "string"
         },
+        "sort": {
+         "type": "number"
+        },
         "allowedGroupIds": {
          "array": {
           "type": "number",
@@ -15952,9 +15712,6 @@
         },
         "isActive": {
          "type": "boolean"
-        },
-        "sort": {
-         "type": "number"
         },
         "type": {
          "enum": [
@@ -16023,6 +15780,9 @@
      "name": {
       "type": "string"
      },
+     "sort": {
+      "type": "number"
+     },
      "allowedGroupIds": {
       "array": {
        "type": "number",
@@ -16031,9 +15791,6 @@
      },
      "isActive": {
       "type": "boolean"
-     },
-     "sort": {
-      "type": "number"
      },
      "type": {
       "enum": [
@@ -16156,15 +15913,11 @@
          "type": "number",
          "alias": "Id"
         },
-        "country": {
-         "type": "string"
-        },
         "sort": {
          "type": "number"
         },
-        "serviceId": {
-         "type": "number",
-         "alias": "Id"
+        "country": {
+         "type": "string"
         },
         "slug": {
          "type": "string"
@@ -16180,6 +15933,10 @@
         },
         "brand": {
          "type": "string"
+        },
+        "serviceId": {
+         "type": "number",
+         "alias": "Id"
         },
         "publicTitle": {
          "type": "string"
@@ -16333,15 +16090,11 @@
       "type": "number",
       "alias": "Id"
      },
-     "country": {
-      "type": "string"
-     },
      "sort": {
       "type": "number"
      },
-     "serviceId": {
-      "type": "number",
-      "alias": "Id"
+     "country": {
+      "type": "string"
      },
      "slug": {
       "type": "string"
@@ -16357,6 +16110,10 @@
      },
      "brand": {
       "type": "string"
+     },
+     "serviceId": {
+      "type": "number",
+      "alias": "Id"
      },
      "publicTitle": {
       "type": "string"
@@ -17355,7 +17112,7 @@
    "key": "GET /admin/sessions",
    "fn": "listSessions",
    "file": "src/features/access/api/sessions.ts",
-   "line": 25,
+   "line": 22,
    "params": [
     {
      "name": "query",
@@ -17457,13 +17214,13 @@
          "type": "number",
          "alias": "Id"
         },
+        "createdAt": {
+         "type": "string",
+         "alias": "IsoDateTime"
+        },
         "expiresAt": {
          "type": "string",
          "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "createdAt": {
-         "type": "string",
          "alias": "IsoDateTime"
         },
         "ip": {
@@ -17478,7 +17235,10 @@
          "alias": "IsoDateTime"
         },
         "subjectType": {
-         "const": "staff"
+         "enum": [
+          "account",
+          "staff"
+         ]
         },
         "subject": {
          "object": {
@@ -18240,22 +18000,19 @@
          "type": "string",
          "alias": "IsoDateTime"
         },
+        "currency": {
+         "type": "string"
+        },
         "name": {
          "type": "string"
         },
         "driver": {
          "type": "string"
         },
-        "currency": {
+        "baseUrl": {
          "type": "string"
-        },
-        "rateLimitPerMin": {
-         "type": "number"
         },
         "username": {
-         "type": "string"
-        },
-        "baseUrl": {
          "type": "string"
         },
         "creditRate": {
@@ -18276,6 +18033,9 @@
          "alias": "Money"
         },
         "maxConcurrency": {
+         "type": "number"
+        },
+        "rateLimitPerMin": {
          "type": "number"
         },
         "timeoutMs": {
@@ -18384,22 +18144,19 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
+     "currency": {
+      "type": "string"
+     },
      "name": {
       "type": "string"
      },
      "driver": {
       "type": "string"
      },
-     "currency": {
+     "baseUrl": {
       "type": "string"
-     },
-     "rateLimitPerMin": {
-      "type": "number"
      },
      "username": {
-      "type": "string"
-     },
-     "baseUrl": {
       "type": "string"
      },
      "creditRate": {
@@ -18420,6 +18177,9 @@
       "alias": "Money"
      },
      "maxConcurrency": {
+      "type": "number"
+     },
+     "rateLimitPerMin": {
       "type": "number"
      },
      "timeoutMs": {
@@ -19022,6 +18782,10 @@
         "name": {
          "type": "string"
         },
+        "credit": {
+         "type": "string",
+         "alias": "Money"
+        },
         "lastSeenAt": {
          "type": "string",
          "nullable": true,
@@ -19029,10 +18793,6 @@
         },
         "type": {
          "type": "string"
-        },
-        "credit": {
-         "type": "string",
-         "alias": "Money"
         },
         "supplierId": {
          "type": "number",
@@ -19076,7 +18836,7 @@
    "key": "GET /admin/support-tickets",
    "fn": "listSupportTickets",
    "file": "src/features/support/api/tickets.ts",
-   "line": 35,
+   "line": 36,
    "params": [
     {
      "name": "query",
@@ -19188,11 +18948,6 @@
         "subject": {
          "type": "string"
         },
-        "resolvedAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
         "requesterId": {
          "type": "number",
          "alias": "Id"
@@ -19207,6 +18962,11 @@
          "nullable": true,
          "alias": "IsoDateTime"
         },
+        "resolvedAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
+        },
         "channel": {
          "enum": [
           "email",
@@ -19216,10 +18976,7 @@
          ]
         },
         "requesterType": {
-         "enum": [
-          "customer",
-          "client"
-         ]
+         "const": "account"
         },
         "requester": {
          "object": {
@@ -19229,6 +18986,12 @@
           "email": {
            "type": "string",
            "nullable": true
+          },
+          "rankKind": {
+           "enum": [
+            "retail",
+            "merchant"
+           ]
           }
          }
         },
@@ -19329,7 +19092,7 @@
    "key": "GET /admin/support-tickets/:id",
    "fn": "getSupportTicket",
    "file": "src/features/support/api/tickets.ts",
-   "line": 48,
+   "line": 49,
    "params": [
     {
      "name": "id",
@@ -19378,11 +19141,6 @@
      "subject": {
       "type": "string"
      },
-     "resolvedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
      "requesterId": {
       "type": "number",
       "alias": "Id"
@@ -19397,6 +19155,11 @@
       "nullable": true,
       "alias": "IsoDateTime"
      },
+     "resolvedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
      "channel": {
       "enum": [
        "email",
@@ -19406,10 +19169,7 @@
       ]
      },
      "requesterType": {
-      "enum": [
-       "customer",
-       "client"
-      ]
+      "const": "account"
      },
      "requester": {
       "object": {
@@ -19419,6 +19179,12 @@
        "email": {
         "type": "string",
         "nullable": true
+       },
+       "rankKind": {
+        "enum": [
+         "retail",
+         "merchant"
+        ]
        }
       }
      },
@@ -19535,10 +19301,9 @@
         },
         "authorType": {
          "enum": [
-          "staff",
-          "customer",
+          "account",
           "system",
-          "client"
+          "staff"
          ]
         },
         "authorId": {
@@ -19586,7 +19351,7 @@
    "key": "GET /admin/support-tickets/:id/files/:fileId",
    "fn": "ticketFileUrl",
    "file": "src/features/support/api/tickets.ts",
-   "line": 114,
+   "line": 115,
    "params": [
     {
      "name": "id",
@@ -21213,7 +20978,8 @@
           "entries_balanced",
           "accounts_match_lines",
           "stuck_holds",
-          "payments_without_entry"
+          "payments_without_entry",
+          "wallets_follow_rank"
          ]
         },
         "label": {
@@ -23535,12 +23301,12 @@
      "data": {
       "array": {
        "object": {
-        "source": {
-         "type": "string"
-        },
         "id": {
          "type": "number",
          "alias": "Id"
+        },
+        "source": {
+         "type": "string"
         },
         "model": {
          "type": "string"
@@ -23605,12 +23371,12 @@
    "returnsText": "TacEntry",
    "returns": {
     "object": {
-     "source": {
-      "type": "string"
-     },
      "id": {
       "type": "number",
       "alias": "Id"
+     },
+     "source": {
+      "type": "string"
      },
      "model": {
       "type": "string"
@@ -24106,7 +23872,7 @@
   {
    "key": "PATCH /admin/api-keys/:id",
    "fn": "updateApiKey",
-   "file": "src/features/merchants/api/apiKeys.ts",
+   "file": "src/features/accounts/api/apiKeys.ts",
    "line": 58,
    "params": [
     {
@@ -24165,26 +23931,12 @@
       "type": "number",
       "alias": "Id"
      },
-     "expiresAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "name": {
-      "type": "string"
-     },
-     "revokedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
      "clientId": {
       "type": "number",
       "alias": "Id"
+     },
+     "name": {
+      "type": "string"
      },
      "prefix": {
       "type": "string"
@@ -24205,6 +23957,20 @@
      "lastUsedIp": {
       "type": "string"
      },
+     "expiresAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "revokedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
      "createdByStaff": {
       "type": "boolean",
       "optional": true
@@ -24214,8 +23980,8 @@
   },
   {
    "key": "PATCH /admin/client-groups/:id",
-   "fn": "updateClientGroup",
-   "file": "src/features/merchants/api/groups.ts",
+   "fn": "updateRank",
+   "file": "src/features/accounts/api/ranks.ts",
    "line": 52,
    "params": [
     {
@@ -24230,7 +23996,7 @@
     {
      "name": "body",
      "optional": false,
-     "typeText": "Partial<CreateClientGroupBody>",
+     "typeText": "Partial<CreateRankBody>",
      "shape": {
       "object": {
        "name": {
@@ -24279,7 +24045,7 @@
      }
     }
    ],
-   "returnsText": "ClientGroup",
+   "returnsText": "Rank",
    "returns": {
     "object": {
      "id": {
@@ -24313,7 +24079,13 @@
      "kind": {
       "type": "string"
      },
-     "merchantCount": {
+     "rankKind": {
+      "enum": [
+       "retail",
+       "merchant"
+      ]
+     },
+     "accountCount": {
       "type": "number",
       "optional": true
      }
@@ -24322,9 +24094,9 @@
   },
   {
    "key": "PATCH /admin/client-prices/:id",
-   "fn": "updateClientPrice",
-   "file": "src/features/merchants/api/prices.ts",
-   "line": 42,
+   "fn": "updateAccountPrice",
+   "file": "src/features/accounts/api/prices.ts",
+   "line": 43,
    "params": [
     {
      "name": "id",
@@ -24338,7 +24110,7 @@
     {
      "name": "body",
      "optional": false,
-     "typeText": "UpdateClientPriceBody",
+     "typeText": "UpdateAccountPriceBody",
      "shape": {
       "object": {
        "price": {
@@ -24374,22 +24146,18 @@
      }
     }
    ],
-   "returnsText": "ClientPrice",
+   "returnsText": "AccountPrice",
    "returns": {
     "object": {
      "id": {
       "type": "number",
       "alias": "Id"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "clientId": {
+     "serviceId": {
       "type": "number",
       "alias": "Id"
      },
-     "serviceId": {
+     "clientId": {
       "type": "number",
       "alias": "Id"
      },
@@ -24399,6 +24167,10 @@
      },
      "note": {
       "type": "string"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
      },
      "service": {
       "object": {
@@ -24435,9 +24207,9 @@
   },
   {
    "key": "PATCH /admin/clients/:id",
-   "fn": "updateClient",
-   "file": "src/features/merchants/api/clients.ts",
-   "line": 58,
+   "fn": "updateAccount",
+   "file": "src/features/accounts/api/accounts.ts",
+   "line": 85,
    "params": [
     {
      "name": "id",
@@ -24451,24 +24223,18 @@
     {
      "name": "body",
      "optional": false,
-     "typeText": "UpdateClientBody",
+     "typeText": "UpdateAccountBody",
      "shape": {
       "object": {
        "status": {
         "enum": [
          "active",
-         "suspended",
-         "pending"
+         "suspended"
         ],
         "optional": true
        },
        "reason": {
         "type": "string",
-        "optional": true
-       },
-       "groupId": {
-        "type": "number",
-        "alias": "Id",
         "optional": true
        },
        "name": {
@@ -24527,7 +24293,7 @@
      }
     }
    ],
-   "returnsText": "Client",
+   "returnsText": "AccountRow",
    "returns": {
     "object": {
      "id": {
@@ -24544,35 +24310,42 @@
      "email": {
       "type": "string"
      },
-     "country": {
-      "type": "string"
-     },
-     "username": {
-      "type": "string"
-     },
-     "company": {
-      "type": "string"
-     },
-     "phone": {
-      "type": "string"
-     },
-     "groupId": {
-      "type": "number",
-      "alias": "Id"
-     },
      "emailVerifiedAt": {
       "type": "string",
       "nullable": true,
       "alias": "IsoDateTime"
      },
+     "phone": {
+      "type": "string"
+     },
+     "country": {
+      "type": "string"
+     },
+     "company": {
+      "type": "string"
+     },
+     "address": {
+      "type": "string"
+     },
+     "taxId": {
+      "type": "string"
+     },
+     "internalNotes": {
+      "type": "string"
+     },
+     "username": {
+      "type": "string",
+      "nullable": true
+     },
      "status": {
       "enum": [
        "active",
        "suspended",
-       "pending"
+       "blocked",
+       "anonymized"
       ]
      },
-     "group": {
+     "rank": {
       "object": {
        "id": {
         "type": "number",
@@ -24581,77 +24354,89 @@
        "name": {
         "type": "string"
        },
+       "kind": {
+        "enum": [
+         "retail",
+         "merchant"
+        ]
+       },
        "discountPercent": {
         "type": "string",
         "alias": "Decimal"
+       },
+       "creditAllowed": {
+        "type": "boolean"
+       }
+      }
+     },
+     "hasAccount": {
+      "type": "boolean"
+     },
+     "invitationPending": {
+      "type": "boolean"
+     },
+     "currencyCode": {
+      "type": "string",
+      "nullable": true
+     },
+     "marketingOptIn": {
+      "type": "boolean"
+     },
+     "createdBy": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "name": {
+        "type": "string"
        }
       },
       "nullable": true
      },
-     "wallet": {
+     "suspension": {
       "object": {
-       "balance": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "reserved": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "creditLimit": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "available": {
-        "type": "string",
-        "alias": "Money"
-       }
-      },
-      "nullable": true,
-      "optional": true
-     },
-     "stats": {
-      "object": {
-       "orders": {
-        "type": "number"
-       },
-       "spend": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "profit": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "margin": {
-        "type": "string",
-        "nullable": true,
-        "alias": "Decimal"
-       },
-       "successRate": {
-        "type": "number",
-        "nullable": true
-       },
-       "lastOrderAt": {
+       "at": {
         "type": "string",
         "nullable": true,
         "alias": "IsoDateTime"
+       },
+       "reason": {
+        "type": "string",
+        "nullable": true
+       },
+       "by": {
+        "object": {
+         "id": {
+          "type": "number",
+          "alias": "Id"
+         },
+         "name": {
+          "type": "string"
+         }
+        },
+        "nullable": true
        }
       },
+      "nullable": true
+     },
+     "anonymizedAt": {
+      "type": "string",
       "nullable": true,
-      "optional": true
+      "alias": "IsoDateTime"
      },
-     "address": {
+     "lastLoginAt": {
       "type": "string",
-      "optional": true
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
-     "taxId": {
-      "type": "string",
-      "optional": true
+     "ordersCount": {
+      "type": "number"
      },
-     "internalNotes": {
+     "lastOrderAt": {
       "type": "string",
-      "optional": true
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
      "security": {
       "object": {
@@ -24692,30 +24477,65 @@
         "alias": "IsoDateTime"
        }
       },
+      "nullable": true
+     },
+     "wallet": {
+      "object": {
+       "kind": {
+        "enum": [
+         "merchant",
+         "store"
+        ]
+       },
+       "balance": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "reserved": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "creditLimit": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "available": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "frozen": {
+        "type": "boolean"
+       }
+      },
+      "nullable": true,
       "optional": true
      },
-     "suspension": {
+     "stats": {
       "object": {
-       "at": {
+       "orders": {
+        "type": "number"
+       },
+       "spend": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "profit": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "margin": {
+        "type": "string",
+        "nullable": true,
+        "alias": "Decimal"
+       },
+       "successRate": {
+        "type": "number",
+        "nullable": true
+       },
+       "lastOrderAt": {
         "type": "string",
         "nullable": true,
         "alias": "IsoDateTime"
-       },
-       "reason": {
-        "type": "string",
-        "nullable": true
-       },
-       "by": {
-        "object": {
-         "id": {
-          "type": "number",
-          "alias": "Id"
-         },
-         "name": {
-          "type": "string"
-         }
-        },
-        "nullable": true
        }
       },
       "nullable": true,
@@ -24726,9 +24546,9 @@
   },
   {
    "key": "PATCH /admin/clients/:id/credit-limit",
-   "fn": "setClientCreditLimit",
-   "file": "src/features/merchants/api/wallet.ts",
-   "line": 75,
+   "fn": "setAccountCreditLimit",
+   "file": "src/features/accounts/api/wallet.ts",
+   "line": 79,
    "params": [
     {
      "name": "id",
@@ -24753,6 +24573,14 @@
      }
     },
     {
+     "name": "idempotencyKey",
+     "optional": false,
+     "typeText": "string",
+     "shape": {
+      "type": "string"
+     }
+    },
+    {
      "name": "init",
      "optional": true,
      "typeText": "ApiInit | undefined",
@@ -24773,9 +24601,18 @@
      }
     }
    ],
-   "returnsText": "ClientWallet",
+   "returnsText": "AccountWallet",
    "returns": {
     "object": {
+     "kind": {
+      "enum": [
+       "merchant",
+       "store"
+      ]
+     },
+     "currency": {
+      "type": "string"
+     },
      "balance": {
       "type": "string",
       "alias": "Money"
@@ -24791,6 +24628,42 @@
      "available": {
       "type": "string",
       "alias": "Money"
+     },
+     "creditAllowed": {
+      "type": "boolean"
+     },
+     "adjustApprovalLimit": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "frozen": {
+      "object": {
+       "at": {
+        "type": "string",
+        "alias": "IsoDateTime"
+       },
+       "reason": {
+        "type": "string"
+       }
+      },
+      "nullable": true
+     },
+     "enabled": {
+      "type": "boolean"
+     },
+     "pendingTopUps": {
+      "object": {
+       "count": {
+        "type": "number"
+       },
+       "amount": {
+        "type": "string",
+        "alias": "Money"
+       }
+      }
+     },
+     "openDisputes": {
+      "type": "number"
      }
     }
    }
@@ -24863,11 +24736,6 @@
    "returnsText": "ContentPage",
    "returns": {
     "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
      "id": {
       "type": "number",
       "alias": "Id"
@@ -24875,6 +24743,11 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime",
+      "optional": true
      },
      "slug": {
       "type": "string"
@@ -25059,178 +24932,10 @@
    }
   },
   {
-   "key": "PATCH /admin/customers/:id",
-   "fn": "updateCustomer",
-   "file": "src/features/customers/api/customers.ts",
-   "line": 61,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "UpdateCustomerBody",
-     "shape": {
-      "object": {
-       "name": {
-        "type": "string",
-        "optional": true
-       },
-       "email": {
-        "type": "string",
-        "optional": true
-       },
-       "country": {
-        "type": "string",
-        "optional": true
-       },
-       "phone": {
-        "type": "string",
-        "optional": true
-       },
-       "internalNotes": {
-        "type": "string",
-        "optional": true
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "Customer",
-   "returns": {
-    "object": {
-     "createdBy": {
-      "type": "number",
-      "nullable": true,
-      "alias": "Id"
-     },
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "name": {
-      "type": "string"
-     },
-     "email": {
-      "type": "string"
-     },
-     "suspendedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "lastLoginAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "country": {
-      "type": "string"
-     },
-     "currency": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "phone": {
-      "type": "string"
-     },
-     "emailVerifiedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "hasAccount": {
-      "type": "boolean"
-     },
-     "marketingOptIn": {
-      "type": "boolean"
-     },
-     "internalNotes": {
-      "type": "string"
-     },
-     "firstOrderAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "totalSpent": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "anonymizedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "status": {
-      "enum": [
-       "active",
-       "suspended",
-       "blocked",
-       "anonymized"
-      ]
-     },
-     "suspendedReason": {
-      "type": "string",
-      "nullable": true
-     },
-     "suspendedBy": {
-      "type": "number",
-      "nullable": true,
-      "alias": "Id"
-     },
-     "ordersCount": {
-      "type": "number"
-     },
-     "lastOrderAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "currencyCode": {
-      "type": "string",
-      "nullable": true,
-      "optional": true
-     }
-    }
-   }
-  },
-  {
    "key": "PATCH /admin/data-requests/:id",
    "fn": "updateDataRequest",
-   "file": "src/features/customers/api/dataRequests.ts",
-   "line": 39,
+   "file": "src/features/accounts/api/dataRequests.ts",
+   "line": 41,
    "params": [
     {
      "name": "id",
@@ -25249,9 +24954,9 @@
       "object": {
        "status": {
         "enum": [
-         "rejected",
+         "in_progress",
          "completed",
-         "in_progress"
+         "rejected"
         ]
        },
        "note": {
@@ -25289,28 +24994,12 @@
       "type": "number",
       "alias": "Id"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "dueAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "customerId": {
+     "accountId": {
       "type": "number",
       "alias": "Id"
      },
-     "requestedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "completedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
+     "accountName": {
+      "type": "string"
      },
      "kind": {
       "enum": [
@@ -25321,10 +25010,25 @@
      "status": {
       "enum": [
        "open",
-       "rejected",
+       "in_progress",
        "completed",
-       "in_progress"
+       "rejected"
       ]
+     },
+     "requestedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "dueAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
+     "completedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
      "handledBy": {
       "type": "number",
@@ -25336,8 +25040,9 @@
       "nullable": true,
       "alias": "Id"
      },
-     "customerName": {
-      "type": "string"
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
      }
     }
    }
@@ -25406,11 +25111,6 @@
    "returnsText": "HelpArticle",
    "returns": {
     "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
      "id": {
       "type": "number",
       "alias": "Id"
@@ -25421,6 +25121,11 @@
      },
      "sort": {
       "type": "number"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime",
+      "optional": true
      },
      "category": {
       "type": "string"
@@ -25750,9 +25455,8 @@
            "object": {
             "type": {
              "enum": [
-              "staff",
-              "customer",
-              "client"
+              "account",
+              "staff"
              ]
             },
             "id": {
@@ -25768,9 +25472,8 @@
            "object": {
             "type": {
              "enum": [
-              "staff",
-              "customer",
-              "client"
+              "account",
+              "staff"
              ]
             },
             "id": {
@@ -25998,9 +25701,8 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
-            "customer",
-            "client"
+            "account",
+            "staff"
            ]
           },
           "id": {
@@ -26016,9 +25718,8 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
-            "customer",
-            "client"
+            "account",
+            "staff"
            ]
           },
           "id": {
@@ -26153,9 +25854,9 @@
        },
        "audience": {
         "enum": [
-         "staff",
+         "merchant",
          "customer",
-         "merchant"
+         "staff"
         ],
         "optional": true
        },
@@ -26198,11 +25899,6 @@
    "returnsText": "NotificationTemplate",
    "returns": {
     "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
      "id": {
       "type": "number",
       "alias": "Id"
@@ -26210,6 +25906,11 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime",
+      "optional": true
      },
      "isActive": {
       "type": "boolean"
@@ -26228,9 +25929,9 @@
      },
      "audience": {
       "enum": [
-       "staff",
+       "merchant",
        "customer",
-       "merchant"
+       "staff"
       ]
      },
      "sentLast30Days": {
@@ -26913,9 +26614,9 @@
      },
      "state": {
       "enum": [
+       "blocked",
        "review",
-       "ready",
-       "blocked"
+       "ready"
       ]
      },
      "blockedReason": {
@@ -27699,6 +27400,9 @@
      "name": {
       "type": "string"
      },
+     "sort": {
+      "type": "number"
+     },
      "allowedGroupIds": {
       "array": {
        "type": "number",
@@ -27707,9 +27411,6 @@
      },
      "isActive": {
       "type": "boolean"
-     },
-     "sort": {
-      "type": "number"
      },
      "type": {
       "enum": [
@@ -27843,15 +27544,11 @@
       "type": "number",
       "alias": "Id"
      },
-     "country": {
-      "type": "string"
-     },
      "sort": {
       "type": "number"
      },
-     "serviceId": {
-      "type": "number",
-      "alias": "Id"
+     "country": {
+      "type": "string"
      },
      "slug": {
       "type": "string"
@@ -27867,6 +27564,10 @@
      },
      "brand": {
       "type": "string"
+     },
+     "serviceId": {
+      "type": "number",
+      "alias": "Id"
      },
      "publicTitle": {
       "type": "string"
@@ -28648,6 +28349,10 @@
      "typeText": "UpdateSupplierBody",
      "shape": {
       "object": {
+       "currency": {
+        "type": "string",
+        "optional": true
+       },
        "name": {
         "type": "string",
         "optional": true
@@ -28656,19 +28361,11 @@
         "type": "string",
         "optional": true
        },
-       "currency": {
+       "baseUrl": {
         "type": "string",
-        "optional": true
-       },
-       "rateLimitPerMin": {
-        "type": "number",
         "optional": true
        },
        "username": {
-        "type": "string",
-        "optional": true
-       },
-       "baseUrl": {
         "type": "string",
         "optional": true
        },
@@ -28678,6 +28375,10 @@
         "optional": true
        },
        "maxConcurrency": {
+        "type": "number",
+        "optional": true
+       },
+       "rateLimitPerMin": {
         "type": "number",
         "optional": true
        },
@@ -28732,22 +28433,19 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
+     "currency": {
+      "type": "string"
+     },
      "name": {
       "type": "string"
      },
      "driver": {
       "type": "string"
      },
-     "currency": {
+     "baseUrl": {
       "type": "string"
-     },
-     "rateLimitPerMin": {
-      "type": "number"
      },
      "username": {
-      "type": "string"
-     },
-     "baseUrl": {
       "type": "string"
      },
      "creditRate": {
@@ -28768,6 +28466,9 @@
       "alias": "Money"
      },
      "maxConcurrency": {
+      "type": "number"
+     },
+     "rateLimitPerMin": {
       "type": "number"
      },
      "timeoutMs": {
@@ -28904,7 +28605,7 @@
    "key": "PATCH /admin/support-tickets/:id",
    "fn": "updateSupportTicket",
    "file": "src/features/support/api/tickets.ts",
-   "line": 58,
+   "line": 59,
    "params": [
     {
      "name": "id",
@@ -28983,11 +28684,6 @@
      "subject": {
       "type": "string"
      },
-     "resolvedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
      "requesterId": {
       "type": "number",
       "alias": "Id"
@@ -29002,6 +28698,11 @@
       "nullable": true,
       "alias": "IsoDateTime"
      },
+     "resolvedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
+     },
      "channel": {
       "enum": [
        "email",
@@ -29011,10 +28712,7 @@
       ]
      },
      "requesterType": {
-      "enum": [
-       "customer",
-       "client"
-      ]
+      "const": "account"
      },
      "requester": {
       "object": {
@@ -29024,6 +28722,12 @@
        "email": {
         "type": "string",
         "nullable": true
+       },
+       "rankKind": {
+        "enum": [
+         "retail",
+         "merchant"
+        ]
        }
       }
      },
@@ -29182,12 +28886,12 @@
    "returnsText": "TacEntry",
    "returns": {
     "object": {
-     "source": {
-      "type": "string"
-     },
      "id": {
       "type": "number",
       "alias": "Id"
+     },
+     "source": {
+      "type": "string"
      },
      "model": {
       "type": "string"
@@ -29906,8 +29610,8 @@
       "object": {
        "kind": {
         "enum": [
-         "email",
          "card",
+         "email",
          "imei",
          "domain"
         ]
@@ -29949,6 +29653,10 @@
       "type": "number",
       "alias": "Id"
      },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
      "reason": {
       "type": "string"
      },
@@ -29957,17 +29665,13 @@
       "nullable": true,
       "alias": "IsoDateTime"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
      "display": {
       "type": "string"
      },
      "kind": {
       "enum": [
-       "email",
        "card",
+       "email",
        "country",
        "imei",
        "device",
@@ -29998,14 +29702,14 @@
   },
   {
    "key": "POST /admin/client-groups",
-   "fn": "createClientGroup",
-   "file": "src/features/merchants/api/groups.ts",
+   "fn": "createRank",
+   "file": "src/features/accounts/api/ranks.ts",
    "line": 42,
    "params": [
     {
      "name": "body",
      "optional": false,
-     "typeText": "CreateClientGroupBody",
+     "typeText": "CreateRankBody",
      "shape": {
       "object": {
        "name": {
@@ -30049,7 +29753,7 @@
      }
     }
    ],
-   "returnsText": "ClientGroup",
+   "returnsText": "Rank",
    "returns": {
     "object": {
      "id": {
@@ -30083,7 +29787,13 @@
      "kind": {
       "type": "string"
      },
-     "merchantCount": {
+     "rankKind": {
+      "enum": [
+       "retail",
+       "merchant"
+      ]
+     },
+     "accountCount": {
       "type": "number",
       "optional": true
      }
@@ -30092,14 +29802,14 @@
   },
   {
    "key": "POST /admin/client-prices",
-   "fn": "createClientPrice",
-   "file": "src/features/merchants/api/prices.ts",
-   "line": 33,
+   "fn": "createAccountPrice",
+   "file": "src/features/accounts/api/prices.ts",
+   "line": 34,
    "params": [
     {
      "name": "body",
      "optional": false,
-     "typeText": "CreateClientPriceBody",
+     "typeText": "CreateAccountPriceBody",
      "shape": {
       "object": {
        "clientId": {
@@ -30142,22 +29852,18 @@
      }
     }
    ],
-   "returnsText": "ClientPrice",
+   "returnsText": "AccountPrice",
    "returns": {
     "object": {
      "id": {
       "type": "number",
       "alias": "Id"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "clientId": {
+     "serviceId": {
       "type": "number",
       "alias": "Id"
      },
-     "serviceId": {
+     "clientId": {
       "type": "number",
       "alias": "Id"
      },
@@ -30167,6 +29873,10 @@
      },
      "note": {
       "type": "string"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
      },
      "service": {
       "object": {
@@ -30203,14 +29913,14 @@
   },
   {
    "key": "POST /admin/clients",
-   "fn": "createClient",
-   "file": "src/features/merchants/api/clients.ts",
-   "line": 44,
+   "fn": "createAccount",
+   "file": "src/features/accounts/api/accounts.ts",
+   "line": 72,
    "params": [
     {
      "name": "body",
      "optional": false,
-     "typeText": "CreateClientBody",
+     "typeText": "CreateAccountBody",
      "shape": {
       "object": {
        "name": {
@@ -30222,6 +29932,14 @@
        "country": {
         "type": "string"
        },
+       "phone": {
+        "type": "string",
+        "optional": true
+       },
+       "company": {
+        "type": "string",
+        "optional": true
+       },
        "groupId": {
         "type": "number",
         "alias": "Id",
@@ -30232,8 +29950,16 @@
         "alias": "Money",
         "optional": true
        },
-       "invite": {
-        "const": true
+       "password": {
+        "object": {
+         "mode": {
+          "enum": [
+           "reset_link",
+           "temporary_password"
+          ]
+         }
+        },
+        "optional": true
        }
       }
      }
@@ -30259,7 +29985,7 @@
      }
     }
    ],
-   "returnsText": "Client",
+   "returnsText": "CreateAccountResult",
    "returns": {
     "object": {
      "id": {
@@ -30276,35 +30002,42 @@
      "email": {
       "type": "string"
      },
-     "country": {
-      "type": "string"
-     },
-     "username": {
-      "type": "string"
-     },
-     "company": {
-      "type": "string"
-     },
-     "phone": {
-      "type": "string"
-     },
-     "groupId": {
-      "type": "number",
-      "alias": "Id"
-     },
      "emailVerifiedAt": {
       "type": "string",
       "nullable": true,
       "alias": "IsoDateTime"
      },
+     "phone": {
+      "type": "string"
+     },
+     "country": {
+      "type": "string"
+     },
+     "company": {
+      "type": "string"
+     },
+     "address": {
+      "type": "string"
+     },
+     "taxId": {
+      "type": "string"
+     },
+     "internalNotes": {
+      "type": "string"
+     },
+     "username": {
+      "type": "string",
+      "nullable": true
+     },
      "status": {
       "enum": [
        "active",
        "suspended",
-       "pending"
+       "blocked",
+       "anonymized"
       ]
      },
-     "group": {
+     "rank": {
       "object": {
        "id": {
         "type": "number",
@@ -30313,77 +30046,89 @@
        "name": {
         "type": "string"
        },
+       "kind": {
+        "enum": [
+         "retail",
+         "merchant"
+        ]
+       },
        "discountPercent": {
         "type": "string",
         "alias": "Decimal"
+       },
+       "creditAllowed": {
+        "type": "boolean"
+       }
+      }
+     },
+     "hasAccount": {
+      "type": "boolean"
+     },
+     "invitationPending": {
+      "type": "boolean"
+     },
+     "currencyCode": {
+      "type": "string",
+      "nullable": true
+     },
+     "marketingOptIn": {
+      "type": "boolean"
+     },
+     "createdBy": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "name": {
+        "type": "string"
        }
       },
       "nullable": true
      },
-     "wallet": {
+     "suspension": {
       "object": {
-       "balance": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "reserved": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "creditLimit": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "available": {
-        "type": "string",
-        "alias": "Money"
-       }
-      },
-      "nullable": true,
-      "optional": true
-     },
-     "stats": {
-      "object": {
-       "orders": {
-        "type": "number"
-       },
-       "spend": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "profit": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "margin": {
-        "type": "string",
-        "nullable": true,
-        "alias": "Decimal"
-       },
-       "successRate": {
-        "type": "number",
-        "nullable": true
-       },
-       "lastOrderAt": {
+       "at": {
         "type": "string",
         "nullable": true,
         "alias": "IsoDateTime"
+       },
+       "reason": {
+        "type": "string",
+        "nullable": true
+       },
+       "by": {
+        "object": {
+         "id": {
+          "type": "number",
+          "alias": "Id"
+         },
+         "name": {
+          "type": "string"
+         }
+        },
+        "nullable": true
        }
       },
+      "nullable": true
+     },
+     "anonymizedAt": {
+      "type": "string",
       "nullable": true,
-      "optional": true
+      "alias": "IsoDateTime"
      },
-     "address": {
+     "lastLoginAt": {
       "type": "string",
-      "optional": true
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
-     "taxId": {
-      "type": "string",
-      "optional": true
+     "ordersCount": {
+      "type": "number"
      },
-     "internalNotes": {
+     "lastOrderAt": {
       "type": "string",
-      "optional": true
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
      "security": {
       "object": {
@@ -30424,46 +30169,194 @@
         "alias": "IsoDateTime"
        }
       },
-      "optional": true
+      "nullable": true
      },
-     "suspension": {
+     "wallet": {
       "object": {
-       "at": {
-        "type": "string",
-        "nullable": true,
-        "alias": "IsoDateTime"
+       "kind": {
+        "enum": [
+         "merchant",
+         "store"
+        ]
        },
-       "reason": {
+       "balance": {
         "type": "string",
-        "nullable": true
+        "alias": "Money"
        },
-       "by": {
-        "object": {
-         "id": {
-          "type": "number",
-          "alias": "Id"
-         },
-         "name": {
-          "type": "string"
-         }
-        },
-        "nullable": true
+       "reserved": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "creditLimit": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "available": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "frozen": {
+        "type": "boolean"
        }
       },
       "nullable": true,
+      "optional": true
+     },
+     "stats": {
+      "object": {
+       "orders": {
+        "type": "number"
+       },
+       "spend": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "profit": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "margin": {
+        "type": "string",
+        "nullable": true,
+        "alias": "Decimal"
+       },
+       "successRate": {
+        "type": "number",
+        "nullable": true
+       },
+       "lastOrderAt": {
+        "type": "string",
+        "nullable": true,
+        "alias": "IsoDateTime"
+       }
+      },
+      "nullable": true,
+      "optional": true
+     },
+     "temporaryPassword": {
+      "type": "string",
       "optional": true
      }
     }
    }
   },
   {
+   "key": "POST /admin/clients/:id/account",
+   "fn": "makeAccount",
+   "file": "src/features/accounts/api/accounts.ts",
+   "line": 96,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "MakeAccountBody",
+     "shape": {
+      "object": {
+       "mode": {
+        "enum": [
+         "reset_link",
+         "temporary_password"
+        ]
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "PasswordResult",
+   "returns": {
+    "object": {
+     "temporaryPassword": {
+      "type": "string",
+      "optional": true
+     },
+     "link": {
+      "enum": [
+       "invite",
+       "reset"
+      ],
+      "optional": true
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/clients/:id/anonymize",
+   "fn": "anonymizeAccount",
+   "file": "src/features/accounts/api/privacy.ts",
+   "line": 47,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "void",
+   "returns": {
+    "type": "undefined"
+   }
+  },
+  {
    "key": "POST /admin/clients/:id/api-keys",
-   "fn": "createClientApiKey",
-   "file": "src/features/merchants/api/apiKeys.ts",
+   "fn": "createAccountApiKey",
+   "file": "src/features/accounts/api/apiKeys.ts",
    "line": 41,
    "params": [
     {
-     "name": "clientId",
+     "name": "accountId",
      "optional": false,
      "typeText": "number",
      "shape": {
@@ -30528,26 +30421,12 @@
         "type": "number",
         "alias": "Id"
        },
-       "expiresAt": {
-        "type": "string",
-        "nullable": true,
-        "alias": "IsoDateTime"
-       },
-       "createdAt": {
-        "type": "string",
-        "alias": "IsoDateTime"
-       },
-       "name": {
-        "type": "string"
-       },
-       "revokedAt": {
-        "type": "string",
-        "nullable": true,
-        "alias": "IsoDateTime"
-       },
        "clientId": {
         "type": "number",
         "alias": "Id"
+       },
+       "name": {
+        "type": "string"
        },
        "prefix": {
         "type": "string"
@@ -30568,6 +30447,20 @@
        "lastUsedIp": {
         "type": "string"
        },
+       "expiresAt": {
+        "type": "string",
+        "nullable": true,
+        "alias": "IsoDateTime"
+       },
+       "revokedAt": {
+        "type": "string",
+        "nullable": true,
+        "alias": "IsoDateTime"
+       },
+       "createdAt": {
+        "type": "string",
+        "alias": "IsoDateTime"
+       },
        "createdByStaff": {
         "type": "boolean",
         "optional": true
@@ -30581,9 +30474,76 @@
    }
   },
   {
+   "key": "POST /admin/clients/:id/block",
+   "fn": "blockAccount",
+   "file": "src/features/accounts/api/privacy.ts",
+   "line": 24,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "BlockAccountBody",
+     "shape": {
+      "anyOf": [
+       {
+        "object": {
+         "blocked": {
+          "const": true
+         },
+         "reason": {
+          "type": "string"
+         }
+        }
+       },
+       {
+        "object": {
+         "blocked": {
+          "const": false
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "void",
+   "returns": {
+    "type": "undefined"
+   }
+  },
+  {
    "key": "POST /admin/clients/:id/password",
-   "fn": "setClientPassword",
-   "file": "src/features/merchants/api/security.ts",
+   "fn": "setAccountPassword",
+   "file": "src/features/accounts/api/security.ts",
    "line": 14,
    "params": [
     {
@@ -30598,13 +30558,13 @@
     {
      "name": "body",
      "optional": false,
-     "typeText": "ClientPasswordBody",
+     "typeText": "AccountPasswordBody",
      "shape": {
       "object": {
        "mode": {
         "enum": [
-         "temporary_password",
-         "reset_link"
+         "reset_link",
+         "temporary_password"
         ]
        },
        "revokeSessions": {
@@ -30634,7 +30594,7 @@
      }
     }
    ],
-   "returnsText": "ClientPasswordResult",
+   "returnsText": "PasswordResult",
    "returns": {
     "object": {
      "temporaryPassword": {
@@ -30652,9 +30612,170 @@
    }
   },
   {
+   "key": "POST /admin/clients/:id/rank",
+   "fn": "changeAccountRank",
+   "file": "src/features/accounts/api/accounts.ts",
+   "line": 108,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "ChangeRankBody",
+     "shape": {
+      "object": {
+       "groupId": {
+        "type": "number",
+        "alias": "Id"
+       }
+      }
+     }
+    },
+    {
+     "name": "idempotencyKey",
+     "optional": false,
+     "typeText": "string",
+     "shape": {
+      "type": "string"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "RankChangeResult",
+   "returns": {
+    "object": {
+     "rank": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "name": {
+        "type": "string"
+       },
+       "kind": {
+        "enum": [
+         "retail",
+         "merchant"
+        ]
+       }
+      }
+     },
+     "wallet": {
+      "object": {
+       "kind": {
+        "enum": [
+         "merchant",
+         "store"
+        ]
+       },
+       "currency": {
+        "type": "string"
+       },
+       "balance": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "reserved": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "creditLimit": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "available": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "creditAllowed": {
+        "type": "boolean"
+       },
+       "adjustApprovalLimit": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "frozen": {
+        "object": {
+         "at": {
+          "type": "string",
+          "alias": "IsoDateTime"
+         },
+         "reason": {
+          "type": "string"
+         }
+        },
+        "nullable": true
+       },
+       "enabled": {
+        "type": "boolean"
+       },
+       "pendingTopUps": {
+        "object": {
+         "count": {
+          "type": "number"
+         },
+         "amount": {
+          "type": "string",
+          "alias": "Money"
+         }
+        }
+       },
+       "openDisputes": {
+        "type": "number"
+       }
+      },
+      "nullable": true
+     },
+     "movedAmount": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "transactionId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id"
+     },
+     "sessionsEnded": {
+      "type": "number"
+     },
+     "apiKeysRevoked": {
+      "type": "number"
+     }
+    }
+   }
+  },
+  {
    "key": "POST /admin/clients/:id/reset-2fa",
-   "fn": "resetClientTwoFactor",
-   "file": "src/features/merchants/api/security.ts",
+   "fn": "resetAccountTwoFactor",
+   "file": "src/features/accounts/api/security.ts",
    "line": 27,
    "params": [
     {
@@ -30694,8 +30815,8 @@
   },
   {
    "key": "POST /admin/clients/:id/sessions/revoke",
-   "fn": "revokeClientSessions",
-   "file": "src/features/merchants/api/security.ts",
+   "fn": "revokeAccountSessions",
+   "file": "src/features/accounts/api/security.ts",
    "line": 36,
    "params": [
     {
@@ -30735,8 +30856,8 @@
   },
   {
    "key": "POST /admin/clients/:id/verify-email/resend",
-   "fn": "resendClientVerification",
-   "file": "src/features/merchants/api/security.ts",
+   "fn": "resendAccountVerification",
+   "file": "src/features/accounts/api/security.ts",
    "line": 45,
    "params": [
     {
@@ -30776,8 +30897,8 @@
   },
   {
    "key": "POST /admin/clients/:id/wallet/adjust",
-   "fn": "adjustClientWallet",
-   "file": "src/features/merchants/api/wallet.ts",
+   "fn": "adjustAccountWallet",
+   "file": "src/features/accounts/api/wallet.ts",
    "line": 58,
    "params": [
     {
@@ -30849,6 +30970,15 @@
      },
      "wallet": {
       "object": {
+       "kind": {
+        "enum": [
+         "merchant",
+         "store"
+        ]
+       },
+       "currency": {
+        "type": "string"
+       },
        "balance": {
         "type": "string",
         "alias": "Money"
@@ -30864,8 +30994,290 @@
        "available": {
         "type": "string",
         "alias": "Money"
+       },
+       "creditAllowed": {
+        "type": "boolean"
+       },
+       "adjustApprovalLimit": {
+        "type": "string",
+        "alias": "Money"
+       },
+       "frozen": {
+        "object": {
+         "at": {
+          "type": "string",
+          "alias": "IsoDateTime"
+         },
+         "reason": {
+          "type": "string"
+         }
+        },
+        "nullable": true
+       },
+       "enabled": {
+        "type": "boolean"
+       },
+       "pendingTopUps": {
+        "object": {
+         "count": {
+          "type": "number"
+         },
+         "amount": {
+          "type": "string",
+          "alias": "Money"
+         }
+        }
+       },
+       "openDisputes": {
+        "type": "number"
        }
       }
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/clients/:id/wallet/freeze",
+   "fn": "freezeAccountWallet",
+   "file": "src/features/accounts/api/wallet.ts",
+   "line": 101,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "WalletReasonBody",
+     "shape": {
+      "object": {
+       "reason": {
+        "type": "string"
+       }
+      }
+     }
+    },
+    {
+     "name": "idempotencyKey",
+     "optional": false,
+     "typeText": "string",
+     "shape": {
+      "type": "string"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "AccountWallet",
+   "returns": {
+    "object": {
+     "kind": {
+      "enum": [
+       "merchant",
+       "store"
+      ]
+     },
+     "currency": {
+      "type": "string"
+     },
+     "balance": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "reserved": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "creditLimit": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "available": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "creditAllowed": {
+      "type": "boolean"
+     },
+     "adjustApprovalLimit": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "frozen": {
+      "object": {
+       "at": {
+        "type": "string",
+        "alias": "IsoDateTime"
+       },
+       "reason": {
+        "type": "string"
+       }
+      },
+      "nullable": true
+     },
+     "enabled": {
+      "type": "boolean"
+     },
+     "pendingTopUps": {
+      "object": {
+       "count": {
+        "type": "number"
+       },
+       "amount": {
+        "type": "string",
+        "alias": "Money"
+       }
+      }
+     },
+     "openDisputes": {
+      "type": "number"
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/clients/:id/wallet/unfreeze",
+   "fn": "unfreezeAccountWallet",
+   "file": "src/features/accounts/api/wallet.ts",
+   "line": 122,
+   "params": [
+    {
+     "name": "id",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "WalletReasonBody",
+     "shape": {
+      "object": {
+       "reason": {
+        "type": "string"
+       }
+      }
+     }
+    },
+    {
+     "name": "idempotencyKey",
+     "optional": false,
+     "typeText": "string",
+     "shape": {
+      "type": "string"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "AccountWallet",
+   "returns": {
+    "object": {
+     "kind": {
+      "enum": [
+       "merchant",
+       "store"
+      ]
+     },
+     "currency": {
+      "type": "string"
+     },
+     "balance": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "reserved": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "creditLimit": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "available": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "creditAllowed": {
+      "type": "boolean"
+     },
+     "adjustApprovalLimit": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "frozen": {
+      "object": {
+       "at": {
+        "type": "string",
+        "alias": "IsoDateTime"
+       },
+       "reason": {
+        "type": "string"
+       }
+      },
+      "nullable": true
+     },
+     "enabled": {
+      "type": "boolean"
+     },
+     "pendingTopUps": {
+      "object": {
+       "count": {
+        "type": "number"
+       },
+       "amount": {
+        "type": "string",
+        "alias": "Money"
+       }
+      }
+     },
+     "openDisputes": {
+      "type": "number"
      }
     }
    }
@@ -30938,11 +31350,6 @@
    "returnsText": "ContentPage",
    "returns": {
     "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
      "id": {
       "type": "number",
       "alias": "Id"
@@ -30950,6 +31357,11 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime",
+      "optional": true
      },
      "slug": {
       "type": "string"
@@ -31051,11 +31463,6 @@
    "returnsText": "ContentPage",
    "returns": {
     "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
      "id": {
       "type": "number",
       "alias": "Id"
@@ -31063,6 +31470,11 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime",
+      "optional": true
      },
      "slug": {
       "type": "string"
@@ -31170,11 +31582,6 @@
      "created": {
       "array": {
        "object": {
-        "updatedAt": {
-         "type": "string",
-         "alias": "IsoDateTime",
-         "optional": true
-        },
         "id": {
          "type": "number",
          "alias": "Id"
@@ -31182,6 +31589,11 @@
         "createdAt": {
          "type": "string",
          "alias": "IsoDateTime"
+        },
+        "updatedAt": {
+         "type": "string",
+         "alias": "IsoDateTime",
+         "optional": true
         },
         "slug": {
          "type": "string"
@@ -31420,904 +31832,6 @@
    }
   },
   {
-   "key": "POST /admin/customers",
-   "fn": "createCustomer",
-   "file": "src/features/customers/api/customers.ts",
-   "line": 51,
-   "params": [
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "CreateCustomerBody",
-     "shape": {
-      "object": {
-       "name": {
-        "type": "string"
-       },
-       "email": {
-        "type": "string"
-       },
-       "country": {
-        "type": "string"
-       },
-       "phone": {
-        "type": "string",
-        "optional": true
-       },
-       "password": {
-        "object": {
-         "mode": {
-          "enum": [
-           "temporary_password",
-           "reset_link"
-          ]
-         }
-        }
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "CreateCustomerResult",
-   "returns": {
-    "object": {
-     "createdBy": {
-      "type": "number",
-      "nullable": true,
-      "alias": "Id"
-     },
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "name": {
-      "type": "string"
-     },
-     "email": {
-      "type": "string"
-     },
-     "suspendedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "lastLoginAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "country": {
-      "type": "string"
-     },
-     "currency": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "phone": {
-      "type": "string"
-     },
-     "emailVerifiedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "hasAccount": {
-      "type": "boolean"
-     },
-     "marketingOptIn": {
-      "type": "boolean"
-     },
-     "internalNotes": {
-      "type": "string"
-     },
-     "firstOrderAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "totalSpent": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "anonymizedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "status": {
-      "enum": [
-       "active",
-       "suspended",
-       "blocked",
-       "anonymized"
-      ]
-     },
-     "suspendedReason": {
-      "type": "string",
-      "nullable": true
-     },
-     "suspendedBy": {
-      "type": "number",
-      "nullable": true,
-      "alias": "Id"
-     },
-     "ordersCount": {
-      "type": "number"
-     },
-     "lastOrderAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "currencyCode": {
-      "type": "string",
-      "nullable": true,
-      "optional": true
-     },
-     "temporaryPassword": {
-      "type": "string",
-      "optional": true
-     }
-    }
-   }
-  },
-  {
-   "key": "POST /admin/customers/:id/account",
-   "fn": "createCustomerAccount",
-   "file": "src/features/customers/api/accounts.ts",
-   "line": 19,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "CreateAccountBody",
-     "shape": {
-      "object": {
-       "mode": {
-        "enum": [
-         "temporary_password",
-         "reset_link"
-        ]
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "PasswordResult",
-   "returns": {
-    "object": {
-     "temporaryPassword": {
-      "type": "string",
-      "optional": true
-     }
-    }
-   }
-  },
-  {
-   "key": "POST /admin/customers/:id/anonymize",
-   "fn": "anonymizeCustomer",
-   "file": "src/features/customers/api/privacy.ts",
-   "line": 21,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "void",
-   "returns": {
-    "type": "undefined"
-   }
-  },
-  {
-   "key": "POST /admin/customers/:id/block",
-   "fn": "blockCustomer",
-   "file": "src/features/customers/api/accounts.ts",
-   "line": 76,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "BlockCustomerBody",
-     "shape": {
-      "anyOf": [
-       {
-        "object": {
-         "blocked": {
-          "const": true
-         },
-         "reason": {
-          "type": "string"
-         }
-        }
-       },
-       {
-        "object": {
-         "blocked": {
-          "const": false
-         }
-        }
-       }
-      ]
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "void",
-   "returns": {
-    "type": "undefined"
-   }
-  },
-  {
-   "key": "POST /admin/customers/:id/password",
-   "fn": "setCustomerPassword",
-   "file": "src/features/customers/api/accounts.ts",
-   "line": 34,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "CustomerPasswordBody",
-     "shape": {
-      "object": {
-       "mode": {
-        "enum": [
-         "temporary_password",
-         "reset_link"
-        ]
-       },
-       "revokeSessions": {
-        "type": "boolean"
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "PasswordResult",
-   "returns": {
-    "object": {
-     "temporaryPassword": {
-      "type": "string",
-      "optional": true
-     }
-    }
-   }
-  },
-  {
-   "key": "POST /admin/customers/:id/reactivate",
-   "fn": "reactivateCustomer",
-   "file": "src/features/customers/api/accounts.ts",
-   "line": 66,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "void",
-   "returns": {
-    "type": "undefined"
-   }
-  },
-  {
-   "key": "POST /admin/customers/:id/sessions/revoke",
-   "fn": "revokeCustomerSessions",
-   "file": "src/features/customers/api/accounts.ts",
-   "line": 47,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "void",
-   "returns": {
-    "type": "undefined"
-   }
-  },
-  {
-   "key": "POST /admin/customers/:id/suspend",
-   "fn": "suspendCustomer",
-   "file": "src/features/customers/api/accounts.ts",
-   "line": 57,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "SuspendCustomerBody",
-     "shape": {
-      "object": {
-       "reason": {
-        "type": "string"
-       },
-       "note": {
-        "type": "string",
-        "optional": true
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "void",
-   "returns": {
-    "type": "undefined"
-   }
-  },
-  {
-   "key": "POST /admin/customers/:id/wallet/adjust",
-   "fn": "adjustCustomerWallet",
-   "file": "src/features/customers/api/wallet.ts",
-   "line": 62,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "AdjustWalletBody",
-     "shape": {
-      "object": {
-       "amount": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "direction": {
-        "enum": [
-         "credit",
-         "debit"
-        ]
-       },
-       "reason": {
-        "type": "string"
-       }
-      }
-     }
-    },
-    {
-     "name": "idempotencyKey",
-     "optional": false,
-     "typeText": "string",
-     "shape": {
-      "type": "string"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "AdjustWalletResult",
-   "returns": {
-    "object": {
-     "transactionId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "wallet": {
-      "object": {
-       "enabled": {
-        "type": "boolean"
-       },
-       "currency": {
-        "type": "string"
-       },
-       "balance": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "reserved": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "creditLimit": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "available": {
-        "type": "string",
-        "alias": "Money"
-       },
-       "frozen": {
-        "object": {
-         "at": {
-          "type": "string",
-          "alias": "IsoDateTime"
-         },
-         "reason": {
-          "type": "string"
-         }
-        },
-        "nullable": true
-       },
-       "pendingTopUps": {
-        "object": {
-         "count": {
-          "type": "number"
-         },
-         "amount": {
-          "type": "string",
-          "alias": "Money"
-         }
-        }
-       },
-       "openDisputes": {
-        "type": "number"
-       },
-       "adjustApprovalLimit": {
-        "type": "string",
-        "alias": "Money"
-       }
-      }
-     }
-    }
-   }
-  },
-  {
-   "key": "POST /admin/customers/:id/wallet/freeze",
-   "fn": "freezeCustomerWallet",
-   "file": "src/features/customers/api/wallet.ts",
-   "line": 80,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "FreezeWalletBody",
-     "shape": {
-      "object": {
-       "reason": {
-        "type": "string"
-       }
-      }
-     }
-    },
-    {
-     "name": "idempotencyKey",
-     "optional": false,
-     "typeText": "string",
-     "shape": {
-      "type": "string"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "CustomerWallet",
-   "returns": {
-    "object": {
-     "enabled": {
-      "type": "boolean"
-     },
-     "currency": {
-      "type": "string"
-     },
-     "balance": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "reserved": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "creditLimit": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "available": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "frozen": {
-      "object": {
-       "at": {
-        "type": "string",
-        "alias": "IsoDateTime"
-       },
-       "reason": {
-        "type": "string"
-       }
-      },
-      "nullable": true
-     },
-     "pendingTopUps": {
-      "object": {
-       "count": {
-        "type": "number"
-       },
-       "amount": {
-        "type": "string",
-        "alias": "Money"
-       }
-      }
-     },
-     "openDisputes": {
-      "type": "number"
-     },
-     "adjustApprovalLimit": {
-      "type": "string",
-      "alias": "Money"
-     }
-    }
-   }
-  },
-  {
-   "key": "POST /admin/customers/:id/wallet/unfreeze",
-   "fn": "unfreezeCustomerWallet",
-   "file": "src/features/customers/api/wallet.ts",
-   "line": 98,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "FreezeWalletBody",
-     "shape": {
-      "object": {
-       "reason": {
-        "type": "string"
-       }
-      }
-     }
-    },
-    {
-     "name": "idempotencyKey",
-     "optional": false,
-     "typeText": "string",
-     "shape": {
-      "type": "string"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "CustomerWallet",
-   "returns": {
-    "object": {
-     "enabled": {
-      "type": "boolean"
-     },
-     "currency": {
-      "type": "string"
-     },
-     "balance": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "reserved": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "creditLimit": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "available": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "frozen": {
-      "object": {
-       "at": {
-        "type": "string",
-        "alias": "IsoDateTime"
-       },
-       "reason": {
-        "type": "string"
-       }
-      },
-      "nullable": true
-     },
-     "pendingTopUps": {
-      "object": {
-       "count": {
-        "type": "number"
-       },
-       "amount": {
-        "type": "string",
-        "alias": "Money"
-       }
-      }
-     },
-     "openDisputes": {
-      "type": "number"
-     },
-     "adjustApprovalLimit": {
-      "type": "string",
-      "alias": "Money"
-     }
-    }
-   }
-  },
-  {
    "key": "POST /admin/disputes/:id/accept",
    "fn": "acceptDispute",
    "file": "src/features/refunds/api/disputes.ts",
@@ -32360,10 +31874,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
      "amount": {
       "type": "string",
       "alias": "Money"
@@ -32372,9 +31882,18 @@
       "type": "string",
       "alias": "Money"
      },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
      "orderId": {
       "type": "number",
       "alias": "Id"
+     },
+     "resolvedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
      "reasonCode": {
       "type": "string"
@@ -32385,11 +31904,6 @@
       "alias": "IsoDateTime"
      },
      "submittedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "resolvedAt": {
       "type": "string",
       "nullable": true,
       "alias": "IsoDateTime"
@@ -32518,10 +32032,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
      "amount": {
       "type": "string",
       "alias": "Money"
@@ -32530,9 +32040,18 @@
       "type": "string",
       "alias": "Money"
      },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
      "orderId": {
       "type": "number",
       "alias": "Id"
+     },
+     "resolvedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
      "reasonCode": {
       "type": "string"
@@ -32543,11 +32062,6 @@
       "alias": "IsoDateTime"
      },
      "submittedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "resolvedAt": {
       "type": "string",
       "nullable": true,
       "alias": "IsoDateTime"
@@ -32667,11 +32181,6 @@
    "returnsText": "HelpArticle",
    "returns": {
     "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
      "id": {
       "type": "number",
       "alias": "Id"
@@ -32682,6 +32191,11 @@
      },
      "sort": {
       "type": "number"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime",
+      "optional": true
      },
      "category": {
       "type": "string"
@@ -33034,7 +32548,7 @@
    "key": "POST /admin/invoices",
    "fn": "createInvoice",
    "file": "src/features/finance/api/invoices.ts",
-   "line": 40,
+   "line": 42,
    "params": [
     {
      "name": "body",
@@ -33087,10 +32601,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
      "amount": {
       "type": "string",
       "alias": "Money"
@@ -33131,10 +32641,14 @@
       "nullable": true,
       "alias": "IsoDateTime"
      },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
      "kind": {
       "enum": [
-       "manual",
        "topup",
+       "manual",
        "receipt"
       ]
      },
@@ -33265,6 +32779,10 @@
       "type": "number",
       "alias": "Id"
      },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
+     },
      "cidr": {
       "type": "string"
      },
@@ -33285,10 +32803,6 @@
      "lastHitAt": {
       "type": "string",
       "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "createdAt": {
-      "type": "string",
       "alias": "IsoDateTime"
      },
      "kind": {
@@ -33388,6 +32902,10 @@
         "type": "number",
         "alias": "Id"
        },
+       "createdAt": {
+        "type": "string",
+        "alias": "IsoDateTime"
+       },
        "cidr": {
         "type": "string"
        },
@@ -33408,10 +32926,6 @@
        "lastHitAt": {
         "type": "string",
         "nullable": true,
-        "alias": "IsoDateTime"
-       },
-       "createdAt": {
-        "type": "string",
         "alias": "IsoDateTime"
        },
        "kind": {
@@ -33780,9 +33294,8 @@
            "object": {
             "type": {
              "enum": [
-              "staff",
-              "customer",
-              "client"
+              "account",
+              "staff"
              ]
             },
             "id": {
@@ -33798,9 +33311,8 @@
            "object": {
             "type": {
              "enum": [
-              "staff",
-              "customer",
-              "client"
+              "account",
+              "staff"
              ]
             },
             "id": {
@@ -34026,9 +33538,8 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
-            "customer",
-            "client"
+            "account",
+            "staff"
            ]
           },
           "id": {
@@ -34044,9 +33555,8 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
-            "customer",
-            "client"
+            "account",
+            "staff"
            ]
           },
           "id": {
@@ -34347,9 +33857,8 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
-            "customer",
-            "client"
+            "account",
+            "staff"
            ]
           },
           "id": {
@@ -34365,9 +33874,8 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
-            "customer",
-            "client"
+            "account",
+            "staff"
            ]
           },
           "id": {
@@ -34500,9 +34008,9 @@
        },
        "audience": {
         "enum": [
-         "staff",
+         "merchant",
          "customer",
-         "merchant"
+         "staff"
         ],
         "optional": true
        }
@@ -34764,9 +34272,8 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
-            "customer",
-            "client"
+            "account",
+            "staff"
            ]
           },
           "id": {
@@ -34782,9 +34289,8 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
-            "customer",
-            "client"
+            "account",
+            "staff"
            ]
           },
           "id": {
@@ -35097,9 +34603,8 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
-            "customer",
-            "client"
+            "account",
+            "staff"
            ]
           },
           "id": {
@@ -35115,9 +34620,8 @@
          "object": {
           "type": {
            "enum": [
-            "staff",
-            "customer",
-            "client"
+            "account",
+            "staff"
            ]
           },
           "id": {
@@ -35362,9 +34866,8 @@
            "object": {
             "type": {
              "enum": [
-              "staff",
-              "customer",
-              "client"
+              "account",
+              "staff"
              ]
             },
             "id": {
@@ -35380,9 +34883,8 @@
            "object": {
             "type": {
              "enum": [
-              "staff",
-              "customer",
-              "client"
+              "account",
+              "staff"
              ]
             },
             "id": {
@@ -35447,10 +34949,10 @@
        "staff": {
         "type": "number"
        },
-       "client": {
+       "merchant": {
         "type": "number"
        },
-       "customer": {
+       "retail": {
         "type": "number"
        }
       }
@@ -35501,9 +35003,9 @@
        },
        "audience": {
         "enum": [
-         "staff",
+         "merchant",
          "customer",
-         "merchant"
+         "staff"
         ]
        },
        "subject": {
@@ -35542,11 +35044,6 @@
    "returnsText": "NotificationTemplate",
    "returns": {
     "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
      "id": {
       "type": "number",
       "alias": "Id"
@@ -35554,6 +35051,11 @@
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
+     },
+     "updatedAt": {
+      "type": "string",
+      "alias": "IsoDateTime",
+      "optional": true
      },
      "isActive": {
       "type": "boolean"
@@ -35572,9 +35074,9 @@
      },
      "audience": {
       "enum": [
-       "staff",
+       "merchant",
        "customer",
-       "merchant"
+       "staff"
       ]
      },
      "sentLast30Days": {
@@ -36691,7 +36193,7 @@
    "key": "POST /admin/payments/:id/approve",
    "fn": "approvePayment",
    "file": "src/features/finance/api/payments.ts",
-   "line": 44,
+   "line": 46,
    "params": [
     {
      "name": "id",
@@ -36730,13 +36232,13 @@
       "type": "number",
       "alias": "Id"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
      "amount": {
       "type": "string",
       "alias": "Money"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
      },
      "feeAmount": {
       "type": "string",
@@ -36761,9 +36263,9 @@
      },
      "status": {
       "enum": [
+       "rejected",
        "pending",
-       "approved",
-       "rejected"
+       "approved"
       ]
      },
      "methodType": {
@@ -36912,7 +36414,7 @@
    "key": "POST /admin/payments/:id/reject",
    "fn": "rejectPayment",
    "file": "src/features/finance/api/payments.ts",
-   "line": 53,
+   "line": 55,
    "params": [
     {
      "name": "id",
@@ -36963,13 +36465,13 @@
       "type": "number",
       "alias": "Id"
      },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
      "amount": {
       "type": "string",
       "alias": "Money"
+     },
+     "createdAt": {
+      "type": "string",
+      "alias": "IsoDateTime"
      },
      "feeAmount": {
       "type": "string",
@@ -36994,9 +36496,9 @@
      },
      "status": {
       "enum": [
+       "rejected",
        "pending",
-       "approved",
-       "rejected"
+       "approved"
       ]
      },
      "methodType": {
@@ -38183,9 +37685,9 @@
             "object": {
              "state": {
               "enum": [
+               "blocked",
                "review",
-               "ready",
-               "blocked"
+               "ready"
               ],
               "optional": true
              },
@@ -38598,16 +38100,16 @@
       "type": "number",
       "alias": "Id"
      },
-     "reason": {
-      "type": "string"
+     "amount": {
+      "type": "string",
+      "alias": "Money"
      },
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "amount": {
-      "type": "string",
-      "alias": "Money"
+     "reason": {
+      "type": "string"
      },
      "orderId": {
       "type": "number",
@@ -38620,10 +38122,10 @@
      },
      "status": {
       "enum": [
-       "failed",
-       "rejected",
-       "processing",
        "completed",
+       "rejected",
+       "failed",
+       "processing",
        "requested"
       ]
      },
@@ -38655,9 +38157,9 @@
       "object": {
        "type": {
         "enum": [
-         "staff",
-         "customer",
-         "system"
+         "account",
+         "system",
+         "staff"
         ]
        },
        "name": {
@@ -38803,16 +38305,16 @@
       "type": "number",
       "alias": "Id"
      },
-     "reason": {
-      "type": "string"
+     "amount": {
+      "type": "string",
+      "alias": "Money"
      },
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "amount": {
-      "type": "string",
-      "alias": "Money"
+     "reason": {
+      "type": "string"
      },
      "orderId": {
       "type": "number",
@@ -38825,10 +38327,10 @@
      },
      "status": {
       "enum": [
-       "failed",
-       "rejected",
-       "processing",
        "completed",
+       "rejected",
+       "failed",
+       "processing",
        "requested"
       ]
      },
@@ -38860,9 +38362,9 @@
       "object": {
        "type": {
         "enum": [
-         "staff",
-         "customer",
-         "system"
+         "account",
+         "system",
+         "staff"
         ]
        },
        "name": {
@@ -38996,16 +38498,16 @@
       "type": "number",
       "alias": "Id"
      },
-     "reason": {
-      "type": "string"
+     "amount": {
+      "type": "string",
+      "alias": "Money"
      },
      "createdAt": {
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "amount": {
-      "type": "string",
-      "alias": "Money"
+     "reason": {
+      "type": "string"
      },
      "orderId": {
       "type": "number",
@@ -39018,10 +38520,10 @@
      },
      "status": {
       "enum": [
-       "failed",
-       "rejected",
-       "processing",
        "completed",
+       "rejected",
+       "failed",
+       "processing",
        "requested"
       ]
      },
@@ -39053,9 +38555,9 @@
       "object": {
        "type": {
         "enum": [
-         "staff",
-         "customer",
-         "system"
+         "account",
+         "system",
+         "staff"
         ]
        },
        "name": {
@@ -40319,6 +39821,9 @@
      "name": {
       "type": "string"
      },
+     "sort": {
+      "type": "number"
+     },
      "allowedGroupIds": {
       "array": {
        "type": "number",
@@ -40327,9 +39832,6 @@
      },
      "isActive": {
       "type": "boolean"
-     },
-     "sort": {
-      "type": "number"
      },
      "type": {
       "enum": [
@@ -40444,15 +39946,11 @@
       "type": "number",
       "alias": "Id"
      },
-     "country": {
-      "type": "string"
-     },
      "sort": {
       "type": "number"
      },
-     "serviceId": {
-      "type": "number",
-      "alias": "Id"
+     "country": {
+      "type": "string"
      },
      "slug": {
       "type": "string"
@@ -40468,6 +39966,10 @@
      },
      "brand": {
       "type": "string"
+     },
+     "serviceId": {
+      "type": "number",
+      "alias": "Id"
      },
      "publicTitle": {
       "type": "string"
@@ -40629,15 +40131,11 @@
       "type": "number",
       "alias": "Id"
      },
-     "country": {
-      "type": "string"
-     },
      "sort": {
       "type": "number"
      },
-     "serviceId": {
-      "type": "number",
-      "alias": "Id"
+     "country": {
+      "type": "string"
      },
      "slug": {
       "type": "string"
@@ -40653,6 +40151,10 @@
      },
      "brand": {
       "type": "string"
+     },
+     "serviceId": {
+      "type": "number",
+      "alias": "Id"
      },
      "publicTitle": {
       "type": "string"
@@ -41370,8 +40872,8 @@
        },
        "onboarding": {
         "enum": [
-         "invite",
-         "temporary_password"
+         "temporary_password",
+         "invite"
         ]
        }
       }
@@ -41525,8 +41027,8 @@
       "object": {
        "mode": {
         "enum": [
-         "temporary_password",
-         "reset_link"
+         "reset_link",
+         "temporary_password"
         ]
        },
        "revokeSessions": {
@@ -41824,22 +41326,19 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
+     "currency": {
+      "type": "string"
+     },
      "name": {
       "type": "string"
      },
      "driver": {
       "type": "string"
      },
-     "currency": {
+     "baseUrl": {
       "type": "string"
-     },
-     "rateLimitPerMin": {
-      "type": "number"
      },
      "username": {
-      "type": "string"
-     },
-     "baseUrl": {
       "type": "string"
      },
      "creditRate": {
@@ -41860,6 +41359,9 @@
       "alias": "Money"
      },
      "maxConcurrency": {
+      "type": "number"
+     },
+     "rateLimitPerMin": {
       "type": "number"
      },
      "timeoutMs": {
@@ -42575,7 +42077,7 @@
    "key": "POST /admin/support-tickets/:id/files",
    "fn": "uploadTicketFile",
    "file": "src/features/support/api/tickets.ts",
-   "line": 101,
+   "line": 102,
    "params": [
     {
      "name": "id",
@@ -42649,7 +42151,7 @@
    "key": "POST /admin/support-tickets/:id/note",
    "fn": "addTicketNote",
    "file": "src/features/support/api/tickets.ts",
-   "line": 79,
+   "line": 80,
    "params": [
     {
      "name": "id",
@@ -42729,10 +42231,9 @@
      },
      "authorType": {
       "enum": [
-       "staff",
-       "customer",
+       "account",
        "system",
-       "client"
+       "staff"
       ]
      },
      "authorId": {
@@ -42769,7 +42270,7 @@
    "key": "POST /admin/support-tickets/:id/read",
    "fn": "markTicketRead",
    "file": "src/features/support/api/tickets.ts",
-   "line": 90,
+   "line": 91,
    "params": [
     {
      "name": "id",
@@ -42823,7 +42324,7 @@
    "key": "POST /admin/support-tickets/:id/reply",
    "fn": "replyToTicket",
    "file": "src/features/support/api/tickets.ts",
-   "line": 69,
+   "line": 70,
    "params": [
     {
      "name": "id",
@@ -42910,10 +42411,9 @@
      },
      "authorType": {
       "enum": [
-       "staff",
-       "customer",
+       "account",
        "system",
-       "client"
+       "staff"
       ]
      },
      "authorId": {
@@ -43433,12 +42933,12 @@
    "returnsText": "TacEntry",
    "returns": {
     "object": {
-     "source": {
-      "type": "string"
-     },
      "id": {
       "type": "number",
       "alias": "Id"
+     },
+     "source": {
+      "type": "string"
      },
      "model": {
       "type": "string"

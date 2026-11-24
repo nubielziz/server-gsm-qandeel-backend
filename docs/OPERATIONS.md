@@ -263,6 +263,8 @@ automatic deploys of section 8 run exactly these steps by themselves for such a 
 them on hold (`gsm-auto-deploy hold`).
 **One release is not: release 30 (English only, decision 039)** drops columns the previous code reads and deletes content in
 other languages after an export. It has its own order (below, "Release 30"); never run the old API on its migrated database.
+**Another is not: the release of decision 064 (one account type)** rewrites rows the previous code reads (types, owners, statuses, sessions)
+and is deployed by hand in the order of "Release with decision 064" below, with the automatic deploys on hold.
 
 ```bash
 git pull
@@ -336,8 +338,8 @@ changes nothing and names them (see "One order per checkout session" in section 
   payment's record. The gateway account's API version must support `expand[]=latest_charge` (the driver sends no version header).
 - `gateway_card_details_unavailable_total` is 0 on the metrics page before the release: from now on a record that cannot be read answers
   502 (the gateway delivers the event again) and, after 24 hours, holds the payment for staff.
-- `STORE_BASE_URL` and `PORTAL_BASE_URL` are the real addresses of the shop and the portal: `/pay` refuses a return address on any other
-  origin.
+- `STORE_BASE_URL` and `PORTAL_BASE_URL` are the real addresses of the shop and of its account area (`https://<shop host>/account`, decision 064):
+  `/pay` refuses a return address on any other origin.
 - Storefront payments that were already held for staff before this release appear as findings of the money integrity check on its first run.
 - `supportsRefunds` is off by default for a payment method: until it is switched on, money of a held or late payment is paid back by hand.
 
@@ -477,7 +479,8 @@ customer addresses outside the Customers pages. Give the roles the second permis
 
 The migration (`0065`) is data only and safe to run twice, so the order of this section works. The merchant sign-up, the REST API v1, the
 outgoing webhooks to merchants, the commissions and the merchant Telegram link stop at the release (decision 062). Steps 1 and 2 come before
-the deploy, so put the automatic deploy on hold first (`gsm-auto-deploy hold`) and let it go after step 2.
+the deploy, so put the automatic deploy on hold first (`gsm-auto-deploy hold`) and let it go after step 2, while no later backend commit is on
+main (the deployer deploys the newest commit; the release of decision 064 comes after this one, by hand).
 
 1. **Before the backup, read-only** (`gsmc exec postgres psql -U gsm -d gsm`, then paste it): commissions that were approved and paid into a
    wallet. After the release a refund or a reopen of their orders no longer takes the commission back.
@@ -486,22 +489,418 @@ the deploy, so put the automatic deploy on hold first (`gsm-auto-deploy hold`) a
    SELECT count(*) FROM commission_accruals WHERE status = 'approved' AND reversed_at IS NULL;
    ```
 
-   Expect 0. If it is more, decide before the release whether those commissions stay with the merchants (nothing changes) or are taken
-   back by hand through a wallet adjustment of each merchant.
+   0: nothing to do. More than 0: decide before the release whether those commissions stay with the merchants (nothing changes) or are
+   taken back by hand through a wallet adjustment of each merchant.
 2. **Before step 3 (the migration), if the Telegram bot was registered with a webhook:** remove the registration, so Telegram stops posting
-   merchants' messages to a route that no longer exists. It prints the status and Telegram's answer, never the token or the address:
+   merchants' messages to a route that no longer exists. It prints the status and Telegram's answer; when the request fails it prints only
+   the error's code, because the error itself names the whole address, token included:
 
    ```bash
-   gsmc run --rm api bun -e "const r = await fetch('https://api.telegram.org/bot' + process.env.TELEGRAM_BOT_TOKEN + '/deleteWebhook?drop_pending_updates=true'); console.log(r.status, (await r.json()).description)"
+   gsmc run --rm api bun -e "try { const r = await fetch('https://api.telegram.org/bot' + process.env.TELEGRAM_BOT_TOKEN + '/deleteWebhook?drop_pending_updates=true'); console.log(r.status, (await r.json()).description) } catch (e) { console.log('the request failed:', e?.code ?? e?.name); process.exit(1) }"
    ```
 
-   It ends with `200 Webhook was deleted` (or `Webhook is already deleted`). The bot keeps sending the alerts; skip the step when `TELEGRAM_BOT_TOKEN` is not set.
+   It ends with `200 Webhook was deleted` (or `Webhook is already deleted`). `the request failed: <code>` (for example `ENOTFOUND`): the
+   server did not reach Telegram; fix that and run it again. The bot keeps sending the alerts; skip the step when `TELEGRAM_BOT_TOKEN` is not set.
 3. Upgrade as usual (backup, build, migrate, `gsmc up -d api worker`). Then reload Caddy for its new access log, which no longer has the rule
    for the Telegram path: `gsmc exec caddy caddy reload --config /etc/caddy/Caddyfile`.
 4. Delete `TELEGRAM_BOT_USERNAME` and `TELEGRAM_WEBHOOK_SECRET` from `.env.production`: nothing reads them any more. The queue Redis may keep
    jobs of the removed `merchant-webhooks` queue; they can stay or be deleted by hand.
 5. Nothing to do for the cached views of API keys: their cache key has a new version, so the new code never reads a view cached before the
    release, and the migration's revoked keys are refused at once.
+
+### Release with decision 064 (one account type; not additive)
+
+Merchants and customers become one account type in the table `clients` (decision 064). The expand release is two migrations
+(`0066_accounts_expand` and `0067_account_permissions`), run in one transaction by `gsmc run --rm migrate`. The new API cannot run on the old
+schema and the old API cannot run on the new one, and the console and the shop of the release change their sign-in and their routes, so **the three
+parts (backend, console, shop) are deployed by hand, in this order, with the automatic deploys on hold from step 1 to step 16** (step 1 says
+what the hold does not stop). A contract release follows days later (end of this section). Step 13 closes the edge with `gsm-edge-gate`,
+which this release does not bring: it ships first, as a small release of its own from the backend main branch, deployed by the deployer (P9).
+
+Names. `<B>`, `<C>` and `<S>` are the commits of the release on the main branches of the backend, the console and the shop, as steps 2 to 4
+push them; there is no pull request, so the checks (P3), the check image (P6) and the rehearsal (P7) are those of the pushed commits. `<B0>`,
+`<C0>` and `<S0>` are the commits that run before (the files `/var/lib/gsm-deploy/{backend,console,shop}.deployed`, or `gsm-auto-deploy status`). `<ROOT>` is the
+folder that holds the three checkouts (section 8). The **operator address** is the public address of the person who tries the release, the one
+that the console's admin allowlist already holds.
+
+**Preconditions.** P1, P2, P4, P5 and P8 to P10 hold before step 1, so before any main branch is pushed. P3, P6 and P7 need the pushed
+commits: they hold after step 4, with the hold still on, and before step 5.
+
+- **P1** The releases of decisions 061 to 063 are deployed and their own windows are closed.
+- **P2** The release commits of the three local main branches come right after those deployed commits: every placeholder number is
+  replaced; the expand migration is re-assembled (`bun run db:generate --name accounts_expand`, then `bun scripts/accounts-merge/assemble.ts expand`; the phase files do not change at a rebase);
+  the permissions file is regenerated; the journal `when` of each new migration is later than every earlier entry; every other generated file is
+  regenerated, never merged by hand.
+- **P3** The checks of the three pushed commits are green (steps 2 to 4): `<C>` first; then `<B>`, whose `ci/console-ref` names `main`, so it is
+  checked against `<C>`; then `<S>`, whose `ci/backend-ref` names `main`, so its types come from `<B>` (a push to a main branch whose ref file is
+  not `main` fails on purpose).
+- **P4** The development dry run passed. Against a copy of the development database: load the realistic data, migrate, run the verification
+  queries (below), migrate again (nothing applies), then migrate an empty database, then load the variant of the same file without its approval
+  lines (the migration must stop on the pair, code E5, with nothing changed). Keep the queries and their output.
+
+  ```bash
+  psql "$COPY_URL" -v ON_ERROR_STOP=1 -f scripts/accounts-merge/fixture.sql     # one session: the file uses temporary helpers
+  DATABASE_URL="$COPY_URL" bun run db:migrate
+  DATABASE_URL="$COPY_URL" bun run db:migrate                                   # applies nothing
+  ```
+- **P5** Backups: the backup timers of section 4 are installed, the newest nightly backup is under 26 hours old, and one restore drill is recorded.
+- **P6** Check image. After step 4, on the server, build the image of the pushed backend commit `<B>` under a tag of its own, from a
+  worktree of its own: the production checkout stays on `<B0>` (every `gsmc` command reads its compose file, the backup service mounts its `drizzle/`, and a restart of
+  Caddy loads its Caddyfile), `BACKEND_IMAGE` is not touched, and nothing can start the new code early. Then run the read-only check against
+  production from it:
+
+  ```bash
+  cd <ROOT>/backend && git fetch
+  git worktree add --detach /var/tmp/accounts-check <B>
+  docker build -t gsm-backend:accounts-check --build-arg GIT_SHA=<B> /var/tmp/accounts-check
+  git worktree remove /var/tmp/accounts-check
+  BACKEND_IMAGE=gsm-backend:accounts-check gsmc run --rm migrate bun scripts/accounts-merge-check.ts
+  ```
+
+  `git status` in the checkout still shows `<B0>` and no change. Build the image again whenever `<B>` changes (a fixed commit pushed through
+  steps 2 to 4), so P7 runs the code that is pushed.
+
+  The check runs the preflight block of the migration in a read-only transaction and prints what would stop it, and the approved pairs the
+  settings row already holds (the migration merges them). Exit code 0: clean; 2: findings (nothing written); 1: an error (a bad file, no
+  database); 3: the expand migration has already run. A finding is a code and ids, never an email:
+
+  | Code | Stops when | Remedy |
+  | --- | --- | --- |
+  | E1 wallet | an approved pair's customer has a store balance that is not zero or a frozen wallet | settle the balance by a posting first |
+  | E2 money in flight | an approved pair's customer has an open top-up invoice, a pending top-up payment, an open top-up dispute, an open balance refund, an order in progress or waiting for its verification, or a checkout it opened signed in that is still open | finish it |
+  | E3 status | an approved pair's statuses differ, or the customer is blocked or anonymized | align them |
+  | E4 privacy | an approved pair's customer has a data request open or in progress | finish it |
+  | E5 login pair | a merchant and a customer with a login share an email and the pair is not approved | the owner approves "one account", or gives one side another email |
+  | E6 stale approval | an approved pair no longer exists, its emails differ, or its customer has no login | regenerate the approvals |
+  | E7 invoice key | the two rows of an approved pair used the same invoice idempotency key | void or re-key one invoice before approving |
+  | G1 outbox | an unprocessed outbox row of the customers aggregate | let the worker drain |
+  | G2 orphan | a (type, id) row points at a merchant or customer that does not exist (a file owner outside client, customer and staff counts here too) | look at the rows |
+  | G3 door | an order whose door and client column disagree | look at the rows |
+  | G4 owner | an invoice, payment or dispute whose owner cannot be found | look at the rows |
+  | G5 rank kind | a rank kind outside `b2b` and `b2c_retail` | fix the kind |
+  | G6 refund refs | a refund of a customer with no payment, or whose customer maps to another account than its payment's | look at the rows |
+  | G7 campaign | a notification campaign is queued or sending | let it finish or cancel it |
+  | G8 retail credit | the retail rank allows overdraft | switch it off |
+
+  A migration that stops says `accounts merge stopped, nothing changed: <findings> (<n> finding(s))` with up to 50 findings listed; fix them and
+  run again. **Approvals.** Read the E5 lines of the check: with none there is nothing to approve. For each pair it lists, the owner decides
+  (the remedy of E5). When a pair is one person, write a file of JSON lines with ids only (`{"clientId": 12, "customerId": 40, "action": "one_account"}`),
+  keep it outside the repositories, and approve it at step 11. Without an approval no pair is merged and every pair stops the migration. The
+  containers that read the file run as the image's user `bun` (uid 1000), not as root, so a root-owned file of mode 0600 cannot be read
+  through the mount: give it owner 1000 and mode 0600 (`chown 1000:1000 <file> && chmod 0600 <file>`), in a folder of root with mode 0700.
+- **P7** Rehearsal on a production copy (it sizes the maintenance window): a fresh `pg_dump -Fc` of production restored into a scratch database
+  `gsm_rehearsal` on the server; the approvals applied there when there are any; the migration of the check image against it; the verification
+  queries; the duration written down; the scratch database dropped. A stop here changes nothing in production: keep the hold and go on as
+  failure path A, step 3 says (a fixed commit, or the reverts).
+
+  ```bash
+  gsmc exec -T postgres sh -c 'pg_dump -U gsm -Fc gsm' > /var/backups/gsm/rehearsal.dump
+  gsmc exec -T postgres createdb -U gsm gsm_rehearsal
+  gsmc exec -T postgres pg_restore -U gsm -d gsm_rehearsal --no-owner --exit-on-error < /var/backups/gsm/rehearsal.dump
+  # the "before" verification queries against the copy: gsmc exec -T postgres psql -U gsm -d gsm_rehearsal
+  # the approvals (only when there are any) and the migration of the check image, against the copy alone:
+  BACKEND_IMAGE=gsm-backend:accounts-check gsmc run --rm -v <file>:/tmp/approvals.jsonl:ro migrate \
+    bun scripts/accounts-merge-check.ts --rehearse gsm_rehearsal --approve /tmp/approvals.jsonl
+  # without approvals: BACKEND_IMAGE=gsm-backend:accounts-check gsmc run --rm migrate bun scripts/accounts-merge-check.ts --rehearse gsm_rehearsal
+  # ...the verification queries against the copy, then:
+  gsmc exec -T postgres dropdb -U gsm gsm_rehearsal
+  ```
+
+  This is the only form of the rehearsal's migration. The copy is named after `--rehearse`; the script refuses the live database `gsm`, the
+  server's own databases and any name that is not lower-case letters, digits and `_`, writes the approvals into the copy only, and then runs
+  the image's `scripts/db-migrate.ts` against the copy (its first line names the copy: `Migrating postgres:5432/gsm_rehearsal ...`). Without
+  `--rehearse` the same command is the read-only check of P6, so no slip of it migrates production. Never point `gsmc run --rm migrate` itself
+  at a copy.
+- **P8** Browser pass on the development dry-run stack: the local main branches of the backend, console and shop with Turnstile test keys;
+  the sign-in of a merchant and of a retail account, the code step, a guest checkout, a store-balance payment, a merchant top-up, the rank change both ways, the old
+  `/merchants/<id>` and `/customers/<id>` console addresses and an old `/merchant/orders` shop address redirecting. Record what you saw.
+- **P9** The edge gate shipped first, as a small release of its own from the backend main branch (`deploy/cd/edge-gate.sh`, the `import edge_gate`
+  of every host in `deploy/Caddyfile` and the mount of `<ROOT>/edge`; section 1, "The closed edge"): the deployer deployed it like any additive
+  release and loaded the new Caddyfile, and `/usr/local/sbin/gsm-edge-gate` is installed (by hand before that deploy, as section 1 says: the
+  deployer that ran it was the older copy, which does not install the gate). It was then tried once on production: closed, the operator
+  address reaches the three hosts, another address gets 503, opened. This is a hard gate: without it step 13 cannot close the edge, and this
+  release does not start. Before step 15 this release installs no host script, and Caddy is not recreated from step 5 on, so nothing here can
+  make up for it.
+- **P10** The local static gates passed on the commits to push: typecheck, lint, format, the English-only check, the generated documents, the
+  database check, and the import of both processes (`bun -e "await import('./src/app.module.ts'); await import('./src/worker.module.ts')"`).
+
+**Expand.**
+
+1. `gsm-auto-deploy hold "accounts expand"`; `gsm-auto-deploy status` shows all three parts on their main and the hold set. The hold stops only
+   the timer's runs: `gsm-auto-deploy retry` and `force` ignore it and deploy at once, with the deployer's dump, migration and automatic
+   put-back, so neither is run for any part until step 16.
+2. With the hold on, the three main branches are pushed in the order console, backend, shop, and each one's checks must be green before the
+   next is pushed (P3). Push the console main branch (`<C>`); its checks must be green. The backend's checks are now red for any other backend
+   commit until step 3.
+3. Push the backend main branch (`<B>`; `ci/console-ref` names `main`, generated documents built against the console main); its checks must be
+   green. The shop's api-types job is red for any other shop commit until step 4.
+4. Push the shop main branch (`<S>`; its generated types come from the backend main); its checks must be green. Nothing has deployed (hold).
+   Now P6 and P7, from `<B>`: step 5 starts only when both passed. Until step 14 the main branches hold a release that is not deployed; the
+   failure paths below say how they become deployable again.
+5. Build every image while everything still runs.
+   - Backend. Keep the running image as `previous`, name the new one in `deploy/.env` and build it. From here no `gsmc up` of `api`, `worker`,
+     `migrate` or `caddy` except as written below: each would start the new code on the old schema. Work in a shell that exports none of the
+     values of `deploy/.env` (`env | grep -E '^(BACKEND|CONSOLE|SITE)_IMAGE='` prints nothing, and no step here runs `set -a; . deploy/.env`):
+     a variable of the shell wins over the `--env-file` of `gsmc`, so an edit of an image line in the file would not take effect.
+
+     ```bash
+     cd <ROOT>/backend && git fetch && git checkout --detach <B>
+     # the image the API runs now, not what its tag names (a build that was cut short may have moved the tag)
+     docker tag "$(docker inspect -f '{{.Image}}' "$(gsmc ps -q api)")" gsm-backend:previous
+     # edit deploy/.env: BACKEND_IMAGE=gsm-backend:accounts-<B>
+     GIT_SHA=<B> gsmc build api
+     ```
+
+     Settings: set `PORTAL_BASE_URL` in `.env.production` to the account area, `https://<shop host>/account` (it named `.../merchant` before), before the new API starts at step 13.
+   - Shop. The build arguments of `deploy_shop` (`deploy/cd/auto-deploy.sh`), from the deployer's settings file of section 8, read in a
+     subshell so nothing of it stays set:
+
+     ```bash
+     cd <ROOT>/storefront && git fetch && git checkout --detach <S>
+     ( . /etc/gsm-deploy.conf && docker build -t gsm-site:accounts-<S> \
+         --build-arg GSM_API_ORIGIN="$SHOP_BUILD_API_ORIGIN" \
+         --build-arg GSM_API_REWRITE_ORIGIN=http://api:3000 \
+         --build-arg NEXT_PUBLIC_SITE_URL="$SHOP_SITE_URL" \
+         --build-arg NEXT_PUBLIC_TURNSTILE_SITE_KEY="$SHOP_TURNSTILE_SITE_KEY" \
+         --build-arg NEXT_PUBLIC_TIME_ZONE="${SHOP_TIME_ZONE:-UTC}" \
+         --build-arg NEXT_PUBLIC_API_PUBLIC_URL="${SHOP_API_PUBLIC_URL:-}" . )
+     ```
+
+     Its build reads the public configuration and the catalog from the live API through the public shop host, so store maintenance stays off
+     until the build is done. `SITE_IMAGE` is not touched.
+   - Console. `cd <ROOT>/frontend-admin && git fetch && git checkout --detach <C>`, then
+     `docker build -t gsm-console:accounts-<C> --build-arg VITE_API_BASE_URL="" .` (no API read at build time). `CONSOLE_IMAGE` is not touched.
+6. Store maintenance on (the console's switch; the old console and the old API still run).
+7. `gsmc stop api`. No request and no webhook reaches the system now (the gateways retry).
+8. Let the worker drain, then stop it and check that nothing is left (the console's queue board is a route of the API, which step 7 stopped, so
+   the check reads the queue Redis itself):
+   1. No unprocessed outbox row: `gsmc exec -T postgres psql -U gsm -d gsm -c "select count(*) from outbox_events where processed_at is null"`
+      answers 0. Then `gsmc stop worker`.
+   2. No job left in the queue Redis but the schedules' own next runs (their ids start with `repeat:`). The command prints one line per queue;
+      every count must be 0:
+
+      ```bash
+      queue_password=$(. deploy/.env && printf '%s' "$REDIS_QUEUE_PASSWORD")   # read in a subshell, never exported (step 5)
+      gsmc exec -T -e REDISCLI_AUTH="$queue_password" redis-queue sh -c '
+        for meta in $(redis-cli --scan --pattern "*:meta"); do q=${meta%:meta}
+          printf "%s wait=%s paused=%s active=%s prioritized=%s children=%s delayed=%s\n" "$q" \
+            "$(redis-cli lrange "$q:wait" 0 -1 | grep -v "^repeat:" | grep -c .)" \
+            "$(redis-cli lrange "$q:paused" 0 -1 | grep -v "^repeat:" | grep -c .)" \
+            "$(redis-cli lrange "$q:active" 0 -1 | grep -v "^repeat:" | grep -c .)" \
+            "$(redis-cli zrange "$q:prioritized" 0 -1 | grep -v "^repeat:" | grep -c .)" \
+            "$(redis-cli zrange "$q:waiting-children" 0 -1 | grep -v "^repeat:" | grep -c .)" \
+            "$(redis-cli zrange "$q:delayed" 0 -1 | grep -v "^repeat:" | grep -c .)"
+        done'
+      ```
+
+      A delayed job here is a retry waiting for its backoff or a job asked for later (the price follow pass waits a minute); docs/queues.md
+      gives each queue's backoff. When a count is not 0: `gsmc start worker`, wait until that job has run (its backoff at most), then 1 and 2
+      again. Keep the output: failure path B compares with it.
+9. A fresh dump and the offsite copy: `gsmc exec -T postgres pg_dump -U gsm -Fc gsm > /var/backups/gsm/pre-accounts-expand-<B>.dump`, then
+   `gsmc run --rm -T backup pg-backup.sh`.
+10. Restore test of that dump: with P7's commands, restore the step 9 dump into a scratch database `gsm_dryrun` (`createdb`, then `pg_restore`
+    of `pre-accounts-expand-<B>.dump`), migrate it with the release image (`BACKEND_IMAGE` names it since step 5) and the approvals when there
+    are any, run the verification queries against `gsm_dryrun`, compare the duration with P7's, drop the scratch database:
+
+    ```bash
+    gsmc run --rm -v <file>:/tmp/approvals.jsonl:ro migrate bun scripts/accounts-merge-check.ts --rehearse gsm_dryrun --approve /tmp/approvals.jsonl
+    gsmc run --rm migrate bun scripts/accounts-merge-check.ts --rehearse gsm_dryrun          # the same without approvals
+    ```
+
+    The command migrates the named copy only and refuses `gsm`, so production is unchanged whatever happens here. A stop or a failed query:
+    **failure path A**.
+11. Only when the owner approved pairs at P6: `gsmc run --rm -v <file>:/tmp/approvals.jsonl:ro migrate bun scripts/accounts-merge-check.ts --approve /tmp/approvals.jsonl`
+    on production. The command refuses (nothing written) a line that fails E1 to E4, E6 or E7; it prints E5 pairs left out and G1 to G8 and still
+    writes the rest, and the migration keeps stopping on them until they are fixed.
+12. `gsmc run --rm migrate`. It runs in two steps: the two migrations in one transaction, then the privileges of the application role, which are
+    set after that transaction committed. Exit code 0 (`Applied 2 migration(s)`, then the `Application role` line): step 13. Any other ending
+    (an error, a broken connection, a killed command) does not say by itself whether the schema changed, so ask the database before anything
+    else starts:
+
+    ```bash
+    gsmc exec -T postgres psql -U gsm -d gsm -Atc "select count(*) from drizzle.__drizzle_migrations"   # migrations the database holds
+    ls drizzle/*.sql | wc -l                                                                           # migrations of <B>
+    ```
+
+    - **The database holds 2 fewer** (the two of this release; typically after `Migration failed: ...`): the transaction rolled back and the
+      database is the one of step 9, plus the approvals of step 11: **failure path A**.
+    - **The two numbers are equal** (typically after `Grants failed: ...`, or the line about one role for both URLs): the migrations are
+      committed and only the privileges are missing; `gsmc run --rm migrate bun scripts/accounts-merge-check.ts` says the same (exit code 3).
+      The old API and worker cannot run on this schema any more (their sign-ins, orders and invoices are refused by the new checks): **never
+      failure path A**. Fix the cause the message names (section 2: the roles of `DATABASE_URL` and `DATABASE_OWNER_URL`) and run
+      `gsmc run --rm migrate` again: it applies nothing (`Already up to date`) and sets the privileges. Exit 0: step 13. When it cannot be
+      fixed within the window: **failure path B**, from its step 1 (the new API never ran, so its queue step finds nothing).
+    - **No answer** (the database is not reachable): fix that and ask again. Start nothing before you have the number.
+13. **The closed-edge check. This is the last moment a restore is a rollback.**
+    1. `gsm-edge-gate close <operator address>`: every public host answers 503 to any other address.
+    2. `gsmc up -d --no-deps api` (the worker stays stopped); `/health?strict=1` answers.
+    3. Shop: `docker tag "$(docker inspect -f '{{.Image}}' "$(gsmc ps -q site)")" gsm-site:previous` (the image the container runs, as in step 5),
+       set `SITE_IMAGE=gsm-site:accounts-<S>` in `deploy/.env`, `gsmc up -d --no-deps site`. Console: the same with `gsmc ps -q console`,
+       `gsm-console:previous`, `CONSOLE_IMAGE=gsm-console:accounts-<C>` and `gsmc up -d --no-deps console`.
+    4. Store maintenance off (the edge is closed, so only the operator reaches the hosts).
+    5. From the operator address, on the real hosts (Turnstile and the admin allowlist work as in production): the verification queries again, read
+       only; a test merchant and a test retail account sign in on the shop (with the code step where it is on); the accounts list and one account
+       page in the console; the old `/merchants/<id>` and `/customers/<id>` addresses of a merchant and a customer (ids from `account_legacy_ids`)
+       redirect; an old `/merchant/orders` link redirects.
+
+    Any failure: **failure path B**.
+14. **Point of no return.** `gsmc up -d worker` then `gsm-edge-gate open`. From here on fix forward only: a later restore loses real writes and
+    needs a reconciliation with the gateways and the suppliers.
+15. Write the commits so the deployer sees each part as deployed:
+    `echo <B> > /var/lib/gsm-deploy/backend.deployed`, `echo <C> > /var/lib/gsm-deploy/console.deployed`, `echo <S> > /var/lib/gsm-deploy/shop.deployed`.
+    Then do by hand what the deployer does at the end of a backend deploy: install the deployer, the edge gate and the host scripts of `<B>`
+    (`install_self`), and, with a CDN, write the server's Caddyfile from the `deploy/Caddyfile` of `<B>`, check it and load it into Caddy
+    (`edge_prepare`, `edge_apply`). As root, from `<ROOT>/backend` (checked out at `<B>` since step 5):
+
+    ```bash
+    GSM_DEPLOY_SOURCED=1 bash -c '. deploy/cd/auto-deploy.sh && install_self && edge_prepare && edge_apply'
+    ```
+
+    Any exit status but 0: the server's Caddyfile was not replaced and Caddy keeps the one it runs; fix the cause the message names before
+    step 16. Without a CDN, Caddy mounts the checkout's own file: when `git diff --name-only <B0> <B> -- deploy/Caddyfile` names it,
+    `gsmc up -d --no-deps --force-recreate caddy`.
+16. Smoke test from another network (a phone off Wi-Fi): the shop's home page and a product page, one sign-in. Then `gsm-auto-deploy resume`.
+
+**Failure path A** (a stop at step 10 or 11, or at step 12 when the database holds 2 migrations fewer than `drizzle/`: the expand is not
+applied and the schema is the old one). Never when step 12 committed the migrations.
+1. Delete the approvals of this attempt, so a later attempt merges only what the owner approves for it (at its own step 11):
+   `gsmc exec -T postgres psql -U gsm -d gsm -c "DELETE FROM settings WHERE key = 'accountsMerge.approvedPairs'"`. This row is the only thing
+   steps 10 to 12 can have written to production.
+2. Re-tag `gsm-backend:previous` as `BACKEND_IMAGE` (put the old tag back in `deploy/.env`); the backend checkout back to `<B0>`; `gsmc up -d api worker`;
+   store maintenance off. The new shop and console images were never started: their checkouts go back to `<S0>` and `<C0>`.
+3. Keep the hold. Make the main branches deployable again, one of: a fixed commit (P10 passed on it) pushed through steps 2 to 4 with its
+   checks green (P3), then P6 and P7 again from the new `<B>`, and the runbook restarts at step 5; or revert the release commits of the three
+   main branches in the push order (console, backend, shop), each one's checks green before the next (the revert commits carry the old
+   trees, so the deployer may deploy them after `resume` with no migration).
+4. Never `gsm-auto-deploy resume` while a main branch holds an expand that has not been deployed.
+
+**Failure path B** (a check of step 13 failed, or step 12 committed the migrations and their privileges cannot be set). The database is
+migrated and the new API may have run, reached by the operator alone; the way back is the step 9 dump. Run every command from
+`<ROOT>/backend`, in this order, with the edge as step 13 left it (closed, when it got that far) and the worker still stopped (it has not run
+since step 8):
+
+1. `gsmc stop api`.
+2. The queue Redis. Every job that the command of step 8 counts now was added by the new API (the worker has not run since that command
+   counted 0 everywhere), for example the delayed price follow pass of a price change; the old worker would run such a job against a
+   database where its rows do not exist. Run the step 8 command again. Every count 0: nothing to do. Otherwise empty the queue Redis:
+
+   ```bash
+   queue_password=$(. deploy/.env && printf '%s' "$REDIS_QUEUE_PASSWORD")   # as in step 8: read, never exported
+   gsmc exec -T -e REDISCLI_AUTH="$queue_password" redis-queue redis-cli FLUSHALL
+   ```
+
+   The jobs of the new API go with it; the worker writes its schedules again when it starts (step 5 below). Step 8 found no other job, so
+   the only loss is the list of failed jobs kept for staff and the job history (section 6, "If the queue Redis loses its data").
+   The cache Redis keeps nothing on disk: `gsmc restart redis-cache` empties it, so the old API reads nothing the new one cached (the sign-in
+   counters and rate limits start again).
+3. Restore the step 9 dump into a new database, as the owner role (it is your own dump, made at step 9 and kept on this disk):
+
+   ```bash
+   gsmc exec -T postgres createdb -U gsm gsm_restored
+   gsmc exec -T postgres pg_restore -U gsm -d gsm_restored --exit-on-error < /var/backups/gsm/pre-accounts-expand-<B>.dump
+   ```
+
+   An error stops the restore and `gsm` is untouched: `gsmc exec -T postgres dropdb -U gsm gsm_restored`, find the cause, restore again.
+4. Swap the two databases. The session is on the database `postgres`, because a database cannot be renamed while anyone, you included, is
+   connected to it. Connections to `gsm` are switched off first, so a backup timer or a forgotten `psql` cannot connect again between the
+   two steps, and the two renames run in one transaction, so there is always exactly one database named `gsm`:
+
+   ```bash
+   gsmc exec -T postgres psql -U gsm -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+   ALTER DATABASE gsm WITH ALLOW_CONNECTIONS false;
+   SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('gsm', 'gsm_restored') AND pid <> pg_backend_pid();
+   BEGIN;
+   ALTER DATABASE gsm RENAME TO gsm_failed_expand;
+   ALTER DATABASE gsm_restored RENAME TO gsm;
+   COMMIT;
+   SQL
+   ```
+
+   An error leaves both names as they were: read it and run the block again. The migrated database is kept as `gsm_failed_expand` for the
+   analysis, with its connections still off (`ALTER DATABASE gsm_failed_expand WITH ALLOW_CONNECTIONS true` to read it). A backup timer that
+   ran in this minute failed: run `gsmc run --rm -T backup pg-backup.sh` once the old API is up.
+5. The old code back, then the doors open:
+
+   ```bash
+   # deploy/.env: BACKEND_IMAGE, SITE_IMAGE and CONSOLE_IMAGE back to the tags they named before step 5; each read in a subshell (step 5)
+   ( . deploy/.env && docker tag gsm-backend:previous "$BACKEND_IMAGE" )
+   ( . deploy/.env && docker tag gsm-site:previous "$SITE_IMAGE" )         # these two only when step 13.3 switched the shop and the console
+   ( . deploy/.env && docker tag gsm-console:previous "$CONSOLE_IMAGE" )
+   git checkout --detach <B0>                                   # and <S0> in <ROOT>/storefront, <C0> in <ROOT>/frontend-admin
+   gsmc run --rm migrate                                        # the old image: "Already up to date", and the privileges on the restored tables
+   gsmc up -d --no-deps api worker site console
+   ```
+
+   `/health?strict=1` answers, store maintenance off, `gsm-edge-gate open`. The restored database is the one of step 9, from before the
+   approvals of step 11.
+6. Then the main branches as in failure path A, step 3.
+
+**After step 14: fix forward.** A fixed commit goes through the same hold (steps 1 to 4 with its checks green), then only the changed part is
+deployed by hand without a migration, or with an additive one through steps 6 to 14. Never a restore.
+
+**Verification queries** (P4, P7, step 10, step 13). Record the first two before the migration (before step 12 on production, before
+`--rehearse` on a copy). After it, every query answers as written:
+
+```sql
+-- before the migration (record the numbers)
+SELECT (SELECT count(*) FROM clients) AS clients, (SELECT count(*) FROM customers) AS customers,
+       (SELECT count(*) FROM customer_credentials) AS credentials;
+SELECT kind, sum(balance) AS total FROM ledger_accounts GROUP BY kind ORDER BY kind;
+
+-- after: clients = clients before + converted; customers and credentials unchanged; one map row per old merchant and per customer
+SELECT (SELECT count(*) FROM clients) AS clients,
+       (SELECT count(*) FROM account_legacy_ids WHERE legacy_type = 'customer' AND NOT merged) AS converted,
+       (SELECT count(*) FROM account_legacy_ids WHERE legacy_type = 'client') AS mapped_merchants,
+       (SELECT count(*) FROM account_legacy_ids WHERE legacy_type = 'customer') AS mapped_customers,
+       (SELECT count(*) FROM customers) AS customers, (SELECT count(*) FROM customer_credentials) AS credentials;
+-- 0: no pending status left
+SELECT count(*) FROM clients WHERE status = 'pending';
+-- 0 rows: every login email is unique among login rows, every guest email among guest rows
+SELECT has_account, lower(email) FROM clients GROUP BY 1, 2 HAVING count(*) > 1;
+-- 0: no old type word in a mutable column
+SELECT (SELECT count(*) FROM sessions WHERE subject_type IN ('client', 'customer'))
+     + (SELECT count(*) FROM auth_tokens WHERE subject_type IN ('client', 'customer'))
+     + (SELECT count(*) FROM ledger_accounts WHERE owner_type IN ('client', 'customer'))
+     + (SELECT count(*) FROM notifications WHERE recipient_type IN ('client', 'customer'))
+     + (SELECT count(*) FROM notification_inbox WHERE recipient_type IN ('client', 'customer'))
+     + (SELECT count(*) FROM support_tickets WHERE requester_type IN ('client', 'customer'))
+     + (SELECT count(*) FROM ticket_messages WHERE author_type IN ('client', 'customer'))
+     + (SELECT count(*) FROM consent_records WHERE subject_type IN ('client', 'customer'))
+     + (SELECT count(*) FROM files WHERE owner_type IN ('client', 'customer'))
+     + (SELECT count(*) FROM refunds WHERE requested_by_type = 'customer')
+     + (SELECT count(*) FROM alert_events WHERE subject_type = 'client') AS old_words;
+-- the same totals per ledger kind as before, and 0 rows: every balance equals its entries
+SELECT kind, sum(balance) AS total FROM ledger_accounts GROUP BY kind ORDER BY kind;
+SELECT la.id FROM ledger_accounts la LEFT JOIN ledger_entries e ON e.account_id = la.id GROUP BY la.id
+HAVING la.balance <> CASE WHEN la.kind IN ('fee_income', 'vat_payable', 'customer_funds', 'revenue', 'owner_capital',
+                                           'client_wallet', 'client_hold', 'customer_wallet')
+                          THEN -coalesce(sum(e.amount), 0) ELSE coalesce(sum(e.amount), 0) END;
+-- 0 for each: every buyer column is set
+SELECT 'orders' AS t, count(*) FROM orders WHERE account_id IS NULL UNION ALL
+SELECT 'invoices', count(*) FROM invoices WHERE account_id IS NULL UNION ALL
+SELECT 'payments', count(*) FROM payments WHERE account_id IS NULL UNION ALL
+SELECT 'disputes', count(*) FROM disputes WHERE account_id IS NULL UNION ALL
+SELECT 'data_requests', count(*) FROM data_requests WHERE account_id IS NULL;
+-- 0 rows: a refund with a payment names its payment's account
+SELECT r.id FROM refunds r JOIN payments p ON p.id = r.payment_id WHERE r.account_id IS DISTINCT FROM p.account_id;
+-- 0: every account has a rank, every guest the retail rank; and the approvals row is gone
+SELECT count(*) FROM clients c LEFT JOIN client_groups g ON g.id = c.group_id WHERE g.id IS NULL
+   OR (NOT c.has_account AND g.kind <> 'b2c_retail');
+SELECT count(*) FROM settings WHERE key = 'accountsMerge.approvedPairs';
+-- the four current checks stay NOT VALID (convalidated = false on each)
+SELECT conname, convalidated FROM pg_constraint WHERE conname LIKE '%\_current\_check' ORDER BY conname;
+```
+
+**The contract release** follows at least seven days after the expand release, once these hold: no call of a retired route in the API logs for 72
+hours, no legacy-resolution error logged, one nightly backup and one restore drill after the expand release, and the contract dry run passed on a
+copy of the expanded development database. It is deployed in the same order for the backend and the shop only (the console does not change):
+1 hold; 2 push the backend main branch (its checks must be green; the shop's api-types job opens its window); 3 push the shop main branch
+(types regenerated, its checks must be green; the window closes), then the contract rehearsal on a production copy (P6's image and P7's
+method, from the pushed backend commit; a stop there changes nothing in production); 4 step 5 for the backend and the shop (images built while
+everything runs, maintenance off); 5 store maintenance on; 6 steps 7 to 12 (the old image selects columns the contract drops, so the stop is
+required; step 10 and the contract rehearsal use `--rehearse` the same way, and at step 12 the database holds as many fewer migrations as the
+contract adds when it did not commit); 7 step 13 with the backend and the shop; 8 step 14; 9 write the backend and shop commits; 10 smoke test
+and `resume`. Failure paths A and B apply with the contract's own dump.
 
 ## 4. Backups and the restore drill
 
@@ -838,7 +1237,7 @@ line in the refresh answer (`failed`) names the provider's rate, the stored rate
 staff member with `settings:update` gets 403.
 
 **Manual money limits** (decision 049). A staff member's credits within 24 hours, per kind of wallet, and any single debit, are capped by
-the approval limit (`wallet.adjust_approval_limit` for merchants, `wallet.customer.adjust_approval_limit` for customers); above it only an
+the approval limit (`wallet.adjust_approval_limit` for the merchant wallet, `wallet.customer.adjust_approval_limit` for the store balance); above it only an
 Owner adjusts. The parts by which a staff member raises merchant credit limits (also at an invitation) count in the same merchant sum. A
 credit limit above the merchant limit, and approving the payment of an invoice one issued oneself, also need an Owner. What one staff
 member credits by approving transfer receipts on top-ups within 24 hours is capped by `wallet.receipt_approval_limit` (default $10,000);
@@ -1002,23 +1401,23 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 ### Sign-in protections (decision 052)
 
 - **A locked email.** Ten failed passwords for one email (from any networks; a success in between does not cancel them) lock it for
-  15 minutes on its side (the console, or the shop for merchants and customers): the sign-in answers `429` "Too many failed attempts.
+  15 minutes on its side (the console, or the shop for every account): the sign-in answers `429` "Too many failed attempts.
   Try again later." with `Retry-After`. A network the account signed in from before (the same IPv4 /24 or IPv6 /64 as one of its stored
   sessions) can still sign in, with five attempts per 15 minutes shared by every address of that network while the lock runs (the
   sixth gets the same `429`). Otherwise the person waits for the lock to end, or gets a new password, which lifts the lock at once:
-  customers can use the emailed sign-in link or a reset link; merchants a reset link (changing the password while signed in does not lift
+  an account of the retail rank can use the emailed sign-in link or a reset link; an account of a merchant rank a reset link (changing the password while signed in does not lift
   the shop lock: a password chosen without the emailed link proves no mailbox); staff ask an Owner (or a member allowed to act on them) for a password link
   or a temporary password. The API log has one `Sign-in refused (staff|shop): the email is locked` line per refusal, with the address and without the email.
-- **Temporary passwords expire after 72 hours** (staff, merchants and customers): after that the sign-in refuses them like a wrong
+- **Temporary passwords expire after 72 hours** (staff and accounts of every rank): after that the sign-in refuses them like a wrong
   password; set a new one from the console.
-- **The cache Redis holds the counters.** While it is down, the authenticator code step (staff and merchants with 2FA) is refused
+- **The cache Redis holds the counters.** While it is down, the authenticator code step (staff and accounts with 2FA) is refused
   (`429`, retry after 60 s), so nobody with 2FA can finish signing in until it is back; the other sign-in limits and the lock count in
   memory per API process, so do not run more than one API process without the cache Redis.
 - **Mails a visitor asks for** (sign-in link, forgot password) are capped at five an hour per account and kind; a request beyond the cap
   answers as usual and sends nothing. Mails staff send have their own budget.
-- **Two-step sign-in of a merchant needs a confirmed email address.** Starting the setup or confirming it answers `409` ("Confirm your
-  email address first; two-step sign-in can be switched on after that.") while the merchant's email is not confirmed: send the
-  verification link first. Switching it off and signing in with a code are not affected.
+- **Two-step sign-in needs a confirmed email address.** Starting the setup or confirming it answers `409` ("Confirm your
+  email address first; two-step sign-in can be switched on after that.") while the account's email is not confirmed: send the
+  verification link first. An account without a password is told to choose one first (`409`, "Choose a password first."). Switching it off and signing in with a code are not affected.
 
 ### Public surface limits (decision 053)
 
@@ -1032,8 +1431,8 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - **Kept for a limited time.** Supplier call logs are deleted after 90 days (the daily job `supplier_log_retention` at 04:50 UTC). Stored files that no record references are
   deleted 7 days after they were stored (daily job `upload_janitor` at 04:30 UTC), so an upload that nobody used is gone within a week. Every run is in the jobs
   list of the console (`GET /admin/system/jobs`) with its counts.
-- **Upload quotas.** A merchant that waits for approval keeps at most 10 uploaded files (50 MiB); an approved merchant uploads at most 500 files (5 GiB) in 24 hours; a
-  customer 30 files (100 MiB) in 24 hours, receipts and ticket files together; one ticket link 20 files (50 MiB) in 24 hours. Over a bound the upload is
+- **Upload quotas** (decision 064: they follow the rank kind of the account that uploads, not the route, and no status waits for approval any more). An account of a merchant rank uploads at most 500 files (5 GiB) in 24 hours; an account of any other rank
+  30 files (100 MiB) in 24 hours, receipts and ticket files together; one ticket link 20 files (50 MiB) in 24 hours. Over a bound the upload is
   `422` on `file` with the code `quota`. Generated documents (invoices, receipts) and staff uploads never count. The numbers are constants in
   `src/modules/platform/files/upload-quota.ts`: a merchant who needs more is a code change today.
 - **Incoming webhooks and failed sessions.** Every request under `/webhooks` is counted per client address (600 a minute, limiter `webhook-intake`) before the

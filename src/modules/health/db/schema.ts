@@ -94,9 +94,10 @@ export type AlertUnit = (typeof ALERT_UNITS)[number];
  * What an alert is about.
  *
  * Why: RESOLUTIONS health-commissions-14: `system` is the subject of alerts that belong to no single record (API
- * latency, error rate); the others point at `subject_id`.
+ * latency, error rate); the others point at `subject_id`. Decision 064: an account is `account`, where the old list said `client` (an
+ * account id equals the old merchant id, so the rows of kind `client` are rewritten in place).
  */
-export const ALERT_SUBJECT_TYPES = ['system', 'supplier', 'queue', 'gateway', 'ledger_account', 'client'] as const;
+export const ALERT_SUBJECT_TYPES = ['system', 'supplier', 'queue', 'gateway', 'ledger_account', 'account'] as const;
 
 /** One value of {@link ALERT_SUBJECT_TYPES}. */
 export type AlertSubjectType = (typeof ALERT_SUBJECT_TYPES)[number];

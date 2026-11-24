@@ -11,6 +11,7 @@ import {
   PasswordResetMailProcessor,
 } from '@src/modules/identity/jobs/merchant-mail.processors';
 import type { OutboxJobData } from '@src/modules/platform';
+import { ensureMerchantGroup } from '../../support/accounts';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, openSession } from '../../support/auth';
@@ -72,14 +73,14 @@ const tokensOf = async (clientId: number) =>
   (await testDb()).db
     .select()
     .from(s.authTokens)
-    .where(and(eq(s.authTokens.subjectType, 'client'), eq(s.authTokens.subjectId, clientId)))
+    .where(and(eq(s.authTokens.subjectType, 'account'), eq(s.authTokens.subjectId, clientId)))
     .orderBy(s.authTokens.id);
 const openTokens = async (clientId: number) => (await tokensOf(clientId)).filter((row) => row.usedAt === null);
 const sessionsOf = async (clientId: number) =>
   (await testDb()).db
     .select()
     .from(s.sessions)
-    .where(and(eq(s.sessions.subjectType, 'client'), eq(s.sessions.subjectId, clientId)));
+    .where(and(eq(s.sessions.subjectType, 'account'), eq(s.sessions.subjectId, clientId)));
 const liveSessions = async (clientId: number) => (await sessionsOf(clientId)).filter((row) => row.revokedAt === null);
 
 /** Runs the mail job of the newest outbox event of a type, as the worker would. */
@@ -120,8 +121,13 @@ describe('POST /admin/clients/:id/password, reset_link', () => {
 
     // Ids only in the outbox; the placeholder token of the request is dropped.
     const [event] = await outbox(MERCHANT_MAIL_EVENTS.password_reset);
-    expect(event!.payload).toMatchObject({ tokenId: expect.any(Number) });
-    expect(Object.keys(event!.payload).filter((key) => key !== 'meta')).toEqual(['tokenId']);
+    expect(event!.payload).toMatchObject({ accountId: merchant.id, tokenId: expect.any(Number) });
+    // Sorted: a jsonb column keeps its keys in its own order, not in the order they were written.
+    expect(
+      Object.keys(event!.payload)
+        .filter((key) => key !== 'meta')
+        .sort(),
+    ).toEqual(['accountId', 'tokenId']);
     const [placeholder] = emailedLinks();
     expect(placeholder).toMatchObject({ kind: 'password_reset', clientId: merchant.id });
 
@@ -134,7 +140,7 @@ describe('POST /admin/clients/:id/password, reset_link', () => {
     const [audit] = await auditRows();
     expect(audit).toMatchObject({
       action: 'sent a password reset link to',
-      entityType: 'merchant',
+      entityType: 'account',
       entityId: merchant.id,
       actorName: 'Rami K.',
       after: { credential: 'reset link emailed', revokeSessions: false, sessionsEnded: 0 },
@@ -143,7 +149,7 @@ describe('POST /admin/clients/:id/password, reset_link', () => {
   });
 
   it('sends the invitation while the merchant has no password, and a newer link voids the older one', async () => {
-    const merchant = await makeMerchant(t, { noPassword: true, status: 'pending' });
+    const merchant = await makeMerchant(t, { noPassword: true });
     const api = await security();
     expect((await api.post(`/admin/clients/${merchant.id}/password`, { mode: 'reset_link' })).body).toEqual({
       link: 'invite',
@@ -195,7 +201,8 @@ describe('POST /admin/clients/:id/password, reset_link', () => {
     const refused = await api.post(`/admin/clients/${suspended.id}/password`, { mode: 'reset_link' });
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe('NOT_ACTIVE');
-    expect(refused.body.detail).toContain('suspended');
+    // One sentence for every status that may not act (suspended or blocked), as the console shows it.
+    expect(refused.body.detail).toBe('This account is not active. Reactivate the account first.');
     expect((await api.post('/admin/clients/999999/password', { mode: 'temporary_password' })).status).toBe(404);
     expect((await api.post(`/admin/clients/${suspended.id}/password`, { mode: 'nonsense' })).status).toBe(422);
   });
@@ -231,8 +238,9 @@ describe('POST /admin/clients/:id/password, temporary_password', () => {
     const audit = (await auditRows()).at(-1)!;
     expect(audit).toMatchObject({
       action: 'set a temporary password for',
-      entityType: 'merchant',
-      after: { credential: 'temporary password set', revokeSessions: false, sessionsEnded: 0 },
+      entityType: 'account',
+      // A temporary password always ends the sessions (none were open here).
+      after: { credential: 'temporary password set', revokeSessions: true, sessionsEnded: 0 },
     });
     const { db } = await testDb();
     const everything = JSON.stringify([
@@ -252,9 +260,9 @@ describe('POST /admin/clients/:id/password, temporary_password', () => {
 
   it('with revokeSessions ends every session and the audit row counts them', async () => {
     const merchant = await makeMerchant(t);
-    await openSession(t, { type: 'client', id: merchant.id });
-    await openSession(t, { type: 'client', id: merchant.id });
-    await openSession(t, { type: 'client', id: merchant.id }, { stage: 'pending_totp' });
+    await openSession(t, { type: 'account', id: merchant.id });
+    await openSession(t, { type: 'account', id: merchant.id });
+    await openSession(t, { type: 'account', id: merchant.id }, { stage: 'pending_totp' });
     const api = await security();
     const res = await api.post(`/admin/clients/${merchant.id}/password`, {
       mode: 'temporary_password',
@@ -265,14 +273,16 @@ describe('POST /admin/clients/:id/password, temporary_password', () => {
     expect((await auditRows()).at(-1)!.after).toMatchObject({ revokeSessions: true, sessionsEnded: 3 });
   });
 
-  it('keeps the sessions without revokeSessions, and never logs the password', async () => {
+  it('ends the sessions without revokeSessions too (the old password may be known to someone else), and never logs the password', async () => {
     const merchant = await makeMerchant(t);
-    await openSession(t, { type: 'client', id: merchant.id });
+    await openSession(t, { type: 'account', id: merchant.id });
     const log = spyOn(Logger.prototype, 'log');
     const warn = spyOn(Logger.prototype, 'warn');
     const api = await security();
     const res = await api.post(`/admin/clients/${merchant.id}/password`, { mode: 'temporary_password' });
-    expect(await liveSessions(merchant.id)).toHaveLength(1);
+    expect(res.status).toBe(200);
+    expect(await liveSessions(merchant.id)).toHaveLength(0);
+    expect((await auditRows()).at(-1)!.after).toMatchObject({ revokeSessions: true, sessionsEnded: 1 });
     const logged = [...log.mock.calls, ...warn.mock.calls].map((call) => String(call[0])).join('\n');
     expect(logged).not.toContain(res.body.temporaryPassword);
   });
@@ -281,8 +291,8 @@ describe('POST /admin/clients/:id/password, temporary_password', () => {
 describe('POST /admin/clients/:id/reset-2fa', () => {
   it('clears the three TOTP columns, ends every session (a pending step too), mails a notice and audits', async () => {
     const merchant = await makeMerchant(t, { twofa: true, totpLastStep: 5 });
-    await openSession(t, { type: 'client', id: merchant.id });
-    await openSession(t, { type: 'client', id: merchant.id }, { stage: 'pending_totp' });
+    await openSession(t, { type: 'account', id: merchant.id });
+    await openSession(t, { type: 'account', id: merchant.id }, { stage: 'pending_totp' });
     const api = await security();
     const res = await api.post(`/admin/clients/${merchant.id}/reset-2fa`);
     expect(res.status).toBe(204);
@@ -291,7 +301,7 @@ describe('POST /admin/clients/:id/reset-2fa', () => {
     expect(await liveSessions(merchant.id)).toHaveLength(0);
     expect((await auditRows()).at(-1)).toMatchObject({
       action: 'reset 2FA of',
-      entityType: 'merchant',
+      entityType: 'account',
       before: { twofaEnabled: true },
       after: { twofaEnabled: false, sessionsEnded: 2 },
     });
@@ -312,17 +322,17 @@ describe('POST /admin/clients/:id/reset-2fa', () => {
 describe('POST /admin/clients/:id/sessions/revoke', () => {
   it('ends full and pending sessions, answers 204 when there are none, and audits the count', async () => {
     const merchant = await makeMerchant(t);
-    const full = await openSession(t, { type: 'client', id: merchant.id });
-    await openSession(t, { type: 'client', id: merchant.id }, { stage: 'pending_totp' });
+    const full = await openSession(t, { type: 'account', id: merchant.id });
+    await openSession(t, { type: 'account', id: merchant.id }, { stage: 'pending_totp' });
     const other = await makeMerchant(t);
-    await openSession(t, { type: 'client', id: other.id });
+    await openSession(t, { type: 'account', id: other.id });
     const api = await security();
     expect((await api.post(`/admin/clients/${merchant.id}/sessions/revoke`)).status).toBe(204);
     expect(await liveSessions(merchant.id)).toHaveLength(0);
     expect(await liveSessions(other.id)).toHaveLength(1);
     expect((await auditRows()).at(-1)).toMatchObject({
       action: 'signed out all devices of',
-      entityType: 'merchant',
+      entityType: 'account',
       entityId: merchant.id,
       before: { sessions: 2 },
       after: { sessions: 0 },
@@ -341,7 +351,7 @@ describe('POST /admin/clients/:id/sessions/revoke', () => {
 
 describe('POST /admin/clients/:id/verify-email/resend', () => {
   it('mails a new verification link that replaces the older one; the limiter is shared with the merchant', async () => {
-    const merchant = await makeMerchant(t, { emailVerifiedAt: null, status: 'pending' });
+    const merchant = await makeMerchant(t, { emailVerifiedAt: null });
     const api = await security();
     expect((await api.post(`/admin/clients/${merchant.id}/verify-email/resend`)).status).toBe(204);
     expect((await api.post(`/admin/clients/${merchant.id}/verify-email/resend`)).status).toBe(204);
@@ -413,11 +423,14 @@ describe('the merchant row', () => {
 
   it('carries the security facts of a merchant with no password and an open invitation, and drops an expired link', async () => {
     const api = await security();
-    const created = await api.post('/admin/clients', {
+    // A merchant rank is the Owner's to give (decision 064); the default password mode mails the invitation link.
+    const owner = await adminWith(t, ['*'], { name: 'Nadia H.' });
+    const groupId = await ensureMerchantGroup((await testDb()).db);
+    const created = await owner.post('/admin/clients', {
       name: 'Zain Mobile Hub',
       email: 'ops@zain.example',
       country: 'JO',
-      invite: true,
+      groupId,
     });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     const { body } = await row(api, created.body.id);
@@ -451,9 +464,9 @@ describe('the merchant row', () => {
       lastLoginIp: '203.0.113.9',
       emailVerifiedAt: null,
     });
-    await openSession(t, { type: 'client', id: merchant.id });
-    await openSession(t, { type: 'client', id: merchant.id });
-    await openSession(t, { type: 'client', id: merchant.id }, { stage: 'pending_totp' });
+    await openSession(t, { type: 'account', id: merchant.id });
+    await openSession(t, { type: 'account', id: merchant.id });
+    await openSession(t, { type: 'account', id: merchant.id }, { stage: 'pending_totp' });
     const api = await security();
     await api.post(`/admin/clients/${merchant.id}/verify-email/resend`);
     const { body } = await row(api, merchant.id);

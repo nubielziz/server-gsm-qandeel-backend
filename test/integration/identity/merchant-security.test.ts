@@ -86,20 +86,20 @@ describe('POST /client/auth/password/forgot', () => {
     expect(await outboxTypes()).toEqual(['merchant.password_reset']);
     const { db } = await testDb();
     const [link] = await db.select().from(s.authTokens);
-    expect(link).toMatchObject({ purpose: 'reset', subjectType: 'client', subjectId: known.id, usedAt: null });
+    expect(link).toMatchObject({ purpose: 'reset', subjectType: 'account', subjectId: known.id, usedAt: null });
     expect(link!.expiresAt.getTime()).toBe(clock.nowMs() + HOUR);
     expect(emailedLinks()).toMatchObject([{ kind: 'password_reset', clientId: known.id }]);
   });
 
-  it('works for a merchant waiting for approval that has no password yet (an expired invitation)', async () => {
-    const invited = await makeMerchant(t, { status: 'pending', noPassword: true });
+  it('works for a merchant that has no password yet (an expired invitation)', async () => {
+    const invited = await makeMerchant(t, { noPassword: true });
     expect((await portal().forgot(invited.email)).statusCode).toBe(204);
     const [link] = emailedLinks();
     expect(link).toMatchObject({ kind: 'password_reset', clientId: invited.id });
     expect((await portal().reset(link!.token, NEW_PASSWORD)).statusCode).toBe(204);
     const p = portal();
     expect((await p.login(invited.email, NEW_PASSWORD)).statusCode).toBe(200);
-    expect(await clientRow(invited.id)).toMatchObject({ status: 'pending' });
+    expect(await clientRow(invited.id)).toMatchObject({ status: 'active' });
   });
 
   it('keeps earlier links working (at most three), and counts requests per email and network', async () => {
@@ -157,8 +157,8 @@ describe('POST /client/auth/password/reset', () => {
     expect(problem(again).code).toBe('TOKEN_INVALID');
   });
 
-  it('keeps the status pending and, for an invitation, also marks the email verified', async () => {
-    const invited = await makeMerchant(t, { status: 'pending', noPassword: true });
+  it('keeps the status active and, for an invitation, also marks the email verified', async () => {
+    const invited = await makeMerchant(t, { noPassword: true });
     const issued = await t.app
       .get(DbService)
       .runInTransaction((work) =>
@@ -174,7 +174,7 @@ describe('POST /client/auth/password/reset', () => {
     clock.advance(10 * 60_000);
 
     expect((await portal().reset(issued.token, NEW_PASSWORD)).statusCode).toBe(204);
-    expect(await clientRow(invited.id)).toMatchObject({ status: 'pending' });
+    expect(await clientRow(invited.id)).toMatchObject({ status: 'active' });
     expect((await clientRow(invited.id)).emailVerifiedAt?.getTime()).toBe(clock.nowMs());
     expect((await clientRow(invited.id)).passwordChangedAt?.getTime()).toBe(clock.nowMs());
     expect((await clientRow(invited.id)).passwordHash).toStartWith('$argon2id$');
@@ -253,7 +253,7 @@ describe('POST /client/auth/password/reset', () => {
   });
 
   it('turns two-factor sign-in off for an invitation link on an unverified merchant too, and verifies the email', async () => {
-    const merchant = await makeMerchant(t, { status: 'pending', twofa: true, emailVerifiedAt: null });
+    const merchant = await makeMerchant(t, { twofa: true, emailVerifiedAt: null });
     const issued = await t.app
       .get(DbService)
       .runInTransaction((work) =>

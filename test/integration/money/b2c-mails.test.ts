@@ -66,7 +66,8 @@ const sendEvents = () => db.select().from(s.outboxEvents).where(eq(s.outboxEvent
 /** The placeholder values a notification row holds. */
 const variablesOf = (row: { payload: unknown }): Record<string, string> =>
   (row.payload as { variables: Record<string, string> }).variables;
-const customerOf = async (paid: PaidOrder) => (await orderRow(db, paid.orderId)).customerId!;
+/** The buyer of a paid order: the account (a guest row for a guest checkout). */
+const accountOf = async (paid: PaidOrder) => (await orderRow(db, paid.orderId)).accountId;
 
 /** Writes the message and then fails, as a flow whose later step breaks: everything the flow wrote, the message included, must vanish. */
 function failAfterTheMail() {
@@ -81,22 +82,22 @@ function failAfterTheMail() {
   });
 }
 
-/** Inserts a refund request of a customer (the customer's own request route belongs to the support feature). */
+/** Inserts a refund request of the buyer account (the customer's own request route belongs to the support feature). */
 async function request(paid: PaidOrder, values: Partial<typeof s.refunds.$inferInsert> = {}) {
-  const customerId = await customerOf(paid);
+  const accountId = await accountOf(paid);
   const [row] = await db
     .insert(s.refunds)
     .values({
       paymentId: paid.paymentId,
       orderId: paid.orderId,
-      customerId,
+      accountId,
       amount: paid.charged,
       currency: 'GBP',
       reason: 'The code did not work',
       method: 'original',
       status: 'requested',
-      requestedByType: 'customer',
-      requestedById: customerId,
+      requestedByType: 'account',
+      requestedById: accountId,
       createdAt: clock.now(),
       updatedAt: clock.now(),
       ...values,
@@ -118,8 +119,8 @@ describe('order.received', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       event: 'order.received',
-      recipientType: 'customer',
-      recipientId: order!.customerId,
+      recipientType: 'account',
+      recipientId: order!.accountId,
       channel: 'email',
       status: 'queued',
       payload: {
@@ -225,8 +226,8 @@ describe('order.completed', () => {
     const rows = await mails('order.completed');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      recipientType: 'customer',
-      recipientId: await customerOf(paid),
+      recipientType: 'account',
+      recipientId: await accountOf(paid),
       channel: 'email',
       payload: {
         variables: {
@@ -260,9 +261,9 @@ describe('order.completed', () => {
     // Another customer gets the same template, with their own name (templates have no language, decision 039).
     const other = await paidOrder(t, clock, world, { email: 'luc@mail.example' });
     await db
-      .update(s.customers)
+      .update(s.clients)
       .set({ name: 'Luc Martin' })
-      .where(eq(s.customers.id, await customerOf(other)));
+      .where(eq(s.clients.id, await accountOf(other)));
     expect((await staff.post(`/admin/orders/${other.orderId}/reply`, { code: 'Unlocked' })).status).toBe(204);
     await sendAllQueued(t);
     expect(mailbox(t).sent.at(-1)).toMatchObject({
@@ -302,8 +303,8 @@ describe('order.failed', () => {
     const rows = await mails('order.failed');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      recipientType: 'customer',
-      recipientId: await customerOf(paid),
+      recipientType: 'account',
+      recipientId: await accountOf(paid),
       payload: {
         variables: { orderId: `SF-${paid.orderId}`, amount: '3.84 GBP', service: 'iCloud Clean / Lost Check' },
       },
@@ -417,12 +418,12 @@ describe('payment.failed', () => {
     const [row] = rows;
     expect(row).toMatchObject({
       event: 'payment.failed',
-      recipientType: 'customer',
+      recipientType: 'account',
       channel: 'email',
       payload: { variables: { customerName: 'there', amount: '3.84 GBP' } },
     });
     const [stored] = await db.select().from(s.payments);
-    expect(row!.recipientId).toBe(stored!.customerId!);
+    expect(row!.recipientId).toBe(stored!.accountId);
     await sendAllQueued(t);
     expect(mailbox(t).sent[0]).toMatchObject({ to: 'sam@mail.example', subject: 'Your payment didn’t go through' });
 
@@ -481,8 +482,8 @@ describe('refund.declined', () => {
     const rows = await mails('refund.declined');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      recipientType: 'customer',
-      recipientId: await customerOf(paid),
+      recipientType: 'account',
+      recipientId: await accountOf(paid),
       channel: 'email',
       payload: {
         variables: {

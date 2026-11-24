@@ -1,4 +1,5 @@
-// Test helpers of the customer wallet (feature 21): switch it on, credit a customer's balance through the ledger, read the wallet row.
+// Test helpers of the store balance (feature 21): switch it on, credit a retail account's balance through the ledger, read the wallet row.
+// The wallet is the `customer_wallet` ledger account of an account of the retail rank, owned by ('account', id) (decision 064).
 import { and, eq } from 'drizzle-orm';
 import { Money } from '@src/common/money';
 import { type Database, schema as s } from '@src/infra/db';
@@ -35,20 +36,20 @@ export async function walletSettings(t: TestApp, db: Database, values: Record<st
 }
 
 /**
- * Credits a customer's balance through `postTransaction` (a manual top-up from `bank`).
+ * Credits a retail account's balance through `postTransaction` (a manual top-up from `bank`).
  *
  * @param db the test database
- * @param customerId the customer
+ * @param accountId the retail account
  * @param amount the net credited
  * @param at the posting time (the test clock's, when a test filters by time)
  * @returns the journal id
  */
-export async function fundCustomer(db: Database, customerId: number, amount: string, at = new Date()): Promise<number> {
+export async function fundCustomer(db: Database, accountId: number, amount: string, at = new Date()): Promise<number> {
   const posted = await db.transaction((tx) =>
     postTransaction(
       tx,
       {
-        ...customerTopup({ customerId, amount: Money.of(amount), from: 'bank' }),
+        ...customerTopup({ customerId: accountId, amount: Money.of(amount), from: 'bank' }),
         refId: 1,
         idempotencyKey: `fund-customer:${crypto.randomUUID()}`,
         currency: 'USD',
@@ -62,19 +63,19 @@ export async function fundCustomer(db: Database, customerId: number, amount: str
 }
 
 /**
- * Debits a customer's balance by a system adjustment that may take it below zero, freezing it in the same transaction.
+ * Debits a retail account's balance by a system adjustment that may take it below zero, freezing it in the same transaction.
  *
  * @param db the test database
- * @param customerId the customer
+ * @param accountId the retail account
  * @param amount the debit
  */
-export async function pushNegative(db: Database, customerId: number, amount: string): Promise<void> {
+export async function pushNegative(db: Database, accountId: number, amount: string): Promise<void> {
   await db.transaction(async (tx) => {
     await postTransaction(
       tx,
       {
-        ...customerAdjust({ customerId, amount: Money.of(amount), direction: 'debit' }),
-        refId: customerId,
+        ...customerAdjust({ customerId: accountId, amount: Money.of(amount), direction: 'debit' }),
+        refId: accountId,
         idempotencyKey: `negative:${crypto.randomUUID()}`,
         currency: 'USD',
         createdBy: { type: 'system', id: null },
@@ -85,22 +86,34 @@ export async function pushNegative(db: Database, customerId: number, amount: str
     await tx
       .update(s.ledgerAccounts)
       .set({ frozenAt: new Date(), frozenReason: 'Chargeback' })
-      .where(and(eq(s.ledgerAccounts.kind, 'customer_wallet'), eq(s.ledgerAccounts.ownerId, customerId)));
+      .where(
+        and(
+          eq(s.ledgerAccounts.kind, 'customer_wallet'),
+          eq(s.ledgerAccounts.ownerType, 'account'),
+          eq(s.ledgerAccounts.ownerId, accountId),
+        ),
+      );
   });
 }
 
 /**
- * Reads a customer's wallet row.
+ * Reads a retail account's wallet row.
  *
  * @param db the test database
- * @param customerId the customer
+ * @param accountId the retail account
  * @returns the row, or `undefined`
  */
-export async function customerWalletRow(db: Database, customerId: number) {
+export async function customerWalletRow(db: Database, accountId: number) {
   const [row] = await db
     .select()
     .from(s.ledgerAccounts)
-    .where(and(eq(s.ledgerAccounts.kind, 'customer_wallet'), eq(s.ledgerAccounts.ownerId, customerId)));
+    .where(
+      and(
+        eq(s.ledgerAccounts.kind, 'customer_wallet'),
+        eq(s.ledgerAccounts.ownerType, 'account'),
+        eq(s.ledgerAccounts.ownerId, accountId),
+      ),
+    );
   return row;
 }
 

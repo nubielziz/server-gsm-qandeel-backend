@@ -4,7 +4,10 @@ Live updates for signed-in people: a notification appears on an open page at onc
 2026-11-15). Transport: Server-Sent Events, one `GET` stream per signed-in browser and surface; everything the browser sends back
 is an ordinary `POST`. Decision 037 (`docs/decisions/037-realtime-sse.md`); plan `docs/briefs/27-realtime-notifications.md`; the
 events a client receives: `docs/contract/realtime-events.md`. The layer is infrastructure and owns no table; the three stream
-routes belong to the `identity` module (it owns sessions, principals and the guard).
+routes belong to the `identity` module (it owns sessions, principals and the guard). A viewer is `staff`, `account` or `ticket`
+(`StreamViewerKind`, decision 064): every account, whatever its rank, has **one key per account**, `u:account:<id>`, whichever family's stream route it
+connects through (`GET /client/stream` for a merchant rank, `GET /store/v1/me/stream` for the retail rank); the inbox source, the session doorbell and
+the viewer registry build the same key, and one test proves the three agree.
 
 | What | Where |
 | --- | --- |
@@ -35,7 +38,7 @@ routes belong to the `identity` module (it owns sessions, principals and the gua
    reconnects for ever and resubscribes itself). On a message the hub finds the source of the `topic` and asks it to `resolve` the
    doorbell into deliveries, with at most 4 doorbells in flight (the pool has 10 connections) and a waiting list of 1000.
 4. The source **re-reads Postgres with the viewer's own keys** (`recipient_type` and `recipient_id`), renders the frame for the viewer
-   and returns it with the audience keys it is for (`u:customer:42`). Nothing is trusted from the message, so a lost or
+   and returns it with the audience keys it is for (`u:account:42`). Nothing is trusted from the message, so a lost or
    forged doorbell loses or leaks nothing.
 5. The hub serialises each delivery once per key (once per connection when `data` is a function of the viewer) and writes it to the
    connections of those keys. A connection that does not read is dropped, never buffered.
@@ -67,7 +70,7 @@ poll (5 minutes while a stream is open).
   unsubscribe. The subscriber connection closes in `RedisService.onApplicationShutdown`. The worker has no hub and no subscriber.
 - **Not in the access log or the request histogram.** A stream is one "request" of up to 15 minutes: `access-log.ts` logs a
   `text/event-stream` reply at `debug` and `http-metrics.ts` does not observe it. The hub logs `stream opened` (debug) and
-  `stream closed` (log) with the viewer (`customer:42`), session id, duration, frames and reason; never a cookie, token, cursor or text.
+  `stream closed` (log) with the viewer (`account:42`), session id, duration, frames and reason; never a cookie, token, cursor or text.
 - **Kill switch.** `REALTIME_ENABLED=false`: every stream route answers `503 UNAVAILABLE` with `Retry-After: 30`; clients fall back to
   polling. Publishing continues (harmless).
 
@@ -123,7 +126,7 @@ fan-out, cancel, replay, `resync`, a Redis outage of the subscriber). The test c
 
 `bash scripts/with-slot.sh bun run test:load:realtime [--count 2000] [--idle 60]` (script `test/load/realtime-connections.ts`;
 `NODE_ENV=test`, so the test database and Redis of `.env.test`; not part of `bun run check`). A listening test app with
-`REALTIME_MAX_PER_IP=5000`; 2000 customers with one session each; a child process
+`REALTIME_MAX_PER_IP=5000`; 2000 accounts with one session each; a child process
 (`BUN_CONFIG_MAX_HTTP_REQUESTS=4096`, because Bun's `fetch` opens at most 256 connections per host otherwise) opens one stream each;
 then an idle minute, then one in-app campaign to all, then a restart of the API. It prints the table below. Run it once before a
 merge of the layer and record the numbers here (a small `--count` proves the script works, but its memory figure is noise);

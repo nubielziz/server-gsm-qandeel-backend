@@ -1,5 +1,6 @@
 // Helpers for the risk and privacy tests (feature 18): a held storefront order with its checkout session, payment, ledger posting and
-// assessment, direct inserts of blocklist entries and data requests, and the audit rows of an order.
+// assessment, direct inserts of blocklist entries and data requests, and the audit rows of an order. The buyer is an account of the
+// retail rank (a guest row unless a test asks for a login); every table names it in `account_id`.
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { Money } from '@src/common/money';
 import { TokenService } from '@src/infra/crypto';
@@ -7,11 +8,15 @@ import { type Database, schema as s } from '@src/infra/db';
 import { b2cPay, postTransaction } from '@src/modules/money';
 import { blockHashInput } from '@src/modules/risk';
 import type { TestApp } from './app';
+import { makeAccount } from './accounts';
 import { insertOrderRow, type OrdersWorld } from './orders';
 
 /** A held order and everything around it. */
 export interface HeldOrder {
   readonly orderId: number;
+  /** The buyer's account id. */
+  readonly accountId: number;
+  /** The same number as `accountId`, under the name the old helper used. */
   readonly customerId: number;
   readonly assessmentId: number;
   readonly sessionId: number;
@@ -22,8 +27,9 @@ export interface HeldOrder {
 /** What a test can change about the held order. */
 export interface HeldOptions {
   readonly serviceId?: number;
-  readonly customer?: Partial<typeof s.customers.$inferInsert>;
-  /** Buy as this existing customer instead of inserting a new one. */
+  /** Columns of the buyer's account row (a guest of the retail rank unless these say otherwise). */
+  readonly customer?: Partial<typeof s.clients.$inferInsert>;
+  /** Buy as this existing account instead of inserting a new one. */
   readonly customerId?: number;
   readonly imei?: string;
   readonly signals?: string[];
@@ -36,12 +42,12 @@ export interface HeldOptions {
   readonly cardFingerprint?: string;
   /** The checkout session's encrypted IMEI (`checkout_sessions.imei_enc`). */
   readonly sessionImeiEnc?: string;
-  /** Whether a signed-in customer opened the checkout (`checkout_sessions.opened_signed_in`); default `false`, as the column. */
+  /** Whether a signed-in account opened the checkout (`checkout_sessions.opened_signed_in`); default `false`, as the column. */
   readonly openedSignedIn?: boolean;
 }
 
 /**
- * Inserts a paid storefront order that the rules hold: the customer, the checkout session (USD), the order (`pending`, dispatch
+ * Inserts a paid storefront order that the rules hold: the buyer's account, the checkout session (USD), the order (`pending`, dispatch
  * state `held`), the captured payment, the `b2c_pay` ledger posting (so a refund has money to return) and the `review` assessment.
  *
  * @param world the orders world (its automatic service is the default)
@@ -55,22 +61,25 @@ export async function insertHeldOrder(world: OrdersWorld, options: HeldOptions =
   const vat = options.vat ?? '2.5000';
   const [customer] =
     options.customerId === undefined
-      ? await db
-          .insert(s.customers)
-          .values({
-            email: `buyer-${crypto.randomUUID()}@example.com`,
-            name: 'Jack Turner',
-            country: 'GB',
-            hasAccount: false,
-            ...options.customer,
-          })
-          .returning()
-      : await db.select().from(s.customers).where(eq(s.customers.id, options.customerId));
+      ? [
+          (
+            await makeAccount({
+              db,
+              rank: 'retail',
+              guest: true,
+              email: `buyer-${crypto.randomUUID()}@example.com`,
+              name: 'Jack Turner',
+              country: 'GB',
+              ...options.customer,
+            })
+          ).row,
+        ]
+      : await db.select().from(s.clients).where(eq(s.clients.id, options.customerId));
   const [session] = await db
     .insert(s.checkoutSessions)
     .values({
       token: crypto.randomUUID(),
-      customerId: customer!.id,
+      accountId: customer!.id,
       email: customer!.email,
       serviceId: options.serviceId ?? world.auto.serviceId,
       currency: 'USD',
@@ -86,7 +95,7 @@ export async function insertHeldOrder(world: OrdersWorld, options: HeldOptions =
     })
     .returning();
   const order = await insertOrderRow(db, {
-    customerId: customer!.id,
+    accountId: customer!.id,
     serviceId: options.serviceId ?? world.auto.serviceId,
     source: 'store',
     status: 'pending',
@@ -109,7 +118,7 @@ export async function insertHeldOrder(world: OrdersWorld, options: HeldOptions =
   const [payment] = await db
     .insert(s.payments)
     .values({
-      customerId: customer!.id,
+      accountId: customer!.id,
       orderId: order.id,
       purpose: 'order',
       gatewayId: gateway!.id,
@@ -139,7 +148,7 @@ export async function insertHeldOrder(world: OrdersWorld, options: HeldOptions =
     .values({
       checkoutSessionId: session!.id,
       orderId: order.id,
-      customerId: customer!.id,
+      accountId: customer!.id,
       score: options.score ?? 62,
       decision: 'review',
       signals: options.signals ?? ['Disposable email domain', 'IP country differs from card country'],
@@ -147,6 +156,7 @@ export async function insertHeldOrder(world: OrdersWorld, options: HeldOptions =
     .returning({ id: s.riskAssessments.id });
   return {
     orderId: order.id,
+    accountId: customer!.id,
     customerId: customer!.id,
     assessmentId: assessment!.id,
     sessionId: session!.id,

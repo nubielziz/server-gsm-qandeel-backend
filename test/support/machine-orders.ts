@@ -20,7 +20,7 @@ export interface MachineCredentials {
 }
 
 /**
- * Gives a merchant an API key with a limit no test reaches.
+ * Gives a merchant-rank account an API key with a limit no test reaches.
  *
  * @param t the running test app
  * @param db the test database
@@ -35,8 +35,11 @@ export async function credentialsFor(
   overrides: Partial<typeof s.apiKeys.$inferInsert> = {},
 ): Promise<MachineCredentials> {
   const [client] = await db.select({ username: s.clients.username }).from(s.clients).where(eq(s.clients.id, clientId));
+  // the Dhru username exists for a merchant-rank account only (a retail account has none)
+  if (!client?.username)
+    throw new Error(`Account ${clientId} has no username: only a merchant has machine credentials.`);
   const { key, id } = await insertApiKey(t, db, clientId, { rateLimitPerMin: 100_000, ...overrides });
-  return { clientId, username: client!.username, key, keyId: id };
+  return { clientId, username: client.username, key, keyId: id };
 }
 
 /** Forgets what the caches and limiters know about API keys (the database is reset between tests and key ids restart at 1). */

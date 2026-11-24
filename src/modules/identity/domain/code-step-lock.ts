@@ -1,4 +1,4 @@
-// The daily cap on wrong authenticator codes of one account (staff member or merchant): pure rules; the count lives in Postgres
+// The daily cap on wrong authenticator codes of one person (a staff member or an account of any rank): pure rules; the count lives in Postgres
 // (`staff_users.totp_failures` and `clients.totp_failures`, written by infra/code-failures.repository).
 
 /** Wrong authenticator codes one account may have counted within {@link CODE_FAILURE_WINDOW_MS}; the next attempt is refused. */

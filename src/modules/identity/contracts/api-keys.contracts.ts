@@ -1,5 +1,5 @@
-// Route contracts of merchant API keys (map domain A, stage 7): the merchant's own keys under /client/api-keys (MISMATCHES B155)
-// and the staff's view and revocation under /admin (identity.md). The shape is the console's ApiKey (identity-platform-5).
+// Route contracts of API keys (map domain A, stage 7): the own keys of an account of a merchant rank under /client/api-keys (MISMATCHES
+// B155) and the staff's view and revocation under /admin (identity.md). The shape is the console's ApiKey (identity-platform-5).
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
 import { MAX_ALLOWED_IPS, MAX_LIVE_KEYS, RATE_LIMIT_PER_MIN_RANGE } from '../domain/api-key-input';
@@ -55,7 +55,7 @@ export const portalListApiKeys = defineRoute({
   key: 'GET /client/api-keys',
   summary: 'My API keys',
   description:
-    'The keys of the signed-in merchant: live keys first, then revoked ones, newest first within each group. Only the display ' +
+    'The keys of the signed-in merchant (an account of a merchant rank; a retail account is `403 RANK_NOT_ALLOWED`): live keys first, then revoked ones, newest first within each group. Only the display ' +
     'prefix is readable; the full key was shown once when it was created. `allowedIps` keeps ranges as written and drops the ' +
     '`/32` or `/128` of a single address; `lastUsedIp` is `""` for a key that was never used.',
   tags: ['api-keys'],
@@ -63,7 +63,7 @@ export const portalListApiKeys = defineRoute({
   access: 'merchant-session',
   query: listQuery({ sorts: ['createdAt', 'id'], defaultSort: { field: 'createdAt', order: 'desc' } }),
   success: { status: 200, schema: ApiKeyRow },
-  errors: ['VALIDATION_FAILED', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'ACCOUNT_PENDING_APPROVAL', 'IP_NOT_ALLOWED'],
+  errors: ['VALIDATION_FAILED', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED'],
   examples: { response: [KEY_EXAMPLE] },
 });
 
@@ -79,7 +79,9 @@ export const portalCreateApiKey = defineRoute({
     `server default; only staff change it. A merchant may hold ${MAX_LIVE_KEYS} live keys: the next one is \`422\` on \`name\`. Every new ` +
     "key sends the merchant a security notice by email. While the account's password is one staff set (a temporary password, until the " +
     'merchant chooses a password from a link mailed to its address), and after a staff member who is not an Owner changed the ' +
-    "account's email address (until an Owner changes it or confirms it), the route is `403 FORBIDDEN`.",
+    "account's email address (until an Owner changes it or confirms it), the route is `403 FORBIDDEN`. The rank and the status are read again " +
+    'from the account row, locked, before the key is stored: an account that is no longer of a merchant rank is `403 RANK_NOT_ALLOWED` and no ' +
+    'key is made.',
   tags: ['api-keys'],
   surface: 'client',
   access: 'merchant-session',
@@ -89,15 +91,7 @@ export const portalCreateApiKey = defineRoute({
     expiresAt: zIsoDateTime.optional(),
   }),
   success: { status: 201, schema: z.object({ key: ApiKeyRow, secret: z.string() }) },
-  errors: [
-    'VALIDATION_FAILED',
-    'UNAUTHORIZED',
-    'FORBIDDEN',
-    'ACCOUNT_SUSPENDED',
-    'ACCOUNT_PENDING_APPROVAL',
-    'IP_NOT_ALLOWED',
-    'CSRF_FAILED',
-  ],
+  errors: ['VALIDATION_FAILED', 'UNAUTHORIZED', 'FORBIDDEN', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED', 'CSRF_FAILED'],
   examples: {
     request: {
       name: 'Production server',
@@ -126,7 +120,6 @@ export const portalUpdateApiKey = defineRoute({
     'INVALID_TRANSITION',
     'UNAUTHORIZED',
     'ACCOUNT_SUSPENDED',
-    'ACCOUNT_PENDING_APPROVAL',
     'IP_NOT_ALLOWED',
     'CSRF_FAILED',
   ],
@@ -145,14 +138,7 @@ export const portalRevokeApiKey = defineRoute({
   access: 'merchant-session',
   params: z.object({ id: zIdParam }),
   success: { status: 204 },
-  errors: [
-    'NOT_FOUND',
-    'UNAUTHORIZED',
-    'ACCOUNT_SUSPENDED',
-    'ACCOUNT_PENDING_APPROVAL',
-    'IP_NOT_ALLOWED',
-    'CSRF_FAILED',
-  ],
+  errors: ['NOT_FOUND', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED', 'CSRF_FAILED'],
 });
 
 /** `GET /admin/clients/:id/api-keys`: the keys of one merchant. */
@@ -160,7 +146,8 @@ export const adminListClientApiKeys = defineRoute({
   key: 'GET /admin/clients/:id/api-keys',
   summary: 'API keys of a merchant',
   description:
-    'A plain array (no paging), newest first, every key including revoked and expired ones. The console derives Active, Revoked ' +
+    'A plain array (no paging), newest first, every key including revoked and expired ones, for an account of any rank: an account ' +
+    'that left the merchant rank shows the keys it had, all revoked. The console derives Active, Revoked ' +
     'and Expired from `revokedAt` and `expiresAt`. Never the hash or the key.',
   tags: ['api-keys'],
   surface: 'admin',
@@ -177,7 +164,8 @@ export const adminCreateClientApiKey = defineRoute({
   key: 'POST /admin/clients/:id/api-keys',
   summary: 'Create an API key for a merchant',
   description:
-    'Only for an `active` merchant (`409 NOT_ACTIVE` otherwise: a key of a pending or suspended merchant cannot be used). The ' +
+    'Only for an `active` account of a merchant rank (`409 CONFLICT` for a retail rank, `409 NOT_ACTIVE` for a suspended, blocked or ' +
+    'erased account: such a key could not be used). The ' +
     `body is the merchant's own creation plus \`rateLimitPerMin\` (an integer from ${RATE_LIMIT_PER_MIN_RANGE.min} to ` +
     `${RATE_LIMIT_PER_MIN_RANGE.max}, default 60). The answer carries the full key once as \`secret\` (\`Cache-Control: no-store\`); ` +
     'only a keyed hash is stored, so a lost key cannot be shown again. The key is marked `createdByStaff` and `api_keys.created_by` ' +
@@ -196,7 +184,7 @@ export const adminCreateClientApiKey = defineRoute({
     rateLimitPerMin: RateLimitPerMin.optional(),
   }),
   success: { status: 201, schema: z.object({ key: ApiKeyRow, secret: z.string() }) },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'NOT_ACTIVE', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'CONFLICT', 'NOT_ACTIVE', 'VALIDATION_FAILED'],
   examples: {
     request: {
       name: 'Production server',

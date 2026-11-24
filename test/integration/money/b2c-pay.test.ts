@@ -134,7 +134,7 @@ describe('POST /store/v1/checkout-sessions/:token/pay', () => {
 
     clock.set('2026-11-07T12:00:00.000Z');
     const second = (await openCheckout(t, world, { email: 'ann@mail.example' })).token;
-    await db.update(s.customers).set({ status: 'blocked' }).where(eq(s.customers.email, 'ann@mail.example'));
+    await db.update(s.clients).set({ status: 'blocked' }).where(eq(s.clients.email, 'ann@mail.example'));
     const blocked = await pay(t, second, undefined);
     expect(blocked.statusCode).toBe(403);
     expect(json(blocked)).toMatchObject({ code: 'ACCOUNT_SUSPENDED' });
@@ -333,8 +333,9 @@ describe('the gateway confirmation', () => {
     expect(payment!.feeAmount).toBe('0.3500');
     const order = await orderRow(db, paid.orderId);
     expect(order).toMatchObject({
-      customerId: expect.any(Number),
-      clientId: null,
+      accountId: expect.any(Number),
+      // the shop door has no merchant: the old column stays empty for it (`orders_door_check`)
+      legacyClientId: null,
       source: 'store',
       status: 'pending',
       dispatchState: 'manual',
@@ -365,7 +366,7 @@ describe('the gateway confirmation', () => {
     expect(invoice).toMatchObject({
       kind: 'receipt',
       status: 'paid',
-      customerId: order.customerId,
+      accountId: order.accountId,
       orderId: paid.orderId,
       amount: '3.8400',
       netAmount: '3.2000',
@@ -565,8 +566,8 @@ describe('GET /store/v1/orders/:token/receipt', () => {
       expect(files).toHaveLength(1);
       expect(files[0]).toMatchObject({
         id: invoice!.pdfFileId,
-        ownerType: 'customer',
-        ownerId: (await orderRow(db, paid.orderId)).customerId,
+        ownerType: 'account',
+        ownerId: (await orderRow(db, paid.orderId)).accountId,
         mime: 'application/pdf',
         filename: `${invoice!.number}.pdf`,
       });
@@ -622,7 +623,10 @@ describe('GET /store/v1/orders/:token/receipt', () => {
     const paid = await paidOrder(t, clock, world);
     // The receipt prints the account's stored name only for a checkout the account opened signed in.
     await db.update(s.checkoutSessions).set({ openedSignedIn: true });
-    await db.update(s.customers).set({ name: 'سارة أحمد' });
+    await db
+      .update(s.clients)
+      .set({ name: 'سارة أحمد' })
+      .where(eq(s.clients.id, (await orderRow(db, paid.orderId)).accountId));
     await db.update(s.services).set({ name: 'فك قفل آيفون ١٥' });
     await renderReceipts(t);
     const first = await receiptOf(paid.trackingToken);
@@ -638,7 +642,10 @@ describe('GET /store/v1/orders/:token/receipt', () => {
     await renderReceipts(t);
     const before = await receiptOf(paid.trackingToken);
     await db.update(s.services).set({ name: 'A completely different service name' });
-    await db.update(s.customers).set({ name: 'Someone Else', email: 'someone.else@mail.example' });
+    await db
+      .update(s.clients)
+      .set({ name: 'Someone Else', email: 'someone.else@mail.example' })
+      .where(eq(s.clients.id, (await orderRow(db, paid.orderId)).accountId));
     const after = await receiptOf(paid.trackingToken);
     expect(after.statusCode).toBe(200);
     expect(Buffer.compare(before.rawPayload, after.rawPayload)).toBe(0);

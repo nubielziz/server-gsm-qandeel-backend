@@ -12,6 +12,8 @@ Built: `GET /openapi.json` and `GET /docs` (the public documentation), plus the 
 
 ## Public API (`index.ts`)
 
+**One account type (decision 064).** In this module the person behind a notification, an inbox item, a stored file or an audit row is an **account** of either rank, or a staff member: the stored words are `staff` and `account` (`NOTIFICATION_RECIPIENT_TYPES`, `FILE_OWNER_TYPES`, `AUDIT_ENTITY_TYPES` and the current audit actor words; the old words are read only through the legacy id map). The sections below say where; the headings are: the audit log ("Audit log"), the files ("File downloads", "File uploads", "PDF documents and stored files"), the notifications ("Notifications", "Notification center", "Live notifications") and the store maintenance ("Settings and maintenance mode"). Public lines added by this release: `uploadQuotaFor(rankKind)` (the upload quota rule of a rank kind), `GUEST_CLAIM_FILES_NAME` and `moveGuestClaimFiles(tx, {guestId, accountId})` (the files participant of the guest claim; rows locked `FOR UPDATE NOWAIT`), `ACCOUNT_ENTITY_WORDS` (`account`, `merchant`, `customer`) and `ACCOUNT_ACTOR_WORDS` (`account`, `client`, `customer`) for reading the audit log; `AUDIENCE_TYPE_ORDER` is `staff`, `account`. `PENDING_MERCHANT_QUOTA` is gone (no account waits for approval).
+
 Exports `PlatformModule`, the document builders and `OpenApiService` (used by `src/app.bootstrap.ts` and `scripts/gen-openapi.ts`), `DOCUMENTATION_ROUTES` (for the route-parity test) and the `REFERENCE_DOCS_GUARD` token (see below).
 
 The audit log: `AuditModule` (global) provides `AuditService.record(tx, { action, entityType, entityId?, entityLabel?, before?, after? })` (see "Audit log" below). The settings: `SettingsModule` (global) provides `SettingsReader` (`all()`, `get(key)`, `integer(key, fallback, bounds)`, `integers(specs)`, `invalidate()`), the only way other modules read `settings`.
@@ -35,15 +37,15 @@ Only this module reads and writes these 10 tables (`scripts/module-map.mjs`; the
 | Table | What it holds |
 |---|---|
 | `settings` | System settings as key and value pairs. |
-| `notification_templates` | Email and Telegram templates for staff, merchants and customers. |
+| `notification_templates` | Email and Telegram templates for staff, merchants and customers (the audience of a template is the family of the text: `merchant` or `customer`, whatever the rank of the account that receives it). |
 | `notifications` | A log of the notifications that were sent. |
-| `webhook_endpoints` | Retired: the webhook URLs merchants registered; unread and unwritten, dropped by the accounts migration. |
+| `webhook_endpoints` | Retired: the webhook URLs merchants registered; unread and unwritten, dropped by the contract release of the one account type. |
 | `webhook_deliveries` | Retired: the attempts to deliver webhooks; unread and unwritten, dropped by the accounts migration. |
 | `outbox_events` | Events waiting to be processed by the worker. |
 | `audit_logs` | The audit log of admin actions. |
 | `files` | S3 files and their metadata. |
 | `notification_campaigns` | The campaigns of the notification center: message, audience, channels, state and fan-out progress (feature 23). |
-| `notification_inbox` | The in-app notifications of staff, merchants and customers, with read state (feature 23). |
+| `notification_inbox` | The in-app notifications of staff and of accounts of either rank (`recipient_type` `staff` or `account`), with read state (feature 23). |
 
 ## Routes
 
@@ -136,7 +138,7 @@ The stage is the second of the request pipeline (`src/common/pipeline/README.md`
 | `api_orders` | order placement: the Dhru actions `placeimeiorder`, `placeimeiorderbulk`, `placefileorder` | reads, cancels and verifies of running orders; Dhru `getimeiorder`, `getimeiorderbulk`, `accountinfo`, `imeiservicelist` |
 | `all` | the union of the three | |
 
-Never affected by any scope: `/admin/*` (staff are not locked out), `/client/*` (the merchant portal), `/webhooks/*` (a payment
+Never affected by any scope: `/admin/*` (staff are not locked out), `/client/*` (the portal, and the eight sign-in routes of `/client/auth/*` that every account uses, which a store scope never stops: decision 064), `/webhooks/*` (a payment
 already started must still be confirmed), `/health`, `/metrics`, `/docs`, `/openapi.json` and `/reference`.
 
 - **The answer** is problem+json `503 MAINTENANCE` with the staff member's message as `detail` (a default sentence when there is
@@ -160,7 +162,7 @@ Four admin routes (`contracts/`, `controllers/`, `application/`, `infra/`), wire
 
 | Route | Permission | What it does |
 |---|---|---|
-| `GET /admin/audit-logs` | `audit:read` | the log newest first. Filters (equality): `actorType` (`staff \| client \| customer \| system`), `actorId`, `entityType`, `entityId`; `q` is a case-insensitive contains over `actorName`, `action` and `entityLabel`; `from` and `to` are UTC days, both included; sorts `createdAt` and `id`; `x-total-count` is exact for the filter |
+| `GET /admin/audit-logs` | `audit:read` | the log newest first. Filters (equality): `actorType` (`staff \| account \| system`, and the old words `client` and `customer` of rows written before decision 064), `actorId`, `entityType`, `entityId`, and `accountId` (decision 064: `entityType=account` and `actorType=account` read the three words of each, `account`, `merchant` or `client` and `customer`, through the legacy id map, so one filter finds an account's whole history); every row also carries `account: {id}` or `null` (the account the entry is about or done by, resolved through the map, so the console never guesses); `q` is a case-insensitive contains over `actorName`, `action` and `entityLabel`; `from` and `to` are UTC days, both included; sorts `createdAt` and `id`; `x-total-count` is exact for the filter |
 | `GET /admin/audit-logs/:id` | `audit:read` | one entry; `404 NOT_FOUND` |
 | `GET /admin/settings` | `settings:read` | one flat object `{ key: value }` of every settings row with its JSON type; keys whose names mark a secret (`password`, `token`, `secret`, `hash`, `apiKey`, ...: `isSecretKey`, the shared rule of `src/common/secret-keys.ts`, decision 054) are never sent; a key that was never set is absent |
 | `PATCH /admin/settings` | `settings:update` | the allow-list below; answers the whole object after the change |
@@ -183,12 +185,12 @@ Four admin routes (`contracts/`, `controllers/`, `application/`, `infra/`), wire
 
 ## File downloads (feature 5, MISMATCHES B154)
 
-`GET /admin/files/:id` (`files:read`) and `GET /client/files/:id` (merchant session, `pendingMerchant: 'allow'`) answer `302` to a
+`GET /admin/files/:id` (`files:read`) and `GET /client/files/:id` (merchant rank) answer `302` to a
 presigned object-storage link that lives 5 minutes (`StorageService.presignGet` with the stored file name as the download name),
 with `Cache-Control: no-store` on the redirect (`FileAccessService`, `controllers/files.controller.ts`, `contracts/files.contracts.ts`).
 `defineRoute` takes `success: { status: 302 }` for them (a bodiless GET: the handler sets `Location` and the response interceptor
-refuses a 302 without it; OpenAPI documents the `Location` header). A merchant opens only its own upload
-(`owner_type client`, `owner_id` the merchant) or the input or result file of one of its own orders (`ownsOrderFile`, a documented
+refuses a 302 without it; OpenAPI documents the `Location` header). An account opens only its own upload
+(`owner_type account`, `owner_id` the account) or the input or result file of one of its own orders (`ownsOrderFile`, a documented
 foreign read of `orders` in `infra/file.repository.ts`); anything else, an unknown id included, is `404`, never `403`. The access is
 logged at info without the file name. The merchant and API key routes read the caller from the request context
 (`getRequestContext().actor`), not from identity's decorators, because identity imports this module (decision 032).
@@ -198,7 +200,7 @@ uses the file, found by `fileReferencesOf` (`infra/file.repository.ts`, one stat
 like `deleteUnreferencedFiles`) and judged by the pure `files/file-kinds.ts`: `clients:read` (an identity document: a verification request of the document check that decision 061 retired lists the file; no new one is made), `payments:read` (a
 payment's receipt), `disputes:read` (dispute evidence), `orders:read` (an order's input or result), `invoices:read` (an invoice PDF), `support:read` (a ticket message's
 attachment) and `customers:privacy` (a data request's export). A file used by several kinds needs all their permissions (the first missing one, in that order, is named in the
-`403 FORBIDDEN`). A file nothing uses yet needs `clients:read` when a merchant owns it (decision 061) and `customers:read` when a customer owns it; the public pictures of listings and payment methods
+`403 FORBIDDEN`). A file nothing uses yet needs `clients:read` for every account, whatever its rank (decision 064); the public pictures of listings and payment methods
 need only `files:read`. Every download of an identity document writes an audit row under the merchant (`opened an identity document of`, with the file and the submission) and
 every download of a payment receipt one under the payment (`opened the payment proof of`, `PAY-<id>`), in one short transaction before the link is made: no row, no link. The rows are
 written by `auditStaffFileOpening` (`files/file-opening-audit.ts`, exported by the module's index), which takes the audited kinds from `auditedKindsOf` (the list `AUDITED_FILE_KINDS`); the support module's staff download of a
@@ -208,27 +210,23 @@ import would close a cycle, decision 032 amendment); a staff caller is `StaffFil
 
 ## File uploads (feature 7a, MISMATCHES B157)
 
-`POST /client/files` (merchant session and CSRF, `pendingMerchant: 'allow'` so a
-merchant waiting for approval can upload) and the Dhru file order share one code path, `FileUploadService.upload` (`application/file-upload.service.ts`,
+`POST /client/files` (merchant rank, session and CSRF) and the Dhru file order share one code path, `FileUploadService.upload` (`application/file-upload.service.ts`,
 provided to every module by the global `FilesModule`, which the Dhru file order of the orders module uses too). The body is
 `multipart/form-data` with one part named `file`, parsed before the guards by `registerMultipartBodies` (a multipart body on any route but
 `/api/index.php`, `/client/files` and `/admin/service-listings/:id/image` is `415 UNSUPPORTED_MEDIA_TYPE`, and the buffer is bounded at 25 MiB plus the form
 fields). Limits: 1 byte to 25 MiB (`422` on `file` when missing or empty, `413 PAYLOAD_TOO_LARGE` above), any media type (a value that is not a
 `type/subtype` is stored as `application/octet-stream`), the name reduced to its base name without control characters and cut to 200
 characters. The object goes to the files bucket under a key built here (`files/<year>/<month>/<uuid>`: never from the name), then a `files`
-row owned by the merchant (`owner_type client`) is written with the size and SHA-256; an object whose row could not be written is deleted
+row owned by the account (`owner_type account`) is written with the size and SHA-256; an object whose row could not be written is deleted
 again. The answer is `201 { id, filename, size, mime, sha256, createdAt }`; the id is what a File service order takes as `fileId`, or a
 receipt (features 8 and 17, B161, B163). `GET /client/files/:id` redirects like the other downloads and opens every file the merchant owns and
 the files of its own orders; anything else, an unknown id included, is `404`. No audit row for a merchant's upload (B121).
 
-**Quotas, the session precheck, the byte bound and the janitor (decision 053).** Every upload that a merchant or a customer makes is counted
-per owner over the `files` rows whose key starts with an upload area (`files/`, and `tickets-` for the customer), so a generated document never counts
-(`files/upload-quota.ts`: a merchant that waits for approval keeps at most 10 files and 50 MiB in all; an approved merchant 500 files and 5 GiB in 24 hours; a
-customer 30 files and 100 MiB in 24 hours, receipts and ticket-link uploads together; one ticket link 20 files and 50 MiB in 24 hours, checked together with the customer's;
-staff uploads have no quota). The count is checked before the object is written (no object for an obvious refusal) and again, under a transaction advisory lock of the owner
-(`lockUploadOwner`), together with the row insert, so two uploads that run together cannot both take the last place. A refusal is `422 VALIDATION_FAILED` on `file` with
-`code: 'quota'` and a sentence that names the bound. The approved/pending split reads `clients.status` (`merchantIsApproved`, a documented deviation of decision 016 like
-`ownsOrderFile`: identity exports no reader platform may import, decision 032). The routes that sign in with a session cookie (`/client/files`, `/store/v1/files`
+**Quotas, the session precheck, the byte bound and the janitor (decision 053, decision 064).** Every upload that an account makes is counted
+per owner over the `files` rows whose key starts with an upload area (`files/`, and `tickets-` for a ticket requester), so a generated document never counts
+(`files/upload-quota.ts`, `uploadQuotaFor(rankKind)`: the quota follows the **rank kind of the account that uploads, not the route**: a merchant rank 500 files and 5 GiB in 24 hours (`MERCHANT_DAILY_QUOTA`), any other rank 30 files and 100 MiB in 24 hours (`CUSTOMER_DAILY_QUOTA`), receipts and ticket-link uploads together; there is no quota for an account that waits for approval, because that status is gone; one ticket link 20 files and 50 MiB in 24 hours, checked together with the account's;
+staff uploads have no quota). The count is checked before the object is written (no object for an obvious refusal) and again, under the transaction advisory lock of the owner (`lockUploadOwner(tx, {type, id})`, the lock `upload-quota:account:<id>`), together with the row insert, so two uploads that run together cannot both take the last place. A refusal is `422 VALIDATION_FAILED` on `file` with
+`code: 'quota'` and a sentence that names the bound. The rank kind of an account is read with the same documented deviation of decision 016 as `ownsOrderFile` (identity exports no reader platform may import, decision 032; `merchantIsApproved` is gone). The routes that sign in with a session cookie (`/client/files`, `/store/v1/files`
 and the three console uploads) read a multipart body only when the request carries a live session (identity's `upload-session` pipeline stage); the 5 MiB route
 bound of the store and ticket uploads holds for the bytes read (`common/capped-body.ts`), whether or not a length is declared.
 **The janitor** (`files/upload-janitor.ts`, job `upload_janitor`, daily 04:30 UTC, worker-only `PlatformRetentionModule`) deletes every `files` row stored more than 7 days
@@ -236,8 +234,8 @@ ago that nothing references (the one list `unreferenced` in `infra/file.reposito
 the whole test for that row, its object after the commit; 500 candidates a batch, at most 40 batches a run. The only race left is an attach through an array column that is
 not committed yet at the moment of the delete.
 
-`FileUploadService.discard(clientId, fileId)` (P4a, MISMATCHES B166) takes a file back that the caller stored a moment ago and no longer
-needs. It deletes the merchant's `files` row (`owner_type client`, `owner_id` the merchant) and then its object, and answers `true` once
+`FileUploadService.discard(accountId, fileId)` (P4a, MISMATCHES B166) takes a file back that the caller stored a moment ago and no longer
+needs. It deletes the account's `files` row (`owner_type account`, `owner_id` the account) and then its object, and answers `true` once
 the row is removed (an object that then fails to delete is only logged). It keeps a file that another record points at, and answers `false` for it, for another merchant's file and
 for a file that is already gone. It never throws: a cleanup must not hide the refusal that caused it, and an object that could not be
 deleted is only logged (the row is gone, so the file can no longer be read or attached). "Another record points at it" covers every kind
@@ -246,7 +244,7 @@ make the delete fail with `23503`, which `discard` reads as "in use". The three 
 database cannot enforce (`kyc_submissions.file_ids`, `ticket_messages.file_ids`, `disputes.evidence_file_ids`), are checked in the same
 `delete` statement (`kyc_submissions` is the table of the retired document check: nothing writes it any more, but its line stays here until the owner
 decides how long to keep the documents it names, decision 061). Only the Dhru `placefileorder` of the orders module calls it (see the orders README). DEVIATION of decision 016, the
-same kind as `ownsOrderFile`: `deleteUnreferencedClientFile` in `infra/file.repository.ts` reads tables of other modules (identity's
+same kind as `ownsOrderFile`: `deleteUnreferencedAccountFile` in `infra/file.repository.ts` reads tables of other modules (identity's
 `kyc_submissions`, support's `ticket_messages`, money's `disputes`) because platform imports no module (decision 032); this one statement is
 the only place that names them. Replace its body when those modules export a reader.
 
@@ -397,15 +395,15 @@ actor is `system`. The row is written on the caller's transaction, so a rolled-b
 
 **Snapshots and vocabularies** (lead resolutions identity-platform-7 and -15, built with feature 2a):
 - `audit_logs.actor_name` is a snapshot written by `AuditService.record` from `RequestActor.name` (the session guards fill it from
-  the subject, the API-key and Dhru guards set `{type: 'client', id, name}`; `''` for `system`), the same way as `entity_label`, so
+  the subject, the API-key and Dhru guards set `{type: 'account', id, name}`; `''` for `system`), the same way as `entity_label`, so
   renamed or deleted accounts still read correctly and `q` can search it in SQL. On the wire `actorName` is `null` when the snapshot
-  is `''`. `actor_type` is `staff | client | customer | system` (exported `AUDIT_ACTOR_TYPES`, CHECK `audit_logs_actor_type_check`).
+  is `''`. `actor_type` is `staff | client | customer | system | account` in the table (exported `AUDIT_ACTOR_TYPES`, CHECK `audit_logs_actor_type_check`, widened by `account`), and the NOT VALID check `audit_logs_actor_type_current_check` refuses `client` and `customer` in every new row (writers use `CURRENT_AUDIT_ACTOR_TYPES`: `staff`, `account`, `system`); rows written before keep their words.
 - `entityType` must come from the exported `AUDIT_ENTITY_TYPES` (the console's 19 words plus `role`, `client_group`, `category`,
   `currency`, `payment_gateway`, `invoice`, `api_key`, `notification_template`,
   `alert_rule`, `alert`, `incident`, `tax_rate`, `help_article`, `content_page`, `ledger_transaction`, `inventory_code`, `pricing_rule`); `record` throws a
   `RangeError` (a programming error that rolls the transaction back) on any other value. The list is enforced in code with no
   DB CHECK, so the append-only table never needs a migration for it; a feature that needs a new type adds it in its own commit.
-  Table to word: `clients` is `merchant`, `staff_users` `staff`, `checkout_sessions` `checkout`, `legal_documents` `legal`,
+  The entity word of every account, merchant or retail, is **`account`** since decision 064 (`AUDIT_ENTITY_TYPES` keeps `merchant` and `customer` for reading old rows only; a tooling test fails on a new write of either). Table to word: `clients` is `account`, `staff_users` `staff`, `checkout_sessions` `checkout`, `legal_documents` `legal`,
   blocklist entries `blocklist`, `settings` `setting`, `commission_plans` `plan` (retired, decision 062: old rows only, the word stays so they can be read and
   filtered), `withdrawal_requests` `withdrawal`, `support_tickets` `ticket`.
 
@@ -437,6 +435,8 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 
 ## Notifications (feature 12a)
 
+**Recipients and audiences (decision 064).** A notification goes to a staff member or to an account of either rank: `NotificationRecipientType` is `staff` or `account` (`recipientOf(db, type, id)` accepts `client` and `customer` only through `LegacyAccounts.resolve`, so an old customer number is never read as an account id). **The text of a message is chosen by the audience it was made for**, not by the rank held now: an order, payment or refund mail by the door of the order (the shop's door uses the customer text), a wallet mail by the kind of the wallet (the store balance's mails use the customer text), a support reply and its receipt by the rank kind of the asker, and every other message by the rank of the account (`merchant` for a merchant rank, `customer` otherwise, a guest row included). The choice is kept in the message (`notifications.payload.audience`, `NotificationInput.audience?`, `NotificationAudience`) and read again at send time, so a later rank change never swaps its text; a caller that sends a text that is not the rank's must pass `audience` (a missing one is a `RangeError` at enqueue or a failed send job). The occurrence key of an inbox item is `inapp:<audience>:<event>:<occurrence>`. The staff list of the log filters `recipientType` as `staff` or `account`, and `q` matches an account's whole address only for a caller who holds `clients:read`. The suspension and reactivation mails stay merchant-only. The unsubscribe token of a new marketing mail signs `marketing-unsubscribe:account:<id>` under a prefix of its own; `parseMarketingUnsubscribeToken(tokens, token)` answers `{ kind: 'account' | 'customer', id }` (a token sent before the merge names an old customer number: `kind: 'customer'`, read through the legacy id map) or undefined.
+
 Eight staff routes, one code path for every message, and the merchant portal's four routes (in the identity module, see its README). Specs: RULES settings
 10 to 12, RESOLUTIONS identity-platform-11 and -16, MISMATCHES B165, decision 033 (mail over SMTP with nodemailer, Telegram over `OutboundHttp`).
 Code: `notifications/` (contracts `notification-templates.contracts.ts` and `notification-log.contracts.ts`; controllers; use cases
@@ -451,7 +451,7 @@ Code: `notifications/` (contracts `notification-templates.contracts.ts` and `not
 | `PATCH /admin/notification-templates/:id` | `notifications:update` | `subject`, `body`, `isActive`; `event`, `channel`, `audience` are fixed (`422 immutable` on a different value); the texts are checked only when sent, so an old template can still be switched off (except an email that protects accounts: `409 LOCKED`, decision 047; the `link_*` and `security_placeholder` rules run on the texts that are sent); audited with before and after: `edited notification template`, or `turned on notification` / `turned off notification` (the demo's phrases, ANSWERS audit Q3) when the request carries only the switch |
 | `DELETE /admin/notification-templates/:id` | `notifications:delete` | `204`; audited `deleted notification template`; `409 LOCKED` for an email that protects accounts (decision 047) |
 | `POST /admin/notification-templates/:id/preview` | `notifications:read` | `{ subject?, body? }` (unsaved text) → `{ subject, body, format ('text' \| 'html'), from, note }`; sample data of the event, an unknown placeholder stays visible; sends nothing, no audit row |
-| `GET /admin/notifications` | `notifications:read` | the log, newest first; filters `status` (`queued`, `sent`, `failed`; `status_ne`), `channel`, `event`, `recipientType`; `q` a case-insensitive contains search over the event, and over the recipient's address only when `q` is the whole address (a customer's address only for a caller who holds `customers:read`, decision 047); `recipient` is masked by the server (`r***@example.com`, `@1***`; a row that names the address it went to, such as the notice of an email change, shows that address), `error` only for a failed message, no `payload` |
+| `GET /admin/notifications` | `notifications:read` | the log, newest first; filters `status` (`queued`, `sent`, `failed`; `status_ne`), `channel`, `event`, `recipientType`; `q` a case-insensitive contains search over the event, and over the recipient's address only when `q` is the whole address (an account's address only for a caller who holds `clients:read`, decision 047 and decision 064); `recipient` is masked by the server (`r***@example.com`, `@1***`; a row that names the address it went to, such as the notice of an email change, shows that address), `error` only for a failed message, no `payload` |
 | `GET /admin/notifications/:id` | `notifications:read` | the same row with its `payload` (placeholder values, never a secret) |
 
 **The event registry** (`notification-events.ts`) is the only list of events: key, audience (`staff`, `merchant`, `customer`), channels, the variables a template may
@@ -508,12 +508,12 @@ data may still carry is read as "not sent": a `telegram` key in a merchant's `no
 and rows too), a queued Telegram row of a merchant or customer (`NotificationDelivery` marks it `failed`: "Telegram is no longer used for this
 message."), a bulk send job that names it, and a `support.ticket_mail` event with `channel: telegram` (skipped as `channel_retired`).
 
-**Merchant and customer mail** (identity's `MerchantMailJobs`, feature 14b's customers `CustomerMailJobs`) call `NotificationService.sendNow` with the clear link as a secret
-placeholder: it fills the template and is never stored, logged or put in the payload. `recipientOf` reads a customer's status (feature 23): an anonymized customer is gone (nothing is sent), a suspended or blocked one is `suspended`
-(only transactional events reach them; the order, payment, refund, ticket and account events are transactional). The customer mail job still judges the
-customer's status itself (only an active customer gets a link).
+**Account mail** (identity's `AccountMailJobs`, which replaced the merchant and customer mail jobs: one use case for every rank) calls `NotificationService.sendNow` with the clear link as a secret
+placeholder: it fills the template and is never stored, logged or put in the payload. `recipientOf` reads an account's status (feature 23, one reading through identity's `canAct` rules): an anonymized account is gone (nothing is sent), a suspended or blocked one is `suspended`
+(only transactional events reach them; the order, payment, refund, ticket and account events are transactional). The account mail job still judges the
+account's status itself (only an account that may act gets a link).
 
-**Foreign reads.** `notification-foreign-reads.ts` reads `clients`, `staff_users` and `customers` (the recipient) , the order of an order notification, the invoice of a paid-invoice notification and the name of a service with plain selects:
+**Foreign reads.** `notification-foreign-reads.ts` reads `clients` (every account: the recipient of either rank, with its rank kind), `staff_users`, the order of an order notification, the invoice of a paid-invoice notification and the name of a service with plain selects:
 a documented deviation of decision 016 (platform imports no module, decision 032). Replace the bodies when those modules export a reader.
 
 Open points: the route of `invoice.paid` to `notifications` is added when feature 8 (its producer) is merged; a Telegram `retry_after` is not
@@ -545,10 +545,9 @@ the audience on the pool and move the row only if its audience, channels and pur
 fan-out finished (every in-app item exists, every message is queued); the detail's `delivery` counts what was sent since.
 
 **Audiences** (`campaigns/notification-audiences.ts`). Platform imports no module, so identity registers the staff and merchant
-providers and customers the customer provider in `NotificationAudiences` at boot. Each answers `count`, `page` (keyset by id) and
-`member` (the send-time check) from one SQL predicate: active staff (roles), merchants by status (default active; a listed one may be
-pending), group and country, with the email flag of their `broadcast.announcement` switch (the SQL twin of
-`choiceFor`), and active customers (account, country; consent for marketing).
+providers and customers the retail provider in `NotificationAudiences` at boot. Each answers `count`, `page` (keyset by id) and
+`member` (the send-time check) from one SQL predicate: active staff (roles), accounts of a merchant rank (rank and country; `merchants.statuses` is accepted and ignored: only an active account is mailed), with the email flag of their `broadcast.announcement` switch (the SQL twin of
+`choiceFor`), and active accounts of the retail rank or any other non-merchant rank, guests included (country; consent for marketing). **The campaign groups** are staff, accounts of a merchant rank and accounts of any other rank with the guests (`AudienceKind` = `staff`, `merchant`, `retail`, field `kind`; the preview's `byType` is `{ staff, merchant, retail }`); a person added by hand is `staff` or `account` (`client` and `customer` are `422`) and is reached by the group of its rank. The recipient type of a campaign row is `staff` or `account`.
 
 **Fan-out and sending.** `send` (or the minute sweep) writes one `notification.campaign_fanout` outbox event; the worker's
 `CampaignFanOut` walks the audience in chunk transactions (row lock on the campaign, `ON CONFLICT DO NOTHING` inserts, the cursor moved in
@@ -571,7 +570,7 @@ and are not in `BUILT_IN_EVENTS`.
 `/unread-count` (capped at 100: an index probe on the partial unread index, never cached), `POST .../:id/read` (204, idempotent) and
 `POST .../read-all` (body `{ upToId? }`, so an item that arrives during the click stays unread). The person is the actor the session
 guard put in the request context (`inboxOwner`), never a parameter: every read and write carries `recipient_type` and `recipient_id`, so
-another person's id is `404`, never `403`. A pending merchant may read; a suspended one is refused (`ACCOUNT_SUSPENDED`); the two
+another person's id is `404`, never `403`. An account of either rank reads its own inbox on its own family (merchant rank on `/client`, retail on `/store/v1/me`); a suspended one is refused (`ACCOUNT_SUSPENDED`); the two
 staff POSTs are `audit: false` (a staff member's own read state). Items of a cancelled campaign are hidden from the list and the count.
 Text is made at read time (`inbox-views.ts`): a campaign item from the campaign's content (`{{name}}`), an
 event item from the `InboxTextRegistry`.
@@ -584,7 +583,7 @@ and the merchant's `wallet.low_balance`, `invoice.paid`. A recipient with no inb
 suspended or anonymized person) gets no item. Other modules register their text with `InboxTextRegistry.register` and call
 `NotificationInbox.add`.
 
-**Recipient status (S6).** `recipientOf` reads a customer's status: anonymized is gone, suspended or blocked is `suspended`. The customer events
+**Recipient status (S6).** `recipientOf` reads an account's status: anonymized is gone, suspended or blocked is `suspended`. The customer events
 that report on the customer's own purchase or ticket are transactional (`order.received`, `order.completed`, `order.failed`,
 `payment.failed`, `refund.declined`, `support.reply`, `support.ticket_received`), so a suspended or blocked customer still gets them.
 
@@ -598,9 +597,9 @@ an event row after 30 whose relayed job is gone, a digest whose period ended) an
 (a secret link, no outbox event) are never re-sent. `notification_retention` (daily 04:20 UTC) deletes read inbox items after 90 days, all
 items after 365 and sent or failed log rows after 180 (the three settings below), in batches. The log's `count(*)` joins the recipient
 tables only for a `q` search. `GET /admin/notifications` filters by `campaignId` and answers it. A marketing email to a customer carries
-the footer and `List-Unsubscribe` headers made from `marketingUnsubscribeToken` (a stateless keyed MAC over the customer id); the
+the footer and `List-Unsubscribe` headers made from `marketingUnsubscribeToken` (a stateless keyed MAC over the account id, decision 064); the
 customers module owns the route `POST /store/v1/marketing/unsubscribe/:token`. `NotificationPrivacy.eraseRecipient` deletes a person's
-inbox and empties their log payloads (the customers module calls it from its anonymization hook). Jobs: `docs/queues.md`.
+inbox and empties their log payloads (the customers module calls it from its erasure hook, `AccountErasureHook`). Jobs: `docs/queues.md`.
 
 **Settings.** `notifications.broadcast_email_per_second` (1-30, default 5), `notifications.inbox_read_retention_days` (7-3650, default 90), `notifications.inbox_retention_days` (30-3650, default
 365), `notifications.log_retention_days` (30-3650, default 180). No cache key: the unread count is not cached.
@@ -625,13 +624,13 @@ events: `docs/contract/realtime-events.md`. No new route, table, setting, queue 
 **The source** (`inbox/inbox-realtime.source.ts`, `InboxRealtimeSource`, API only, registered with `RealtimeSources` in
 `onModuleInit`; provided by the module of the inbox controllers, `NotificationCenterModule`): topic `inbox`, cursor letter `i`
 (the cursor is the item id). `resolve`: `created` with `itemId` reads that one row with its campaign and renders it for
-`u:<type>:<id>` when connected; `created` with `campaignId` reads the chunk's connected recipients in one query
+`u:<type>:<id>` when connected (`u:account:<id>`: one key per account, whichever family it connects through, shared with the session doorbell and the live stream of the identity module); `created` with `campaignId` reads the chunk's connected recipients in one query
 (`recipient_id = any($1)`) and one grouped unread count (capped at 100 in code); `read` answers `notification.read` with the fresh
 count; `recount` answers `unread.changed` to every connected viewer of those types, counted in batches of 500. `replay`: the
 viewer's visible rows with `id > after`, ascending, at most 50; a 51st row is `'resync'`. `snapshot`: one `unread.changed`.
 `head`: the largest `notification_inbox.id`. `keysFor`: none (an item is for `u:<type>:<id>`).
 
-- **No leak.** Every query carries the viewer's `recipient_type` and `recipient_id` (`visibleTo`), so a customer, a merchant and a
+- **No leak.** Every query carries the viewer's `recipient_type` and `recipient_id` (`visibleTo`), so an account of any rank and a
   staff member with the same numeric id never see each other's items, and a doorbell naming someone else's id renders nothing for
   the viewer. A doorbell is not trusted: its fields are checked, and the row is re-read.
 - **Text** is made as the lists make it (`inboxView`); a campaign's `{{name}}` is the account's name. The data is parsed by `inbox-realtime.events.ts` before it is

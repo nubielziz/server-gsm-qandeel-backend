@@ -87,7 +87,7 @@ describe('the sign-in link and the browser that asked for it', () => {
     expect(verified.statusCode).toBe(200);
     expect(verified.json()).toMatchObject({ id: customer.id, email: customer.email, requestedHere: true });
     expect(verified.json<{ maskedEmail: string }>().maskedEmail).toBe('cu•••@example.com');
-    expect(verified.cookies.map((cookie) => cookie.name)).toContain(SESSION_COOKIE_NAMES.customer);
+    expect(verified.cookies.map((cookie) => cookie.name)).toContain(SESSION_COOKIE_NAMES.account);
     expect((await browser.me()).json<{ id: number }>().id).toBe(customer.id);
   });
 
@@ -110,7 +110,7 @@ describe('the sign-in link and the browser that asked for it', () => {
       code: 'CONFLICT',
       detail: 'This browser is signed in to another account. Sign out first, then open the link again.',
     });
-    expect(refused.cookies.map((cookie) => cookie.name)).not.toContain(SESSION_COOKIE_NAMES.customer);
+    expect(refused.cookies.map((cookie) => cookie.name)).not.toContain(SESSION_COOKIE_NAMES.account);
 
     // The holder's session is untouched and still answers as the holder; the link was not spent and opened no session.
     expect(holderBrowser.sessionToken).toBe(holderSession);

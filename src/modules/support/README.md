@@ -1,6 +1,6 @@
 # Support module (`support`)
 
-Map domain J. Support for storefront customers: tickets, their messages and reply templates.
+Map domain J. Support for accounts of either rank (decision 064): tickets, their messages and reply templates. A ticket's requester and a message's author are stored as `account` (or `staff` or `system`).
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
@@ -43,8 +43,8 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
 
 | Table | What it holds |
 |---|---|
-| `support_tickets` | Support tickets from storefront customers and merchants, linked to an order, with an SLA deadline. |
-| `ticket_messages` | Ticket messages from the customer, a staff member or the system, plus internal notes. |
+| `support_tickets` | Support tickets from accounts of either rank (a guest row included), linked to an order, with an SLA deadline; `requester_type` is `account`. |
+| `ticket_messages` | Ticket messages from the requester, a staff member or the system, plus internal notes; `author_type` is `account`, `staff` or `system`. |
 | `reply_templates` | Ready-made reply templates for staff, by category. |
 
 ## Routes
@@ -96,17 +96,19 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
 
 ## Rules (RULES support, RESOLUTIONS b2c-2 and b2c-9, scenario b2c-ticket)
 
+- **Whose ticket it is (decision 064).** A ticket and its messages belong to an account of either rank: `support_tickets.requester_type` and `ticket_messages.author_type` are `account` (`TICKET_REQUESTER_TYPES` = `account`; `TICKET_AUTHOR_TYPES` = `staff`, `account`, `system`). A merchant rank reads its tickets in the portal by id (a ticket opened there has no link token); a retail rank reads them through the ticket page and its link token. The rule of decision 053 holds for every account: a ticket of the public form filed with a typed address stays off the account's lists, live streams, replays and id routes until the link mailed to that address is used. The public form files a ticket under the login account of the typed address, whatever its rank, and otherwise under the guest row of the address; an order link files it under the account that owns the order. The rank kind of a requester is read when it is needed (`rankKindOfRequester(groupId, retailGroupId)`), never stored on the ticket. The upload quota of a requester follows the rank kind of the account (`uploadQuotaFor(rankKind)`, `platform/files/upload-quota.ts`); the files area is `tickets-<id>/account-<id>/`. The mails follow the rank kind: `TicketMailJobs` reads it with the variables; a support reply and the receipt use the text of the asker's rank; **the merchant audience also receives a receipt**, `support.ticket_received` for `audience: merchant` (the secret link, transactional; its template row ships in the expand migration, `MERCHANT_RECEIPT_TEMPLATE` and `supportMerchantReceiptSql()` in `application/support-templates.ts`). Constructors that gained a class: `TicketAttachmentService`, `StoreTicketService` and `TicketMailJobs` take `AccountDirectory`; `TicketAdminService` and `TicketRealtimeSource` take `RankGroupReads`.
+- **The guest claim** (`SupportGuestClaimParticipant`, name `support`, `application/guest-claim.participant.ts`, API process only): when an account that proved the mailbox claims the records of its guest row, the guest row's tickets and messages move to the account and the files of its tickets with them (platform's `moveGuestClaimFiles`), the rows locked `FOR UPDATE NOWAIT` so the claim never waits.
+
 - **Statuses.** Stored `new | open | pending_customer | resolved` (there is no `closed`); the console and the storefront get `pending` for
   `pending_customer` through one codec (`domain/ticket-status.ts`), and the list filter `status=pending` and a PATCH body of `pending` are
   translated back. PATCH accepts `new|open|pending|resolved` (anything else is 422 on `status`) with these moves: from `new` to `open`,
   `pending` or `resolved`; from `open` and `pending` to each other and to `resolved`; from `resolved` only to `open` (a reopen, which clears
   `resolved_at`); nothing goes back to `new`. A value equal to the current one is ignored.
-- **A storefront customer's address (decision 047).** Outside the Customers pages a staff answer shows the address masked unless the caller holds `customers:read`
+- **A requester's address (decision 047, extended by decision 064 to every rank).** A staff answer shows the address masked unless the caller holds `clients:read`, whatever the requester's rank (the map and decision 047 kept a merchant's address in full)
   (identity's `customerContactOf`; the controller passes the `contact` down to `toTicketView` and `toDetailView`): the list rows, the single read and the answer of
-  `PATCH /admin/support-tickets/:id` mask a *customer* requester's `requester.email` (`customerEmailIn`); a merchant's address stays in full. A customer without a name is labelled by
+  `PATCH /admin/support-tickets/:id` mask a requester's `requester.email` of **every rank** (`customerEmailIn`). A requester without a name is labelled by
   the masked address for every caller (`requesterOf` and `authorNameOf` in `infra/ticket.repository.ts`: the requester name and the author of their messages, never the full address).
-  The inbox's `q` searches `requester.email` as the merchant's address only for a caller without `customers:read` (`merchantEmailSql`), so a merchant is still found by its address and a
-  customer is not. The live staff frame (`ticket.updated`, one broadcast to every staff stream) is built with `'masked'`, whatever the stream holds.
+  The inbox's `q` matches a requester's whole address only for a caller who holds `clients:read`. The staff wire carries `requester.rankKind` (`merchant` or `retail`, `rankKindOfRequester` in `domain/requester-rank.ts`; a missing row reads as retail) and the list filter `rankKind`; `requesterType` accepts `account` only. The live staff frame (`ticket.updated`, one broadcast to every staff stream) is built with `'masked'`, whatever the stream holds.
   `support.ticket_received` is flagged `secretLink` (its `{{link}}` is the ticket's token link: a template keeps the link rules of decision 047), and
   `SupportEventRegistration` registers `SUPPORT_DEFAULT_TEMPLATES` with the event registry as the shipped texts (the fallback of a link mail whose stored template breaks the rules).
 - **Reply target.** `sla_due_at` is the last public requester message plus the priority's target (high 2 h, normal 8 h, low 24 h) while the
@@ -125,7 +127,7 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   transaction. **Reopen** clears `resolved_at`.
 - **Storefront.** `POST /store/v1/tickets` needs Turnstile (decision 034). The body names a subject, a message, an optional category and
   either an `orderToken` (the order's tracking token: the ticket links to that order and belongs to its customer; the typed email is
-  ignored; the order link of an anonymized customer is `422` on `orderToken` like an unknown one) or an `email` (a known address finds its customer, a new one becomes a guest customer). The ticket token (128 random bits,
+  ignored; the order link of an anonymized customer is `422` on `orderToken` like an unknown one) or an `email` (a known address finds the login account of that address, whatever its rank, and otherwise the guest row of the address, made through `AccountDirectory.findOrCreateGuest`). The ticket token (128 random bits,
   decision 010) is the whole credential of the token routes; it is stored only as a keyed hash (`token_hash`) and an AES-GCM copy
   (`token_enc`, AAD `support_tickets.token_enc`) that the mails and the account list reveal (decision 054). The receipt email holds
   its link; the 201 answer carries `token` only on an `orderToken` path that speaks for the order's customer: the account opened the checkout
@@ -162,8 +164,8 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   as the secret, for every receipt (public form, order link, account). The default text is fixed wording plus the number and the link (`RECEIPT_BODY`); the feature-43 migration
   replaces it only where the row still holds the text migration `0016` shipped, so a template staff edited keeps their words (a `{{customerName}}` or `{{subject}}` left in it is shown
   as written, and the editor refuses to save it again until it is removed).
-- **Anonymization (B175, feature 18).** `SupportErasureModule` registers a customer erasure hook: when a customer is anonymized, in the same
-  transaction, the `token` of every ticket the customer opened is set to NULL, so the old link answers `404`; the tickets and messages stay.
+- **Anonymization (B175, feature 18).** `SupportAccountErasure` (`application/support-account-erasure.ts`) registers an `AccountErasureHook` with the customers module's `AccountErasureHooks` in `onModuleInit`: when an account is anonymized, in the same
+  transaction, the `token` of every ticket the account opened is set to NULL (`clearTicketTokensOfAccount`), so the old link answers `404`; the tickets and messages stay.
 - **Templates.** The shortcut is trimmed; `''` is stored as NULL and read back as `''`; it must be `''` or `/word`; unique ignoring case among
   the non-empty ones (`409 SHORTCUT_TAKEN`, detail names the owner). The server renders no variables.
 
@@ -172,7 +174,7 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
 - **Live both ways (rule 1).** Every use case that changes a ticket rings a doorbell after its commit (`TicketEvents`, topic `ticket`: `message`,
   `updated`, `read`, `revoked`; ids only). `TicketRealtimeSource` (API only) re-reads and renders two views: the staff view to
   `support:staff` (every message, the inbox row) and the requester view to `ticket:<id>` (the ticket link's
-  stream) and the requester's account stream (`u:customer:<id>`, `u:client:<id>`): public messages only, never a note, a system message, a staff
+  stream) and the requester's account stream (`u:account:<id>`, one key per account whichever family it connects through): public messages only, never a note, a system message, a staff
   name, the assignee, the priority or a timer, and no ticket token (a customer's event has `ticketId: null`, match by `number`). The stream
   route `GET /store/v1/tickets/:token/stream` keeps the token in the path (an `EventSource` cannot send a header), has no cookie and
   `originCheck`, and is capped at 3 streams per ticket and 30 per address; the proxy's log hides the token (`deploy/Caddyfile`). Events and
@@ -184,20 +186,19 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   party: the requester learns that support saw it, never who. A requester's read never touches `updated_at`. `hasUnread` is never stored:
   for staff `last_requester_message_id > coalesce(staff_seen_message_id, 0)`, for the requester `last_staff_message_id >
   coalesce(requester_seen_message_id, 0)`.
-- **My tickets (rule 6, B217).** `GET /store/v1/me/tickets` lists the tickets whose requester is the signed-in customer (those filed as a
+- **My tickets (rule 6, B217).** `GET /store/v1/me/tickets` lists the tickets whose requester is the signed-in account (retail rank) (those filed as a
   guest with the same address included, because the address belongs to the customer who owns it); each row hands out the ticket's link token
   and the page stays the token page, so no new credential exists. A customer's ticket without a token (cleared by an erasure) is not listed.
   `POST /store/v1/me/tickets` opens a ticket without Turnstile and answers with the token at once; the receipt email is still queued. The
   order picked must be the customer's own (`422 orderId`, `unknown_order`, for any other order, an unknown id included).
-- **Merchant support (rule 7, B217).** A merchant's ticket has no link token: the session is the credential and the routes take the ticket
+- **Merchant support (rule 7, B217).** The ticket of an account of a merchant rank, opened in the portal, has no link token: the session is the credential and the routes take the ticket
   id, and another merchant's ticket (or an unknown id) is `404`, never `403`. List, open, the public conversation, reply, read mark
-  and the download are `/client/tickets*`; a merchant waiting for approval may use all of them (`pendingMerchant: 'allow'`, B153), a
-  suspended one is refused by the session guard. The merchant's message goes through the same `TicketThreadService` as the ticket page's, so
+  and the download are `/client/tickets*`; a suspended one is refused by the session guard (the status `pending` no longer exists, decision 064). **A ticket whose address is not proven yet** (a ticket of the public form filed with a typed address, below) is `404` on `GET /client/tickets/:id` and the three routes under it, as it is off every list, stream, replay and id route of the account. The merchant's message goes through the same `TicketThreadService` as the ticket page's, so
   the status moves, the reply target, the 20 messages a minute per ticket (`ticket-message`), the doorbell and the refusal of a resolved
   ticket (`409 TICKET_RESOLVED`, B220) are the same. The conversation
   is the storefront's view with `id`; a merchant gets no receipt email.
 - **Opening from an account.** `AccountTicketOpener` is the one path of routes `POST /store/v1/me/tickets` and `POST /client/tickets`: the
-  limiter `ticket-open` (5 an hour per account, `customer:<id>` or `client:<id>`, `429 RATE_LIMITED` with `Retry-After`) is taken first, before
+  limiter `ticket-open` (5 an hour per account, key `account:<id>`, `429 RATE_LIMITED` with `Retry-After`) is taken first, before
   anything is read, so a refused attempt counts too and order and file ids cannot be probed; then, in one transaction, the order check, the
   attachments check, the ticket (priority and reply target of its category, `new`), the first message, `last_requester_message_id`, the
   customer's receipt event and the doorbell. The first message may be files only (`message: ''` with `fileIds`).
@@ -220,17 +221,14 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
 ## Foreign reads
 
 `infra/support-foreign-reads.ts` is the only file that names tables of other modules (decision 016 deviation, like the order read model's):
-`customers` (the requester's name and address; the guest a first-time visitor becomes is made by the customers module's
-`CustomerDirectory.findOrCreateGuest`, so support only reads the table),
-`clients` (a merchant requester), `staff_users` (an assignee must be active; author names) and `orders` (by tracking
-token, for the link; and, for the account routes, whether an order is the caller's own: `orders.customer_id` for a customer, `orders.client_id`
-for a merchant). Replace the bodies with calls to the owners' services when identity and orders export them.
+`clients` (the requester's name and address: the account of either rank or the guest row a first-time visitor becomes, made by identity's `AccountDirectory.findOrCreateGuest`, so support only reads the table), `staff_users` (an assignee must be active; author names) and `orders` (by tracking
+token, for the link; and, for the account routes, whether an order is the caller's own: `orders.account_id`). Replace the bodies with calls to the owners' services when identity and orders export them.
 
 ## Links
 
 Ticket links in emails are `<STORE_BASE_URL>/support/tickets/<token>` (`STORE_BASE_URL`, the same config key feature 14b adds for the
 customer sign-in links); the storefront page at that path shows the ticket and the reply form. A merchant's reply
-mail links to `<STORE_BASE_URL>/merchant/support/<ticket id>`, the portal's conversation (feature 28).
+mail links to `<STORE_BASE_URL>/account/support/<ticket id>`, the conversation page of the account area (feature 28, decision 064).
 
 ## Scenarios
 
@@ -260,7 +258,7 @@ Live events (feature 28, not outbox events): the doorbells of topic `ticket` on 
 `ticket.read`, and the end of a ticket link's streams), documented with both views in `docs/contract/realtime-events.md`.
 
 Notification events registered here (`SUPPORT_EVENTS`, loaded by the API and the worker through `SupportEventsModule`): customer
-`support.ticket_received` (email; variables `ticketNumber` and `link` only, decision 053), and merchant `support.reply` (email, transactional: never a
+`support.ticket_received` (email; variables `ticketNumber` and `link` only, decision 053), the same event for the merchant audience (decision 064, above), and merchant `support.reply` (email, transactional: never a
 preference). The customer's `support.reply` is built into the platform's list (12a registered it for the Customer emails tab; this feature
 widened its variables to the name, the ticket number, the subject, the reply and the link). Default English templates for all four are in
 `SUPPORT_DEFAULT_TEMPLATES` and inserted by migration `0012`.

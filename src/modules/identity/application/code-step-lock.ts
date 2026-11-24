@@ -1,5 +1,5 @@
-// CodeStepLock: the daily cap on wrong authenticator codes at the code step of the staff and the merchant sign-in. The count is a column
-// of the account's own row in Postgres (`totp_failures`, `totp_failures_since`, `totp_locked_at`), written by
+// CodeStepLock: the daily cap on wrong authenticator codes at the code step of the staff sign-in and the sign-in of every account. The count
+// is a column of the account's own row in Postgres (`totp_failures`, `totp_failures_since`, `totp_locked_at`), written by
 // infra/code-failures.repository.
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
@@ -25,12 +25,12 @@ import type { RequestMeta } from './request-meta';
 const CLOSED_DETAIL: Readonly<Record<CodeStepAccount['type'], (wait: string) => string>> = {
   staff: (wait) =>
     `Too many wrong codes. The code step of this account opens again in ${wait}, or sooner with a password link, a temporary password or a 2FA reset from a member who manages staff accounts.`,
-  client: (wait) =>
+  account: (wait) =>
     `Too many wrong codes. The code step of this account opens again in ${wait}, or sooner with a password link ("Forgot password") or when support sets a new password or resets two-factor sign-in.`,
 };
 
-/** The audit word of each kind of account. */
-const ENTITY_OF = { staff: 'staff', client: 'merchant' } as const satisfies Record<CodeStepAccount['type'], string>;
+/** The audit word of each kind of person: an account of any rank is `account` (decision 064). */
+const ENTITY_OF = { staff: 'staff', account: 'account' } as const satisfies Record<CodeStepAccount['type'], string>;
 
 /**
  * Counts the authenticator codes of one account and closes its code step after twenty wrong ones within 24 hours.
@@ -62,7 +62,7 @@ export class CodeStepLock {
   /**
    * Counts one code attempt before its code is checked, and refuses it while the code step is closed.
    *
-   * @param account the staff member or merchant of the pending session
+   * @param account the staff member or account of the pending session
    * @param meta the caller's address (logged with a refusal)
    * @returns the attempts counted with this one (pass it to {@link failed} when the code is wrong)
    * @throws {AppError} `RATE_LIMITED` (429, with `Retry-After`: the seconds until the 24 hours of the count end and the step opens),
@@ -88,7 +88,7 @@ export class CodeStepLock {
   /**
    * Takes back the attempt counted by {@link charge}: its code was correct.
    *
-   * @param account the staff member or merchant
+   * @param account the staff member or account
    * @returns when the count is taken back
    */
   giveBack(account: CodeStepAccount): Promise<void> {
@@ -98,7 +98,7 @@ export class CodeStepLock {
   /**
    * Records a wrong code: it is logged, and the one that reaches the cap closes the step, which is recorded and audited once.
    *
-   * @param account the staff member or merchant
+   * @param account the staff member or account
    * @param attempts what {@link charge} returned for this attempt
    * @param entityLabel the name of the account, for the audit row
    * @param meta the caller's address (logged)

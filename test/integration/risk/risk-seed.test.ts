@@ -1,5 +1,6 @@
 // The risk seed (feature 18): the demo's rules, blocklist and data requests appear with the ids, kinds, displays and
-// statuses of the frontend mocks, through the real API, and a second run changes nothing.
+// statuses of the frontend mocks, through the real API, and a second run changes nothing. A demo customer cN is the account 100 + N
+// (decision 064), so the buyers of the queue and the accounts of the data requests carry those numbers.
 import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { inArray } from 'drizzle-orm';
@@ -71,7 +72,7 @@ describe.skipIf(!frontendPresent)('the risk seed', () => {
     const screening = t.app.get(RiskScreening);
     const blocked = await db.transaction((tx) =>
       screening.assess(tx, {
-        customerId: null,
+        accountId: null,
         email: 'someone@tempbox.example',
         amountUsd: '10.0000',
         paymentMethod: 'card',
@@ -87,13 +88,13 @@ describe.skipIf(!frontendPresent)('the risk seed', () => {
     const requests = await staff.get('/admin/data-requests');
     expect(requests.total).toBe(2);
     expect(requests.body.find((row: { id: number }) => row.id === 31)).toMatchObject({
-      customerId: 4,
+      accountId: 104,
       kind: 'export',
       status: 'completed',
       handledBy: 1,
     });
     expect(requests.body.find((row: { id: number }) => row.id === 32)).toMatchObject({
-      customerId: 16,
+      accountId: 116,
       kind: 'erasure',
       status: 'open',
       handledBy: null,
@@ -114,9 +115,9 @@ describe.skipIf(!frontendPresent)('the risk seed', () => {
       score: 67,
       // The demo's two signals that never fired ("VPN or proxy IP", "IMEI was checked blacklisted before") are retired (decision 062).
       signals: ['New customer, first order above $40'],
-      customer: { id: 10 },
+      customer: { id: 110 },
     });
-    expect(queue.held[3]).toMatchObject({ orderId: 20495, score: 87, customer: { id: 21 } });
+    expect(queue.held[3]).toMatchObject({ orderId: 20495, score: 87, customer: { id: 121 } });
     // Every held order is paid, pending and never sent anywhere; their assessments are unreviewed `review` rows.
     const { db } = await testDb();
     const orders = await db
@@ -152,14 +153,14 @@ describe.skipIf(!frontendPresent)('the risk seed', () => {
       score: 84,
       outcome: 'refunded',
       reviewedBy: { name: 'Rami K.' },
-      customer: { id: 25 },
+      customer: { id: 125 },
     });
     expect(queue.recent[1]).toMatchObject({
       orderId: 20400,
       score: 71,
       outcome: 'approved',
       reviewedBy: { name: 'Lina S.' },
-      customer: { id: 19 },
+      customer: { id: 119 },
     });
     expect(Date.parse(queue.recent[0].reviewedAt)).toBeGreaterThan(Date.parse(queue.recent[1].reviewedAt));
     // A decided order is not held any more, and the figures count the decisions of the last 30 days only.

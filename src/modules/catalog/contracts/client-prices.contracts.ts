@@ -77,7 +77,8 @@ export const createClientPrice = defineRoute({
     'A fixed price one merchant pays for one service, from its next order: it beats the group price, the pricing rules and every ' +
     "discount. The price must be above zero and at or above the floor of the merchant's group (effective cost plus minimum " +
     'profit): `422` on `price` with "Below the floor of $X (cost $Y plus $Z minimum profit).". An unknown or archived service, ' +
-    'or one that is turned off, is `422` on `serviceId`; an unknown merchant is `422` on `clientId`; a second price for the same ' +
+    'or one that is turned off, is `422` on `serviceId`; an unknown account is `422` on `clientId`, and so is an account of the ' +
+    'retail rank (code `retail_rank`: it pays the shop price, so only a merchant rank has fixed prices); a second price for the same ' +
     'merchant and service is `409 PRICE_EXISTS`. `note` is optional.',
   tags: ['client-prices'],
   surface: 'admin',
@@ -98,7 +99,9 @@ export const updateClientPrice = defineRoute({
   summary: 'Change a client price',
   description:
     'Only the keys sent change; `note: ""` clears the note. A new price faces the same floor check as on create (`422` on ' +
-    '`price`). A price of an archived service is `404`.',
+    '`price`). A price of an archived service is `404`. A price of an account that is on the retail rank now (it was lowered after ' +
+    'the price was set) is not changed: `422` on `clientId`, code `retail_rank`; the row stays and applies again after a raise, ' +
+    'and it can still be deleted.',
   tags: ['client-prices'],
   surface: 'admin',
   access: 'staff-permission',
@@ -117,7 +120,8 @@ export const deleteClientPrice = defineRoute({
   key: 'DELETE /admin/client-prices/:id',
   summary: 'Remove a client price',
   description:
-    'The merchant pays the group price again from its next order. Answers `204`. A price of an archived service is `404`.',
+    'The merchant pays the group price again from its next order. Answers `204`, also for an account lowered to the retail rank. ' +
+    'A price of an archived service is `404`.',
   tags: ['client-prices'],
   surface: 'admin',
   access: 'staff-permission',

@@ -8,9 +8,11 @@ import { TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { MetricsService } from '../../../infra/metrics';
 import type { Notification, NotificationAudience } from '../db/schema';
+import { kindOfAudience } from './campaigns/audience-spec';
 import { renderCampaign } from './campaigns/campaign-render';
 import { marketingUnsubscribeToken } from './campaigns/unsubscribe-token';
 import { findCampaign } from './campaigns/campaign.repository';
+import { notificationSettingsUrl } from './campaigns/campaign-rules';
 import { contentOf, linkOf } from './campaigns/campaign-views';
 import { NotificationAudiences } from './campaigns/notification-audiences';
 import { DeliveryError } from './delivery-error';
@@ -28,9 +30,23 @@ import {
   recordAttempt,
 } from './notification.repository';
 import { findTemplateFor } from './notification-template.repository';
-import { type Recipient, recipientOf } from './notification-foreign-reads';
+import { type Recipient, recipientOf, withAudience } from './notification-foreign-reads';
 import { TelegramClient } from './telegram-client';
 import { type TemplateFields, emailHtml, protectedTemplateProblems, renderMessage } from './template-rules';
+
+/**
+ * The audience a row's message was made for, as its payload keeps it.
+ *
+ * Why: the door of an order or the kind of a wallet can differ from the rank the account holds when the row is sent (decision 064);
+ * a row without one (made before the accounts were merged, or a staff message) uses the audience of its recipient.
+ *
+ * @param payload the stored payload
+ * @returns the audience, or `undefined` when the row keeps none or a word that is not an audience
+ */
+function audienceOfRow(payload: NotificationPayload): NotificationAudience | undefined {
+  const audience: unknown = payload.audience;
+  return audience === 'merchant' || audience === 'customer' || audience === 'staff' ? audience : undefined;
+}
 
 /** Where a job stands in its retries: BullMQ's `attemptsMade + 1` and the queue's `attempts`. */
 export interface AttemptContext {
@@ -170,10 +186,12 @@ export class NotificationDelivery {
     if (row.channel === 'telegram' && !operations)
       throw new DeliveryError('Telegram is no longer used for this message.', { permanent: true });
     // An alert's message has no person's row: it goes to the address or chat the configuration named when the row was made.
-    const recipient = operations
+    // The text is the audience the message was made for (the door of an order, the kind of a wallet), else the one of the rank.
+    const found = operations
       ? operationsRecipientOf(payload)
       : await recipientOf(this.db.db, row.recipientType, row.recipientId);
-    if (!recipient) throw new DeliveryError('The recipient no longer exists.', { permanent: true });
+    if (!found) throw new DeliveryError('The recipient no longer exists.', { permanent: true });
+    const recipient = withAudience(found, audienceOfRow(payload));
     const definition = this.registry.get(row.event, recipient.audience);
     if (!definition)
       throw new DeliveryError(`The event "${row.event}" is not registered for ${recipient.audience}.`, {
@@ -282,9 +300,14 @@ export class NotificationDelivery {
     // A campaign sends email (its in-app items are not rows of this log): a row of another channel was queued before that channel was retired.
     if (row.channel !== 'email')
       throw new DeliveryError('Campaigns no longer send on this channel.', { permanent: true });
-    const recipient = await recipientOf(this.db.db, row.recipientType, row.recipientId);
-    if (!recipient) throw new DeliveryError('The recipient no longer exists.', { permanent: true });
-    const member = await this.audiences.get(row.recipientType).member(this.db.db, campaign.purpose, row.recipientId);
+    const found = await recipientOf(this.db.db, row.recipientType, row.recipientId);
+    if (!found) throw new DeliveryError('The recipient no longer exists.', { permanent: true });
+    // The row keeps the group the person was selected in (the fan-out asked that group's provider): the same one is asked again, so an
+    // account whose rank changed since is no longer a member of it (a retail account moved to a merchant rank is not reached by the retail text).
+    const recipient = withAudience(found, audienceOfRow(row.payload));
+    const member = await this.audiences
+      .get(kindOfAudience(recipient.audience))
+      .member(this.db.db, campaign.purpose, recipient.id);
     if (!member) throw new DeliveryError('The recipient is no longer eligible.', { permanent: true });
     if (!member.email) throw new DeliveryError('The recipient turned this message off.', { permanent: true });
 
@@ -299,13 +322,11 @@ export class NotificationDelivery {
         name: recipient.name,
         audience: recipient.audience,
         channel: row.channel,
-        // Campaign links are site paths (`/account/orders`, `/merchant/wallet`), so customers and merchants both get the site's
-        // root (STORE_BASE_URL): PORTAL_BASE_URL already ends at `/merchant` and would double it. The console has no base address
+        // Campaign links are site paths (`/account/orders`, `/account/wallet`), so customers and merchants both get the site's
+        // root (STORE_BASE_URL): PORTAL_BASE_URL already ends at `/account` and would double it. The console has no base address
         // yet (feature 20's CONSOLE_BASE_URL): a staff message carries no link.
         baseUrl: recipient.audience === 'staff' ? undefined : storeBaseUrl,
-        ...(recipient.audience === 'merchant'
-          ? { preferencesUrl: `${storeBaseUrl}/merchant/settings/notifications` }
-          : {}),
+        ...(recipient.audience === 'merchant' ? { preferencesUrl: notificationSettingsUrl(storeBaseUrl) } : {}),
         // A marketing email to a customer carries the unsubscribe page and the one-click POST address (S10, RFC 8058).
         ...(unsubscribeToken === undefined
           ? {}

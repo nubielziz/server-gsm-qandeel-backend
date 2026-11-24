@@ -18,7 +18,7 @@
     "resolvedAt": null,
     "createdAt": "2026-10-26T12:00:00.000Z",
     "customer": {
-      "id": 1,
+      "id": 101,
       "name": "Daniel Whitmore"
     },
     "evidence": [

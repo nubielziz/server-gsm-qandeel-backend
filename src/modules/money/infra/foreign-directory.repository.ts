@@ -1,35 +1,38 @@
-// Read-only lookups into tables other modules own (merchants, groups, suppliers, customers, staff), kept in this one file.
-// The money screens show who owns an account and who posted a journal, and rule 2 needs the merchant's group.
+// Read-only lookups into tables other modules own (accounts, ranks, suppliers, staff, the legacy number map), kept in this one file.
+// The money screens show who owns an account and who posted a journal, and rule 2 needs the account's rank.
 //
 // DEVIATION to resolve at merge: decision 016 wants these reads through the owning module's public service. identity,
 // catalog and suppliers export no directory yet (features 2a and 4a add `ClientGroupDirectory`; suppliers arrive in 6),
-// so this file reads `clients`, `client_groups`, `suppliers`, `customers` and `staff_users` with plain selects. Replace its
+// so this file reads `clients`, `client_groups`, `suppliers`, `staff_users` and `account_legacy_ids` with plain selects. Replace its
 // bodies with calls to those services once they exist; nothing outside this file knows.
-import { eq, ilike, inArray, or, sql } from 'drizzle-orm';
+//
+// One account type (decision 064): merchants and shoppers are rows of `clients`, so every "customer" lookup here reads `clients` too. The
+// names of the functions and of their result types keep their old words for the callers that have not moved yet; the values are account ids.
+import { and, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
-import type { LedgerOwnerType } from '../db/schema';
+import type { LedgerActorType, LedgerOwnerType } from '../db/schema';
 
-/** A merchant as the wallet use cases need it. */
+/** An account as the wallet use cases need it (a merchant-kind account, or any account for the rank checks of a credit limit). */
 export interface MerchantRecord {
   readonly id: number;
   readonly name: string;
-  /** `client_groups.overdraft_allowed` of the merchant's group (user rule 2). */
+  /** `client_groups.overdraft_allowed` of the account's rank (user rule 2; the retail rank never allows credit). */
   readonly overdraftAllowed: boolean;
 }
 
 /**
  * The key of a name in the maps below.
  *
- * @param ownerType `client`, `supplier`, `customer` or `staff`
+ * @param ownerType `account`, `supplier` or `staff`, or the old word of an append-only row (`client`, `customer`)
  * @param ownerId the id of that record
- * @returns the key, for example `client:12`
+ * @returns the key, for example `account:12`
  */
 export function ownerKey(ownerType: string, ownerId: number): string {
   return `${ownerType}:${ownerId}`;
 }
 
 /**
- * Finds a merchant and whether its group allows credit, and keeps the group row locked (`FOR SHARE`) until the transaction ends.
+ * Finds an account and whether its rank allows credit, and keeps the rank row locked (`FOR SHARE`) until the transaction ends.
  *
  * Why: user rule 2 must hold when staff turn `overdraftAllowed` off for a group at the same moment as another request gives
  * one of its merchants a credit limit; the group routes lock the row `FOR UPDATE` (catalog module), so one of the two waits and
@@ -38,9 +41,9 @@ export function ownerKey(ownerType: string, ownerId: number): string {
  * read only once the lock is held, after any move that held it. Called inside a transaction, as the locks last until it ends.
  *
  * @param db the database or a transaction
- * @param id the merchant id
- * @param options `lockMerchant`: also lock the merchant row (the credit-limit route)
- * @returns the merchant, or `undefined` when there is none
+ * @param id the account id
+ * @param options `lockMerchant`: also lock the account row (the credit-limit route)
+ * @returns the account, or `undefined` when there is none
  */
 export async function findMerchant(
   db: DbExecutor,
@@ -84,6 +87,26 @@ export async function findStatementMerchant(db: DbExecutor, id: number): Promise
   return row;
 }
 
+/**
+ * Reads the kind of an account's rank.
+ *
+ * Why: the wallet kind follows the rank kind (decision 064), so a money path that holds the account row lock asks which kind of rank the
+ * account has now; `rankKindOf` of identity turns the stored kind into `merchant` or `retail`.
+ *
+ * @param db the database or the caller's transaction (after it locked the account row)
+ * @param id the account id
+ * @returns the stored kind of the rank (`client_groups.kind`), or `undefined` when there is no such account
+ */
+export async function findRankGroupKind(db: DbExecutor, id: number): Promise<string | undefined> {
+  const [row] = await db
+    .select({ kind: s.clientGroups.kind })
+    .from(s.clients)
+    .innerJoin(s.clientGroups, eq(s.clientGroups.id, s.clients.groupId))
+    .where(eq(s.clients.id, id))
+    .limit(1);
+  return row?.kind;
+}
+
 /** What Dhru says about the merchant behind an API key. */
 export interface MerchantProfile {
   readonly email: string;
@@ -104,11 +127,14 @@ export async function findMerchantProfile(db: DbExecutor, id: number): Promise<M
 }
 
 /**
- * Looks up the names of account owners.
+ * Looks up the names of ledger account owners.
+ *
+ * Why: every wallet and hold is owned by `('account', id)` since decision 064, and supplier accounts by `('supplier', id)`; the ledger and
+ * reconcile screens show the name next to the line.
  *
  * @param db the database or a transaction
  * @param owners the owners to name
- * @returns names by {@link ownerKey}; an owner with no row has no entry
+ * @returns names by {@link ownerKey} (`account:12`, `supplier:3`); an owner with no row, or a row with no name, has no entry
  */
 export async function loadOwnerNames(
   db: DbExecutor,
@@ -118,13 +144,13 @@ export async function loadOwnerNames(
     ...new Set(owners.filter((owner) => owner.ownerType === type).map((owner) => owner.ownerId)),
   ];
   const names = new Map<string, string>();
-  const clientIds = idsOf('client');
-  if (clientIds.length > 0) {
+  const accountIds = idsOf('account');
+  if (accountIds.length > 0) {
     const rows = await db
       .select({ id: s.clients.id, name: s.clients.name })
       .from(s.clients)
-      .where(inArray(s.clients.id, clientIds));
-    for (const row of rows) names.set(ownerKey('client', row.id), row.name);
+      .where(inArray(s.clients.id, accountIds));
+    for (const row of rows) if (row.name !== '') names.set(ownerKey('account', row.id), row.name);
   }
   const supplierIds = idsOf('supplier');
   if (supplierIds.length > 0) {
@@ -134,30 +160,29 @@ export async function loadOwnerNames(
       .where(inArray(s.suppliers.id, supplierIds));
     for (const row of rows) names.set(ownerKey('supplier', row.id), row.name);
   }
-  const customerIds = idsOf('customer');
-  if (customerIds.length > 0) {
-    const rows = await db
-      .select({ id: s.customers.id, name: s.customers.name })
-      .from(s.customers)
-      .where(inArray(s.customers.id, customerIds));
-    for (const row of rows) if (row.name !== '') names.set(ownerKey('customer', row.id), row.name);
-  }
   return names;
 }
+
+/** Who posted a journal, as the ledger stores it: staff, an account, or (in a row written before the merge) a merchant or a customer. */
+export type ActorRef = { readonly type: Exclude<LedgerActorType, 'system'>; readonly id: number };
 
 /**
  * Looks up the names of the people who posted journals.
  *
+ * Why: the journals are append-only, so their actor keeps the word it was written with (decision 064): new rows say `account` with the
+ * account id; an old row says `client` with the merchant number (a merchant kept its number as its account id) or `customer` with an old
+ * customer number, which is NOT an account id (old customer 7 is not account 7). A customer number is named only through the legacy map
+ * (`account_legacy_ids`); a number the map does not know has no name, never another account's.
+ *
  * @param db the database or a transaction
- * @param actors staff members, merchants and customers
- * @returns names by {@link ownerKey} (`staff:3`, `client:12`, `customer:8`)
+ * @param actors staff members, accounts and the old words of earlier rows
+ * @returns names by {@link ownerKey} of the stored pair (`staff:3`, `account:12`, `client:12`, `customer:8`)
  */
-export async function loadActorNames(
-  db: DbExecutor,
-  actors: ReadonlyArray<{ type: 'staff' | 'client' | 'customer'; id: number }>,
-): Promise<Map<string, string>> {
+export async function loadActorNames(db: DbExecutor, actors: readonly ActorRef[]): Promise<Map<string, string>> {
   const names = new Map<string, string>();
-  const idsOf = (type: string) => [...new Set(actors.filter((actor) => actor.type === type).map((actor) => actor.id))];
+  const idsOf = (type: ActorRef['type']) => [
+    ...new Set(actors.filter((actor) => actor.type === type).map((actor) => actor.id)),
+  ];
   const staffIds = idsOf('staff');
   if (staffIds.length > 0) {
     const rows = await db
@@ -166,19 +191,40 @@ export async function loadActorNames(
       .where(inArray(s.staffUsers.id, staffIds));
     for (const row of rows) names.set(ownerKey('staff', row.id), row.name);
   }
-  const rest = await loadOwnerNames(db, [
-    ...idsOf('client').map((ownerId) => ({ ownerType: 'client' as const, ownerId })),
-    ...idsOf('customer').map((ownerId) => ({ ownerType: 'customer' as const, ownerId })),
-  ]);
-  for (const [key, name] of rest) names.set(key, name);
+  const accountIds = idsOf('account');
+  const merchantIds = idsOf('client');
+  if (accountIds.length > 0 || merchantIds.length > 0) {
+    // A merchant number is its account id (the map of a merchant is the identity), so both words read `clients` directly.
+    const rows = await db
+      .select({ id: s.clients.id, name: s.clients.name })
+      .from(s.clients)
+      .where(inArray(s.clients.id, [...new Set([...accountIds, ...merchantIds])]));
+    const byId = new Map(rows.map((row) => [row.id, row.name]));
+    for (const id of accountIds) {
+      const name = byId.get(id);
+      if (name !== undefined && name !== '') names.set(ownerKey('account', id), name);
+    }
+    for (const id of merchantIds) {
+      const name = byId.get(id);
+      if (name !== undefined && name !== '') names.set(ownerKey('client', id), name);
+    }
+  }
+  const customerNumbers = idsOf('customer');
+  if (customerNumbers.length > 0) {
+    const rows = await db
+      .select({ legacyId: s.accountLegacyIds.legacyId, name: s.clients.name })
+      .from(s.accountLegacyIds)
+      .innerJoin(s.clients, eq(s.clients.id, s.accountLegacyIds.accountId))
+      .where(and(eq(s.accountLegacyIds.legacyType, 'customer'), inArray(s.accountLegacyIds.legacyId, customerNumbers)));
+    for (const row of rows) if (row.name !== '') names.set(ownerKey('customer', row.legacyId), row.name);
+  }
   return names;
 }
 
 /** Owner ids whose name matches a search text, per owner type. */
 export interface OwnerMatches {
-  readonly client: number[];
+  readonly account: number[];
   readonly supplier: number[];
-  readonly customer: number[];
 }
 
 /** How many owners per type a text search may expand to (the search stays a bounded `IN` list). */
@@ -188,70 +234,68 @@ const MATCH_LIMIT = 200;
  * Finds owners by name.
  *
  * Why: resolution money-15: a text `q` of the ledger list matches the owner names of the lines; the list repository then
- * looks for entries on those owners' accounts.
+ * looks for entries on those owners' accounts. Every wallet owner is an account (decision 064).
  *
  * @param db the database or a transaction
  * @param pattern a `LIKE` pattern (already escaped, with the wildcards)
- * @returns up to 200 ids per owner type
+ * @returns up to 200 ids per owner type (`account` and `supplier`)
  */
 export async function findOwnersByName(db: DbExecutor, pattern: string): Promise<OwnerMatches> {
-  const [client, supplier, customer] = await Promise.all([
+  const [account, supplier] = await Promise.all([
     db.select({ id: s.clients.id }).from(s.clients).where(ilike(s.clients.name, pattern)).limit(MATCH_LIMIT),
     db.select({ id: s.suppliers.id }).from(s.suppliers).where(ilike(s.suppliers.name, pattern)).limit(MATCH_LIMIT),
-    db.select({ id: s.customers.id }).from(s.customers).where(ilike(s.customers.name, pattern)).limit(MATCH_LIMIT),
   ]);
   return {
-    client: client.map((row) => row.id),
+    account: account.map((row) => row.id),
     supplier: supplier.map((row) => row.id),
-    customer: customer.map((row) => row.id),
   };
 }
 
 /**
- * Reads the notification preferences of a merchant (where its low-balance threshold lives).
+ * Reads the notification preferences of an account (where its low-balance threshold lives).
  *
- * Why: the `wallet.low_balance` event compares the available balance with the merchant's own threshold
+ * Why: the `wallet.low_balance` event compares the available balance with the account's own threshold
  * (`notification_prefs.lowBalanceThreshold`); the preferences belong to identity, which exports no reader yet (same deviation as
  * the rest of this file).
  *
  * @param db the transaction of the posting
- * @param clientId the merchant id
- * @returns the preferences object, or `undefined` when there is no such merchant
+ * @param accountId the account id
+ * @returns the preferences object, or `undefined` when there is no such account
  */
 export async function notificationPrefsOf(
   db: DbExecutor,
-  clientId: number,
+  accountId: number,
 ): Promise<Record<string, unknown> | undefined> {
   const [row] = await db
     .select({ prefs: s.clients.notificationPrefs })
     .from(s.clients)
-    .where(eq(s.clients.id, clientId))
+    .where(eq(s.clients.id, accountId))
     .limit(1);
   return row?.prefs;
 }
 
-/** A merchant as billing shows and checks it: who it is, where it is billed and which group it is in. */
+/** An account as billing shows and checks it: who it is, where it is billed and which rank it is in. */
 export interface BillingMerchant {
   readonly id: number;
   readonly name: string;
   readonly email: string;
-  /** The billing country (ISO code); empty when the merchant has none (a manual invoice is refused then). */
+  /** The billing country (ISO code); empty when the account has none (a manual invoice is refused then). */
   readonly country: string;
   readonly groupId: number;
-  /** `pending`, `active` or `suspended`. */
+  /** `active`, `suspended`, `blocked` or `anonymized` (read it through `canAct` and `sessionStateOf` of identity, never by comparing). */
   readonly status: string;
 }
 
 /**
- * Reads merchants for the invoice and payment screens.
+ * Reads accounts for the invoice and payment screens.
  *
- * Why: invoices and top-ups name the merchant (`client {id, name}`), the portal checks the merchant's group for the payment
+ * Why: invoices and top-ups name the account (`client {id, name}`), the portal checks the account's rank for the payment
  * methods and the deposit limit, and a manual invoice needs the billing country (RESOLUTIONS money-7). Identity owns `clients`
  * and exports no reader for these fields yet (same deviation as the rest of this file).
  *
  * @param db the database or a transaction
- * @param ids the merchant ids
- * @returns the merchants that exist, by id
+ * @param ids the account ids
+ * @returns the accounts that exist, by id
  */
 export async function loadBillingMerchants(
   db: DbExecutor,
@@ -273,7 +317,7 @@ export async function loadBillingMerchants(
   return new Map(rows.map((row) => [row.id, row]));
 }
 
-/** A storefront customer as a receipt invoice names it. */
+/** An account as a receipt invoice names it (a shopper is an account since decision 064). */
 export interface BillingCustomer {
   readonly id: number;
   readonly name: string;
@@ -281,11 +325,11 @@ export interface BillingCustomer {
 }
 
 /**
- * Reads storefront customers for the receipt invoices of the admin list.
+ * Reads accounts for the receipt invoices of the admin list.
  *
  * @param db the database or a transaction
- * @param ids the customer ids
- * @returns the customers that exist, by id
+ * @param ids the account ids
+ * @returns the accounts that exist, by id
  */
 export async function loadBillingCustomers(
   db: DbExecutor,
@@ -294,20 +338,20 @@ export async function loadBillingCustomers(
   const unique = [...new Set(ids)];
   if (unique.length === 0) return new Map();
   const rows = await db
-    .select({ id: s.customers.id, name: s.customers.name, email: s.customers.email })
-    .from(s.customers)
-    .where(inArray(s.customers.id, unique));
+    .select({ id: s.clients.id, name: s.clients.name, email: s.clients.email })
+    .from(s.clients)
+    .where(inArray(s.clients.id, unique));
   return new Map(rows.map((row) => [row.id, row]));
 }
 
 /**
- * The merchants whose name matches a search text.
+ * The accounts whose name matches a search text.
  *
- * Why: the invoice and payment lists search by merchant name (money.md `q`); the repositories then look for rows of those merchants.
+ * Why: the invoice and payment lists search by account name (money.md `q`); the repositories then look for rows of those accounts.
  *
  * @param db the database or a transaction
  * @param pattern a `LIKE` pattern (already escaped, with the wildcards)
- * @returns up to 200 merchant ids
+ * @returns up to 200 account ids
  */
 export async function findMerchantIdsByName(db: DbExecutor, pattern: string): Promise<number[]> {
   const rows = await db
@@ -319,17 +363,20 @@ export async function findMerchantIdsByName(db: DbExecutor, pattern: string): Pr
 }
 
 /**
- * The customers whose name matches a search text (for the receipt invoices of the admin list).
+ * The accounts whose name matches a search text (for the receipt invoices of the admin list).
+ *
+ * Why: a shopper is an account, so this reads the same table as {@link findMerchantIdsByName}; the name stays for the callers that ask
+ * about shoppers.
  *
  * @param db the database or a transaction
  * @param pattern a `LIKE` pattern (already escaped, with the wildcards)
- * @returns up to 200 customer ids
+ * @returns up to 200 account ids
  */
 export async function findCustomerIdsByName(db: DbExecutor, pattern: string): Promise<number[]> {
   const rows = await db
-    .select({ id: s.customers.id })
-    .from(s.customers)
-    .where(ilike(s.customers.name, pattern))
+    .select({ id: s.clients.id })
+    .from(s.clients)
+    .where(ilike(s.clients.name, pattern))
     .limit(MATCH_LIMIT);
   return rows.map((row) => row.id);
 }
@@ -369,43 +416,43 @@ export async function orderPaymentBaseAmounts(
   return result.rows.map((row) => ({ gatewayId: Number(row.gateway_id), base: row.base }));
 }
 
-/** A storefront customer as the wallet use cases need it (feature 21). */
+/** An account as the store-balance use cases need it (feature 21, decision 064). */
 export interface WalletCustomer {
   readonly id: number;
   readonly name: string;
   readonly email: string;
   /** `active`, `suspended`, `blocked` or `anonymized`. */
   readonly status: string;
-  /** Whether the customer has a sign-in account (only they may hold and spend a balance: O5). */
+  /** Whether the account has a sign-in (a guest row has none; only a login account may hold and spend a balance: O5). */
   readonly hasAccount: boolean;
 }
 
 const walletCustomerColumns = {
-  id: s.customers.id,
-  name: s.customers.name,
-  email: s.customers.email,
-  status: s.customers.status,
-  hasAccount: s.customers.hasAccount,
+  id: s.clients.id,
+  name: s.clients.name,
+  email: s.clients.email,
+  status: s.clients.status,
+  hasAccount: s.clients.hasAccount,
 };
 
 /**
- * Reads one storefront customer for the wallet use cases.
+ * Reads one account for the store-balance use cases.
  *
  * @param db the database or a transaction
- * @param id the customer id
- * @returns the customer, or `undefined`
+ * @param id the account id
+ * @returns the account, or `undefined`
  */
 export async function findWalletCustomer(db: DbExecutor, id: number): Promise<WalletCustomer | undefined> {
-  const [row] = await db.select(walletCustomerColumns).from(s.customers).where(eq(s.customers.id, id)).limit(1);
+  const [row] = await db.select(walletCustomerColumns).from(s.clients).where(eq(s.clients.id, id)).limit(1);
   return row;
 }
 
 /**
- * Reads storefront customers for the wallet list and the deposits screen (feature 21).
+ * Reads accounts for the store-balance list and the deposits screen (feature 21).
  *
  * @param db the database or a transaction
- * @param ids the customer ids
- * @returns the customers that exist, by id
+ * @param ids the account ids
+ * @returns the accounts that exist, by id
  */
 export async function loadWalletCustomers(
   db: DbExecutor,
@@ -413,20 +460,20 @@ export async function loadWalletCustomers(
 ): Promise<Map<number, WalletCustomer>> {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return new Map();
-  const rows = await db.select(walletCustomerColumns).from(s.customers).where(inArray(s.customers.id, unique));
+  const rows = await db.select(walletCustomerColumns).from(s.clients).where(inArray(s.clients.id, unique));
   return new Map(rows.map((row) => [row.id, row]));
 }
 
 /**
- * The customers whose name, and for a caller who may read customers also email, matches a search text (the staff wallet list and the
+ * The accounts whose name, and for a caller who may read customers also email, matches a search text (the staff wallet list and the
  * deposits search, feature 21).
  *
- * Why: decision 047: the address is searched only for a caller who may read customers; the others find a customer by name.
+ * Why: decision 047: the address is searched only for a caller who may read customers; the others find an account by name.
  *
  * @param db the database or a transaction
  * @param pattern a `LIKE` pattern (already escaped, with the wildcards)
  * @param matchEmail whether the address is searched too (`customerContactOf(caller) === 'full'`)
- * @returns up to 200 customer ids
+ * @returns up to 200 account ids
  */
 export async function findCustomerIdsByNameOrEmail(
   db: DbExecutor,
@@ -434,12 +481,10 @@ export async function findCustomerIdsByNameOrEmail(
   matchEmail: boolean,
 ): Promise<number[]> {
   const rows = await db
-    .select({ id: s.customers.id })
-    .from(s.customers)
+    .select({ id: s.clients.id })
+    .from(s.clients)
     .where(
-      matchEmail
-        ? or(ilike(s.customers.name, pattern), ilike(s.customers.email, pattern))
-        : ilike(s.customers.name, pattern),
+      matchEmail ? or(ilike(s.clients.name, pattern), ilike(s.clients.email, pattern)) : ilike(s.clients.name, pattern),
     )
     .limit(MATCH_LIMIT);
   return rows.map((row) => row.id);

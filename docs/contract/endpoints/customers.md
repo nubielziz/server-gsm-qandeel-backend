@@ -20,24 +20,31 @@ Frontend features covering this module: `customers`, `checkouts` (rules in `RULE
 | `POST /store/v1/auth/logout` | store | customer-session | 14 |  |
 | `GET /store/v1/me` | store | customer-session | 14 |  |
 | `PATCH /store/v1/me` | store | customer-session | 14 |  |
-| `GET /admin/customers` | admin | staff-permission `customers:*` | 14 | `listCustomers` |
-| `GET /admin/customers/:id` | admin | staff-permission `customers:*` | 14 | `getCustomer` |
-| `POST /admin/customers` | admin | staff-permission `customers:*` | 14 | `createCustomer` |
-| `PATCH /admin/customers/:id` | admin | staff-permission `customers:*` | 14 | `updateCustomer` |
-| `POST /admin/customers/:id/account` | admin | staff-permission `customers:update` | 14 | `createCustomerAccount` |
-| `POST /admin/customers/:id/password` | admin | staff-permission `customers:password` | 14 | `setCustomerPassword` |
-| `POST /admin/customers/:id/sessions/revoke` | admin | staff-permission `customers:password` | 14 | `revokeCustomerSessions` |
-| `POST /admin/customers/:id/suspend` | admin | staff-permission `customers:suspend` | 14 | `suspendCustomer` |
-| `POST /admin/customers/:id/reactivate` | admin | staff-permission `customers:suspend` | 14 | `reactivateCustomer` |
-| `POST /admin/customers/:id/block` | admin | staff-permission `customers:block` | 18 | `blockCustomer` |
-| `GET /admin/customers/:id/export` | admin | staff-permission `customers:privacy` | 18 | `exportCustomerData` |
-| `POST /admin/customers/:id/anonymize` | admin | staff-permission `customers:privacy` | 18 | `anonymizeCustomer` |
+| `GET /admin/customers` | admin | staff-permission `customers:*` | 14 |  |
+| `GET /admin/customers/:id` | admin | staff-permission `customers:*` | 14 |  |
+| `POST /admin/customers` | admin | staff-permission `customers:*` | 14 |  |
+| `PATCH /admin/customers/:id` | admin | staff-permission `customers:*` | 14 |  |
+| `POST /admin/customers/:id/account` | admin | staff-permission `customers:update` | 14 |  |
+| `POST /admin/customers/:id/password` | admin | staff-permission `customers:password` | 14 |  |
+| `POST /admin/customers/:id/sessions/revoke` | admin | staff-permission `customers:password` | 14 |  |
+| `POST /admin/customers/:id/suspend` | admin | staff-permission `customers:suspend` | 14 |  |
+| `POST /admin/customers/:id/reactivate` | admin | staff-permission `customers:suspend` | 14 |  |
+| `POST /admin/customers/:id/block` | admin | staff-permission `customers:block` | 18 |  |
+| `GET /admin/customers/:id/export` | admin | staff-permission `customers:privacy` | 18 |  |
+| `POST /admin/customers/:id/anonymize` | admin | staff-permission `customers:privacy` | 18 |  |
 | `GET /admin/checkouts/abandoned` | admin | staff-permission `growth:read` | 19 |  |
 | `POST /admin/checkouts/recover` | admin | staff-permission `growth:send` | 19 |  |
 | `GET /admin/reports/funnel` | admin | staff-permission `reports:growth` | 19 | `getFunnel` |
 | `POST /store/v1/checkout-sessions/:token/balance-payment` | store | checkout-token | 21 |  |
 | `POST /store/v1/marketing/unsubscribe/:token` | store | public | 23 |  |
 | `POST /client/auth/sign-in` | client | public | 24 |  |
+| `POST /admin/clients/:id/block` | admin | staff-permission `clients:block` | 48 | `blockAccount` |
+| `GET /admin/clients/:id/privacy` | admin | staff-permission `clients:read` | 48 | `getAccountPrivacy` |
+| `GET /admin/clients/:id/export` | admin | staff-permission `customers:privacy` | 48 | `exportAccountData` |
+| `POST /admin/clients/:id/anonymize` | admin | staff-permission `customers:privacy` | 48 | `anonymizeAccount` |
+| `POST /store/v1/me/2fa/setup` | store | customer-session | 48 |  |
+| `POST /store/v1/me/2fa/enable` | store | customer-session | 48 |  |
+| `POST /store/v1/me/2fa/disable` | store | customer-session | 48 |  |
 
 ## POST /store/v1/checkout-sessions
 
@@ -107,7 +114,7 @@ Frontend features covering this module: `customers`, `checkouts` (rules in `RULE
 ## GET /admin/customers
 
 - **Map**: Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification. (عملاء المتجر: بحث وعرض الطلبات والمدفوعات؛ إنشاء عميل بحساب (دعوة برابط أو كلمة مؤقتة) وتعديل الاسم والإيميل والبلد والهاتف والملاحظات. تغيير الإيميل يُلغي التوثيق) · staff-permission `customers:*` · stage 14 · tables customers, customer_credentials, auth_tokens, orders, notifications, audit_logs
-- **Frontend**: `listCustomers` (src/features/customers/api/customers.ts:30) · params `query?: ListQuery` · returns `ListResult<Customer>` · success 200 · assumed contract
+- **Frontend**: none.
 - **Query**: Paging _start/_end, 25 per page (customers/lib/filters.ts:11). Filters: status (repeat = IN; tabs send one of active|suspended|blocked), riskLevel (repeat = IN; the Flagged tab sends riskLevel=medium&riskLevel=high, filters.ts:187), country (ISO-2, upper case), hasAccount=true|false. q: case-insensitive contains over name and email only (mocks/customerHandlers.ts:16; country is its own filter, M86). _sort is one of name|country|hasAccount|ordersCount|totalSpent|lastOrderAt|riskLevel|status, with _order asc|desc; default totalSpent desc (filters.ts:76-100). riskLevel sorts by order low<medium<high. Counts: five tab calls (no filter, status=active, riskLevel=medium&riskLevel=high, status=suspended, status=blocked) plus hasAccount=true, each _start=0&_end=1 with no toolbar filter (hooks/useCustomerCounts.ts:20-45). Palette: q=<text>&_start=0&_end=4 with no _sort, so the server's default order applies (lib/paletteSource.ts:10-21).
 - **Response**: JSON array + x-total-count. Row = customers columns: id, email, emailVerifiedAt, name, phone ('' when none), country, currency (currency id, see below), hasAccount, createdBy (staff id; null for self-signup or guest), marketingOptIn, riskLevel low|medium|high, status active|suspended|blocked|anonymized, suspendedAt, suspendedReason and suspendedBy (null unless suspended), internalNotes, lastLoginAt, firstOrderAt, totalSpent (4-dp USD, gross incl. VAT of non-rejected orders, '0.0000' when none), anonymizedAt, createdAt. Plus ordersCount (every order, any status), lastOrderAt (latest order created_at or null) and currencyCode (currencies.code); currency = currencies.id (JSON number) and currencyCode = currencies.code, both null when the customer has no currency: customers.currency stays the ISO code FK to currencies.code (as checkout_sessions and payments do) and every row builder (list, detail, create result, patch result) LEFT JOINs currencies ON currencies.code = customers.currency; request bodies carry no currency (create and a country change derive the code from the country and write the code). Never credential data. Anonymized rows carry name 'Deleted customer' and email deleted-<id>@redacted.invalid.
 - **Errors**: 403 FORBIDDEN (caller lacks customers:read)
@@ -117,7 +124,7 @@ Frontend features covering this module: `customers`, `checkouts` (rules in `RULE
 ## GET /admin/customers/:id
 
 - **Map**: Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification. (عملاء المتجر: بحث وعرض الطلبات والمدفوعات؛ إنشاء عميل بحساب (دعوة برابط أو كلمة مؤقتة) وتعديل الاسم والإيميل والبلد والهاتف والملاحظات. تغيير الإيميل يُلغي التوثيق) · staff-permission `customers:*` · stage 14 · tables customers, customer_credentials, auth_tokens, orders, notifications, audit_logs
-- **Frontend**: `getCustomer` (src/features/customers/api/customers.ts:40) · params `id: number` · returns `CustomerDetail` · success 200 · assumed contract
+- **Frontend**: none.
 - **Request**: :id is the numeric customer id.
 - **Response**: The list row, plus:
 - stats {orders, spent (= totalSpent), lastOrderAt, refunds (refunds of the customer's orders), tickets (support_tickets with requester_type customer and this requester_id, any status), disputes}.
@@ -132,7 +139,7 @@ For a guest, 'last seen from' is latestConsents.records[0].ip (lib/text.ts:50-51
 ## POST /admin/customers
 
 - **Map**: Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification. (عملاء المتجر: بحث وعرض الطلبات والمدفوعات؛ إنشاء عميل بحساب (دعوة برابط أو كلمة مؤقتة) وتعديل الاسم والإيميل والبلد والهاتف والملاحظات. تغيير الإيميل يُلغي التوثيق) · staff-permission `customers:*` · stage 14 · tables customers, customer_credentials, auth_tokens, orders, notifications, audit_logs
-- **Frontend**: `createCustomer` (src/features/customers/api/customers.ts:51) · params `body: CreateCustomerBody` · returns `CreateCustomerResult` · success 201 · assumed contract
+- **Frontend**: none.
 - **Request**: Body {name (trimmed, inner spaces collapsed, >= 2 chars), email (trimmed, lower case), country (ISO-2 the storefront sells to), phone? (left out when empty), password: {mode: reset_link|temporary_password}}.
 Server:
 - Inserts customers (has_account true, created_by = staff, status active, risk_level low, marketing_opt_in false, currency from the country) and customer_credentials.
@@ -147,7 +154,7 @@ Server:
 ## PATCH /admin/customers/:id
 
 - **Map**: Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification. (عملاء المتجر: بحث وعرض الطلبات والمدفوعات؛ إنشاء عميل بحساب (دعوة برابط أو كلمة مؤقتة) وتعديل الاسم والإيميل والبلد والهاتف والملاحظات. تغيير الإيميل يُلغي التوثيق) · staff-permission `customers:*` · stage 14 · tables customers, customer_credentials, auth_tokens, orders, notifications, audit_logs
-- **Frontend**: `updateCustomer` (src/features/customers/api/customers.ts:61) · params `id: number`, `body: UpdateCustomerBody` · returns `Customer` · success 200 · assumed contract
+- **Frontend**: none.
 - **Request**: Partial body: only the changed fields of {name, email, country, phone, internalNotes}. The dialog sends nothing when nothing changed. internalNotes is at most 300 chars (EditCustomerDialog.tsx:114).
 - A different email sets email_verified_at = NULL; when has_account is true it also issues a new email-verification token (auth_tokens) and sends the verification email through the outbox; guests get no email.
 - A country change re-derives currency (mocks/customerHandlers.ts:127-147).
@@ -159,7 +166,7 @@ Same field rules as create. Writes audit_logs with before and after.
 ## POST /admin/customers/:id/account
 
 - **Map**: Create an account for a customer who bought as a guest: earlier orders are linked to the account and the customer receives a link to choose a password. (إنشاء حساب لعميل اشترى كضيف: تُربط طلباته السابقة بالحساب ويصله رابط لاختيار كلمة المرور) · staff-permission `customers:update` · stage 14 · tables customers, customer_credentials, auth_tokens, notifications, audit_logs
-- **Frontend**: `createCustomerAccount` (src/features/customers/api/accounts.ts:19) · params `id: number`, `body: CreateAccountBody` · returns `PasswordResult` · success 200 · assumed contract
+- **Frontend**: none.
 - **Request**: Body {mode: reset_link|temporary_password}. Turns a guest into an account: has_account true and a customer_credentials row. The guest's earlier orders already carry customer_id, so they stay linked.
 - reset_link: one-hour invite token and email.
 - temporary_password: generated password hash and must_change_password.
@@ -172,7 +179,7 @@ Writes audit_logs ('created account for').
 ## POST /admin/customers/:id/password
 
 - **Map**: Send a password-setting link, or set a temporary password that must be changed at first sign-in; the current password is never shown and never enters the audit log, and the sessions can optionally be ended. (إرسال رابط تعيين كلمة المرور، أو تعيين كلمة مؤقتة تُفرض تغييرها بأول دخول؛ الكلمة الحالية لا تُعرض ولا تدخل سجل التدقيق، ويُنهي الجلسات اختيارياً) · staff-permission `customers:password` · stage 14 · tables customer_credentials, auth_tokens, sessions, notifications, audit_logs
-- **Frontend**: `setCustomerPassword` (src/features/customers/api/accounts.ts:34) · params `id: number`, `body: CustomerPasswordBody` · returns `PasswordResult` · success 200 · assumed contract
+- **Frontend**: none.
 - **Request**: Body {mode, revokeSessions: boolean}.
 - reset_link: a new one-hour, single-use password_reset token (hash only), emailed through notifications.
 - temporary_password: generated and hashed; sets must_change_password true and password_changed_at now, and invalidates outstanding reset tokens.
@@ -185,7 +192,7 @@ audit_logs records only that a change happened, never the password.
 ## POST /admin/customers/:id/sessions/revoke
 
 - **Map**: Sign the customer out of all devices: sets revoked_at on every active session. (تسجيل خروج العميل من كل الأجهزة: revoked_at على كل جلساته النشطة) · staff-permission `customers:password` · stage 14 · tables sessions, audit_logs
-- **Frontend**: `revokeCustomerSessions` (src/features/customers/api/accounts.ts:47) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: none.
 - **Request**: No body. Sets revoked_at on every active session of the customer (map row).
 - **Response**: 204. The console reads no body.
 - **Errors**: 404 NOT_FOUND (no customer with that id); 409 ANONYMIZED (the customer is anonymized); 403 FORBIDDEN (caller lacks customers:password)
@@ -194,7 +201,7 @@ audit_logs records only that a change happened, never the password.
 ## POST /admin/customers/:id/suspend
 
 - **Map**: Suspend the account with a reason: no sign-in and no new orders, orders in progress still complete, and sessions are ended; a temporary suspension adds nothing to the blocklist. (إيقاف الحساب مع السبب: لا دخول ولا طلبات جديدة، والطلبات الجارية تكتمل، وتُنهى الجلسات. إيقاف مؤقت لا يضيف شيئاً للقائمة السوداء) · staff-permission `customers:suspend` · stage 14 · tables customers, sessions, audit_logs
-- **Frontend**: `suspendCustomer` (src/features/customers/api/accounts.ts:57) · params `id: number`, `body: SuspendCustomerBody` · returns `void` · success 204 · assumed contract
+- **Frontend**: none.
 - **Request**: Body {reason, note?}.
 - reason is one of 'Customer asked to pause the account', 'Account may be compromised', 'Unusual activity under review', 'Waiting for proof of identity or payment', 'Other' (customers/lib/status.ts:46-52).
 - note is optional, at most 200 chars, and left out when empty.
@@ -206,7 +213,7 @@ Server: sets status suspended, suspended_at now, suspended_by = staff, and suspe
 ## POST /admin/customers/:id/reactivate
 
 - **Map**: Reactivate a suspended account; the customer signs in again. (إعادة تفعيل حساب موقوف؛ يسجّل العميل دخوله من جديد) · staff-permission `customers:suspend` · stage 14 · tables customers, audit_logs
-- **Frontend**: `reactivateCustomer` (src/features/customers/api/accounts.ts:66) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: none.
 - **Request**: No body. Moves suspended to active, clears suspended_at, suspended_reason and suspended_by, and writes audit_logs (scenario b2c-account step 9).
 - **Response**: 204.
 - **Errors**: 404 NOT_FOUND (no customer with that id); 409 NOT_SUSPENDED (the customer is not suspended); 409 ANONYMIZED (the customer is anonymized); 403 FORBIDDEN (caller lacks customers:suspend)
@@ -215,7 +222,7 @@ Server: sets status suspended, suspended_at now, suspended_by = staff, and suspe
 ## POST /admin/customers/:id/block
 
 - **Map**: Block a customer for fraud, or lift the block, with a reason; blocking adds the customer fingerprint to the blocklist (use suspend for a temporary stop). (حظر عميل لاحتيال أو فك الحظر مع السبب، ويضيف بصمته للقائمة السوداء (للإيقاف المؤقت استعمل suspend)) · staff-permission `customers:block` · stage 18 · tables customers, blocklist_entries, audit_logs
-- **Frontend**: `blockCustomer` (src/features/customers/api/accounts.ts:76) · params `id: number`, `body: BlockCustomerBody` · returns `void` · success 204 · assumed contract
+- **Frontend**: none.
 - **Request**: Body {blocked: true, reason} or {blocked: false}.
 - reason is one of 'Chargeback or dispute', 'Card testing or fraud', 'Abuse of refunds', 'Other' (lib/status.ts:55-60).
 - {blocked: false} carries no reason; accept an optional one.
@@ -230,7 +237,7 @@ Writes audit_logs both ways. Card fingerprint = the gateway's card fingerprint (
 ## GET /admin/customers/:id/export
 
 - **Map**: Export the customer data for a data-protection request. (تصدير بيانات العميل بطلب حماية البيانات) · staff-permission `customers:privacy` · stage 18 · tables customers, orders, consent_records, data_requests
-- **Frontend**: `exportCustomerData` (src/features/customers/api/privacy.ts:11) · params `id: number` · returns `string` · success 200 · assumed contract
+- **Frontend**: none.
 - **Request**: :id. Side effects: marks the customer's open or in_progress export request completed (completed_at, handled_by) and writes audit_logs. It may also store the file and set data_requests.file_id. Contract flag originCheck: true (defineRoute; allowed only on GET routes with a session access): the CSRF guard requires, for a safe method whose contract has originCheck, Sec-Fetch-Site in (same-origin, same-site) or, when absent, an Origin header exactly in the configured CORS origins, else 403 CSRF_FAILED. No CSRF token is sent on this GET (apiDownload sends none). Content-Disposition is already in CORS_EXPOSED_HEADERS.
 - **Response**: 200 with a JSON file and Content-Disposition: attachment; filename=customer-<id>.json. The console falls back to that name when the header is missing; expose the header through CORS. Content: profile, orders (id, service, IMEI, status, totals, dates), payments without card data, consents, checkout sessions, support tickets with their public messages, and data requests. Works for every customer, anonymized ones included.
 - **Errors**: 404 NOT_FOUND (no customer with that id); 403 FORBIDDEN (caller lacks customers:privacy)
@@ -240,7 +247,7 @@ Writes audit_logs both ways. Card fingerprint = the gateway's card fingerprint (
 ## POST /admin/customers/:id/anonymize
 
 - **Map**: Anonymize the name, email and IMEI while keeping payment records for accounting. (إخفاء الاسم والإيميل والـ IMEI مع إبقاء سجلات الدفع للمحاسبة) · staff-permission `customers:privacy` · stage 18 · tables customers, data_requests, audit_logs
-- **Frontend**: `anonymizeCustomer` (src/features/customers/api/privacy.ts:21) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: none.
 - **Request**: No body. Irreversible.
 - customers: status anonymized, anonymized_at now, name 'Deleted customer', email deleted-<id>@redacted.invalid, phone '', internal_notes '', marketing_opt_in false, has_account false.
 - Deletes credentials and revokes sessions and tokens.
@@ -290,7 +297,7 @@ Writes audit_logs both ways. Card fingerprint = the gateway's card fingerprint (
 ## GET /admin/reports/funnel
 
 - **Map**: Sales funnel: check, then payment started, then paid, then delivered. (قمع المبيعات: فحص ثم بدء دفع ثم مدفوع ثم مسلَّم) · staff-permission `reports:growth` · stage 19 · tables imei_checks, checkout_sessions, orders
-- **Frontend**: `getFunnel` (src/features/finance/api/reports.ts:56) · params `query?: FunnelQuery` · returns `FunnelReport` · success 200 · assumed contract
+- **Frontend**: `getFunnel` (src/features/finance/api/reports.ts:58) · params `query?: FunnelQuery` · returns `FunnelReport` · success 200 · assumed contract
 - **Query**: days=7|30|90, always sent; default 30 (lib/filters.ts:24, 71-74).
 - **Response**: {days, imeiChecks, paymentStarted, paid, delivered}, all integers. Storefront only, over the last `days` days. The console shows each step's share of the one before (display only). Window [now - days x 24 h, now]. imeiChecks = count(imei_checks) with source IN (storefront_free, pre_order) and created_at in the window. paymentStarted = count(checkout_sessions) created in the window, any status. paid = those sessions with order_id IS NOT NULL (status paid). delivered = those sessions whose order (orders.id = order_id) has status completed. One read-only function storefrontFunnel(days) in the customers module's public index; the dashboard storefront block (feature 9, fixed 30 days) calls the same function; feature 9 builds it and feature 19 reuses it.
 - **Errors**: 422 VALIDATION_FAILED (days not in 7|30|90, errors[{field: 'days'}] (mocks/handlers.ts:27-30)); 403 FORBIDDEN (caller lacks reports:growth)
@@ -309,5 +316,40 @@ Writes audit_logs both ways. Card fingerprint = the gateway's card fingerprint (
 ## POST /client/auth/sign-in
 
 - **Map addition** (B-TBD smart-sign-in, `scripts/map-additions/24a.mjs`): Sign in with email and password as a merchant or a customer. (تسجيل دخول موحّد: تاجر أو زبون بالبريد وكلمة المرور) · public · stage 24 · tables clients, customers, customer_credentials, sessions
+- **Frontend**: none.
+
+## POST /admin/clients/:id/block
+
+- **Map addition** (B245, `scripts/map-additions/48-accounts.mjs`): Block an account for fraud, or lift the block, with a reason; blocking adds its email and the card and IMEI fingerprints of its shop orders to the blocklist. · staff-permission `clients:block` · stage 48 · tables clients, blocklist_entries, sessions, audit_logs · success 204
+- **Frontend**: `blockAccount` (src/features/accounts/api/privacy.ts:24) · params `id: number`, `body: BlockAccountBody` · returns `void`
+
+## GET /admin/clients/:id/privacy
+
+- **Map addition** (B245, `scripts/map-additions/48-accounts.mjs`): The privacy facts of an account: the marketing choice, the consents of its latest shop order and its risk signals. · staff-permission `clients:read` · stage 48 · tables clients, consent_records, checkout_sessions, risk_assessments · success 200
+- **Frontend**: `getAccountPrivacy` (src/features/accounts/api/privacy.ts:13) · params `id: number` · returns `AccountPrivacy`
+
+## GET /admin/clients/:id/export
+
+- **Map addition** (B245, `scripts/map-additions/48-accounts.mjs`): Export the data of an account for a data-protection request. · staff-permission `customers:privacy` · stage 48 · tables clients, orders, checkout_sessions, consent_records, support_tickets, files, data_requests · success 200
+- **Frontend**: `exportAccountData` (src/features/accounts/api/privacy.ts:35) · params `id: number` · returns `string`
+
+## POST /admin/clients/:id/anonymize
+
+- **Map addition** (B245, `scripts/map-additions/48-accounts.mjs`): Anonymize the name, email and IMEI of a retail account while keeping the payment records for accounting. · staff-permission `customers:privacy` · stage 48 · tables clients, data_requests, sessions, api_keys, ledger_accounts, audit_logs · success 204
+- **Frontend**: `anonymizeAccount` (src/features/accounts/api/privacy.ts:47) · params `id: number` · returns `void`
+
+## POST /store/v1/me/2fa/setup
+
+- **Map addition** (B245, `scripts/map-additions/48-accounts.mjs`): A new authenticator secret with a QR code for the signed-in account (a password is needed first). · customer-session · stage 48 · tables clients
+- **Frontend**: none.
+
+## POST /store/v1/me/2fa/enable
+
+- **Map addition** (B245, `scripts/map-additions/48-accounts.mjs`): Turn on two-factor sign-in for the signed-in account after confirming a code. · customer-session · stage 48 · tables clients
+- **Frontend**: none.
+
+## POST /store/v1/me/2fa/disable
+
+- **Map addition** (B245, `scripts/map-additions/48-accounts.mjs`): Turn off two-factor sign-in for the signed-in account with a code. · customer-session · stage 48 · tables clients
 - **Frontend**: none.
 

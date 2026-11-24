@@ -1,5 +1,5 @@
-// Pure rules of a staff edit of a merchant (feature 20): which of the three kinds of change a PATCH is, and which columns a details edit
-// really changes. No I/O, so the rules are unit-tested.
+// Pure rules of a staff edit of an account (feature 20, decision 064): which of the three kinds of change a PATCH is, and which columns a
+// details edit really changes. No I/O, so the rules are unit-tested.
 import type { Client, ClientStatus } from '../db/schema';
 
 /** The profile keys a details edit may carry. */
@@ -17,7 +17,12 @@ export const DETAIL_KEYS = [
 /** One key of {@link DETAIL_KEYS}. */
 export type DetailKey = (typeof DETAIL_KEYS)[number];
 
-/** The body of `PATCH /admin/clients/:id` as the domain reads it. */
+/**
+ * The body of `PATCH /admin/clients/:id` as the domain reads it.
+ *
+ * Why: `groupId` is still read so that a body which carries it is refused with `422 use_rank_route` (the rank has its own route,
+ * `POST /admin/clients/:id/rank`, which is the Owner's and moves the balance); it is never applied here.
+ */
 export interface ClientChangeInput {
   readonly status?: ClientStatus | undefined;
   readonly reason?: string | undefined;
@@ -32,34 +37,42 @@ export interface ClientChangeInput {
   readonly internalNotes?: string | undefined;
 }
 
-/** What kind of change a PATCH asks for. */
+/** What kind of change a PATCH asks for (`group` is only recognised, to be refused: the rank has its own route). */
 export type ClientChangeKind = 'status' | 'group' | 'details';
 
 /** A field error in the shape the use cases turn into `422 VALIDATION_FAILED`. */
 export interface FieldProblem {
   readonly field: string;
   readonly message: string;
+  /** The code of the `errors[]` entry; `invalid` when left out. */
+  readonly code?: string;
 }
 
 /** The sentence of a body that mixes kinds. */
-export const MIXED_CHANGE_MESSAGE = 'Send one change at a time: a status, a group or details.';
+export const MIXED_CHANGE_MESSAGE = 'Send one change at a time: a status or details.';
+
+/** The sentence of a body that carries a rank: the rank is changed on its own route. */
+export const USE_RANK_ROUTE_MESSAGE = 'The rank is changed with POST /admin/clients/:id/rank, by the Owner.';
 
 /**
  * Says which kind of change a PATCH is.
  *
- * Why: a call is one of three kinds (a status change, a group move, or details), so each has its own audit row and its own rules
- * (feature 20, plan section 4.1). A mixed body is `422` on the first key of the second kind; an empty one on `status`.
+ * Why: a call is one of two kinds (a status change, or details), so each has its own audit row and its own rules (feature 20, plan
+ * section 4.1). A body with `groupId` is `422 use_rank_route` on `groupId` whatever else it carries (decision 064); a mixed body is `422` on the
+ * first key of the second kind; an empty one on `status`.
  *
  * @param input the body
  * @returns the kind, or the field error
  */
 export function kindOfClientChange(input: ClientChangeInput): { kind: ClientChangeKind } | { problem: FieldProblem } {
+  if (input.groupId !== undefined) {
+    return { problem: { field: 'groupId', code: 'use_rank_route', message: USE_RANK_ROUTE_MESSAGE } };
+  }
   const present: Array<{ kind: ClientChangeKind; field: string }> = [];
   if (input.status !== undefined) present.push({ kind: 'status', field: 'status' });
-  if (input.groupId !== undefined) present.push({ kind: 'group', field: 'groupId' });
   const firstDetail = DETAIL_KEYS.find((key) => input[key] !== undefined);
   if (firstDetail !== undefined) present.push({ kind: 'details', field: firstDetail });
-  if (present.length === 0) return { problem: { field: 'status', message: 'Send a status, a group or details.' } };
+  if (present.length === 0) return { problem: { field: 'status', message: 'Send a status or details.' } };
   if (present.length > 1) return { problem: { field: present[1]!.field, message: MIXED_CHANGE_MESSAGE } };
   return { kind: present[0]!.kind };
 }
@@ -76,7 +89,7 @@ export interface DetailColumns {
   internalNotes?: string;
 }
 
-/** The result of comparing a details edit with the stored merchant. */
+/** The result of comparing a details edit with the stored account. */
 export interface DetailChanges {
   /** Only the keys whose value differs from the stored one. */
   readonly columns: DetailColumns;
@@ -91,12 +104,12 @@ export interface DetailChanges {
 const collapse = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 /**
- * Compares a details edit with the stored merchant.
+ * Compares a details edit with the stored account.
  *
  * Why: a key equal to the stored value is not a change (the console may send the whole form); the name is stored with single
- * spaces and the email lower-case, the way the invitation stores them.
+ * spaces and the email lower-case, the way the create stores them.
  *
- * @param client the locked merchant row
+ * @param client the locked account row
  * @param input the body of the edit
  * @returns the changed keys, or the field error (a name that is empty after cleaning)
  */
@@ -152,7 +165,7 @@ export interface EmailMarkEdit {
 /**
  * The value of `clients.email_set_by_staff` after a details edit, or `undefined` when the edit leaves it as it is.
  *
- * Why: decision 046 keeps the creation of a merchant's API key by staff for Owners. The mark means that the address was last set
+ * Why: decision 046 keeps the creation of an API key of an account by staff for Owners. The mark means that the address was last set
  * by a staff member who is not an Owner and that no Owner has confirmed it since (`MachineCredentialHold`). An email change sets it
  * when the caller is not an Owner and clears it when the caller is an Owner. An Owner's edit that carries the stored address (the
  * console sends the whole form) confirms the address and clears a set mark. Any other edit leaves it.

@@ -4,10 +4,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
+import { customerNameForStaff } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
 import { type PermissionHolder, requirePermission } from '../../identity';
 import { AuditService } from '../../platform';
+import { isPrepaidOrder } from '../domain/door';
 import { ADMIN_ORDER_CSV_COLUMNS, CLIENT_ORDER_CSV_COLUMNS, csvHeader, csvLine } from '../domain/order-csv';
 import {
   type ExportCursor,
@@ -63,8 +65,8 @@ function cursorOf(row: OrderRow, query: ExportQuery): ExportCursor {
  *
  * Why: RESOLUTIONS orders-suppliers-19 and ANSWERS orders Q12: the matching rows are counted first and more than 100,000 is `422`;
  * every staff export writes `audit_logs`; the file is streamed (batches of 1,000 by keyset paging, so a long export never loads the
- * table and never repeats a row when orders arrive meanwhile). The merchant's file has its own columns and never carries cost or
- * supplier.
+ * table and never repeats a row when orders arrive meanwhile). The staff file ends with the buyer's `rank` (decision 064). The account's
+ * file has its own columns and never carries cost, supplier or rank.
  *
  * Decision 047: the staff export also needs `reports:read`, checked first, so a refused export counts nothing and writes no audit row.
  *
@@ -108,29 +110,30 @@ export class OrderExportService {
       stream: this.stream(scope, query, now, ADMIN_ORDER_CSV_COLUMNS, (row) => [
         row.order.id,
         row.order.createdAt.toISOString(),
-        row.order.clientId === null ? 'b2c' : 'b2b',
-        row.clientName ?? row.customerName,
+        isPrepaidOrder(row.order) ? 'b2c' : 'b2b',
+        customerNameForStaff(row.accountName, row.accountEmail),
         row.serviceName,
         row.order.imei ?? '',
         row.order.status,
         row.supplierName,
         row.order.totalPrice,
         row.order.totalCost,
+        row.rankName,
       ]),
     };
   }
 
   /**
-   * Starts the merchant's export of its own orders.
+   * Starts the account's export of its own orders of the merchant doors.
    *
-   * @param clientId the signed-in merchant
+   * @param accountId the signed-in account (a merchant rank)
    * @param query the filters, search and sort of the merchant list
    * @returns the stream and the row count
    * @throws {AppError} `VALIDATION_FAILED` (422) when more than 100,000 orders match
    */
-  async forMerchant(clientId: number, query: ExportQuery): Promise<OrderExport> {
+  async forMerchant(accountId: number, query: ExportQuery): Promise<OrderExport> {
     const now = this.clock.now();
-    const scope: OrderScope = { kind: 'merchant', clientId };
+    const scope: OrderScope = { kind: 'merchant', accountId };
     const rows = await this.checkedCount(scope, query, now);
     return {
       rows,

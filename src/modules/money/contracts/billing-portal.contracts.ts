@@ -1,5 +1,6 @@
 // Route contracts of the merchant portal's billing (map domain E, stage 8, MISMATCHES B162 and B163): the payment methods, the
-// merchant's invoices, a new top-up invoice and the receipt of a bank transfer. No console screen calls them.
+// merchant's invoices, a new top-up invoice (with an optional `Idempotency-Key`, decision 064) and the receipt of a bank transfer. No
+// console screen calls them.
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
 import { INVOICE_KINDS, INVOICE_STATUSES, TOPUP_METHODS, TOPUP_PAYMENT_STATUSES } from '../db/schema';
@@ -131,7 +132,7 @@ export const listMyPaymentMethods = defineRoute({
   access: 'merchant-session',
   query: listQuery({ sorts: ['name'], defaultSort: { field: 'name', order: 'asc' } }),
   success: { status: 200, schema: PaymentMethodSchema },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'VALIDATION_FAILED'],
   examples: { response: [method] },
 });
 
@@ -154,7 +155,7 @@ export const listMyInvoices = defineRoute({
     search: ['number'],
   }),
   success: { status: 200, schema: MerchantInvoiceSchema },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'VALIDATION_FAILED'],
   examples: { response: [invoice] },
 });
 
@@ -175,8 +176,29 @@ export const getMyInvoice = defineRoute({
   access: 'merchant-session',
   params: z.object({ id: zIdParam }),
   success: { status: 200, schema: InvoiceDetail },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'NOT_FOUND', 'VALIDATION_FAILED'],
   examples: { response: { invoice, payments: [payment], instructions: method.instructions } },
+});
+
+/**
+ * The optional `Idempotency-Key` of `POST /client/invoices` (decision 064): 1 to 100 printable ASCII characters, no spaces.
+ *
+ * Why: a retry of the same dialog (or a double click) must not open a second top-up invoice; without the header the route behaves as it
+ * always did.
+ */
+export const MerchantInvoiceHeaders = z.object({
+  'idempotency-key': z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .regex(/^[\x21-\x7e]+$/, 'Use printable ASCII characters without spaces.')
+    .optional()
+    .describe(
+      'Makes a retry safe: the same key with the same gateway and amount answers the same invoice (`idempotency-replayed: true`), ' +
+        'the same key with another request is `409 IDEMPOTENCY_KEY_REUSED`, and one whose payment page is still opening is ' +
+        '`409 IDEMPOTENCY_IN_PROGRESS`.',
+    ),
 });
 
 /** `POST /client/invoices`. */
@@ -191,10 +213,14 @@ export const createMyInvoice = defineRoute({
     '`amount` outside the method limits, above the group limit per deposit, too small for the fee, or (for an automatic method) with ' +
     'more decimals than it can charge exactly (`not_chargeable`, two for a card page). A card method asks for ' +
     "3-D Secure while the shop's `require3ds` policy is on. A merchant holds at most five unpaid top-up invoices that are less than " +
-    '24 hours old or have a receipt in review: the next one is `409 CONFLICT`, before any payment page is opened (decision 049).',
+    '24 hours old or have a receipt in review: the next one is `409 CONFLICT`, before any payment page is opened (decision 049). The ' +
+    'optional `Idempotency-Key` header makes a retry answer the same invoice (`idempotency-replayed: true`); the same key with another ' +
+    'gateway or amount is `409 IDEMPOTENCY_KEY_REUSED` (decision 064). Only an account of a merchant rank may ask: another rank is ' +
+    '`403 RANK_NOT_ALLOWED`.',
   tags: ['finance'],
   surface: 'client',
   access: 'merchant-session',
+  headers: MerchantInvoiceHeaders,
   body: z.object({
     amount: z.string().trim().describe('A decimal amount above zero with up to four decimals.'),
     gatewayId: zId,
@@ -207,7 +233,15 @@ export const createMyInvoice = defineRoute({
       paymentUrl: z.string().optional(),
     }),
   },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'CSRF_FAILED', 'VALIDATION_FAILED', 'CONFLICT', 'GATEWAY_ERROR'],
+  errors: [
+    'UNAUTHORIZED',
+    'CSRF_FAILED',
+    'VALIDATION_FAILED',
+    'CONFLICT',
+    'IDEMPOTENCY_KEY_REUSED',
+    'IDEMPOTENCY_IN_PROGRESS',
+    'GATEWAY_ERROR',
+  ],
   examples: { request: { amount: '100', gatewayId: 3 }, response: { invoice, instructions: method.instructions } },
 });
 
@@ -234,6 +268,6 @@ export const uploadMyReceipt = defineRoute({
     gatewayId: zId.optional().describe('The manual payment method used; required when the invoice has none yet.'),
   }),
   success: { status: 201, schema: MerchantPaymentSchema },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'CSRF_FAILED', 'NOT_FOUND', 'CONFLICT', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'CSRF_FAILED', 'NOT_FOUND', 'CONFLICT', 'VALIDATION_FAILED'],
   examples: { request: { fileId: 9101, reference: 'TRX-5521' }, response: payment },
 });

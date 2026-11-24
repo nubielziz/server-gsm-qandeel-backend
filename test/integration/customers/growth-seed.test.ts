@@ -72,7 +72,7 @@ describe.skipIf(!frontendPresent)('the growth seed', () => {
     });
     // Nothing is written to the column of the retired reminder.
     expect((await db.select().from(s.checkoutSessions)).every((row) => row.recoveryEmailedAt === null)).toBe(true);
-    const [guest] = await db.select().from(s.customers).where(eq(s.customers.id, ck3001!.customerId!));
+    const [guest] = await db.select().from(s.clients).where(eq(s.clients.id, ck3001!.accountId!));
     expect(guest).toMatchObject({ email: 'jo10@post.example', hasAccount: false });
     // The mock's marketing answer of the checkout: a grant for the buyers who agreed, a withdrawal after a grant, or no record.
     const answers = await db

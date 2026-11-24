@@ -18,8 +18,11 @@ import {
   type StockClaim,
   checkPriceChange,
 } from '../../catalog';
+import { AccountDirectory, canAct } from '../../identity';
+import { AccountWallets } from '../../money';
 import { SettingsReader } from '../../platform';
 import type { Order } from '../db/schema';
+import { PLACEMENT_REFUSAL_DETAILS, placementRefusal } from '../domain/buyer-rules';
 import { mainInputOf } from '../domain/main-input';
 import { placementDispatchState } from '../domain/order-machine';
 import {
@@ -42,10 +45,10 @@ import { STOCK_DELIVERY_FROM, stockDeliveryLines } from '../domain/stock-deliver
 import {
   hasActiveSupplierLink,
   merchantFileOf,
-  merchantOf,
   serviceAvailabilityOf,
   serviceFieldsOf,
 } from '../infra/foreign-reads.repository';
+import { asTransaction } from '../infra/buyer.repository';
 import { findOpenDuplicate, insertEvents, insertOrder, lockFingerprint } from '../infra/order.repository';
 import { OrderLedger } from './order-ledger';
 import { OrderOutbox } from './order-outbox';
@@ -62,7 +65,8 @@ export interface PlacementItem {
 
 /** What placement needs; one order is created per item. */
 export interface PlacementRequest {
-  readonly clientId: number;
+  /** The buyer: the account that places the order from its merchant wallet (the portal and Dhru). */
+  readonly accountId: number;
   readonly source: PlacedOrderSource;
   /** The merchant key that placed the order (Dhru). */
   readonly apiKeyId?: number | null;
@@ -87,7 +91,10 @@ function detailOf(errors: readonly FieldError[]): string {
  * Creates orders.
  *
  * Why: scenario manual step 3 and decision 025: "PriceResolver prices this merchant, then in one transaction: the order, its
- * event, the hold and the outbox job". Rules (the brief): the price is the resolver's for this merchant; an order more than the
+ * event, the hold and the outbox job". The buyer is an account; it is locked `FOR KEY SHARE` first (decision 064), and an account of a
+ * retail rank (403 `RANK_NOT_ALLOWED`), one that may not act (403 `ACCOUNT_SUSPENDED`) or one whose merchant wallet is frozen (409
+ * `WALLET_FROZEN`) is refused before anything is written, so a rank change that races the placement is either seen or waited for.
+ * Rules (the brief): the price is the resolver's for this merchant; an order more than the
  * tolerance above the price the merchant last saw is refused (`409 PRICE_CHANGED`, user rule 9), a smaller raise is charged and
  * recorded in `pricing_snapshot`; a second open order for the same service and input is refused under `duplicate_rule =
  * block_open` (`409 DUPLICATE_ORDER`, catalog-2); `orders.imei` holds the main input (orders-suppliers-2); `placed_at` and
@@ -96,8 +103,8 @@ function detailOf(errors: readonly FieldError[]): string {
  * hidden service is not orderable. All items of a request are placed in the caller's one transaction: the first refusal
  * (`INSUFFICIENT_FUNDS` included) undoes the whole request.
  *
- * Side effects (on the caller's transaction): inserts `orders`, `order_events`, `ledger_transactions` and entries (the hold) and
- * `outbox_events`; takes an advisory lock per duplicate fingerprint.
+ * Side effects (on the caller's transaction): takes the buyer's account row `FOR KEY SHARE`; inserts `orders`, `order_events`,
+ * `ledger_transactions` and entries (the hold) and `outbox_events`; takes an advisory lock per duplicate fingerprint.
  *
  * @see docs/decisions/025-order-state-machine.md
  */
@@ -112,6 +119,8 @@ export class OrderPlacement {
     private readonly outbox: OrderOutbox,
     private readonly tokens: TokenService,
     private readonly stock: InventoryStock,
+    private readonly directory: AccountDirectory,
+    private readonly wallets: AccountWallets,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -119,16 +128,22 @@ export class OrderPlacement {
    * Places the orders of one request.
    *
    * @param tx the caller's transaction
-   * @param request the merchant, the service and the items
+   * @param request the buyer account, the service and the items
    * @returns the stored orders, in the order of the items
    * @throws {AppError} `NOT_FOUND` / `SERVICE_DISABLED` (the service cannot be ordered), `INVALID_IMEI` or `VALIDATION_FAILED`
    *   (422, with the field), `PRICE_CHANGED`, `DUPLICATE_ORDER` (409), `INSUFFICIENT_FUNDS` (402), `UNAUTHORIZED` (the
-   *   merchant no longer exists)
+   *   account no longer exists), `RANK_NOT_ALLOWED` (403: the account holds a retail rank), `ACCOUNT_SUSPENDED` (403), `WALLET_FROZEN`
+   *   (409: its merchant wallet is on hold)
    */
   async place(tx: DbExecutor, request: PlacementRequest): Promise<Order[]> {
-    const merchant = await merchantOf(tx, request.clientId);
-    if (!merchant) throw new AppError('UNAUTHORIZED');
-    const entry = await this.catalog.find(tx, { clientId: merchant.id, groupId: merchant.groupId }, request.serviceId);
+    // Decision 064: the account row first (FOR KEY SHARE: a rank change holds it FOR UPDATE), then the rows of the path, then the advisory and
+    // ledger locks; the rank and the wallet are read only under it.
+    const buyer = await this.directory.lockForKeyShare(tx, request.accountId);
+    if (!buyer) throw new AppError('UNAUTHORIZED');
+    const refusal = placementRefusal({ rankKind: buyer.rankKind, mayAct: canAct(buyer.status) });
+    if (refusal !== undefined) throw new AppError(refusal, { detail: PLACEMENT_REFUSAL_DETAILS[refusal] });
+    await this.wallets.assertNotFrozen(asTransaction(tx), buyer.id);
+    const entry = await this.catalog.find(tx, { clientId: buyer.id, groupId: buyer.groupId }, request.serviceId);
     if (!entry) throw await this.notOrderable(tx, request.serviceId);
     const { service } = entry;
 
@@ -142,8 +157,8 @@ export class OrderPlacement {
 
     const resolution = await this.resolver.resolve(tx, {
       serviceId: service.id,
-      groupId: merchant.groupId,
-      clientId: merchant.id,
+      groupId: buyer.groupId,
+      clientId: buyer.id,
     });
     if (!resolution) throw await this.notOrderable(tx, request.serviceId);
     const unit = resolution.price;
@@ -152,7 +167,7 @@ export class OrderPlacement {
       DEFAULT_PRICE_CHANGE_TOLERANCE_PERCENT,
       PRICE_CHANGE_TOLERANCE_BOUNDS,
     );
-    const listed = await this.listedPrices.find(tx, merchant.id, service.id);
+    const listed = await this.listedPrices.find(tx, buyer.id, service.id);
     const verdict = checkPriceChange(listed?.price ?? null, unit, tolerance, { floorRaised: resolution.clamped });
     if (verdict.outcome === 'refuse') {
       throw new AppError('PRICE_CHANGED', {
@@ -162,6 +177,7 @@ export class OrderPlacement {
     }
     const snapshot: Record<string, unknown> = {
       source: resolution.source,
+      rankId: buyer.groupId,
       price: unit.toWire(),
       rawPrice: resolution.rawPrice.toWire(),
       floor: resolution.floor.toWire(),
@@ -200,7 +216,7 @@ export class OrderPlacement {
         item.mainInput === null
           ? null
           : this.tokens.lookupHash(
-              `order-duplicate:${merchant.id}:${service.id}:${item.mainInput.replace(/\s+/g, '').toLowerCase()}`,
+              `order-duplicate:${buyer.id}:${service.id}:${item.mainInput.replace(/\s+/g, '').toLowerCase()}`,
             );
       if (fingerprint !== null && service.duplicateRule === 'block_open') {
         await lockFingerprint(tx, fingerprint);
@@ -216,7 +232,7 @@ export class OrderPlacement {
       const claim = await this.stock.claim(tx, service.id, quantity);
       const begin = claim ? fromStock : start;
       const order = await insertOrder(tx, {
-        clientId: merchant.id,
+        accountId: buyer.id,
         serviceId: service.id,
         type: service.type,
         source: request.source,
@@ -241,11 +257,11 @@ export class OrderPlacement {
       });
       const lines = [
         createdLine(request.source, request.actor),
-        holdLine(order.totalPrice, merchant.name),
+        holdLine(order.totalPrice, buyer.name),
         ...(begin.dispatchState === 'manual' ? [manualReviewLine()] : []),
       ];
       await insertEvents(tx, eventRows(order.id, lines));
-      await this.ledger.hold(tx, order, { type: 'client', id: merchant.id });
+      await this.ledger.hold(tx, order, { type: 'account', id: buyer.id });
       if (claim) await this.deliverFromStock(tx, order, claim);
       if (begin.enqueueDispatch) await this.outbox.dispatchRequested(tx, order.id);
       placed.push(order);
@@ -267,7 +283,8 @@ export class OrderPlacement {
     await insertEvents(tx, eventRows(order.id, stockDeliveryLines(claim.codes.length, moved)));
     await this.outbox.statusChanged(tx, {
       orderId: order.id,
-      clientId: order.clientId,
+      accountId: order.accountId,
+      source: order.source,
       fromStatus: STOCK_DELIVERY_FROM,
       toStatus: order.status,
     });
@@ -284,7 +301,7 @@ export class OrderPlacement {
 
   private async fileOf(tx: DbExecutor, request: PlacementRequest, type: string) {
     if (request.fileId === undefined) return undefined;
-    const file = await merchantFileOf(tx, request.clientId, request.fileId);
+    const file = await merchantFileOf(tx, request.accountId, request.fileId);
     if (!file || type !== 'file') {
       throw new AppError('VALIDATION_FAILED', {
         detail: 'Choose a file you uploaded for a File service.',

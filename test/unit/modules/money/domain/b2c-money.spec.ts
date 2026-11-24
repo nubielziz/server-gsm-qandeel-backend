@@ -14,6 +14,7 @@ import {
   gatewayFeeUsd,
   holdMarkOf,
   hostedPageExpiry,
+  isShopOrder,
   lateConfirmationSignal,
   minutesLate,
   paymentFacts,
@@ -255,5 +256,12 @@ describe('the hold mark of a held storefront payment (decision 048)', () => {
     expect(holdMarkOf({ [HOLD_MARK_KEY]: 'yes' })).toBeUndefined();
     expect(holdMarkOf({ [HOLD_MARK_KEY]: [true] })).toBeUndefined();
     expect(holdMarkOf({ [HOLD_MARK_KEY]: { moneyReceived: 'true' } })).toBeUndefined();
+  });
+});
+
+describe('isShopOrder (decision 064)', () => {
+  it('is true for the shop door only, whatever the buyer is or has become', () => {
+    expect(isShopOrder({ source: 'store' })).toBe(true);
+    for (const source of ['portal', 'dhru', 'v1', 'admin']) expect(isShopOrder({ source })).toBe(false);
   });
 });

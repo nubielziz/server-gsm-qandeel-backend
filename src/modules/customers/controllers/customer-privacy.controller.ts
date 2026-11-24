@@ -1,18 +1,17 @@
-// HTTP controller of the admin customer privacy routes (map domain I, /admin/customers, stage 18): block, export and anonymize. Thin:
-// the use cases are in CustomerBlockService and CustomerPrivacyService.
-import { Body, Controller, Param, Res } from '@nestjs/common';
-import type { FastifyReply } from 'fastify';
-import { type BodyOf, type ParamsOf, Route } from '../../../common/contract';
-import { attachmentDisposition } from '../../../infra/storage';
-import { CurrentStaff, type StaffPrincipal } from '../../identity';
-import { CustomerBlockService } from '../application/customer-block.service';
-import { CustomerPrivacyService } from '../application/customer-privacy.service';
+// HTTP controller of the retired admin customer privacy routes (map domain I, /admin/customers, stage 18): block, export and anonymize.
+// Since decision 064 a customer is an account of the retail rank, and the account routes (account-privacy.controller.ts) do the work for
+// every rank; these three addresses answer 410 ROUTE_RETIRED and change nothing. The contract release deletes this file.
+import { Controller } from '@nestjs/common';
+import { Route } from '../../../common/contract';
+import { routeRetired } from '../application/customer-errors';
 import { anonymizeCustomer, blockCustomer, exportCustomerData } from '../contracts/customer-privacy.contracts';
 
 /**
- * The customer page's block, export and anonymize actions.
+ * The retired block, export and anonymize routes of the customer page.
  *
- * Why: scenario b2c-account steps 8 and 9 and the data-protection requests (B49, B50). The export is a download that is never cached.
+ * Why: decision 064: there are no compatibility adapters; the old address stays registered during the expand release so that a client
+ * that still calls it learns what to call. Nothing is read or written. The access check of the route (session, permission, CSRF token)
+ * and the validation of its old contract still come first, so a request the old contract refuses is 422 and a valid one is 410.
  *
  * @route POST /admin/customers/:id/block
  * @route GET /admin/customers/:id/export
@@ -20,63 +19,36 @@ import { anonymizeCustomer, blockCustomer, exportCustomerData } from '../contrac
  */
 @Controller()
 export class CustomerPrivacyController {
-  constructor(
-    private readonly blocking: CustomerBlockService,
-    private readonly privacy: CustomerPrivacyService,
-  ) {}
-
   /**
-   * Blocks or unblocks a customer.
+   * Answers that the block moved to the account routes.
    *
-   * @param staff the signed-in staff member
-   * @param params the customer id
-   * @param body the switch and the reason
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route POST /admin/customers/:id/block
    */
   @Route(blockCustomer)
-  async block(
-    @CurrentStaff() staff: StaffPrincipal,
-    @Param() params: ParamsOf<typeof blockCustomer>,
-    @Body() body: BodyOf<typeof blockCustomer>,
-  ): Promise<void> {
-    await this.blocking.setBlocked(staff.staffId, params.id, body);
+  block(): never {
+    throw routeRetired('POST /admin/clients/:id/block');
   }
 
   /**
-   * Downloads everything held about a customer.
+   * Answers that the export moved to the account routes.
    *
-   * @param staff the signed-in staff member
-   * @param params the customer id
-   * @param reply the reply, for the download headers
-   * @returns the JSON file
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route GET /admin/customers/:id/export
    */
   @Route(exportCustomerData)
-  async exportData(
-    @CurrentStaff() staff: StaffPrincipal,
-    @Param() params: ParamsOf<typeof exportCustomerData>,
-    @Res({ passthrough: true }) reply: FastifyReply,
-  ): Promise<Buffer> {
-    const file = await this.privacy.exportData(staff.staffId, params.id);
-    reply
-      .header('content-type', 'application/json; charset=utf-8')
-      .header('content-disposition', attachmentDisposition(file.filename))
-      .header('cache-control', 'no-store');
-    return file.bytes;
+  exportData(): never {
+    throw routeRetired('GET /admin/clients/:id/export');
   }
 
   /**
-   * Anonymizes a customer.
+   * Answers that the erasure moved to the account routes.
    *
-   * @param staff the signed-in staff member
-   * @param params the customer id
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route POST /admin/customers/:id/anonymize
    */
   @Route(anonymizeCustomer)
-  async anonymize(
-    @CurrentStaff() staff: StaffPrincipal,
-    @Param() params: ParamsOf<typeof anonymizeCustomer>,
-  ): Promise<void> {
-    await this.privacy.anonymize(staff.staffId, params.id);
+  anonymize(): never {
+    throw routeRetired('POST /admin/clients/:id/anonymize');
   }
 }

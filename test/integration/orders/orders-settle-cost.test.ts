@@ -4,7 +4,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
 import { EncryptionService } from '@src/infra/crypto';
-import { schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
 import { b2cPay, postTransaction } from '@src/modules/money';
 import { DISPATCH_ANSWER_MARGIN_MS, DispatchSweep, SupplierDispatch, SupplierPoll } from '@src/modules/suppliers';
@@ -27,6 +26,7 @@ import {
   type OrdersWorld,
 } from '../../support/orders';
 import { deleteBullKeys, testBullPrefix } from '../../support/queues';
+import { makeCustomer } from '../../support/store';
 import { FakeDhruSupplier, SupplierTestModule, hold, insertFakeSupplier, linkService } from '../../support/suppliers';
 
 const TIMEOUT_MS = 10_000;
@@ -163,12 +163,9 @@ describe('the supplier cost of a completion after a reopen', () => {
   it('books the cost again for a storefront order that staff send again after a reopen', async () => {
     const { db } = world;
     const { supplierId, serviceId } = await route('10.0000');
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: `c-${crypto.randomUUID()}@example.com`, name: 'Jack Turner' })
-      .returning({ id: s.customers.id });
+    const customer = await makeCustomer(t, { guest: true, name: 'Jack Turner' });
     const order = await insertOrderRow(db, {
-      customerId: customer!.id,
+      accountId: customer.id,
       serviceId,
       source: 'store',
       dispatchState: 'pending',

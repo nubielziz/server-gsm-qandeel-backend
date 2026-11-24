@@ -6,6 +6,7 @@ import { and, eq } from 'drizzle-orm';
 import { Money } from '@src/common/money';
 import { DbService, schema as s } from '@src/infra/db';
 import { adjust, postTransaction } from '@src/modules/money';
+import { makeAccount } from '../../support/accounts';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -68,10 +69,7 @@ const at = (iso: string) => new Date(iso);
 async function seedOrders() {
   const { db, merchant, other, auto, manual } = world;
   const base = { type: 'imei' as const, currency: 'USD' };
-  const [customer] = await db
-    .insert(s.customers)
-    .values({ email: `c-${crypto.randomUUID()}@example.com`, name: 'Jack Turner' })
-    .returning({ id: s.customers.id });
+  const customer = await makeAccount({ rank: 'retail', name: 'Jack Turner', db });
   const row = (values: Parameters<typeof insertOrderRow>[1]) => insertOrderRow(db, { ...base, ...values });
   const o1 = await row({
     clientId: merchant.id,
@@ -151,7 +149,7 @@ async function seedOrders() {
     completedAt: at('2026-10-01T09:00:00.000Z'),
   });
   const o7 = await row({
-    customerId: customer!.id,
+    accountId: customer.id,
     serviceId: auto.serviceId,
     supplierId: gulf,
     source: 'store',
@@ -406,6 +404,8 @@ describe('GET /admin/reports/wallet-exposure', () => {
         inOverdraft: 0,
       },
       rows: [],
+      // The store balances of the other wallet kind, counted apart (decision 064).
+      storeBalances: { accounts: 0, balance: '0.0000', negative: 0, frozen: 0 },
     });
     const other = await adminWith(t, ['orders:read']);
     expect((await other.get('/admin/reports/wallet-exposure')).status).toBe(403);
@@ -517,17 +517,20 @@ describe('GET /admin/reports/suppliers', () => {
 });
 
 describe('GET /admin/reports/top-clients', () => {
-  it('ranks merchants by what they spent in the window, with orders, profit and the wallet balance', async () => {
+  it('ranks every account by what it spent in the window, with orders, profit, the rank and the live wallet balance', async () => {
     const { merchant, other } = world;
     await seedOrders();
     const res = await staff.get('/admin/reports/top-clients?days=7&limit=6');
     expect(res.status).toBe(200);
+    const merchantRank = { id: expect.any(Number), name: expect.any(String), kind: 'merchant' };
     expect(res.body).toEqual([
       // orders 1, 2, 5 and 8 in the window; spend leaves the rejected one out; profit is the completed orders'.
       {
         id: merchant.id,
         name: 'Cairo GSM Lab',
         country: '',
+        rank: merchantRank,
+        hasAccount: true,
         orders: 4,
         spend: '54.5600',
         profit: '8.7800',
@@ -537,10 +540,24 @@ describe('GET /admin/reports/top-clients', () => {
         id: other.id,
         name: 'Erbil Mobile Parts',
         country: '',
+        rank: merchantRank,
+        hasAccount: true,
         orders: 2,
         spend: '15.0000',
         profit: '12.0000',
         walletBalance: '100.0000',
+      },
+      // Order 7, the shop buyer: every account that ordered is in the default scope (decision 064); no store balance yet.
+      {
+        id: expect.any(Number),
+        name: 'Jack Turner',
+        country: 'GB',
+        rank: { id: expect.any(Number), name: expect.any(String), kind: 'retail' },
+        hasAccount: true,
+        orders: 1,
+        spend: '12.4900',
+        profit: '5.2900',
+        walletBalance: '0.0000',
       },
     ]);
   });
@@ -560,21 +577,29 @@ describe('GET /admin/reports/top-clients', () => {
     expect(fortnight.body[0]).toMatchObject({ id: merchant.id, orders: 4 });
   });
 
-  it('leaves out merchants waiting for approval, merchants without an order in the window and storefront orders', async () => {
+  it('leaves out anonymized accounts and accounts without an order in the window, and keeps the storefront buyer out of the b2b scope', async () => {
     const { db, auto } = world;
     await seedOrders();
-    const waiting = await insertWalletMerchant(db, { name: 'Waiting Co' });
-    await db.update(s.clients).set({ status: 'pending' }).where(eq(s.clients.id, waiting.id));
+    const erased = await insertWalletMerchant(db, { name: 'Erased Co' });
+    // An anonymized row carries the time it was anonymized (clients_anonymized_check).
+    await db
+      .update(s.clients)
+      .set({ status: 'anonymized', anonymizedAt: clock.now() })
+      .where(eq(s.clients.id, erased.id));
     await insertOrderRow(db, {
-      clientId: waiting.id,
+      clientId: erased.id,
       serviceId: auto.serviceId,
       unitPrice: '99.0000',
       totalPrice: '99.0000',
       createdAt: at('2026-11-07T09:00:00.000Z'),
     });
     await insertWalletMerchant(db, { name: 'Quiet Co' });
-    const res = await staff.get('/admin/reports/top-clients');
+    const res = await staff.get('/admin/reports/top-clients?scope=b2b');
     expect(res.body.map((row: { name: string }) => row.name)).toEqual(['Cairo GSM Lab', 'Erbil Mobile Parts']);
+    // Every account that ordered is in the default scope, the storefront buyer included (decision 064).
+    const everyone = await staff.get('/admin/reports/top-clients');
+    expect(everyone.body.map((row: { name: string }) => row.name)).toContain('Jack Turner');
+    expect(everyone.body.map((row: { name: string }) => row.name)).not.toContain('Erased Co');
   });
 
   it('shows a negative wallet balance as it is', async () => {

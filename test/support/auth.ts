@@ -8,6 +8,8 @@ import { TokenService } from '@src/infra/crypto';
 import { type Database, schema as s } from '@src/infra/db';
 import { CsrfService, IpRuleCache, SessionCookies, SessionService } from '@src/modules/identity';
 import type { SessionStage, SubjectType } from '@src/modules/identity/db/schema';
+import { RankKinds } from '@src/modules/identity/security/rank-kinds';
+import { ensureMerchantGroup } from './accounts';
 import { PRODUCTION_ENV, type TestApp } from './app';
 import { TEST_DATABASE_URL, testDb } from './db';
 import { testInstanceEnv } from './env';
@@ -35,17 +37,21 @@ export async function insertStaff(
   return staff!.id;
 }
 
-/** Inserts an active merchant (and the default client group it needs); returns the id. */
+/**
+ * Inserts an active account of the merchant rank (and the merchant rank it needs); returns the id.
+ *
+ * Why: the rank is the only thing that tells a merchant from a retail account, so the account takes a rank of the merchant kind
+ * (`b2b`), never the first rank of any kind (which can be the retail one).
+ *
+ * @param db the test database
+ * @param overrides columns to change
+ * @returns the account id
+ */
 export async function insertMerchant(
   db: Database,
   overrides: Partial<typeof s.clients.$inferInsert> = {},
 ): Promise<number> {
-  const existing = await db.select({ id: s.clientGroups.id }).from(s.clientGroups).limit(1);
-  const groupId =
-    existing[0]?.id ??
-    (
-      await db.insert(s.clientGroups).values({ name: 'Standard', isDefault: true }).returning({ id: s.clientGroups.id })
-    )[0]!.id;
+  const groupId = await ensureMerchantGroup(db);
   const unique = randomUUID();
   const [client] = await db
     .insert(s.clients)
@@ -80,7 +86,7 @@ export interface TestSession {
  * Opens a session for an account the way sign-in does.
  *
  * @param t the running test app
- * @param subject the account (`staff`, `client` for a merchant, `customer`)
+ * @param subject the person: `staff`, or `account` for an account of any rank (the rank is the account's, not the session's)
  * @param options the stage (default `active`) and an optional lifetime in seconds
  * @returns the token, the cookie header and the CSRF token
  */
@@ -127,10 +133,15 @@ export async function signInStaff(
 }
 
 /**
- * Deletes the cached sessions, role permissions, settings and IP rules of the test app (the database is reset between tests).
+ * Deletes the cached sessions, role permissions, settings and IP rules of the test app, and the retail rank id the app remembers (the
+ * database is reset between tests, and a reset restarts the ids).
  *
  * Why the IP rules: their snapshot is served from the cache for minutes, which outlives a test file. After a file that seeds an
  * allowlist for the console, the staff requests of the next file would be refused from every other address.
+ *
+ * Why the retail rank: `RankKinds` keeps the id of the one retail rank in memory, because the product never deletes that rank. `resetDb`
+ * does, and restarts the ids, so the id the retail rank had in one test can be a merchant rank in the next, whose accounts would then
+ * meet the rank gate of a retail account.
  */
 export async function clearIdentityCaches(t: TestApp): Promise<void> {
   const cache = t.app.get(CacheService);
@@ -139,6 +150,8 @@ export async function clearIdentityCaches(t: TestApp): Promise<void> {
   await cache.delByPrefix(keys.prefix('identity', 'role'));
   await cache.del(keys.settings());
   await t.app.get(IpRuleCache).invalidate();
+  // a database reset restarts the ids: the retail rank id the app remembered may now belong to a merchant rank
+  t.app.get(RankKinds).forgetRetail();
 }
 
 /**

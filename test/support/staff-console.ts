@@ -24,6 +24,8 @@ export interface CallOptions {
   readonly csrf?: boolean | string;
   /** Send the session cookie (default true). */
   readonly cookies?: boolean;
+  /** More request headers (an `idempotency-key`). */
+  readonly headers?: Record<string, string>;
 }
 
 /** A browser plus the console's API client, talking to the test app by `inject`. */
@@ -68,6 +70,7 @@ export class StaffConsole {
     const csrf = options.csrf ?? method !== 'GET';
     if (typeof csrf === 'string') headers['x-csrf-token'] = csrf;
     else if (csrf && this.csrf !== undefined) headers['x-csrf-token'] = this.csrf;
+    Object.assign(headers, options.headers);
     const res = await this.t.app.inject({
       method,
       url,

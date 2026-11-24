@@ -61,7 +61,7 @@ Frontend features covering this module: `support` (rules in `RULES.md`).
 ## GET /admin/support-tickets
 
 - **Map**: Support inbox: priority, assignment, status and SLA timers. (صندوق الدعم: الأولوية والإسناد والحالة ومؤقتات SLA) · staff-permission `support:*` · stage 17 · tables support_tickets, orders
-- **Frontend**: `listSupportTickets` (src/features/support/api/tickets.ts:35) · params `query?: ListQuery` · returns `ListResult<SupportTicket>` · success 200 · assumed contract
+- **Frontend**: `listSupportTickets` (src/features/support/api/tickets.ts:36) · params `query?: ListQuery` · returns `ListResult<SupportTicket>` · success 200 · assumed contract
 - **Query**: Paging 25. Filters:
 - status: repeat = IN. Open sends new&open&pending; Resolved sends resolved. status=pending is translated to the stored pending_customer (status IN (pending_customer)) by the status codec.
 - late=true: Overdue.
@@ -94,7 +94,7 @@ The list itself is also refetched every 30 s.
 ## GET /admin/support-tickets/:id
 
 - **Map**: Support inbox: priority, assignment, status and SLA timers. (صندوق الدعم: الأولوية والإسناد والحالة ومؤقتات SLA) · staff-permission `support:*` · stage 17 · tables support_tickets, orders
-- **Frontend**: `getSupportTicket` (src/features/support/api/tickets.ts:48) · params `id: number` · returns `SupportTicketDetail` · success 200 · assumed contract
+- **Frontend**: `getSupportTicket` (src/features/support/api/tickets.ts:49) · params `id: number` · returns `SupportTicketDetail` · success 200 · assumed contract
 - **Request**: :id is the numeric ticket id. The pane reads it by id, whatever the list shows.
 - **Response**: The list row plus:
 - messages[], oldest first, internal notes included. Each has id, ticketId, authorType customer|client|staff|system, authorId or null, authorName (joined; 'Deleted customer' after anonymize; 'System' for system messages), body, isInternal, fileIds (number[]) and createdAt.
@@ -107,7 +107,7 @@ Refetched every 30 s while open.
 ## PATCH /admin/support-tickets/:id
 
 - **Map**: Support inbox: priority, assignment, status and SLA timers. (صندوق الدعم: الأولوية والإسناد والحالة ومؤقتات SLA) · staff-permission `support:*` · stage 17 · tables support_tickets, orders
-- **Frontend**: `updateSupportTicket` (src/features/support/api/tickets.ts:58) · params `id: number`, `body: UpdateTicketBody` · returns `SupportTicket` · success 200 · assumed contract
+- **Frontend**: `updateSupportTicket` (src/features/support/api/tickets.ts:59) · params `id: number`, `body: UpdateTicketBody` · returns `SupportTicket` · success 200 · assumed contract
 - **Request**: Partial body {priority?, assigneeId?, status?}. Status codec (B112): the body word pending is stored as pending_customer; status accepts only new|open|pending|resolved (anything else is 422 on status); stored words other than pending_customer pass through. Status codec in one place, the support repository: toWire(pending_customer) = 'pending', fromWire('pending') = 'pending_customer'.
 - assigneeId: null unassigns; otherwise it must be an active staff member.
 - status 'resolved': sets resolved_at now, adds an internal system message 'Marked resolved by <name>. A satisfaction survey is emailed to the customer.', and sends the CSAT survey (outbox/notifications).
@@ -121,7 +121,7 @@ Values equal to the current ones are ignored. audit_logs entry per change.
 ## POST /admin/support-tickets/:id/reply
 
 - **Map**: Reply to the customer by email or Telegram. (رد على الزبون بإيميل أو Telegram) · staff-permission `support:reply` · stage 17 · tables ticket_messages, support_tickets, notifications
-- **Frontend**: `replyToTicket` (src/features/support/api/tickets.ts:69) · params `id: number`, `body: ReplyBody` · returns `TicketMessage` · success 201 · assumed contract
+- **Frontend**: `replyToTicket` (src/features/support/api/tickets.ts:70) · params `id: number`, `body: ReplyBody` · returns `TicketMessage` · success 201 · assumed contract
 - **Request**: Body {body, channel?}.
 - body: trimmed text; templates are already filled in by the console.
 - channel: email|telegram, sent only when replyChannels has more than one entry (Composer.tsx:48-51, 91). Without it, use the ticket's channel when allowed, else email.
@@ -133,7 +133,7 @@ Effects: inserts a staff message (is_internal false) and delivers it on the chan
 ## POST /admin/support-tickets/:id/note
 
 - **Map**: Internal note that the customer does not see. (ملاحظة داخلية لا يراها الزبون) · staff-permission `support:reply` · stage 17 · tables ticket_messages
-- **Frontend**: `addTicketNote` (src/features/support/api/tickets.ts:79) · params `id: number`, `body: NoteBody` · returns `TicketMessage` · success 201 · assumed contract
+- **Frontend**: `addTicketNote` (src/features/support/api/tickets.ts:80) · params `id: number`, `body: NoteBody` · returns `TicketMessage` · success 201 · assumed contract
 - **Request**: Body {body}. Adds an internal message (is_internal true); the status stays the same and the customer never sees it. As in the mock and demo, it also assigns an unassigned ticket to the author and bumps updated_at. Allowed on resolved tickets.
 - **Response**: 201 with the new TicketMessage.
 - **Errors**: 422 VALIDATION_FAILED (empty body, errors[{field: 'body'}]); 404 NOT_FOUND (no ticket with that id); 403 FORBIDDEN (caller lacks support:reply)
@@ -208,17 +208,17 @@ Effects: inserts a staff message (is_internal false) and delivers it on the chan
 ## POST /admin/support-tickets/:id/read
 
 - **Map addition** (B218, `scripts/map-additions/28.mjs`): Mark the requester's messages as seen. (تعليم رسائل التذكرة كمقروءة) · staff-permission `support:read` · stage 28 · tables support_tickets, ticket_messages · success 204
-- **Frontend**: `markTicketRead` (src/features/support/api/tickets.ts:90) · params `id: number`, `body: MarkReadBody` · returns `void`
+- **Frontend**: `markTicketRead` (src/features/support/api/tickets.ts:91) · params `id: number`, `body: MarkReadBody` · returns `void`
 
 ## POST /admin/support-tickets/:id/files
 
 - **Map addition** (B218, `scripts/map-additions/28.mjs`): Upload an attachment for a reply or a note. (إرفاق ملف برد أو ملاحظة) · staff-permission `support:reply` · stage 28 · tables support_tickets, ticket_messages, files, audit_logs · success 201
-- **Frontend**: `uploadTicketFile` (src/features/support/api/tickets.ts:101) · params `id: number`, `body: TicketFileUpload` · returns `StoredTicketFile`
+- **Frontend**: `uploadTicketFile` (src/features/support/api/tickets.ts:102) · params `id: number`, `body: TicketFileUpload` · returns `StoredTicketFile`
 
 ## GET /admin/support-tickets/:id/files/:fileId
 
 - **Map addition** (B218, `scripts/map-additions/28.mjs`): Download an attachment of the ticket (presigned link). (تنزيل مرفق التذكرة) · staff-permission `support:read` · stage 28 · tables support_tickets, ticket_messages, files · success 302
-- **Frontend**: `ticketFileUrl` (src/features/support/api/tickets.ts:114) · params `id: number`, `fileId: number` · returns `string`
+- **Frontend**: `ticketFileUrl` (src/features/support/api/tickets.ts:115) · params `id: number`, `fileId: number` · returns `string`
 
 ## GET /store/v1/me/tickets
 

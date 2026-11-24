@@ -1,6 +1,9 @@
-// The upload quotas of merchants, customers and ticket links (decision 053): the rules are constants, one function counts and refuses.
+// The upload quotas of accounts and ticket links (decisions 053 and 064): the rules are constants, one function counts and refuses.
+// The rule follows the rank kind of the account that uploads: merchant ranks get the merchant rule, every other rank the retail one.
 import { AppError } from '../../../common/errors';
 import type { DbExecutor } from '../../../infra/db';
+import type { RankKind } from '../../identity';
+import type { FileOwnerType } from '../db/schema';
 import { uploadUsage } from '../infra/file.repository';
 
 const MIB = 1024 * 1024;
@@ -27,24 +30,10 @@ export interface UploadQuotaRule {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * The quota of a merchant that waits for approval: 10 files and 50 MiB in all.
- *
- * Why: decision 053. A merchant that waits for approval uploads only ticket attachments (the ticket routes allow a pending merchant, B153; the order
- * and billing routes answer it 403 ACCOUNT_PENDING_APPROVAL), and an account nobody approved yet has no reason to hold more.
- */
-export const PENDING_MERCHANT_QUOTA: UploadQuotaRule = {
-  maxFiles: 10,
-  maxBytes: 50 * MIB,
-  windowMs: null,
-  keyPrefixes: ['files/'],
-  message:
-    'An account that waits for approval can keep at most 10 uploaded files (50 MiB). Files that nothing uses are removed 7 days after their upload.',
-};
-
-/**
- * The quota of an approved merchant: 500 files and 5 GiB in 24 hours.
+ * The quota of an account of a merchant rank: 500 files and 5 GiB in 24 hours.
  *
  * Why: decision 053. Far above the pace of the `upload` limiter that a real integration keeps; 5 GiB is 200 files of the 25 MiB maximum.
+ * Decision 064: there is no waiting-for-approval quota any more (the status `pending` is gone), so every merchant rank has this one.
  */
 export const MERCHANT_DAILY_QUOTA: UploadQuotaRule = {
   maxFiles: 500,
@@ -55,9 +44,11 @@ export const MERCHANT_DAILY_QUOTA: UploadQuotaRule = {
 };
 
 /**
- * The quota of a customer: 30 files and 100 MiB in 24 hours, receipts and ticket-link uploads together.
+ * The quota of an account of a retail rank: 30 files and 100 MiB in 24 hours, receipts and ticket-link uploads together.
  *
  * Why: decision 053. Three times the pace of the top-up limiter of real use (10 per 10 minutes is a hint, 30 a day is the cap).
+ * Decision 064: the rule belongs to the rank kind, not to the route: an account of a merchant rank is never held to it, whichever route its
+ * file came through (see {@link uploadQuotaFor}). The name keeps the word of decision 053.
  */
 export const CUSTOMER_DAILY_QUOTA: UploadQuotaRule = {
   maxFiles: 30,
@@ -66,6 +57,21 @@ export const CUSTOMER_DAILY_QUOTA: UploadQuotaRule = {
   keyPrefixes: ['files/', 'tickets-'],
   message: 'You can upload at most 30 files (100 MiB) in 24 hours. Try again later.',
 };
+
+/**
+ * The daily quota that belongs to a rank kind.
+ *
+ * Why: decision 064. One owner (`account`, id) now uploads through `/client/files` and `/store/v1/files`, and a ticket link
+ * uploads for the account that asked, so a rule chosen by the route would hold a merchant rank to the retail 30 files or a retail rank to
+ * the merchant 500. The rank kind decides: every caller that checks a quota for an account (the upload routes, the ticket-link upload)
+ * picks the rule here.
+ *
+ * @param rankKind the rank kind of the account that uploads
+ * @returns the merchant rule ({@link MERCHANT_DAILY_QUOTA}) for a merchant rank, the retail rule ({@link CUSTOMER_DAILY_QUOTA}) for a retail rank
+ */
+export function uploadQuotaFor(rankKind: RankKind): UploadQuotaRule {
+  return rankKind === 'merchant' ? MERCHANT_DAILY_QUOTA : CUSTOMER_DAILY_QUOTA;
+}
 
 /**
  * The quota of one ticket's link: 20 files and 50 MiB in 24 hours.
@@ -108,15 +114,15 @@ export function quotaExceeded(
  * {@link lockUploadOwner}, together with the row insert (exact under concurrency).
  *
  * @param db the database or the transaction that holds the owner lock
- * @param owner the merchant or customer who owns the file
- * @param rules the quotas to check, in order; the first exceeded one refuses
+ * @param owner the account (or staff member) who owns the file
+ * @param rules the quotas to check, in order; the first exceeded one refuses (see {@link uploadQuotaFor})
  * @param incomingBytes the size of the new file
  * @param now the injected clock's time
  * @throws {AppError} `VALIDATION_FAILED` (422) on `file` with the code `quota` and the sentence of the rule
  */
 export async function assertUploadQuota(
   db: DbExecutor,
-  owner: { readonly type: 'client' | 'customer'; readonly id: number },
+  owner: { readonly type: FileOwnerType; readonly id: number },
   rules: readonly UploadQuotaRule[],
   incomingBytes: number,
   now: Date,

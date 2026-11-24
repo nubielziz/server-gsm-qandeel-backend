@@ -7,12 +7,12 @@ import type { LedgerAccountKind, LedgerOwnerType } from '../db/schema';
 /**
  * Which ledger account a line is about: a kind, and the owner for the per-owner kinds.
  *
- * Why: system accounts are found by kind and currency, merchant wallets and holds by merchant, supplier prepaid accounts by
- * supplier (decision 024: unique identity `(kind, owner_type, owner_id, currency)`).
+ * Why: system accounts are found by kind and currency, wallets and holds by account (a merchant or a shopper is one account type,
+ * decision 064), supplier prepaid accounts by supplier (decision 024: unique identity `(kind, owner_type, owner_id, currency)`).
  */
 export interface AccountRef {
   readonly kind: LedgerAccountKind;
-  /** `client` for `client_wallet` and `client_hold`, `supplier` for `supplier_prepaid`; absent for system accounts. */
+  /** `account` for `client_wallet`, `client_hold` and `customer_wallet` (decision 064), `supplier` for `supplier_prepaid`; absent for system accounts. */
   readonly ownerType?: LedgerOwnerType;
   readonly ownerId?: number;
   /** Only to assert one currency; defaults to the transaction's currency. */

@@ -1,21 +1,21 @@
-// Drizzle queries on `api_keys` and the status of the merchant behind a key (identity module). Every function takes a
+// Drizzle queries on `api_keys` and the status of the account behind a key (identity module). Every function takes a
 // DbExecutor, so a caller can run them inside its own transaction.
 import { and, eq, isNull, lte, or } from 'drizzle-orm';
 import type { DbExecutor } from '../../../../../infra/db';
 import { apiKeys, clients } from '../../../db/schema';
-import type { ApiKeyView } from './api-key.rules';
+import type { StoredApiKey } from './api-key.rules';
 
 /**
- * Finds an API key and its merchant by the keyed hash of the key.
+ * Finds an API key and its account by the keyed hash of the key.
  *
  * Why: the guards look keys up by the hash of the presented key (unique index `api_keys_key_hash_uq`, decision 019).
  * Revoked and expired keys are returned too, so the guard can tell them from unknown ones; it judges them with the clock.
  *
  * @param db the database or a transaction
  * @param keyHash the keyed hash of the key
- * @returns the view, or `undefined` for an unknown key
+ * @returns the key, its account and the id of the account's rank group, or `undefined` for an unknown key
  */
-export async function findApiKeyByHash(db: DbExecutor, keyHash: string): Promise<ApiKeyView | undefined> {
+export async function findApiKeyByHash(db: DbExecutor, keyHash: string): Promise<StoredApiKey | undefined> {
   const [row] = await db
     .select({
       id: apiKeys.id,
@@ -29,6 +29,7 @@ export async function findApiKeyByHash(db: DbExecutor, keyHash: string): Promise
       username: clients.username,
       name: clients.name,
       status: clients.status,
+      groupId: clients.groupId,
     })
     .from(apiKeys)
     .innerJoin(clients, eq(clients.id, apiKeys.clientId))
@@ -44,24 +45,23 @@ export async function findApiKeyByHash(db: DbExecutor, keyHash: string): Promise
     lastUsedAtMs: row.lastUsedAt?.getTime() ?? null,
     expiresAtMs: row.expiresAt?.getTime() ?? null,
     revokedAtMs: row.revokedAt?.getTime() ?? null,
-    client: { username: row.username, name: row.name, status: row.status },
+    client: { username: row.username, name: row.name, status: row.status, groupId: row.groupId },
   };
 }
 
 /**
- * Lists the key hashes of a merchant's keys that can still be used.
+ * Lists the key hashes of every key of an account, revoked ones included.
  *
- * Why: when a merchant is suspended or reactivated, the cached views of its keys (which hold the status) must be deleted.
+ * Why: when an account is suspended, reactivated, renamed or leaves the merchant rank, the cached views of its keys (which hold the
+ * status, the name and the rank kind) must be deleted. A rank change revokes the keys first and drops the views after its commit, so the
+ * list must still name the keys that were revoked a moment ago: a view of a revoked key is exactly the one to drop.
  *
  * @param db the database or a transaction
- * @param clientId the merchant id
- * @returns the hashes of the keys that are not revoked
+ * @param clientId the account id (`api_keys.client_id` already names the account)
+ * @returns the hashes of all the account's keys
  */
-export async function liveKeyHashesOf(db: DbExecutor, clientId: number): Promise<string[]> {
-  const rows = await db
-    .select({ keyHash: apiKeys.keyHash })
-    .from(apiKeys)
-    .where(and(eq(apiKeys.clientId, clientId), isNull(apiKeys.revokedAt)));
+export async function keyHashesOf(db: DbExecutor, clientId: number): Promise<string[]> {
+  const rows = await db.select({ keyHash: apiKeys.keyHash }).from(apiKeys).where(eq(apiKeys.clientId, clientId));
   return rows.map((row) => row.keyHash);
 }
 

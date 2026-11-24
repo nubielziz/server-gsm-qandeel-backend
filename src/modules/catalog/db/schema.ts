@@ -204,19 +204,30 @@ export const INVENTORY_CODE_STATUSES = ['available', 'reserved', 'sold', 'void']
 export type InventoryCodeStatus = (typeof INVENTORY_CODE_STATUSES)[number];
 
 /**
- * Merchant groups with their discount percentages and promotion limits; kind = b2c_retail marks the single retail
- * group used by the storefront.
+ * The kinds of rank: `b2b` is a merchant rank, `b2c_retail` is the one retail rank.
  *
- * Why: Merchant tiers with discounts and limits, plus the single storefront retail group (routes
- * /admin/client-groups).
+ * Why: decision 064: the kind of a rank decides what its accounts may do (`rankKindOf`: only `b2b` is a merchant, anything else has retail
+ * rights), so the list is closed. The wire says `merchant` and `retail`; the stored words stay.
+ */
+export const CLIENT_GROUP_KINDS = ['b2b', 'b2c_retail'] as const;
+
+/** One value of {@link CLIENT_GROUP_KINDS}. */
+export type ClientGroupKind = (typeof CLIENT_GROUP_KINDS)[number];
+
+/**
+ * The ranks of accounts (the table keeps its old name `client_groups`) with their discount percentages and promotion limits;
+ * kind = b2c_retail marks the single retail rank used by the storefront and by every guest.
+ *
+ * Why: Merchant tiers with discounts and limits, plus the single storefront retail rank (routes /admin/client-groups). Decision 064: the
+ * rank is the one thing that tells a merchant from a retail account.
  */
 export const clientGroups = pgTable(
   'client_groups',
   {
     id: pk(),
     name: text().notNull(),
-    /** `b2c_retail` marks the storefront's single retail group; the wire leaves the field a free string */
-    kind: text().notNull().default('b2b'),
+    /** see {@link CLIENT_GROUP_KINDS}; `b2c_retail` marks the storefront's single retail rank */
+    kind: text().$type<ClientGroupKind>().notNull().default('b2b'),
     discountPercent: percent().notNull().default('0'),
     isDefault: boolean().notNull().default(false),
     /** Retired (decision 062): ranks are set by hand, nothing reads or writes the upgrade threshold; the accounts migration drops it. */
@@ -235,6 +246,9 @@ export const clientGroups = pgTable(
     uniqueIndex('client_groups_single_retail_uq')
       .on(t.kind)
       .where(sql`${t.kind} = 'b2c_retail'`),
+    check('client_groups_kind_check', inList(t.kind, CLIENT_GROUP_KINDS)),
+    // The retail rank never has credit (the ranks admin refuses it too).
+    check('client_groups_retail_no_credit_check', sql`${t.kind} <> 'b2c_retail' or not ${t.overdraftAllowed}`),
     check(
       'client_groups_amounts_check',
       sql`${t.earnThreshold} >= 0 and ${t.depositLimit} >= 0 and ${t.discountPercent} >= 0 and ${t.discountPercent} <= 100`,

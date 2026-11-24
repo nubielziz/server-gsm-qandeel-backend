@@ -13,11 +13,11 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 | `GET /client/services` | client | merchant-session | 4 |  |
 | `GET /client/services/:id` | client | merchant-session | 4 |  |
 | `GET /client/prices/export` | client | merchant-session | 4 |  |
-| `GET /admin/client-groups` | admin | staff-permission `groups:*` | 4 | `listClientGroups` |
-| `GET /admin/client-groups/:id` | admin | staff-permission `groups:*` | 4 | `getClientGroup` |
-| `POST /admin/client-groups` | admin | staff-permission `groups:*` | 4 | `createClientGroup` |
-| `PATCH /admin/client-groups/:id` | admin | staff-permission `groups:*` | 4 | `updateClientGroup` |
-| `DELETE /admin/client-groups/:id` | admin | staff-permission `groups:*` | 4 | `deleteClientGroup` |
+| `GET /admin/client-groups` | admin | staff-permission `groups:*` | 4 | `listRanks` |
+| `GET /admin/client-groups/:id` | admin | staff-permission `groups:*` | 4 | `getRank` |
+| `POST /admin/client-groups` | admin | staff-permission `groups:*` | 4 | `createRank` |
+| `PATCH /admin/client-groups/:id` | admin | staff-permission `groups:*` | 4 | `updateRank` |
+| `DELETE /admin/client-groups/:id` | admin | staff-permission `groups:*` | 4 | `deleteRank` |
 | `GET /admin/service-categories` | admin | staff-permission `catalog:*` | 4 | `listCategories` |
 | `GET /admin/service-categories/:id` | admin | staff-permission `catalog:*` | 4 | `getCategory` |
 | `POST /admin/service-categories` | admin | staff-permission `catalog:*` | 4 | `createCategory` |
@@ -31,10 +31,10 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 | `PUT /admin/services/:id/fields` | admin | staff-permission `catalog:update` | 4 | `replaceServiceFields` |
 | `PUT /admin/services/:id/options` | admin | staff-permission `catalog:update` | 4 | `replaceServiceOptions` |
 | `PUT /admin/services/:id/group-prices` | admin | staff-permission `pricing:update` | 4 | `replaceServiceGroupPrices` |
-| `GET /admin/client-prices` | admin | staff-permission `pricing:*` | 4 | `listClientPrices` |
-| `POST /admin/client-prices` | admin | staff-permission `pricing:*` | 4 | `createClientPrice` |
-| `PATCH /admin/client-prices/:id` | admin | staff-permission `pricing:*` | 4 | `updateClientPrice` |
-| `DELETE /admin/client-prices/:id` | admin | staff-permission `pricing:*` | 4 | `deleteClientPrice` |
+| `GET /admin/client-prices` | admin | staff-permission `pricing:*` | 4 | `listAccountPrices` |
+| `POST /admin/client-prices` | admin | staff-permission `pricing:*` | 4 | `createAccountPrice` |
+| `PATCH /admin/client-prices/:id` | admin | staff-permission `pricing:*` | 4 | `updateAccountPrice` |
+| `DELETE /admin/client-prices/:id` | admin | staff-permission `pricing:*` | 4 | `deleteAccountPrice` |
 | `GET /admin/pricing-rules` | admin | staff-permission `pricing:*` | 4 | `listPricingRules` |
 | `GET /admin/pricing-rules/:id` | admin | staff-permission `pricing:*` | 4 | `getPricingRule` |
 | `POST /admin/pricing-rules` | admin | staff-permission `pricing:*` | 4 | `createPricingRule` |
@@ -95,7 +95,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 ## GET /admin/client-groups
 
 - **Map**: Merchant groups: discount and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
-- **Frontend**: `listClientGroups` (src/features/merchants/api/groups.ts:24) · params `query?: ListQuery` · returns `ListResult<ClientGroup>` · success 200 · assumed contract
+- **Frontend**: `listRanks` (src/features/accounts/api/ranks.ts:24) · params `query?: ListQuery` · returns `ListResult<Rank>` · success 200 · assumed contract
 - **Query**: Whole list: _start=0&_end=200&_sort=sort&_order=asc (also used by settings gateways and services lookups); tab count _start=0&_end=1. No filters.
 - **Response**: JSON array + x-total-count: id, name, kind ("b2b" for merchant groups, "b2c_retail" for the single storefront group, which must be included), discountPercent (percent decimal string, "4.0000" = 4%), isDefault, earnThreshold (USD money), depositLimit (USD money, the most a merchant of the group may add in one deposit; 0 = no per-deposit limit, the gateway min/max still apply; a deposit above a non-zero limit is refused at deposit creation with 422 on amount, feature 8), overdraftAllowed, sort, createdAt, merchantCount (clients in the group; recommended: Delete is disabled when > 0, retail count not shown).
 - **Errors**: 403 FORBIDDEN (caller lacks groups:read)
@@ -104,7 +104,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 ## GET /admin/client-groups/:id
 
 - **Map**: Merchant groups: discount and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
-- **Frontend**: `getClientGroup` (src/features/merchants/api/groups.ts:33) · params `id: number` · returns `ClientGroup` · success 200 · assumed contract
+- **Frontend**: `getRank` (src/features/accounts/api/ranks.ts:33) · params `id: number` · returns `Rank` · success 200 · assumed contract
 - **Response**: Same row as the list, incl. merchantCount.
 - **Errors**: 404 NOT_FOUND (no group with that id)
 - **Mock**: src/features/merchants/mocks/groupRoutes.ts (Seed groups in mocks/seed.ts (Standard default, Wholesale, VIP, Storefront retail with kind b2c_retail); merchantCount from dto.ts toGroup.)
@@ -112,7 +112,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 ## POST /admin/client-groups
 
 - **Map**: Merchant groups: discount and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
-- **Frontend**: `createClientGroup` (src/features/merchants/api/groups.ts:42) · params `body: CreateClientGroupBody` · returns `ClientGroup` · success 201 · assumed contract
+- **Frontend**: `createRank` (src/features/accounts/api/ranks.ts:42) · params `body: CreateRankBody` · returns `Rank` · success 201 · assumed contract
 - **Request**: Body {name, discountPercent, earnThreshold, depositLimit, overdraftAllowed, isDefault}; earnThreshold, depositLimit >= 0 (CHECK client_groups_amounts_check also bounds discount_percent to 0-100). A group with earnThreshold 0 is never a promotion target (user rule 1). discountPercent arrives as plain decimal text ("4", "2.5"; 0-100, max 2 dp); money fields as 4-dp strings. Server sets kind = "b2b" (a b2c_retail group cannot be created) and sort = last + 1; isDefault = true clears it on every other group.
 - **Response**: 201 with the group (decimals normalised to 4 dp, merchantCount 0).
 - **Errors**: 422 VALIDATION_FAILED (errors[].field name (missing or duplicate, case-insensitive) | discountPercent | earnThreshold | depositLimit | overdraftAllowed | isDefault); 403 FORBIDDEN (caller lacks groups:create)
@@ -121,7 +121,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 ## PATCH /admin/client-groups/:id
 
 - **Map**: Merchant groups: discount and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
-- **Frontend**: `updateClientGroup` (src/features/merchants/api/groups.ts:52) · params `id: number`, `body: Partial<CreateClientGroupBody>` · returns `ClientGroup` · success 200 · assumed contract
+- **Frontend**: `updateRank` (src/features/accounts/api/ranks.ts:52) · params `id: number`, `body: Partial<CreateRankBody>` · returns `Rank` · success 200 · assumed contract
 - **Request**: Partial body: only the changed fields of the create body (the dialog sends a diff). A new discount applies to the next order of the group merchants; open orders keep their pricing_snapshot. isDefault = true moves the default mark to this group.
 - **Response**: 200 with the updated group incl. merchantCount.
 - **Errors**: 422 VALIDATION_FAILED (same field rules as POST); 409 DEFAULT_GROUP_REQUIRED (the change would leave no default group); 404 NOT_FOUND (no group with that id); 403 FORBIDDEN (caller lacks groups:update)
@@ -130,7 +130,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 ## DELETE /admin/client-groups/:id
 
 - **Map**: Merchant groups: discount and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
-- **Frontend**: `deleteClientGroup` (src/features/merchants/api/groups.ts:61) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: `deleteRank` (src/features/accounts/api/ranks.ts:61) · params `id: number` · returns `void` · success 204 · assumed contract
 - **Response**: 204 empty.
 - **Errors**: 409 GROUP_IN_USE (merchants are still in the group (detail names how many); also for the b2c_retail group and the default group); 404 NOT_FOUND (no group with that id); 403 FORBIDDEN (caller lacks groups:delete)
 - **B32**: Map does not say what happens to service_group_prices, payment_gateways.allowed_group_ids and service_categories.allowed_group_ids that reference the group. Proposal: when no merchant is in it, delete its group prices and its pricing rules (pricing_rules.group_id) and drop the id from those arrays in the same transaction. → Proposal accepted, extended (lead resolution catalog-5): when the group can be deleted (no merchants, not default, not b2c_retail), in the same transaction delete its service_group_prices and the pricing_rules with group_id = id, drop the id from payment_gateways.allowed_group_ids and service_categories.allowed_group_ids, then delete the group; 204; one audit entry listing the removed rule ids. Orders keep their pricing_snapshot, so no history is lost.
@@ -253,7 +253,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 ## GET /admin/client-prices
 
 - **Map**: A special price for a merchant on a service. (سعر خاص لتاجر على خدمة) · staff-permission `pricing:*` · stage 4 · tables service_client_prices
-- **Frontend**: `listClientPrices` (src/features/merchants/api/prices.ts:23) · params `query?: ListQuery` · returns `ListResult<ClientPrice>` · success 200 · assumed contract
+- **Frontend**: `listAccountPrices` (src/features/accounts/api/prices.ts:24) · params `query?: ListQuery` · returns `ListResult<AccountPrice>` · success 200 · assumed contract
 - **Query**: clientId=<id> (eq) with _start=0&_end=200; no _sort sent (propose service name asc). A serviceId filter is declared but unused.
 - **Response**: JSON array + x-total-count: id, serviceId, clientId, price, note, createdAt plus service {id, name, type (imei|server|remote|file), basePrice, floorPrice (effective cost B117 + the minimum profit of the merchant's group: the lowest price accepted)} and groupPrice = what this merchant pays without the override (the PriceResolver of GET /admin/pricing/resolve without the client price, for the merchant's group: after the 2-dp rounding, the rule rounding step and the floor clamp, equal to that group's otherGroups price; a 4-dp string such as '0.1200'), null only when the service cannot be priced (never in practice: base_price is NOT NULL).
 - **Errors**: 403 FORBIDDEN (caller lacks pricing:read)
@@ -263,7 +263,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 ## POST /admin/client-prices
 
 - **Map**: A special price for a merchant on a service. (سعر خاص لتاجر على خدمة) · staff-permission `pricing:*` · stage 4 · tables service_client_prices
-- **Frontend**: `createClientPrice` (src/features/merchants/api/prices.ts:33) · params `body: CreateClientPriceBody` · returns `ClientPrice` · success 201 · assumed contract
+- **Frontend**: `createAccountPrice` (src/features/accounts/api/prices.ts:34) · params `body: CreateAccountPriceBody` · returns `AccountPrice` · success 201 · assumed contract
 - **Request**: Body {clientId, serviceId, price (4-dp string > 0), note? (omitted when empty)}. created_by = staff; audit entry. The fixed price beats the group price, the category rule and every discount from the next order.
 - **Response**: 201 with the row incl. the service and groupPrice joins.
 - **Errors**: 422 VALIDATION_FAILED (errors[].field price (<= 0 or below the floor (effective cost B117 + minimum profit of the merchant's group), message naming it, e.g. "Below the floor of $X (cost $Y plus $Z minimum profit).") | serviceId (unknown/inactive) | clientId (unknown; mock answers 404)); 409 PRICE_EXISTS (the merchant already has a fixed price for that service); 403 FORBIDDEN (caller lacks pricing:create)
@@ -272,7 +272,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 ## PATCH /admin/client-prices/:id
 
 - **Map**: A special price for a merchant on a service. (سعر خاص لتاجر على خدمة) · staff-permission `pricing:*` · stage 4 · tables service_client_prices
-- **Frontend**: `updateClientPrice` (src/features/merchants/api/prices.ts:42) · params `id: number`, `body: UpdateClientPriceBody` · returns `ClientPrice` · success 200 · assumed contract
+- **Frontend**: `updateAccountPrice` (src/features/accounts/api/prices.ts:43) · params `id: number`, `body: UpdateAccountPriceBody` · returns `AccountPrice` · success 200 · assumed contract
 - **Request**: Partial {price?, note?}; note may be "" to clear it. Same floor check as POST. The floor is the effective cost (B117) plus the minimum profit of the merchant's group.
 - **Response**: 200 with the row and joins.
 - **Errors**: 422 VALIDATION_FAILED (errors[].field price below the floor or <= 0); 404 NOT_FOUND (no price with that id); 403 FORBIDDEN (caller lacks pricing:update)
@@ -281,7 +281,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 ## DELETE /admin/client-prices/:id
 
 - **Map**: A special price for a merchant on a service. (سعر خاص لتاجر على خدمة) · staff-permission `pricing:*` · stage 4 · tables service_client_prices
-- **Frontend**: `deleteClientPrice` (src/features/merchants/api/prices.ts:51) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: `deleteAccountPrice` (src/features/accounts/api/prices.ts:56) · params `id: number` · returns `void` · success 204 · assumed contract
 - **Response**: 204 empty; the merchant pays the group price again from the next order; audit entry.
 - **Errors**: 404 NOT_FOUND (no price with that id); 403 FORBIDDEN (caller lacks pricing:delete)
 - **Mock**: src/features/merchants/mocks/priceRoutes.ts (Floor and groupPrice computed in mocks/dto.ts floorOf/toPrice from the demo services and group prices; tests in api/catalog.test.ts.)

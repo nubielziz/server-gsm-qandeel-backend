@@ -31,6 +31,20 @@ export interface InboxReader {
 export const UNKNOWN_EVENT_TITLE = 'Notification';
 
 /**
+ * The audience an event item was made for, as its occurrence key names it (`inapp:<audience>:<event>:<occurrence>`).
+ *
+ * Why: the text of an item follows the door of the order or the kind of the wallet, not the rank the reader holds when the item is read (decision 064);
+ * the key is the only place the item keeps it. An item without an occurrence reads with the reader's audience.
+ *
+ * @param dedupeKey the stored occurrence key of the item
+ * @returns the audience, or `undefined` when the item has no key
+ */
+export function storedAudienceOf(dedupeKey: string | null): NotificationAudience | undefined {
+  const match = /^inapp:(staff|merchant|customer):/.exec(dedupeKey ?? '');
+  return match ? (match[1] as NotificationAudience) : undefined;
+}
+
+/**
  * The title, body and link of one item.
  *
  * Why: the stored item holds no text (a campaign's wording can be fixed while it is scheduled; an event's text is code), so the
@@ -57,7 +71,11 @@ export function inboxText(
       link,
     };
   }
-  const definition = item.event === null ? undefined : texts.get(reader.audience, item.event);
+  const definition =
+    item.event === null
+      ? undefined
+      : (texts.get(storedAudienceOf(item.dedupeKey) ?? reader.audience, item.event) ??
+        texts.get(reader.audience, item.event));
   if (!definition) return { title: UNKNOWN_EVENT_TITLE, body: '', link: null };
   return renderInboxText(definition, item.variables as Record<string, string>);
 }

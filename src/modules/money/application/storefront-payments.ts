@@ -66,7 +66,8 @@ export interface CapturedSession {
 /** What the customers module hands over to open a payment. */
 export interface StartPaymentInput {
   readonly sessionId: number;
-  readonly customerId: number;
+  /** The buyer: the account of the checkout (a guest row for a guest checkout); the payment and its receipt belong to it (decision 064). */
+  readonly accountId: number;
   /** The `Idempotency-Key` header of the call. */
   readonly key: string;
   /** The `code` of the gateway the buyer chose. */
@@ -119,7 +120,7 @@ const ABANDONED_AFTER_MS = 60_000;
 const PAGES_RETRY_AFTER_SECONDS = 60;
 
 /** The columns of the order a capture needs. */
-export type CapturedOrder = Pick<Order, 'id' | 'customerId' | 'totalPrice' | 'taxAmount'>;
+export type CapturedOrder = Pick<Order, 'id' | 'accountId' | 'totalPrice' | 'taxAmount'>;
 
 /** What recording a capture decided. */
 export interface RecordedCapture {
@@ -234,7 +235,7 @@ export class StorefrontPayments {
       await insertOrderPayment(tx, {
         id,
         purpose: 'order',
-        customerId: input.customerId,
+        accountId: input.accountId,
         checkoutSessionId: input.sessionId,
         idempotencyKey: input.key,
         gatewayId: gateway.id,
@@ -503,7 +504,7 @@ export class StorefrontPayments {
     const invoice = await insertInvoice(tx, {
       id,
       number: invoiceNumber(now.getUTCFullYear(), id),
-      customerId: order.customerId,
+      accountId: order.accountId,
       orderId: order.id,
       kind: 'receipt',
       amount: grossShown.toWire(),

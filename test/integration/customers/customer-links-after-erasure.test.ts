@@ -1,6 +1,7 @@
-// Integration tests of the storefront links of an anonymized customer: once staff anonymize a customer (POST /admin/customers/:id/anonymize),
-// the tracking link of the customer's orders (the status, the result and the receipt), the checkout link and the ticket form's order link
-// answer as for an unknown link. The links of other customers keep working.
+// Integration tests of the storefront links of an anonymized customer: once staff anonymize the buyer of an order (POST
+// /admin/clients/:id/anonymize; a guest checkout's buyer is a guest row, an account row without a login), the tracking link of its orders (the
+// status, the result and the receipt), the checkout link and the ticket form's order link answer as for an unknown link. The links of other
+// customers keep working.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
@@ -63,7 +64,7 @@ describe('the storefront links of an anonymized customer', () => {
     expect((await get(`/store/v1/orders/${erased.trackingToken}`)).statusCode).toBe(200);
 
     const privacy = await adminWith(t, ['customers:privacy']);
-    expect((await privacy.post(`/admin/customers/${order!.customerId}/anonymize`)).status).toBeLessThan(300);
+    expect((await privacy.post(`/admin/clients/${order!.accountId}/anonymize`)).status).toBeLessThan(300);
 
     for (const url of [
       `/store/v1/orders/${erased.trackingToken}`,

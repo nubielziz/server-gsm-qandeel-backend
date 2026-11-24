@@ -85,13 +85,13 @@ async function refundRequest(paid: { customerId: number; orderId: number; paymen
     .values({
       paymentId: paid.paymentId,
       orderId: paid.orderId,
-      customerId: paid.customerId,
+      accountId: paid.customerId,
       amount: '3.8400',
       currency: 'GBP',
       reason: 'The result was wrong',
       method: 'original',
       status: 'requested',
-      requestedByType: 'customer',
+      requestedByType: 'account',
       requestedById: paid.customerId,
       createdAt: clock.now(),
       updatedAt: clock.now(),
@@ -100,9 +100,9 @@ async function refundRequest(paid: { customerId: number; orderId: number; paymen
   return row!;
 }
 
-const anonymize = (id: number) => staff.post(`/admin/customers/${id}/anonymize`, {});
+const anonymize = (id: number) => staff.post(`/admin/clients/${id}/anonymize`, {});
 
-describe('POST /admin/customers/:id/anonymize with orders paid from the store balance', () => {
+describe('POST /admin/clients/:id/anonymize with orders paid from the store balance', () => {
   it('is refused while an order paid from the balance is open, and goes through once the order is delivered', async () => {
     const paid = await balanceOrder();
     expect((await orderRow(db, paid.orderId)).status).toBe('pending');
@@ -130,7 +130,7 @@ describe('POST /admin/customers/:id/anonymize with orders paid from the store ba
     expect(refused.status).toBe(409);
     expect(refused.body.detail).toContain('4.7900 USD');
     const adjusted = await staff.post(
-      `/admin/customers/${paid.customerId}/wallet/adjust`,
+      `/admin/clients/${paid.customerId}/wallet/adjust`,
       { amount: '4.7900', direction: 'debit', reason: 'Paid out before the erasure' },
       { 'idempotency-key': 'close' },
     );
@@ -172,9 +172,8 @@ describe('POST /admin/customers/:id/anonymize with orders paid from the store ba
     const order = await paidOrder(t, clock, world, { email: 'card.buyer@example.com' });
     const row = await orderRow(db, order.orderId);
     expect(row.status).toBe('pending');
-    expect(row.customerId).not.toBeNull();
-    expect((await anonymize(row.customerId!)).status).toBe(204);
-    const [customer] = await db.select().from(s.customers).where(eq(s.customers.id, row.customerId!));
+    expect((await anonymize(row.accountId)).status).toBe(204);
+    const [customer] = await db.select().from(s.clients).where(eq(s.clients.id, row.accountId));
     expect(customer!.status).toBe('anonymized');
   });
 });

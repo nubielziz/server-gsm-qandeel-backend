@@ -1,10 +1,12 @@
 // Integration tests of the attention list of `GET /admin/dashboard` (feature 9, RULES dashboard 3 and 8): one case per kind with its
-// rule severity, the supplier items of active suppliers only, merchant orders only in the review item, the storefront money converted
+// rule severity, the supplier items of active suppliers only, merchant-door orders only in the review item, the storefront money converted
 // at the checkout's locked rate with one rounding, every dispute that needs a response, and the 24 h stale-rate rule of the currencies page.
+// The buyers are accounts (decision 064): the shop's door is `orders.source = 'store'`, a refund names its payment's account.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { CacheKeys, CacheService } from '@src/infra/cache';
 import { type Database, schema as s } from '@src/infra/db';
+import { makeAccount } from '../../support/accounts';
 import { adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -56,20 +58,23 @@ const item = (body: { attention: Array<Record<string, unknown>> }, kind: string)
 const kinds = (body: { attention: Array<Record<string, unknown>> }) => body.attention.map((entry) => entry.kind);
 
 /**
- * A storefront customer whose checkout locked 3 EUR per USD while the current rate is 2: a row converted at the locked rate and a row
- * converted at the current rate give different answers, and neither equals the amount as it is.
+ * A storefront buyer (a retail account) whose checkout locked 3 EUR per USD while the current rate is 2: a row converted at the locked
+ * rate and a row converted at the current rate give different answers, and neither equals the amount as it is.
  */
 async function lockedRateWorld(db: Database) {
   const world = await ordersWorld(db);
   await db.insert(s.currencies).values({ code: 'EUR', name: 'Euro', rateToBase: '2.0000', rateUpdatedAt: ago(HOUR) });
-  const [customer] = await db
-    .insert(s.customers)
-    .values({ email: 'ada@example.com', name: 'Ada', country: 'JO', currency: 'USD' })
-    .returning({ id: s.customers.id });
+  const customer = await makeAccount({
+    rank: 'retail',
+    email: 'ada@example.com',
+    name: 'Ada',
+    country: 'JO',
+    currency: 'USD',
+  });
   const order = await insertOrderRow(db, {
     serviceId: world.auto.serviceId,
-    clientId: null,
-    customerId: customer!.id,
+    source: 'store',
+    accountId: customer.id,
     status: 'completed',
     dispatchState: 'done',
     totalPrice: '20.0000',
@@ -84,7 +89,7 @@ async function lockedRateWorld(db: Database) {
       token: 'tok-locked',
       email: 'ada@example.com',
       serviceId: world.auto.serviceId,
-      customerId: customer!.id,
+      accountId: customer.id,
       currency: 'EUR',
       fxRate: '3.00000000',
       netAmount: '60.0000',
@@ -105,7 +110,7 @@ async function lockedRateWorld(db: Database) {
     .values({
       purpose: 'order',
       gatewayId: gateway!.id,
-      customerId: customer!.id,
+      accountId: customer.id,
       orderId: order.id,
       amount: '71.4000',
       currency: 'EUR',
@@ -113,7 +118,7 @@ async function lockedRateWorld(db: Database) {
       methodType: 'card',
     })
     .returning({ id: s.payments.id });
-  return { world, customer: customer!, order, payment: payment! };
+  return { world, customer, order, payment: payment! };
 }
 
 describe('money at the checkout locked rate (identity-platform-8)', () => {
@@ -124,12 +129,12 @@ describe('money at the checkout locked rate (identity-platform-8)', () => {
     const refund = {
       paymentId: payment.id,
       orderId: order.id,
-      customerId: customer.id,
+      accountId: customer.id,
       amount: '1.0000',
       currency: 'EUR',
       method: 'original' as const,
       status: 'requested' as const,
-      requestedByType: 'customer' as const,
+      requestedByType: 'account' as const,
       requestedById: customer.id,
     };
     await db.insert(s.refunds).values([refund, refund, refund]);
@@ -155,10 +160,11 @@ describe('money at the checkout locked rate (identity-platform-8)', () => {
   it("converts a dispute's amount and fee at the locked rate, and states the first one that needs a response", async () => {
     const api = await adminWith(t, ['dashboard:read']);
     const { db } = await testDb();
-    const { order, payment } = await lockedRateWorld(db);
+    const { customer, order, payment } = await lockedRateWorld(db);
     const dispute = (n: number, over: Partial<typeof s.disputes.$inferInsert>) => ({
       paymentId: payment.id,
       orderId: order.id,
+      accountId: customer.id,
       gatewayDisputeId: `dp_${n}`,
       reasonCode: 'fraudulent',
       amount: '30.0000',
@@ -205,23 +211,27 @@ describe('money at the checkout locked rate (identity-platform-8)', () => {
 
 describe('the storefront attention items', () => {
   async function customer(db: Database) {
-    const [row] = await db
-      .insert(s.customers)
-      .values({ email: 'bob@example.com', name: 'Bob', country: 'EG', currency: 'USD' })
-      .returning({ id: s.customers.id });
-    return row!.id;
+    const made = await makeAccount({
+      db,
+      rank: 'retail',
+      email: 'bob@example.com',
+      name: 'Bob',
+      country: 'EG',
+      currency: 'USD',
+    });
+    return made.id;
   }
 
   it('raises held storefront orders as high and keeps them out of the merchant review item', async () => {
     const api = await adminWith(t, ['dashboard:read']);
     const { db } = await testDb();
     const world = await ordersWorld(db);
-    const customerId = await customer(db);
+    const accountId = await customer(db);
     const held = (placedAt: Date) =>
       insertOrderRow(db, {
         serviceId: world.auto.serviceId,
-        clientId: null,
-        customerId,
+        source: 'store',
+        accountId,
         status: 'pending',
         dispatchState: 'held',
         totalPrice: '20.0000',
@@ -273,7 +283,7 @@ describe('the storefront attention items', () => {
     const ticket = (n: number, over: Partial<typeof s.supportTickets.$inferInsert>) => ({
       number: `T-${n}`,
       subject: `Ticket ${n}`,
-      requesterType: 'customer' as const,
+      requesterType: 'account' as const,
       requesterId,
       status: 'open' as const,
       slaDueAt: ago(HOUR),
@@ -305,13 +315,13 @@ describe('the storefront attention items', () => {
     expect(item(await dashboard(api, 'scope=b2b&days=7'), 'tickets_late')).toBeUndefined();
   });
 
-  /** A storefront customer's paid order: the refunds the Refunds page lists name its customer, its payment and its order. */
+  /** A storefront buyer's paid order: the refunds the Refunds page lists name the account, the payment and the order. */
   async function customerPayment(db: Database) {
     const world = await ordersWorld(db);
-    const customerId = await insertCustomerRow(db);
-    const order = await insertOrderRow(db, { serviceId: world.auto.serviceId, customerId, source: 'store' });
-    const paymentId = await insertOrderPayment(db, order.id, customerId);
-    return { customerId, orderId: order.id, paymentId };
+    const accountId = await insertCustomerRow(db);
+    const order = await insertOrderRow(db, { serviceId: world.auto.serviceId, accountId, source: 'store' });
+    const paymentId = await insertOrderPayment(db, order.id, accountId);
+    return { accountId, orderId: order.id, paymentId };
   }
 
   it('raises requested refunds as medium and failed refunds as high with the first one and its reason', async () => {
@@ -357,13 +367,15 @@ describe('the storefront attention items', () => {
     expect(kinds(await dashboard(api, 'scope=b2b&days=7'))).not.toContain('refunds_failed');
   });
 
-  it('a failed refund without a customer is not counted in refunds_failed (decision 048)', async () => {
+  it('a failed return of a held payment (no order) is not counted in refunds_failed (decision 048)', async () => {
     const api = await adminWith(t, ['dashboard:read']);
     const { db } = await testDb();
     const paid = await customerPayment(db);
-    // The automatic return of a held payment names only the payment: the Refunds page cannot show it, the integrity check does.
+    // The automatic return of a held payment names the payment and its account but no order: the Refunds page cannot show it, the
+    // integrity check does.
     await db.insert(s.refunds).values({
       paymentId: paid.paymentId,
+      accountId: paid.accountId,
       amount: '5.0000',
       currency: 'USD',
       reason: 'Sent back automatically: this payment could not pay its checkout',
@@ -430,6 +442,7 @@ describe('the merchant attention items', () => {
       .returning({ id: s.paymentGateways.id });
     await db.insert(s.payments).values({
       purpose: 'topup',
+      accountId: world.merchant.id,
       gatewayId: gateway!.id,
       amount: '50.0000',
       currency: 'USD',

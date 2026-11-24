@@ -11,7 +11,8 @@ import { type AudienceCounts, type CampaignChannel, NO_COUNTS, NotificationAudie
 export interface AudiencePreview {
   readonly total: number;
   readonly reachable: number;
-  readonly byType: { staff: number; client: number; customer: number };
+  /** The reachable people by group: staff, the accounts of a merchant rank, and the other accounts with the guests. */
+  readonly byType: { staff: number; merchant: number; retail: number };
   readonly byChannel: { inApp: number; email: number };
   readonly excluded: { noConsent: number; optedOut: number; noAccount: number };
 }
@@ -66,14 +67,14 @@ export class AudiencePreviewService {
     const selections = selectionsOf(spec);
     const counts = await Promise.all(
       selections.map((selection) =>
-        this.audiences.get(selection.type).count(this.db.db, { ...selection, purpose, channels }),
+        this.audiences.get(selection.kind).count(this.db.db, { ...selection, purpose, channels }),
       ),
     );
-    const byType = { staff: 0, client: 0, customer: 0 };
+    const byType = { staff: 0, merchant: 0, retail: 0 };
     let sum: AudienceCounts = NO_COUNTS;
     selections.forEach((selection, index) => {
       const one = counts[index]!;
-      byType[selection.type] = one.reachable;
+      byType[selection.kind] = one.reachable;
       sum = {
         total: sum.total + one.total,
         reachable: sum.reachable + one.reachable,

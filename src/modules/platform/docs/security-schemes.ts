@@ -23,14 +23,14 @@ export const SECURITY_SCHEMES: Readonly<Record<string, PlainObject>> = {
     in: 'cookie',
     name: 'gsm_client_session',
     description:
-      'Merchant portal session cookie, set by the sign-in routes under `/client/auth`. HttpOnly; carries the `__Host-` prefix in production. Requests that change data also send `X-CSRF-Token`.',
+      'Session cookie of an account of a merchant rank, set by the sign-in routes under `/client/auth`. It is the one session cookie of every account: the same cookie opens a retail account (see `customerSession`), and the rank of the account decides which routes it may call (`403 RANK_NOT_ALLOWED` on the others). HttpOnly; carries the `__Host-` prefix in production. Requests that change data also send `X-CSRF-Token`.',
   },
   customerSession: {
     type: 'apiKey',
     in: 'cookie',
-    name: 'gsm_store_session',
+    name: 'gsm_client_session',
     description:
-      'Storefront customer session cookie, set by the sign-in routes under `/store/v1/auth` (password or sign-in link). HttpOnly; carries the `__Host-` prefix in production. Requests that change data also send `X-CSRF-Token`.',
+      'Session cookie of an account of the retail rank (a shop account), set by the sign-in routes under `/client/auth` (password) or `/store/v1/auth` (sign-in link). It is the same cookie as `merchantSession`, because there is one session cookie for every account; the older `gsm_store_session` is never read. HttpOnly; carries the `__Host-` prefix in production. Requests that change data also send `X-CSRF-Token`, whose readable cookie is `csrf_token_store` for the retail rank and `csrf_token_client` for a merchant rank.',
   },
   dhruCredentials: {
     type: 'http',

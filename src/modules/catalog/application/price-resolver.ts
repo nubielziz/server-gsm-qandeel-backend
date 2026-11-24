@@ -117,8 +117,11 @@ export class PricingContext {
     const service = this.data.services.get(request.serviceId);
     if (!service) return undefined;
     const group = request.groupId === null ? null : (this.data.groups.get(request.groupId) ?? null);
+    // A fixed price is looked up only when a merchant (an account id) is asked for; the request key is a filter, not a buyer test.
     const clientPrice =
-      request.clientId == null ? null : (this.data.clientPrices.get(`${service.id}|${request.clientId}`) ?? null);
+      typeof request.clientId === 'number'
+        ? (this.data.clientPrices.get(`${service.id}|${request.clientId}`) ?? null)
+        : null;
     const groupPrice = group === null ? null : (this.data.groupPrices.get(`${service.id}|${group.id}`) ?? null);
     return resolveServicePrice({ service, group, clientPrice, groupPrice, rules: this.data.rules, at: this.at });
   }
@@ -185,7 +188,7 @@ export class PriceResolver {
   ): Promise<Array<PriceResolution | undefined>> {
     const context = await this.context(db, {
       serviceIds: requests.map((request) => request.serviceId),
-      clientIds: requests.flatMap((request) => (request.clientId == null ? [] : [request.clientId])),
+      clientIds: requests.flatMap((request) => (typeof request.clientId === 'number' ? [request.clientId] : [])),
       ...(at === undefined ? {} : { at }),
     });
     return requests.map((request) => context.resolve(request));

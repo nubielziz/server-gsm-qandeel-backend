@@ -1,13 +1,12 @@
-// MachineCredentialHold: whether the signed-in merchant may hand out a machine credential now (an API key; route POST /client/api-keys):
+// MachineCredentialHold: whether the signed-in account may hand out a machine credential now (an API key; route POST /client/api-keys):
 // not while the account's password is one staff set, or its email address one that a staff member who is not an Owner set and no Owner
 // has confirmed since (decision 046).
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { type DbExecutor, DbService } from '../../../infra/db';
-import type { Client } from '../db/schema';
-import { findClientById } from '../infra/merchant-auth.repository';
-import type { MerchantPrincipal } from '../security/principal';
+import { machineHoldOf } from '../infra/api-key-manage.repository';
+import type { AccountPrincipal } from '../ports/account-principal';
 import { findLiveSessionByHash } from '../security/session.repository';
 
 /** The sentence of the `403` while the hold lasts: what the merchant does to end it. */
@@ -20,7 +19,7 @@ export const STAFF_SET_EMAIL_HOLD =
   'Your email address was changed by our support team. Contact our support team before you create API keys.';
 
 /**
- * Refuses machine credentials while the merchant's password is one staff set, or its email address one that a staff member who is not an
+ * Refuses machine credentials while the account's password is one staff set, or its email address one that a staff member who is not an
  * Owner set and no Owner has confirmed since.
  *
  * Why: decision 046 keeps the creation of a merchant's API key by staff for Owners; merchants create their own. A temporary password
@@ -44,27 +43,26 @@ export class MachineCredentialHold {
   ) {}
 
   /**
-   * Checks that the signed-in merchant may create a machine credential now.
+   * Checks that the signed-in account may create a machine credential now.
    *
    * Why: the session guard works from a view cached for up to a minute; this reads the account and the session themselves (decision 018).
+   * It does not judge the rank or the status: the creation reads both from the account row it holds locked and refuses first.
    *
-   * @param principal the signed-in merchant
+   * @param principal the signed-in account
    * @param db the caller's transaction, or the database when omitted
-   * @returns the merchant as it is now
-   * @throws {AppError} `UNAUTHORIZED` (401: the merchant is gone, or the session ended meanwhile), `FORBIDDEN` (403: the password is
+   * @throws {AppError} `UNAUTHORIZED` (401: the account is gone, or the session ended meanwhile), `FORBIDDEN` (403: the password is
    *   one staff set, {@link STAFF_SET_PASSWORD_HOLD}; or `email_set_by_staff` is set, {@link STAFF_SET_EMAIL_HOLD})
    */
-  async assertMayIssue(principal: MerchantPrincipal, db: DbExecutor = this.db.db): Promise<Client> {
-    const client = await findClientById(db, principal.clientId);
-    if (!client) throw new AppError('UNAUTHORIZED');
+  async assertMayIssue(principal: AccountPrincipal, db: DbExecutor = this.db.db): Promise<void> {
+    const flags = await machineHoldOf(db, principal.accountId);
+    if (!flags) throw new AppError('UNAUTHORIZED');
     // Read after the account on purpose: the link that clears the flag ends every session of the merchant in the same commit, so once the
     // cleared flag is visible, so is the end of the sessions that were open under it.
     if (!(await findLiveSessionByHash(db, principal.session.tokenHash, this.clock.now()))) {
       throw new AppError('UNAUTHORIZED');
     }
     // The email cause first: a password from a link does not end it, so its sentence is the one that helps.
-    if (client.emailSetByStaff) throw new AppError('FORBIDDEN', { detail: STAFF_SET_EMAIL_HOLD });
-    if (client.passwordSetByStaff) throw new AppError('FORBIDDEN', { detail: STAFF_SET_PASSWORD_HOLD });
-    return client;
+    if (flags.emailSetByStaff) throw new AppError('FORBIDDEN', { detail: STAFF_SET_EMAIL_HOLD });
+    if (flags.passwordSetByStaff) throw new AppError('FORBIDDEN', { detail: STAFF_SET_PASSWORD_HOLD });
   }
 }

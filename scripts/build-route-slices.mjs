@@ -1,12 +1,14 @@
 // Writes docs/slices/<module>.json (one brief input per backend module) and docs/slices/index.json.
 // A slice holds the module's endpoints, owned tables (columns, FKs, text), the foreign tables it may only reach
-// through other modules' public services, and the scenario steps and money events that exercise it.
+// through other modules' public services, and the scenario steps and money events that exercise it. A table listed in a module's
+// `retiredTables` (decision 064) stays owned by it, because the map still names it, and carries `retired: true` in the slice; the
+// schema tests skip its columns, and none is retired in the expand release.
 // Usage: `bun scripts/build-route-slices.mjs` to rebuild, `--check` to fail when committed slices are stale (CI).
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildManifest } from './lib/manifest.mjs';
-import { system, tables } from './lib/map.mjs';
+import { retiredTablesOf, system, tables } from './lib/map.mjs';
 import { docsDir } from './lib/paths.mjs';
 import { modules } from './module-map.mjs';
 import { tableDescriptions } from './table-descriptions.en.mjs';
@@ -29,7 +31,9 @@ function ownership() {
   return owner;
 }
 
-/** A table as a slice shows it: columns, foreign keys (with kind) and both descriptions. */
+const retired = new Set(retiredTablesOf());
+
+/** A table as a slice shows it: columns, foreign keys (with kind), both descriptions, and `retired: true` for a retired table. */
 const tableView = (name) => {
   const t = tables.find((x) => x.n === name);
   return {
@@ -39,6 +43,7 @@ const tableView = (name) => {
     b2c: t.b2c ?? null,
     columns: t.cols,
     foreignKeys: t.fk.map(([column, target, kind = 'fk']) => ({ column, target, kind })),
+    ...(retired.has(name) ? { retired: true } : {}),
   };
 };
 

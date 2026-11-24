@@ -1,5 +1,6 @@
-// Route contracts of the storefront customer's store balance top-ups (feature 21, plan § 7.1 routes 3 to 8, beyond the map in
-// scripts/map-additions/21.mjs): the methods, a new top-up, the list and one top-up, the transfer receipt and the cancel.
+// Route contracts of the store balance top-ups of a retail account (feature 21, plan § 7.1 routes 3 to 8, beyond the map in
+// scripts/map-additions/21.mjs): the methods, a new top-up, the list and one top-up, the transfer receipt and the cancel. An account of a
+// merchant rank is refused on every route by the rank gate (403 `RANK_NOT_ALLOWED`, decision 064).
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
 import { TOPUP_METHODS } from '../db/schema';
@@ -106,7 +107,8 @@ export const createMyTopUp = defineRoute({
     '`daily_amount`, `max_balance`, and `not_chargeable` for an automatic method that cannot charge the amount exactly: a card page ' +
     'takes two decimals) or `409 CONFLICT` (three unpaid top-ups). Refused while the balance is switched off ' +
     '(`WALLET_DISABLED`), and through an automatic method while it is on hold (`WALLET_FROZEN`). A card method asks for 3-D Secure ' +
-    "while the shop's `require3ds` policy is on (decision 049).",
+    "while the shop's `require3ds` policy is on (decision 049). The creates of one account run one at a time, and a change of rank " +
+    'either lands first (the create is then `403 RANK_NOT_ALLOWED`) or waits for it (decision 064).',
   tags: ['account'],
   surface: 'store',
   access: 'customer-session',

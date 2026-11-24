@@ -14,8 +14,11 @@ import {
   OutboxRouteRegistry,
   type NotificationInput,
 } from '@src/modules/platform';
+import { recipientOf } from '@src/modules/platform/notifications/notification-foreign-reads';
 import { type TestApp, createTestApp } from '../../support/app';
+import { ensureRetailGroup, makeAccount } from '../../support/accounts';
 import { insertMerchant } from '../../support/auth';
+import { mapLegacyClient, mapLegacyCustomer } from '../../support/legacy-accounts';
 import { seedIdentityTemplates } from '../../support/identity-mail';
 import { logSink } from '../../support/log-sink';
 import { insertCustomer } from '../../support/support';
@@ -84,7 +87,7 @@ async function merchant(overrides: Partial<typeof s.clients.$inferInsert> = {}) 
 }
 const lowBalance = (clientId: number) => ({
   event: 'wallet.low_balance',
-  recipient: { type: 'client' as const, id: clientId },
+  recipient: { type: 'account' as const, id: clientId },
   channel: 'email' as const,
   variables: { merchantName: 'Zain Mobile Hub', currency: 'USD', available: '42.50', threshold: '50.00' },
 });
@@ -96,7 +99,7 @@ describe('NotificationService.enqueue and the send job', () => {
     expect(made).toMatchObject({ status: 'queued', created: true });
     const [row] = await notificationRows(db);
     expect(row).toMatchObject({
-      recipientType: 'client',
+      recipientType: 'account',
       recipientId: clientId,
       channel: 'email',
       event: 'wallet.low_balance',
@@ -163,13 +166,10 @@ describe('NotificationService.enqueue and the send job', () => {
   });
 
   it('writes to every recipient with the one template of the event, and skips an event whose template is off or missing', async () => {
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: 'sam@mail.example', name: 'Sam' })
-      .returning({ id: s.customers.id });
+    const customer = await insertCustomer(db, { email: 'sam@mail.example', name: 'Sam' });
     const input = {
       event: 'order.failed',
-      recipient: { type: 'customer' as const, id: customer!.id },
+      recipient: { type: 'account' as const, id: customer.id },
       channel: 'email' as const,
     };
     const check = () => service().check(db, input);
@@ -196,7 +196,7 @@ describe('NotificationService.enqueue and the send job', () => {
     expect(await enqueue(lowBalance(clientId))).toEqual({ status: 'skipped', reason: 'recipient_suspended' });
     const invitation = await enqueue({
       event: 'merchant.invited',
-      recipient: { type: 'client', id: clientId },
+      recipient: { type: 'account', id: clientId },
       channel: 'email',
       variables: { merchantName: 'Zain', expiresAt: 'tomorrow' },
     });
@@ -333,7 +333,7 @@ describe('NotificationService.enqueue and the send job', () => {
       .insert(s.notifications)
       .values([
         {
-          recipientType: 'client',
+          recipientType: 'account',
           recipientId: linked,
           channel: 'telegram',
           event: 'wallet.low_balance',
@@ -341,7 +341,7 @@ describe('NotificationService.enqueue and the send job', () => {
           status: 'queued',
         },
         {
-          recipientType: 'client',
+          recipientType: 'account',
           recipientId: linked,
           channel: 'telegram',
           event: 'wallet.low_balance',
@@ -368,7 +368,7 @@ describe('NotificationService.enqueue and the send job', () => {
     await enqueue({ ...lowBalance(suspended), dedupeKey: 'suspended' });
     await enqueue({
       event: 'merchant.invited',
-      recipient: { type: 'client', id: suspended },
+      recipient: { type: 'account', id: suspended },
       channel: 'email',
       variables: { merchantName: 'Zain', expiresAt: 'tomorrow' },
       dedupeKey: 'invited',
@@ -460,7 +460,7 @@ describe('the outbox routes of the notifications', () => {
 describe('planning a low balance alert', () => {
   const event = (clientId: number, extra: Record<string, string> = {}) =>
     emitEvent(t, 'wallet.low_balance', 'ledger_accounts', 7, {
-      clientId,
+      accountId: clientId,
       currency: 'USD',
       available: '42.5000',
       threshold: '50.0000',
@@ -517,7 +517,7 @@ describe('planning a low balance alert', () => {
     expect(await planEvent(t, await event(suspended))).toEqual({ created: 0, skipped: 'recipient_suspended' });
     expect(await planEvent(t, await event(99999))).toEqual({ created: 0, skipped: 'merchant_gone' });
     const clientId = await merchant();
-    const broken = await emitEvent(t, 'wallet.low_balance', 'ledger_accounts', 7, { clientId });
+    const broken = await emitEvent(t, 'wallet.low_balance', 'ledger_accounts', 7, { accountId: clientId });
     await expectRejection(planEvent(t, broken), UnrecoverableError);
     const orphan = await emitEvent(t, 'wallet.low_balance', 'ledger_accounts', 7, {
       currency: 'USD',
@@ -529,7 +529,7 @@ describe('planning a low balance alert', () => {
   });
 
   it('ignores an event type it does not know', async () => {
-    const job = await emitEvent(t, 'wallet.low_balance', 'ledger_accounts', 7, { clientId: 1 });
+    const job = await emitEvent(t, 'wallet.low_balance', 'ledger_accounts', 7, { accountId: 1 });
     expect(await planEvent(t, { ...job, type: 'something.else' })).toEqual({ created: 0, skipped: 'unknown_event' });
   });
 });
@@ -548,7 +548,8 @@ describe('planning the result of an order', () => {
       orderId,
       job: await emitEvent(t, 'order.status_changed', 'orders', orderId, {
         orderId,
-        clientId,
+        accountId: clientId,
+        source: 'portal',
         fromStatus: 'processing',
         toStatus,
       }),
@@ -584,13 +585,26 @@ describe('planning the result of an order', () => {
     expect((await notificationRows(db)).map((row) => row.event)).toEqual(['order.completed', 'order.failed']);
   });
 
-  it('ignores the other status changes, a storefront order, an order of another merchant and an order that is gone', async () => {
+  it('ignores the other status changes, a shop order, an order of another account and an order that is gone', async () => {
     const clientId = await merchant({ notificationPrefs: optedIn });
     const processing = await orderEvent(clientId, 'processing');
     expect(await planEvent(t, processing.job)).toEqual({ created: 0, skipped: 'not_notified' });
+    // The door of the order decides, not the rank of its account: a shop order of a merchant-rank account is the shop's mail.
+    const shop = await orderEvent(clientId, 'completed', { source: 'store', legacyClientId: null });
+    expect(await planEvent(t, shop.job)).toEqual({ created: 0, skipped: 'no_merchant' });
+    // The payload's own word for the door is only a hint: the order row decides.
+    const lying = await emitEvent(t, 'order.status_changed', 'orders', shop.orderId, {
+      orderId: shop.orderId,
+      accountId: clientId,
+      source: 'portal',
+      fromStatus: 'processing',
+      toStatus: 'completed',
+    });
+    expect(await planEvent(t, lying)).toEqual({ created: 0, skipped: 'no_merchant' });
     const storefront = await emitEvent(t, 'order.status_changed', 'orders', 5, {
       orderId: 5,
-      clientId: null,
+      accountId: clientId,
+      source: 'store',
       fromStatus: 'processing',
       toStatus: 'completed',
     });
@@ -599,14 +613,16 @@ describe('planning the result of an order', () => {
     const foreign = await orderEvent(other, 'completed');
     const mismatch = await emitEvent(t, 'order.status_changed', 'orders', foreign.orderId, {
       orderId: foreign.orderId,
-      clientId,
+      accountId: clientId,
+      source: 'portal',
       fromStatus: 'processing',
       toStatus: 'completed',
     });
     expect(await planEvent(t, mismatch)).toEqual({ created: 0, skipped: 'source_gone' });
     const gone = await emitEvent(t, 'order.status_changed', 'orders', 987654, {
       orderId: 987654,
-      clientId,
+      accountId: clientId,
+      source: 'portal',
       fromStatus: 'processing',
       toStatus: 'completed',
     });
@@ -623,7 +639,8 @@ describe('planning the events of billing', () => {
       .insert(s.invoices)
       .values({
         number: 'INV-2026-0311',
-        clientId,
+        accountId: clientId,
+        walletKind: 'client_wallet',
         kind: 'manual',
         amount: '250.0000',
         netAmount: '250.0000',
@@ -633,15 +650,19 @@ describe('planning the events of billing', () => {
         paidAt: clock.now(),
       })
       .returning({ id: s.invoices.id });
-    const paid = eventJob('invoice.paid', 'invoices', invoice!.id, { invoiceId: invoice!.id, clientId });
+    const paid = eventJob('invoice.paid', 'invoices', invoice!.id, { invoiceId: invoice!.id, accountId: clientId });
     expect(await planEvent(t, paid)).toEqual({ created: 1 });
     await sendAllQueued(t);
     expect(mailbox(t).sent.map((mail) => mail.subject)).toEqual(['Invoice INV-2026-0311 is paid']);
     expect(mailbox(t).sent[0]?.text).toContain('(250.00 USD) was paid');
-    const gone = eventJob('invoice.paid', 'invoices', 987654, { invoiceId: 987654, clientId });
+    const gone = eventJob('invoice.paid', 'invoices', 987654, { invoiceId: 987654, accountId: clientId });
     expect(await planEvent(t, gone)).toEqual({ created: 0, skipped: 'source_gone' });
     // A leftover outbox row of the retired deposit event plans nothing and does not fail.
-    const retired = eventJob('deposit.approved', 'payments', 12, { clientId, amount: '100.0000', currency: 'USD' });
+    const retired = eventJob('deposit.approved', 'payments', 12, {
+      accountId: clientId,
+      amount: '100.0000',
+      currency: 'USD',
+    });
     expect(await planEvent(t, retired)).toEqual({ created: 0, skipped: 'unknown_event' });
   });
 });
@@ -655,7 +676,7 @@ describe('the daily digest of price changes (user rule 9)', () => {
   }
   const change = (clientId: number, serviceId: number, previousPrice: string, price: string) =>
     emitEvent(t, 'service.price_changed', 'services', serviceId, {
-      clientId,
+      accountId: clientId,
       serviceId,
       previousPrice,
       price,
@@ -847,7 +868,7 @@ describe('the daily digest of price changes (user rule 9)', () => {
 describe('link emails and security emails (decision 047)', () => {
   const passwordReset = (clientId: number) => ({
     event: 'merchant.password_reset',
-    recipient: { type: 'client' as const, id: clientId },
+    recipient: { type: 'account' as const, id: clientId },
     channel: 'email' as const,
     variables: { merchantName: 'Zain Mobile Hub', expiresAt: '2026-11-01 11:00 UTC' },
   });
@@ -900,7 +921,7 @@ describe('link emails and security emails (decision 047)', () => {
     expect(mailbox(t).sent.at(-1)!.text).toContain(LINK);
     await enqueue({
       event: 'merchant.security_notice',
-      recipient: { type: 'client', id: clientId },
+      recipient: { type: 'account', id: clientId },
       channel: 'email',
       variables: { merchantName: 'Zain Mobile Hub', change: 'a temporary password was set for your account' },
     });
@@ -925,7 +946,7 @@ describe('link emails and security emails (decision 047)', () => {
     const sendNotice = async () => {
       await enqueue({
         event: 'merchant.security_notice',
-        recipient: { type: 'client', id: clientId },
+        recipient: { type: 'account', id: clientId },
         channel: 'email',
         variables: { merchantName: 'Zain Mobile Hub', change: 'a temporary password was set for your account' },
       });
@@ -999,7 +1020,7 @@ describe('link emails and security emails (decision 047)', () => {
     const customer = await insertCustomer(db, { name: 'Sam Buyer' });
     const mail = {
       event: LINK_EVENT,
-      recipient: { type: 'customer' as const, id: customer.id },
+      recipient: { type: 'account' as const, id: customer.id },
       channel: 'email' as const,
       variables: { customerName: 'Sam' },
     };
@@ -1046,7 +1067,7 @@ describe('link emails and security emails (decision 047)', () => {
     const clientId = await merchant();
     const notice = {
       event: 'merchant.security_notice',
-      recipient: { type: 'client' as const, id: clientId },
+      recipient: { type: 'account' as const, id: clientId },
       channel: 'email' as const,
       variables: { merchantName: 'Zain Mobile Hub', change: 'the email address of your account was changed' },
     };
@@ -1065,5 +1086,149 @@ describe('link emails and security emails (decision 047)', () => {
       { outcome: 'skipped', reason: 'already_sent' },
       { outcome: 'failed', reason: 'The recipient has no email address.' },
     ]);
+  });
+});
+
+describe('one account, two texts: the audience of a message (decision 064)', () => {
+  /** The audience a row keeps in its payload. */
+  const audiencesOf = async () =>
+    (await notificationRows(db)).map((row) => (row.payload as { audience?: string }).audience);
+
+  it('an order mail of the shop door uses the customer text for a merchant-rank account, a portal order the merchant text', async () => {
+    const accountId = await merchant({ notificationPrefs: { events: { 'order.completed': { email: true } } } });
+    const shop = await enqueue({
+      event: 'order.completed',
+      recipient: { type: 'account', id: accountId },
+      audience: 'customer',
+      channel: 'email',
+      variables: { customerName: 'Zain', orderId: 'SF-1', service: 'Vodafone UK iPhone Unlock', device: 'iPhone 15' },
+      dedupeKey: 'shop-order-1:email',
+    });
+    const portal = await enqueue({
+      event: 'order.completed',
+      recipient: { type: 'account', id: accountId },
+      audience: 'merchant',
+      channel: 'email',
+      variables: {
+        merchantName: 'Zain',
+        orderId: '48102',
+        service: 'Vodafone UK iPhone Unlock',
+        resultCode: 'CLEAN',
+        resultComment: 'Device is clean',
+      },
+      dedupeKey: 'portal-order-1:email',
+    });
+    expect([shop.status, portal.status]).toEqual(['queued', 'queued']);
+    expect(await audiencesOf()).toEqual(['customer', 'merchant']);
+    expect(await sendAllQueued(t)).toEqual([{ outcome: 'sent' }, { outcome: 'sent' }]);
+    expect(mailbox(t).sent.map((mail) => mail.subject)).toEqual(['Your unlock is ready', 'Order 48102 is complete']);
+  });
+
+  it('without a named audience the rank decides: a merchant rank reads the merchant text, a retail rank the customer text', async () => {
+    const merchantId = await merchant();
+    const retail = await makeAccount({ db, rank: 'retail', password: null, name: 'Sam Buyer' });
+    await enqueue({ ...lowBalance(merchantId), dedupeKey: 'rank-merchant' });
+    await enqueue({
+      event: 'order.failed',
+      recipient: { type: 'account', id: retail.id },
+      channel: 'email',
+      variables: { customerName: 'Sam', orderId: 'SF-2', amount: '£14.39', service: 'Unlock', device: 'iPhone' },
+      dedupeKey: 'rank-retail',
+    });
+    expect(await audiencesOf()).toEqual(['merchant', 'customer']);
+    // A merchant event for a retail rank is a programming error, as before: the rank's audience has no such event.
+    await expectRejection(
+      enqueue({ ...lowBalance(retail.id), dedupeKey: 'wrong-family' }),
+      'is not registered for the audience "customer"',
+    );
+  });
+
+  it('keeps the audience of a row when the rank changes between the row and its sending', async () => {
+    const accountId = await merchant();
+    await enqueue({ ...lowBalance(accountId), dedupeKey: 'before-the-move' });
+    // The account moves to the retail rank before the job runs: the merchant text it was made for is still the one that goes out.
+    await db
+      .update(s.clients)
+      .set({ groupId: await ensureRetailGroup(db) })
+      .where(eq(s.clients.id, accountId));
+    expect(await sendAllQueued(t)).toEqual([{ outcome: 'sent' }]);
+    expect(mailbox(t).sent.map((mail) => mail.subject)).toEqual(['Your wallet balance is low']);
+  });
+
+  it('an old customer number is read through the legacy id map, an old merchant number is the account id, an unknown number is nobody', async () => {
+    // Merchant 1 keeps its number; the old customer number 1 became the account that follows it.
+    const merchantId = await merchant();
+    const customer = await makeAccount({
+      db,
+      rank: 'retail',
+      password: null,
+      email: 'dana@mail.example',
+      name: 'Dana',
+    });
+    expect(customer.id).not.toBe(merchantId);
+    // The map has a row for every merchant that existed when the accounts were merged, and one for that customer.
+    await mapLegacyClient(db, merchantId);
+    await mapLegacyCustomer(db, merchantId, customer.id);
+
+    expect(await recipientOf(db, 'customer', merchantId)).toMatchObject({
+      type: 'account',
+      id: customer.id,
+      email: 'dana@mail.example',
+      audience: 'customer',
+    });
+    expect(await recipientOf(db, 'client', merchantId)).toMatchObject({
+      type: 'account',
+      id: merchantId,
+      audience: 'merchant',
+    });
+    expect(await recipientOf(db, 'account', merchantId)).toMatchObject({ id: merchantId, audience: 'merchant' });
+    // An old number the map does not know is never read as an account id.
+    expect(await recipientOf(db, 'customer', 987654)).toBeUndefined();
+    expect(await recipientOf(db, 'customer', customer.id)).toBeUndefined();
+  });
+
+  it('a queued row of a converted account is delivered to the account’s current address', async () => {
+    const customer = await makeAccount({
+      db,
+      rank: 'retail',
+      password: null,
+      email: 'dana@mail.example',
+      name: 'Dana',
+    });
+    // The row as the migration leaves it: the account pair, a payload with no audience (written before the audience was kept).
+    const [row] = await db
+      .insert(s.notifications)
+      .values({
+        recipientType: 'account',
+        recipientId: customer.id,
+        channel: 'email',
+        event: 'order.failed',
+        payload: {
+          variables: { customerName: 'Dana', orderId: 'SF-9', amount: '£5.00', service: 'Unlock', device: 'iPhone' },
+        },
+        status: 'queued',
+      })
+      .returning();
+    await db.update(s.clients).set({ email: 'dana.new@mail.example' }).where(eq(s.clients.id, customer.id));
+    expect(await sendNotification(t, row!.id)).toEqual({ outcome: 'sent' });
+    expect(mailbox(t).sent.map((mail) => mail.to)).toEqual(['dana.new@mail.example']);
+  });
+
+  it('sends nothing to an erased account and keeps a blocked account to the mails it needs', async () => {
+    const erased = await makeAccount({
+      db,
+      rank: 'retail',
+      password: null,
+      status: 'anonymized',
+      anonymizedAt: clock.now(),
+    });
+    expect(await recipientOf(db, 'account', erased.id)).toBeUndefined();
+    const blocked = await makeAccount({ db, rank: 'retail', password: null, status: 'blocked' });
+    expect(await recipientOf(db, 'account', blocked.id)).toMatchObject({ suspended: true, inboxEligible: false });
+    const active = await makeAccount({ db, rank: 'retail', password: null });
+    expect(await recipientOf(db, 'account', active.id)).toMatchObject({ suspended: false, inboxEligible: true });
+    // A guest row has no inbox but gets its mails.
+    const guest = await makeAccount({ db, rank: 'retail', guest: true });
+    expect(await recipientOf(db, 'account', guest.id)).toMatchObject({ suspended: false, inboxEligible: false });
   });
 });

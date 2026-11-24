@@ -1,4 +1,4 @@
-// Blocklist: the one writer and matcher of `blocklist_entries` (map domain K, stage 18). The staff routes, the risk refund, the customer
+// Blocklist: the one writer and matcher of `blocklist_entries` (map domain K, stage 18). The staff routes, the risk refund, the account
 // block and the chargeback of the payments feature all add entries through it; the checkout and the screening ask it what is blocked.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
@@ -8,7 +8,7 @@ import type { BlocklistEntry, BlocklistKind, BlocklistSource } from '../db/schem
 import { blockDisplay, blockHashInput, normalizeBlockValue } from '../domain/blocklist-values';
 import {
   type HashProbe,
-  deleteManualEntriesOfCustomer,
+  deleteManualEntriesOfAccount,
   findLiveMatches,
   insertEntriesIgnoringDuplicates,
   widenGuestEntry,
@@ -23,8 +23,8 @@ export interface BlockRequest {
   readonly source: BlocklistSource;
   /** The staff member who added it; `null` for the system (a chargeback). */
   readonly createdBy: number | null;
-  /** The customer a block came from; only `POST /admin/customers/:id/block` sets it (RESOLUTIONS b2c-5). */
-  readonly customerId?: number | null;
+  /** The account a block came from (any rank); only `POST /admin/clients/:id/block` sets it (RESOLUTIONS b2c-5, decision 064). */
+  readonly accountId?: number | null;
   /** When the entry stops blocking; `null` for ever. */
   readonly expiresAt?: Date | null;
   /**
@@ -89,7 +89,7 @@ export class Blocklist {
   /**
    * Adds entries; a value already blocked is left as it is.
    *
-   * Why: a system caller (a customer block, a risk refund, a chargeback) must not fail a whole transaction because one value is
+   * Why: a system caller (an account block, a risk refund, a chargeback) must not fail a whole transaction because one value is
    * malformed, so a value that does not fit its kind is skipped, not thrown (the staff route validates what is typed before it gets
    * here and answers `422` on `value`).
    *
@@ -111,7 +111,7 @@ export class Blocklist {
           expiresAt: request.expiresAt ?? null,
           source: request.source,
           guestOnly: request.guestOnly ?? false,
-          customerId: request.customerId ?? null,
+          accountId: request.accountId ?? null,
           createdBy: request.createdBy,
           createdAt: now,
           updatedAt: now,
@@ -150,17 +150,17 @@ export class Blocklist {
   }
 
   /**
-   * Removes the manual entries one customer's block added.
+   * Removes the manual entries one account's block added.
    *
-   * Why: RESOLUTIONS b2c-5: unblocking lifts only what the block added (`customer_id = :id AND source = 'manual'`); an entry from a
-   * risk refund, a chargeback or a manual add, or one another customer's block already held, stays.
+   * Why: RESOLUTIONS b2c-5: unblocking lifts only what the block added (`account_id = :id AND source = 'manual'`); an entry from a
+   * risk refund, a chargeback or a manual add, or one another account's block already held, stays.
    *
    * @param tx the caller's transaction
-   * @param customerId the customer being unblocked
+   * @param accountId the account being unblocked
    * @returns the removed entries
    */
-  removeAddedByBlockOf(tx: DbExecutor, customerId: number): Promise<BlocklistEntry[]> {
-    return deleteManualEntriesOfCustomer(tx, customerId);
+  removeAddedByBlockOf(tx: DbExecutor, accountId: number): Promise<BlocklistEntry[]> {
+    return deleteManualEntriesOfAccount(tx, accountId);
   }
 
   /**
@@ -203,7 +203,7 @@ export class Blocklist {
   /**
    * Tells whether an email, or the domain it is on, is blocked.
    *
-   * Why: RULES risk 5: a blocked email or domain cannot sign up, sign in by link, be given to a customer by staff or open a checkout. The
+   * Why: RULES risk 5: a blocked email or domain cannot sign up, sign in by link, be given to an account by staff or open a checkout. The
    * customers module asks this instead of reading the table (decision 016). An entry limited to guest checkouts does not count: signing in
    * by link, a staff create and an email change are not guest uses (decision 050).
    *

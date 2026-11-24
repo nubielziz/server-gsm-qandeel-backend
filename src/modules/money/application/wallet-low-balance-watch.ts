@@ -1,5 +1,5 @@
-// WalletLowBalanceWatch: after a posting, writes the outbox event `wallet.low_balance` for each merchant wallet the posting took
-// under the merchant's alert threshold (feature 7b).
+// WalletLowBalanceWatch: after a posting, writes the outbox event `wallet.low_balance` for each merchant-kind wallet the posting took
+// under its account's alert threshold (feature 7b).
 import { Injectable } from '@nestjs/common';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
@@ -9,14 +9,15 @@ import { notificationPrefsOf } from '../infra/foreign-directory.repository';
 import type { PostedTransaction } from './post-transaction';
 
 /**
- * Raises the low-balance alert of a merchant's wallet.
+ * Raises the low-balance alert of a merchant-kind wallet.
  *
  * Why: the map's event `wallet.low_balance`: "the available balance fell below the alert threshold". The ledger writer calls it
- * with what a posting changed; for every `client_wallet` whose available balance (balance plus credit limit) went from at-or-above
- * the merchant's threshold to below it, one `outbox_events` row is written in the posting's own transaction, so the alert exists if
- * and only if the posting committed, and it is sent once per crossing: a wallet that stays under the threshold alerts nothing
- * more until it has been back above it. The row carries the merchant, the currency and the two figures (public to the merchant),
- * and the `notifications` queue turns it into the merchant's message (platform, `EventNotifier`).
+ * with what a posting changed; for every `client_wallet` (owned by an account, decision 064) whose available balance (balance plus credit
+ * limit) went from at-or-above the account's threshold to below it, one `outbox_events` row is written in the posting's own transaction, so
+ * the alert exists if and only if the posting committed, and it is sent once per crossing: a wallet that stays under the threshold alerts
+ * nothing more until it has been back above it. The row carries the account (as `accountId`, and as `clientId` for the reader that still
+ * asks for that key: a merchant's number is its account id), the currency and the two figures (public to the account), and the
+ * `notifications` queue turns it into the account's message (platform, `EventNotifier`). A store balance has no threshold and no alert.
  *
  * Side effects: reads `clients.notification_prefs` for each wallet a debit touched; inserts `outbox_events` rows.
  *
@@ -37,7 +38,7 @@ export class WalletLowBalanceWatch {
   async afterPosting(tx: DbExecutor, currency: string, posted: PostedTransaction): Promise<number> {
     let written = 0;
     for (const account of posted.touched) {
-      if (account.kind !== 'client_wallet' || account.ownerType !== 'client' || account.ownerId === null) continue;
+      if (account.kind !== 'client_wallet' || account.ownerType !== 'account' || account.ownerId === null) continue;
       const before = Money.of(account.before);
       const after = Money.of(account.after);
       // Only a debit can take a wallet under a threshold: credits and unchanged wallets skip the preferences read.
@@ -51,6 +52,7 @@ export class WalletLowBalanceWatch {
         aggregateType: 'ledger_accounts',
         aggregateId: account.accountId,
         payload: {
+          accountId: account.ownerId,
           clientId: account.ownerId,
           currency,
           available: availableOf(after, limit).toWire(),

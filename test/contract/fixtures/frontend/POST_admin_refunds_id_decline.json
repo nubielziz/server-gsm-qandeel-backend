@@ -16,7 +16,7 @@
     "gatewayRefundId": null,
     "note": "Harvest sample text.",
     "requestedBy": {
-      "type": "customer",
+      "type": "account",
       "name": null
     },
     "approvedBy": {
@@ -24,7 +24,7 @@
       "name": "Rami K."
     },
     "customer": {
-      "id": 24,
+      "id": 124,
       "name": "Ryan Cooper"
     },
     "order": {

@@ -294,7 +294,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 33,
+        "line": 34,
         "fn": "listSupportTickets"
       }
     },
@@ -328,7 +328,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 46,
+        "line": 47,
         "fn": "getSupportTicket"
       }
     },
@@ -362,7 +362,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 56,
+        "line": 57,
         "fn": "updateSupportTicket"
       }
     },
@@ -397,7 +397,7 @@
       "description": "Reply to the customer by email or Telegram.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 67,
+        "line": 68,
         "fn": "replyToTicket"
       }
     },
@@ -430,7 +430,7 @@
       "description": "Internal note that the customer does not see.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 77,
+        "line": 78,
         "fn": "addTicketNote"
       }
     },
@@ -771,7 +771,7 @@
       "description": "Mark the requester's messages as seen.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 88,
+        "line": 89,
         "fn": "markTicketRead"
       },
       "addition": {
@@ -812,7 +812,7 @@
       "description": "Upload an attachment for a reply or a note.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 99,
+        "line": 100,
         "fn": "uploadTicketFile"
       },
       "addition": {
@@ -852,7 +852,7 @@
       "description": "Download an attachment of the ticket (presigned link).",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 112,
+        "line": 113,
         "fn": "ticketFileUrl"
       },
       "addition": {

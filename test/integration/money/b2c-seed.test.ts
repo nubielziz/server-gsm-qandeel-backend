@@ -41,11 +41,9 @@ afterAll(async () => {
 describe.skipIf(!frontendPresent)('the storefront money seed', () => {
   it('writes the 104 storefront orders with a paid session, a captured payment and a receipt each, under the demo ids', async () => {
     const { db } = await testDb();
-    const orders = (await db.select().from(s.orders)).filter((order) => order.customerId !== null);
+    const orders = (await db.select().from(s.orders)).filter((order) => order.source === 'store');
     expect(orders).toHaveLength(104);
-    expect(
-      orders.every((order) => order.clientId === null && order.source === 'store' && order.publicToken?.length === 22),
-    ).toBe(true);
+    expect(orders.every((order) => order.legacyClientId === null && order.publicToken?.length === 22)).toBe(true);
     expect(Math.min(...orders.map((order) => order.id))).toBe(20400);
     expect(Math.max(...orders.map((order) => order.id))).toBe(20503);
     const payments = (await db.select().from(s.payments)).filter((payment) => payment.purpose === 'order');
@@ -62,9 +60,11 @@ describe.skipIf(!frontendPresent)('the storefront money seed', () => {
     ).toBe(true);
     const receipts = (await db.select().from(s.invoices)).filter((invoice) => invoice.kind === 'receipt');
     expect(receipts).toHaveLength(104);
-    // The customers are 14b's: the customers seeder wrote all 30 before this one ran, and this one added none (the growth seed's
-    // guests start at id 900 000).
-    expect((await db.select().from(s.customers)).filter((customer) => customer.id < 900_000)).toHaveLength(30);
+    // The shoppers are 14b's: the customers seeder wrote the 30 retail accounts (ids 101 to 130) before this one ran, and this one added none
+    // (the growth seed's guests start at id 900 000).
+    expect(
+      (await db.select().from(s.clients)).filter((account) => account.id > 100 && account.id < 900_000),
+    ).toHaveLength(30);
     expect(await db.select().from(s.refunds)).toHaveLength(11);
     expect(await db.select().from(s.disputes)).toHaveLength(5);
 
@@ -112,7 +112,7 @@ describe.skipIf(!frontendPresent)('the storefront money seed', () => {
       method: 'original',
       currency: 'CAD',
       reason: 'Unlock did not work: phone still asks for a code',
-      requestedBy: { type: 'customer', name: null },
+      requestedBy: { type: 'account', name: null },
       approvedBy: null,
       netAmount: null,
       taxAmount: null,
@@ -224,7 +224,7 @@ describe.skipIf(!frontendPresent)('the storefront money seed', () => {
     expect(await db.select().from(s.orders)).toHaveLength(864);
   });
 
-  it('uses the customers that exist and adds none: without the customers seeder there is no customer row and no storefront order', async () => {
+  it('uses the shoppers that exist and adds none: without the customers seeder there is no storefront order', async () => {
     const { db } = await testDb();
     await resetDb();
     const demo = await loadDemoState();
@@ -236,8 +236,7 @@ describe.skipIf(!frontendPresent)('the storefront money seed', () => {
       }
       return written;
     });
-    expect(await db.select().from(s.customers)).toHaveLength(0);
-    expect((await db.select().from(s.orders)).filter((order) => order.customerId !== null)).toHaveLength(0);
+    expect((await db.select().from(s.orders)).filter((order) => order.source === 'store')).toHaveLength(0);
     expect(reports.filter((report) => report.module === 'b2c').map((report) => report.table)).not.toContain(
       'customers',
     );

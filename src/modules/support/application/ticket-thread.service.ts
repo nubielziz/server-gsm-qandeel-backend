@@ -16,11 +16,10 @@ import { type StoreMessageView, toStoreMessage } from './ticket-views';
 /**
  * Who writes on a ticket: the holder of its link (whoever requested it), or a signed-in requester who must own it.
  *
- * Why: a ticket link is the whole credential of the ticket page (decision 010); a merchant and a signed-in customer address their tickets
+ * Why: a ticket link is the whole credential of the ticket page (decision 010); a signed-in account of a merchant rank addresses its tickets
  * by id, and a ticket of someone else is `404` (plan § 2, rule 7).
  */
-export type ThreadWriter =
-  { readonly via: 'link' } | { readonly via: 'account'; readonly type: 'customer' | 'client'; readonly id: number };
+export type ThreadWriter = { readonly via: 'link' } | { readonly via: 'account'; readonly id: number };
 
 /** A requester's message: the text (may be `''` with a file) and the ids of the files it carries. */
 export interface ThreadMessageInput {
@@ -109,5 +108,5 @@ export class TicketThreadService {
 
 /** Whether the writer may write on the ticket: the link's holder always (the token is the credential), an account only on its own. */
 function owns(ticket: { readonly requesterType: string; readonly requesterId: number }, writer: ThreadWriter): boolean {
-  return writer.via === 'link' || (ticket.requesterType === writer.type && ticket.requesterId === writer.id);
+  return writer.via === 'link' || (ticket.requesterType === 'account' && ticket.requesterId === writer.id);
 }

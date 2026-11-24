@@ -3,6 +3,21 @@
 import { type SQL, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 
+/**
+ * The orders the storefront reports read: the ones that came through the shop door (`orders.source = 'store'`, decision 064), as `o`.
+ *
+ * Why: the books of the shop are the prepaid orders. A reader never tells a shop order by a null buyer column any more (every order has an
+ * `account_id`); the door is the source. Money cannot import orders' `prepaidOrderSql` (decision 032: orders import money), so the one
+ * condition is written here, equal to it.
+ */
+const SHOP_ORDER = sql`o.source = 'store'`;
+
+/**
+ * The refunds of a storefront order, as `r`: the ones that name a payment and an order, so a return of a held payment (no order) and the
+ * retired merchant rows (no payment) stay out, as they did when this was `customer_id is not null`.
+ */
+const SHOP_REFUND = sql`(r.payment_id is not null and r.order_id is not null)`;
+
 /** One row of the VAT report. */
 export interface VatRowRecord {
   readonly country: string;
@@ -61,7 +76,7 @@ export async function vatRows(db: DbExecutor, from: Date, to: Date): Promise<Vat
       coalesce(sum(tx.taxable), 0)::numeric(20,4)::text as taxable,
       coalesce(sum(tx.vat), 0)::numeric(20,4)::text as vat
     from tx
-    join orders o on o.id = tx.order_id and o.customer_id is not null
+    join orders o on o.id = tx.order_id and ${SHOP_ORDER}
     left join checkout_sessions cs on cs.id = o.checkout_session_id
     group by 1, 2
     order by period desc, country asc`);
@@ -93,7 +108,8 @@ export interface PaymentLineRecord {
   readonly status: string;
   readonly currency: string;
   readonly fx: string;
-  readonly customerId: number | null;
+  /** The buyer account of the payment. */
+  readonly accountId: number | null;
 }
 
 /** The figures of one method. */
@@ -131,7 +147,7 @@ const clearingOf = (transactionId: SQL): SQL => sql`(
  * refund and dispute screens to the cent; only a payment without a session or a journal falls back to converting its own currency.
  */
 const PAY = sql`
-  select p.id, p.order_id, p.customer_id, p.method_type, p.brand, p.status, p.currency, p.amount, p.fee_amount,
+  select p.id, p.order_id, p.account_id, p.method_type, p.brand, p.status, p.currency, p.amount, p.fee_amount,
     coalesce(cs.fx_rate, 1) as fx,
     coalesce(cs.gross_amount, round(p.amount / coalesce(cs.fx_rate, 1), 4)) as usd_amount,
     coalesce(
@@ -143,11 +159,13 @@ const PAY = sql`
 
 /**
  * The USD of a payment or refund journal: its `gateway_clearing` line, or its `customer_wallet` line for the store balance (feature 21,
- * plan § 5.6.8), as a correlated subquery over the transaction id the SQL passes in.
+ * plan § 5.6.8), or its `client_wallet` line when a balance payment was refunded to the merchant wallet the account holds after a rank
+ * change (decision 064), as a correlated subquery over the transaction id the SQL passes in. It feeds `REFUND_USD`,
+ * `refunded_amount` and `awaiting`, so the report keeps tying to the books whichever wallet a refund credited.
  */
 const fundingOf = (transactionId: SQL): SQL => sql`(
   select abs(sum(le.amount)) from ledger_entries le
-  join ledger_accounts la on la.id = le.account_id and la.kind in ('gateway_clearing', 'customer_wallet')
+  join ledger_accounts la on la.id = le.account_id and la.kind in ('gateway_clearing', 'customer_wallet', 'client_wallet')
   where le.transaction_id = ${transactionId})`;
 
 /** What a refund is in USD: its journal when it has one, the whole session gross when it refunds the whole payment, else converted. */
@@ -222,7 +240,7 @@ export async function paymentsReport(
       status: string;
       currency: string;
       fx: string;
-      customer_id: number | null;
+      account_id: number | null;
     }>(sql`
       with pay as (${PAY})
       select * from pay where ${methodFilter}
@@ -231,14 +249,14 @@ export async function paymentsReport(
     db.execute<{ refunded_count: number; refunded_amount: string; sales: string; awaiting: string; loss: string }>(sql`
       with pay as (${PAY})
       select
-        (select count(*) from refunds r where r.status = 'completed' and r.customer_id is not null and r.completed_at >= ${since})::int as refunded_count,
+        (select count(*) from refunds r where r.status = 'completed' and ${SHOP_REFUND} and r.completed_at >= ${since})::int as refunded_count,
         (select coalesce(sum(${REFUND_USD}), 0)::numeric(20,4)::text
            from refunds r join payments p on p.id = r.payment_id left join checkout_sessions cs on cs.id = p.checkout_session_id
-           where r.status = 'completed' and r.customer_id is not null and r.completed_at >= ${since}) as refunded_amount,
+           where r.status = 'completed' and ${SHOP_REFUND} and r.completed_at >= ${since}) as refunded_amount,
         (select coalesce(sum(usd_amount), 0)::numeric(20,4)::text from pay where paid_at >= ${since}) as sales,
         (select coalesce(sum(${REFUND_USD}), 0)::numeric(20,4)::text
            from refunds r join payments p on p.id = r.payment_id left join checkout_sessions cs on cs.id = p.checkout_session_id
-           where r.status in ('requested', 'failed') and r.customer_id is not null) as awaiting,
+           where r.status in ('requested', 'failed') and ${SHOP_REFUND}) as awaiting,
         (select (coalesce(sum(${DISPUTE_LOSS_USD}), 0) - ${CHARGEBACK_RETURNS_USD})::numeric(20,4)::text
            from disputes d join payments p on p.id = d.payment_id left join checkout_sessions cs on cs.id = p.checkout_session_id
            where d.status = 'lost' and p.purpose = 'order') as loss`),
@@ -262,7 +280,7 @@ export async function paymentsReport(
       status: row.status,
       currency: row.currency,
       fx: row.fx,
-      customerId: row.customer_id === null ? null : Number(row.customer_id),
+      accountId: row.account_id === null ? null : Number(row.account_id),
     })),
     total: counted.rows[0]?.n ?? 0,
     totals: {

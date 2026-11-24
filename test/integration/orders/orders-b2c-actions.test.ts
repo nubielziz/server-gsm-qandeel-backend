@@ -4,13 +4,13 @@
 // `USE_REFUNDS` for an order delivered before.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
-import { schema as s } from '@src/infra/db';
 import { b2cPay, postTransaction } from '@src/modules/money';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { ledgerTotals } from '../../support/money';
+import { makeCustomer } from '../../support/store';
 import {
   eventsOf,
   insertOrderRow,
@@ -45,12 +45,10 @@ afterAll(async () => {
 /** A paid storefront order: net 12.49, VAT 2.50, the payment posted as `b2c_pay`. */
 async function paidOrder(): Promise<number> {
   const { db, auto } = world;
-  const [customer] = await db
-    .insert(s.customers)
-    .values({ email: `c-${crypto.randomUUID()}@example.com`, name: 'Jack Turner' })
-    .returning({ id: s.customers.id });
+  // A guest checkout: the buyer is a guest row of the one account table (decision 064).
+  const customer = await makeCustomer(t, { guest: true, name: 'Jack Turner' });
   const order = await insertOrderRow(db, {
-    customerId: customer!.id,
+    accountId: customer.id,
     serviceId: auto.serviceId,
     source: 'store',
     dispatchState: 'manual',
@@ -86,8 +84,10 @@ describe('a storefront order', () => {
       ['b2c_payment', `test:pay:${id}`],
       ['order_settle', `order:${id}:settle`],
     ]);
+    // The payload names the buyer account and the door; a store order never carries a merchant notice (decision 064).
     expect((await outboxOf(db, 'order.status_changed', id))[0]!.payload).toMatchObject({
-      clientId: null,
+      accountId: (await orderRow(db, id)).accountId,
+      source: 'store',
       toStatus: 'completed',
     });
     expect((await ledgerTotals(db)).sum).toBe('0.0000');

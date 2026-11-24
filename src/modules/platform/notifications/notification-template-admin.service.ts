@@ -7,12 +7,7 @@ import type { ParsedListQuery } from '../../../common/contract';
 import { AppError, type FieldError } from '../../../common/errors';
 import { type DbExecutor, DbService, isUniqueViolation } from '../../../infra/db';
 import { AuditService } from '../audit/audit.service';
-import type {
-  NotificationAudience,
-  NotificationChannel,
-  NotificationRecipientType,
-  NotificationTemplate,
-} from '../db/schema';
+import type { NotificationAudience, NotificationChannel, NotificationTemplate } from '../db/schema';
 import { type NotificationEventDefinition, NotificationEventRegistry, isEventKey } from './notification-events';
 import { MailTransport } from './mail-transport';
 import type { createNotificationTemplate } from './notification-templates.contracts';
@@ -91,11 +86,6 @@ function protectedTextProblems(
   fields: { readonly channel: NotificationChannel; readonly subject: string; readonly body: string },
 ): FieldError[] {
   return definition === undefined ? [] : protectedTemplateProblems(definition, fields);
-}
-
-/** The recipient type a template audience matches (identity-platform-11). */
-function recipientTypeOf(audience: NotificationAudience): NotificationRecipientType {
-  return audience === 'merchant' ? 'client' : audience;
 }
 
 /** The audit snapshot of a template: what staff can change. */
@@ -394,7 +384,7 @@ export class NotificationTemplateAdminService {
 }
 
 const keyOf = (row: NotificationTemplate): string =>
-  sentCountKey({ event: row.event, channel: row.channel, recipientType: recipientTypeOf(row.audience) });
+  sentCountKey({ event: row.event, channel: row.channel, audience: row.audience });
 
 /** A row on the wire: dates as ISO instants. */
 function toWire(row: NotificationTemplate, sentLast30Days: number): WireTemplate {

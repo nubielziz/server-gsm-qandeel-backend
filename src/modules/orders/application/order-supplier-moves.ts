@@ -7,8 +7,10 @@ import { eq } from 'drizzle-orm';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import type { DbExecutor } from '../../../infra/db';
+import { AccountDirectory } from '../../identity';
 import { AuditService } from '../../platform';
 import { type Order, type OrderEventType, orders } from '../db/schema';
+import { isPrepaidOrder } from '../domain/door';
 import {
   type OrderAction,
   type OrderTransition,
@@ -19,7 +21,6 @@ import {
   paymentCanStop,
 } from '../domain/order-machine';
 import type { TimelineActor } from '../domain/order-timeline';
-import { merchantOf } from '../infra/foreign-reads.repository';
 import {
   type OrderChanges,
   countEventsOfType,
@@ -130,6 +131,7 @@ export class OrderSupplierMoves {
     private readonly transitions: OrderTransitions,
     private readonly outbox: OrderOutbox,
     private readonly audit: AuditService,
+    private readonly directory: AccountDirectory,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -152,10 +154,10 @@ export class OrderSupplierMoves {
    * won dispute lets them send it again).
    *
    * @param db the database or a transaction
-   * @param order the order (a merchant's order is never stopped and its payment is not read)
+   * @param order the order (an order held from a wallet is never stopped and its payment is not read: the door decides)
    * @returns the stop, or `undefined` when nothing stops the send
    */
-  paymentStop(db: DbExecutor, order: Pick<Order, 'id' | 'clientId'>): Promise<PaymentStop | undefined> {
+  paymentStop(db: DbExecutor, order: Pick<Order, 'id' | 'source'>): Promise<PaymentStop | undefined> {
     return paymentStopOfOrder(db, order);
   }
 
@@ -238,7 +240,8 @@ export class OrderSupplierMoves {
     if (decision.statusChanged) {
       await this.outbox.statusChanged(tx, {
         orderId: order.id,
-        clientId: order.clientId,
+        accountId: order.accountId,
+        source: order.source,
         fromStatus: order.status,
         toStatus: updated.status,
       });
@@ -468,12 +471,13 @@ export class OrderSupplierMoves {
   }
 
   private async record(tx: DbExecutor, action: string, before: Order, after: Order): Promise<void> {
-    const merchant = before.clientId === null ? undefined : await merchantOf(tx, before.clientId);
+    // The label names the account for an order held from a wallet only, as before; a shop order's buyer stays out of the audit text.
+    const buyer = isPrepaidOrder(before) ? undefined : await this.directory.findById(tx, before.accountId);
     await this.audit.record(tx, {
       action,
       entityType: 'order',
       entityId: before.id,
-      entityLabel: merchant ? `ORD-${before.id} for ${merchant.name}` : `ORD-${before.id}`,
+      entityLabel: buyer ? `ORD-${before.id} for ${buyer.name}` : `ORD-${before.id}`,
       before: { status: before.status, dispatchState: before.dispatchState },
       after: { status: after.status, dispatchState: after.dispatchState },
     });

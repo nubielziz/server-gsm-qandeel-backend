@@ -1,5 +1,7 @@
 // Integration tests of the audit log routes (feature 2a, scenarios admin-team and ip-rules): the list with its filters, search and
-// sorts, the snapshots of actor and record names, the masking of secrets, and one entry, through HTTP on the real application.
+// sorts, the snapshots of actor and record names, the masking of secrets, and one entry, through HTTP on the real application. The account
+// scope (decision 064: `accountId`, `entityType=account`, the `account` field over old merchant and customer rows) is in
+// audit-account-filter.test.ts.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
@@ -97,7 +99,8 @@ async function history() {
       action: 'placed an order via the API',
       entityType: 'order',
       entityId: 41,
-      actorType: 'client',
+      // Decision 064: a new row says `account` for a merchant and a customer alike (the table refuses the old words in a new row).
+      actorType: 'account',
       actorId: 9,
       actorName: 'Zain Mobile Hub',
       entityLabel: 'Order 41',
@@ -135,6 +138,8 @@ describe('GET /admin/audit-logs', () => {
       before: { status: 'active' },
       after: { status: 'suspended', reason: 'Left the team' },
       ip: '203.0.113.24',
+      // A staff member suspended a staff member: no account in the row.
+      account: null,
     });
   });
 
@@ -155,19 +160,22 @@ describe('GET /admin/audit-logs', () => {
     // A settings change has no numeric record: 0, and the label names the key.
     expect(setting).toMatchObject({ entityId: 0, entityLabel: 'support.attachmentRetentionDays', ip: null });
     const client = (await rami.get(`/admin/audit-logs/${h.client}`)).body;
-    expect(client).toMatchObject({ actorType: 'client', actorId: 9, actorName: 'Zain Mobile Hub' });
+    expect(client).toMatchObject({ actorType: 'account', actorId: 9, actorName: 'Zain Mobile Hub' });
+    // The row is about an order; the account that acted is the one the row stands for (the map is not needed for the current word).
+    expect(client.account).toEqual({ id: 9 });
+    expect(system.account).toBeNull();
   });
 
   it('filters by actor type, actor, record type and record', async () => {
     const h = await history();
     const rami = await adminWith(t, ['audit:read']);
     expect(ids((await rami.get('/admin/audit-logs?actorType=system')).body)).toEqual([h.system]);
-    expect(ids((await rami.get('/admin/audit-logs?actorType=client')).body)).toEqual([h.client]);
+    expect(ids((await rami.get('/admin/audit-logs?actorType=account')).body)).toEqual([h.client]);
     expect((await rami.get('/admin/audit-logs?actorType=staff')).total).toBe(4);
     expect(ids((await rami.get('/admin/audit-logs?actorId=2')).body)).toEqual([h.ipRule]);
     expect(ids((await rami.get('/admin/audit-logs?entityType=staff')).body)).toEqual([h.rename, h.suspend]);
     expect(ids((await rami.get('/admin/audit-logs?entityType=staff&entityId=6')).body)).toEqual([h.suspend]);
-    expect(ids((await rami.get('/admin/audit-logs?entityType=order&actorType=client')).body)).toEqual([h.client]);
+    expect(ids((await rami.get('/admin/audit-logs?entityType=order&actorType=account')).body)).toEqual([h.client]);
     expect((await rami.get('/admin/audit-logs?entityType=nothing')).total).toBe(0);
   });
 
@@ -232,6 +240,7 @@ describe('GET /admin/audit-logs', () => {
     for (const query of [
       'actorType=robot',
       'actorId=abc',
+      'accountId=abc',
       'from=2026-13-01',
       'from=yesterday',
       'to=2026-02-30',

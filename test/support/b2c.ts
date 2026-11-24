@@ -40,7 +40,7 @@ export const DEFAULT_CARD: TestCard = { brand: 'visa', last4: '4242', fingerprin
 
 /**
  * The return address of a test `/pay` call: on the origin of the test app's `STORE_BASE_URL` (decision 048). The test app runs with
- * `NODE_ENV=test`, so the base URLs are the development defaults (`http://localhost:5175` for the shop, `:5174` for the portal).
+ * `NODE_ENV=test`, so the base URLs are the development defaults (`http://localhost:5175` for the shop, `http://localhost:5175/account` for the account area).
  */
 export const STORE_RETURN_URL = 'http://localhost:5175/en/checkout/return';
 

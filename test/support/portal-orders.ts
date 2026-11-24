@@ -16,10 +16,11 @@ export async function insertUsd(db: Database): Promise<void> {
 }
 
 /**
- * Inserts an order of a merchant (a row of feature 5's table, as the order engine will write it).
+ * Inserts an order of a merchant-rank account (a row of feature 5's table, as the order engine writes it: the buyer in `account_id`, and
+ * `client_id` for a hold-and-settle order).
  *
  * @param db the test database
- * @param clientId the merchant
+ * @param clientId the account (a merchant)
  * @param overrides columns to change
  * @returns the order id and its service
  */
@@ -35,7 +36,8 @@ export async function insertOrder(
   const [row] = await db
     .insert(s.orders)
     .values({
-      clientId,
+      accountId: clientId,
+      legacyClientId: clientId,
       serviceId,
       type: 'imei',
       source: 'v1',
@@ -70,6 +72,8 @@ export interface PortalAnswer {
 
 /** A signed-in merchant's calls to the portal routes, by session cookie and CSRF token. */
 export interface PortalClient {
+  readonly accountId: number;
+  /** The same number as `accountId`, under the name the old helper used. */
   readonly clientId: number;
   call(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: unknown): Promise<PortalAnswer>;
   /** Sends a mutation with the cookie but no CSRF token. */
@@ -77,15 +81,15 @@ export interface PortalClient {
 }
 
 /**
- * Opens a merchant session and returns a client for the portal routes.
+ * Opens a session of a merchant-rank account and returns a client for the portal routes.
  *
  * @param t the running test app
- * @param clientId the merchant
+ * @param clientId the account (a merchant)
  * @param ip the address the requests come from
  * @returns the client
  */
 export async function portalFor(t: TestApp, clientId: number, ip = '127.0.0.1'): Promise<PortalClient> {
-  const session = await openSession(t, { type: 'client', id: clientId });
+  const session = await openSession(t, { type: 'account', id: clientId });
   const send = async (
     method: string,
     url: string,
@@ -107,6 +111,7 @@ export async function portalFor(t: TestApp, clientId: number, ip = '127.0.0.1'):
     };
   };
   return {
+    accountId: clientId,
     clientId,
     call: (method, url, payload) =>
       send(method, url, method === 'GET' ? session.headers : session.mutationHeaders, payload),

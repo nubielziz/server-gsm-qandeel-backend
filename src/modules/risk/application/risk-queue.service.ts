@@ -9,7 +9,7 @@ import { deviceName, heldShare, queueMethodOf, signalsOf, tacOfInput } from '../
 import {
   type DecidedRow,
   type HeldRow,
-  customerHistories,
+  accountHistories,
   heldOrders,
   plannedSuppliers,
   queueFigures,
@@ -37,6 +37,7 @@ export interface HeldOrderView {
   readonly fxRate: string;
   readonly paymentMethod: 'card' | 'wallet' | 'crypto' | 'balance';
   readonly signals: string[];
+  /** The buyer: an account of any rank, or the guest row of a guest checkout (the key keeps its name, `customer`, on the wire). */
   readonly customer: {
     readonly id: number;
     readonly name: string;
@@ -72,7 +73,7 @@ export interface RiskQueueView {
 }
 
 /**
- * The amount the customer paid in USD, VAT included.
+ * The amount the buyer paid in USD, VAT included.
  *
  * Why: the checkout session locked the USD gross (the figure the Refunds page shows as the payment's amount), so the queue prints that
  * one. An order without a session falls back to its net price plus its VAT, both USD.
@@ -86,7 +87,8 @@ const capturedOf = (row: { grossUsd: string | null; totalPrice: string; taxAmoun
  * Why: the console's Risk page polls it every 30 seconds. A held order is a storefront order whose newest assessment says `review`
  * and that was never dispatched; the oldest payment is first. The server joins everything the reviewer needs on the card (service,
  * the supplier it would go to, the IMEI and its device, what was paid and in which currency, the signals and the buyer's history),
- * so the console makes one call.
+ * so the console makes one call. Decision 064: the buyer is an account of any rank (the `customer` key of the card keeps its name and holds
+ * the account's number), the history counts that account's shop orders only, and the queue lists shop orders only.
  *
  * Side effects: none (reads only; nothing is cached because staff decide on what is shown).
  */
@@ -100,7 +102,7 @@ export class RiskQueueService {
   /**
    * Reads the queue, the figures and the latest decisions.
    *
-   * @param contact what the caller may see of a held order's customer address (decision 047, rule A)
+   * @param contact what the caller may see of a held order's account address (decision 047, rule A)
    * @returns the three parts of the page
    */
   async get(contact: CustomerContact): Promise<RiskQueueView> {
@@ -116,9 +118,9 @@ export class RiskQueueService {
         db,
         held.filter((row) => row.supplierId === null).map((row) => row.serviceId),
       ),
-      customerHistories(
+      accountHistories(
         db,
-        held.map((row) => ({ orderId: row.orderId, customerId: row.customerId })),
+        held.map((row) => ({ orderId: row.orderId, accountId: row.accountId })),
       ),
       tacEntries(
         db,
@@ -140,7 +142,7 @@ export class RiskQueueService {
   private heldView(
     row: HeldRow,
     suppliers: Awaited<ReturnType<typeof plannedSuppliers>>,
-    histories: Awaited<ReturnType<typeof customerHistories>>,
+    histories: Awaited<ReturnType<typeof accountHistories>>,
     devices: Awaited<ReturnType<typeof tacEntries>>,
     contact: CustomerContact,
   ): HeldOrderView {
@@ -163,10 +165,10 @@ export class RiskQueueService {
       paymentMethod: queueMethodOf(row.methodType),
       signals: signalsOf(row.signals),
       customer: {
-        id: row.customerId,
-        name: row.customerName,
-        email: customerEmailIn(contact, row.customerEmail),
-        country: row.customerCountry,
+        id: row.accountId,
+        name: row.accountName,
+        email: customerEmailIn(contact, row.accountEmail),
+        country: row.accountCountry,
         history: histories.get(row.orderId) ?? { earlierOrders: 0, refunds: 0, disputes: 0 },
       },
     };
@@ -177,7 +179,7 @@ function decidedView(row: DecidedRow): DecidedOrderView {
   return {
     orderId: row.orderId,
     score: row.score,
-    customer: { id: row.customerId, name: row.customerName },
+    customer: { id: row.accountId, name: row.accountName },
     capturedAmount: capturedOf(row),
     currency: row.currency ?? 'USD',
     fxRate: row.fxRate ?? '1',

@@ -38,7 +38,7 @@ describe('lines and columns', () => {
     expect(csvHeader(['a', 'b'])).toBe('a,b\r\n');
   });
 
-  it('the merchant export has no cost and no supplier column', () => {
+  it("the staff export ends with the buyer's rank; the merchant export has no cost, no supplier and no rank column", () => {
     expect([...ADMIN_ORDER_CSV_COLUMNS]).toEqual([
       'id',
       'created',
@@ -50,7 +50,10 @@ describe('lines and columns', () => {
       'supplier',
       'price',
       'cost',
+      'rank',
     ]);
+    // The new column is the last one, so a file read by position keeps every earlier column where it was.
+    expect(ADMIN_ORDER_CSV_COLUMNS[ADMIN_ORDER_CSV_COLUMNS.length - 1]).toBe('rank');
     expect([...CLIENT_ORDER_CSV_COLUMNS]).toEqual([
       'id',
       'created',
@@ -63,5 +66,6 @@ describe('lines and columns', () => {
     ]);
     expect(CLIENT_ORDER_CSV_COLUMNS).not.toContain('cost' as never);
     expect(CLIENT_ORDER_CSV_COLUMNS).not.toContain('supplier' as never);
+    expect(CLIENT_ORDER_CSV_COLUMNS).not.toContain('rank' as never);
   });
 });

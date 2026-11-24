@@ -4,7 +4,11 @@
 // one live payment, whoever uploaded it; a card top-up asks for 3-D Secure under the shop's policy.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { and, eq, inArray } from 'drizzle-orm';
+import { CacheKeys } from '@src/infra/cache';
 import { schema as s } from '@src/infra/db';
+import { RedisService } from '@src/infra/redis';
+import { lockAccountTopUps } from '@src/modules/money';
+import { openAccountSession } from '../../support/account-sessions';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import {
@@ -21,7 +25,7 @@ import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertUsd } from '../../support/fixtures';
 import { PORTAL_ORIGIN } from '../../support/merchant-portal';
 import { insertWalletMerchant } from '../../support/money';
-import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
+import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeAccount, makeCustomer } from '../../support/store';
 import { portalFor } from '../../support/portal-orders';
 
 const clock = new TestClock('2026-11-10T09:00:00.000Z');
@@ -148,9 +152,78 @@ describe('POST /store/v1/me/wallet/top-ups', () => {
     expect(reused.statusCode).toBe(409);
     expect(codeOf(reused)).toBe('IDEMPOTENCY_KEY_REUSED');
     const { db } = await testDb();
-    const rows = await db.select().from(s.invoices).where(eq(s.invoices.customerId, customer.id));
+    const rows = await db.select().from(s.invoices).where(eq(s.invoices.accountId, customer.id));
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ kind: 'topup', taxRate: '0.0000', idempotencyKey: 'attempt-1', clientId: null });
+    expect(rows[0]).toMatchObject({
+      kind: 'topup',
+      taxRate: '0.0000',
+      idempotencyKey: 'attempt-1',
+      // One owner column and the wallet kind it fills; the old columns are not written (decision 064).
+      accountId: customer.id,
+      walletKind: 'customer_wallet',
+      legacyClientId: null,
+      retiredCustomerId: null,
+    });
+  });
+
+  it('writes the account, the wallet kind and the limiter key of the account (decision 064)', async () => {
+    const { customer, store } = await signedIn();
+    expect((await create(store, { amount: '50', gatewayId: cliq })).statusCode).toBe(201);
+    const redis = t.app.get(RedisService).cache;
+    const keys = t.app.get(CacheKeys);
+    // The counter is the account's (`a:<accountId>`), so an old customer number can never share the counter of a new account.
+    expect(await redis.keys(`${keys.rateLimit('wallet-topup')}:a:${customer.id}*`)).toHaveLength(1);
+    expect(await redis.keys(`${keys.rateLimit('wallet-topup')}:${customer.id}`)).toHaveLength(0);
+  });
+
+  it('refuses an account of a merchant rank on every route and creates nothing (decision 064)', async () => {
+    const { db } = await testDb();
+    const merchant = await insertWalletMerchant(db, { name: 'Zain Mobile Hub' });
+    const session = await openAccountSession(t, merchant.id);
+    const send = (method: 'GET' | 'POST', url: string, payload?: unknown) =>
+      t.app.inject({
+        method,
+        url,
+        headers: {
+          ...(method === 'GET' ? session.headers : session.mutationHeaders),
+          origin: STORE_ORIGIN,
+          'idempotency-key': 'merchant-1',
+        },
+        ...(payload === undefined ? {} : { payload: payload as never }),
+      });
+    for (const res of [
+      await send('GET', '/store/v1/me/wallet/top-up-methods'),
+      await send('GET', '/store/v1/me/wallet/top-ups'),
+      await send('POST', '/store/v1/me/wallet/top-ups', { amount: '50', gatewayId: cliq }),
+    ]) {
+      expect(res.statusCode).toBe(403);
+      expect(codeOf(res)).toBe('RANK_NOT_ALLOWED');
+    }
+    expect(await db.select().from(s.invoices)).toHaveLength(0);
+  });
+
+  it('takes the top-up lock of the account: a create waits while another transaction holds it (decision 064)', async () => {
+    const { db } = await testDb();
+    const { customer, store } = await signedIn();
+    let release!: () => void;
+    let locked!: () => void;
+    const lockTaken = new Promise<void>((resolve) => (locked = resolve));
+    const holder = db.transaction(async (tx) => {
+      await lockAccountTopUps(tx, customer.id);
+      locked();
+      await new Promise<void>((resolve) => (release = resolve));
+    });
+    await lockTaken;
+    let answered = false;
+    const pending = create(store, { amount: '50', gatewayId: cliq }).then((res) => {
+      answered = true;
+      return res;
+    });
+    await Bun.sleep(400);
+    expect(answered).toBe(false);
+    release();
+    await holder;
+    expect((await pending).statusCode).toBe(201);
   });
 
   it('refuses without a key, while switched off, a method it may not use, and a bad amount', async () => {
@@ -212,7 +285,7 @@ describe('POST /store/v1/me/wallet/top-ups', () => {
     );
     expect(results.filter((res) => res.statusCode === 201)).toHaveLength(2);
     expect(results.filter((res) => res.statusCode === 422).every((res) => codeOf(res) === 'daily_count')).toBe(true);
-    const rows = await db.select().from(s.invoices).where(eq(s.invoices.customerId, customer.id));
+    const rows = await db.select().from(s.invoices).where(eq(s.invoices.accountId, customer.id));
     expect(rows).toHaveLength(2);
   });
 
@@ -243,7 +316,7 @@ describe('POST /store/v1/me/wallet/top-ups', () => {
 
     await db.insert(s.ledgerAccounts).values({
       kind: 'customer_wallet',
-      ownerType: 'customer',
+      ownerType: 'account',
       ownerId: customer.id,
       currency: 'USD',
       frozenAt: new Date(),
@@ -272,7 +345,7 @@ describe('POST /store/v1/me/wallet/top-ups', () => {
       expect(res.json().errors[0], amount).toMatchObject({ field: 'amount', code: 'not_chargeable' });
     }
     expect(sessions()).toHaveLength(before);
-    expect(await db.select().from(s.invoices).where(eq(s.invoices.customerId, customer.id))).toHaveLength(0);
+    expect(await db.select().from(s.invoices).where(eq(s.invoices.accountId, customer.id))).toHaveLength(0);
 
     // The same key is free again: a refusal reserved nothing.
     const exact = await create(store, { amount: '25.01', gatewayId: card }, 'card-25.005');
@@ -315,7 +388,7 @@ describe('the receipt, the cancel and the reads', () => {
     const { customer, store } = await signedIn();
     const topUp = (await create(store, { amount: '50', gatewayId: cliq })).json();
     const { db } = await testDb();
-    const fileId = await insertProofFile(db, customer.id, { ownerType: 'customer' });
+    const fileId = await insertProofFile(db, customer.id, { ownerType: 'account' });
     return { customer, store, topUp, fileId, db };
   }
   const receipt = (store: StoreClient, id: number, body: unknown) =>
@@ -339,27 +412,29 @@ describe('the receipt, the cancel and the reads', () => {
     expect(payment).toMatchObject({
       purpose: 'topup',
       status: 'pending',
-      customerId: customer.id,
+      accountId: customer.id,
       methodType: 'bank',
       receiptFileId: fileId,
       amount: '50.0000',
     });
-    const otherFile = await insertProofFile(db, customer.id, { ownerType: 'customer' });
+    const otherFile = await insertProofFile(db, customer.id, { ownerType: 'account' });
     expect(codeOf(await receipt(store, topUp.id, { fileId: otherFile }))).toBe('CONFLICT');
     expect(codeOf(await cancel(store, topUp.id))).toBe('CONFLICT');
   });
 
   it('refuses a file that is not the customer’s, a reference already used, and another customer’s top-up', async () => {
     const { customer, store, topUp, db } = await openTopUp();
-    const merchantFile = await insertProofFile(db, customer.id);
-    expect(codeOf(await receipt(store, topUp.id, { fileId: merchantFile }))).toBe('invalid');
-    const text = await insertProofFile(db, customer.id, { ownerType: 'customer', mime: 'text/plain' });
+    // A file another account uploaded is not the account's own.
+    const stranger = await makeAccount({ rank: 'retail', db });
+    const strangersFile = await insertProofFile(db, stranger.id, { ownerType: 'account' });
+    expect(codeOf(await receipt(store, topUp.id, { fileId: strangersFile }))).toBe('invalid');
+    const text = await insertProofFile(db, customer.id, { ownerType: 'account', mime: 'text/plain' });
     expect(codeOf(await receipt(store, topUp.id, { fileId: text }))).toBe('invalid');
     const other = await openTopUp();
     expect((await receipt(other.store, other.topUp.id, { fileId: other.fileId, reference: 'REF-1' })).statusCode).toBe(
       201,
     );
-    const mine = await insertProofFile(db, customer.id, { ownerType: 'customer' });
+    const mine = await insertProofFile(db, customer.id, { ownerType: 'account' });
     expect(codeOf(await receipt(store, topUp.id, { fileId: mine, reference: 'REF-1' }))).toBe('taken');
     expect((await receipt(store, other.topUp.id, { fileId: mine })).statusCode).toBe(404);
     expect((await store.call('GET', `/store/v1/me/wallet/top-ups/${other.topUp.id}`)).statusCode).toBe(404);
@@ -381,11 +456,11 @@ describe('the receipt, the cancel and the reads', () => {
     await insertPendingPayment(db, await insertInvoiceRow(db, merchant.id, { gatewayId: bank }), bank, {
       receiptFileId: merchantFile,
     });
-    const copy = await insertProofFile(db, customer.id, { ownerType: 'customer', sha256: stored!.sha256 });
+    const copy = await insertProofFile(db, customer.id, { ownerType: 'account', sha256: stored!.sha256 });
     expect(codeOf(await receipt(store, third.id, { fileId: copy }))).toBe('taken');
     // Sending the first receipt again to its own top-up is still a retry.
     expect((await receipt(store, topUp.id, { fileId })).statusCode).toBe(201);
-    expect(await db.select().from(s.payments).where(eq(s.payments.customerId, customer.id))).toHaveLength(1);
+    expect(await db.select().from(s.payments).where(eq(s.payments.accountId, customer.id))).toHaveLength(1);
   });
 
   it('judges the same bytes attached by a merchant and by a customer at the same moment one after the other (decision 049)', async () => {
@@ -400,7 +475,7 @@ describe('the receipt, the cancel and the reads', () => {
       const merchantFile = await insertProofFile(db, merchant.id);
       const [stored] = await db.select().from(s.files).where(eq(s.files.id, merchantFile));
       const { customer, store, topUp } = await openTopUp();
-      const customerFile = await insertProofFile(db, customer.id, { ownerType: 'customer', sha256: stored!.sha256 });
+      const customerFile = await insertProofFile(db, customer.id, { ownerType: 'account', sha256: stored!.sha256 });
       const [byMerchant, byCustomer] = await Promise.all([
         portal.call('POST', `/client/invoices/${invoice.id}/receipt`, { fileId: merchantFile }),
         receipt(store, topUp.id, { fileId: customerFile }),
@@ -429,5 +504,17 @@ describe('the receipt, the cancel and the reads', () => {
     expect(list.headers['x-total-count']).toBe('1');
     expect(list.json()[0]).toMatchObject({ id: topUp.id, status: 'cancelled' });
     expect(list.json()[0].instructions).toBeUndefined();
+  });
+
+  it('shows only the top-ups of the store balance: an invoice of the merchant wallet is neither listed nor read (decision 064)', async () => {
+    const { customer, store, topUp, db } = await openTopUp();
+    // An account that was a merchant and became a retail account keeps its old merchant invoices, but they are not store top-ups.
+    const old = await insertInvoiceRow(db, customer.id, { gatewayId: cliq, status: 'paid' });
+    expect(old.walletKind).toBe('client_wallet');
+    const list = await store.call('GET', '/store/v1/me/wallet/top-ups');
+    expect(list.headers['x-total-count']).toBe('1');
+    expect(list.json().map((row: { id: number }) => row.id)).toEqual([topUp.id]);
+    expect((await store.call('GET', `/store/v1/me/wallet/top-ups/${old.id}`)).statusCode).toBe(404);
+    expect((await cancel(store, old.id)).statusCode).toBe(404);
   });
 });

@@ -40,7 +40,8 @@ function refusalDetail(reason: 'blocked' | 'not_listed', address: IpAddress | un
  * all) refuses it; for the admin console, when the restriction is on, an address without a live allow rule is refused too.
  * The refusal is `403 IP_NOT_ALLOWED`, a session-ending code about the caller only (ALIGNMENT § 3), decided before
  * authentication so a blocked address learns nothing about accounts. The decision counts a hit on the rule that made it.
- * `/health` and `/metrics` are never judged.
+ * `/health` and `/metrics` are never judged. The eight sign-in routes every account shares (`/client/auth/sign-in` and its siblings)
+ * are judged as audience `store` and `other` at once, so a store-scope block also stops a blocked buyer from signing in (decision 064).
  *
  * Failure policy: if the rules cannot be read at all (a cold start with Postgres down), the request is refused with
  * `503 DATABASE_UNAVAILABLE`: a rule that cannot be checked is not skipped.

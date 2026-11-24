@@ -1,12 +1,15 @@
-// Integration tests of decision 052, rule seven: the public forgot-password routes run the same
-// database statements for every email (a run that may keep nothing is rolled back at its end). The statements are recorded at the Postgres driver; only their texts are compared, never their values.
+// Integration tests of decision 052, rule seven: the public forgot-password routes run the same database statements for every email (a run
+// that may keep nothing is rolled back at its end), for every rank (decision 064). The statements are recorded at the Postgres driver; only
+// their texts are compared, never their values. A guest row that shares an email with a login row changes nothing: the email is read through
+// the login partition only.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 import { schema as s } from '@src/infra/db';
 import type { RequestMeta } from '@src/modules/identity';
-import { CustomerPasswordService } from '@src/modules/customers/application/customer-password.service';
-import { MerchantPasswordService } from '@src/modules/identity/application/merchant-password.service';
+import { AccountPasswordService } from '@src/modules/identity/application/account-password.service';
+import { accountLinks, captureAccountLinks } from '../../support/account-links';
+import { makeAccount } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
@@ -33,6 +36,7 @@ beforeEach(async () => {
   await clearPortalRateLimits(t);
   await clearStoreRateLimits(t);
   await seedPortalBasics();
+  captureAccountLinks(t);
 });
 afterEach(() => mock.restore());
 
@@ -43,8 +47,7 @@ function newCaller(): RequestMeta {
 }
 
 /** The statements of the tables these use cases touch, and the transaction boundaries. */
-const RELEVANT =
-  /"(auth_tokens|outbox_events|clients|client_groups|ledger_accounts|customers|customer_credentials)"|pg_notify/;
+const RELEVANT = /"(auth_tokens|outbox_events|clients|client_groups|ledger_accounts)"|pg_notify/;
 const BOUNDARY = /^(begin|commit|rollback)\b/;
 
 /** Runs the work and returns the texts of the statements it sent to Postgres (whitespace collapsed), in order. */
@@ -72,7 +75,6 @@ async function counts(): Promise<Record<string, number>> {
     outboxEvents: await db.$count(s.outboxEvents),
     clients: await db.$count(s.clients),
     ledgerAccounts: await db.$count(s.ledgerAccounts),
-    customers: await db.$count(s.customers),
   };
 }
 
@@ -87,38 +89,67 @@ function expectSameWork(runs: readonly string[][]): void {
   }
 }
 
-describe('POST /client/auth/password/forgot', () => {
-  it('runs the same statements for a merchant, an unknown email, a suspended merchant and a merchant whose mail budget is spent', async () => {
-    const forgot = t.app.get(MerchantPasswordService);
+describe('forgot password, for an account of either rank', () => {
+  it('runs the same statements for a merchant rank, an unknown email, a suspended account, a blocked one and an account whose mail budget is spent', async () => {
+    const forgot = t.app.get(AccountPasswordService);
     const merchant = await makeMerchant(t);
     const suspended = await makeMerchant(t, { status: 'suspended' });
+    const blocked = await makeCustomer(t, { status: 'blocked' });
     const spent = await makeMerchant(t);
     for (let i = 0; i < 5; i++) await forgot.forgot(spent.email, newCaller());
 
-    const kept = await statementsOf(() => forgot.forgot(merchant.email, newCaller()));
-    const runs = [kept];
-    for (const email of [`nobody-${randomUUID()}@example.com`, suspended.email, spent.email]) {
+    const runs = [await statementsOf(() => forgot.forgot(merchant.email, newCaller()))];
+    for (const email of [`nobody-${randomUUID()}@example.com`, suspended.email, blocked.email, spent.email]) {
       const before = await counts();
       runs.push(await statementsOf(() => forgot.forgot(email, newCaller())));
       expect(await counts()).toEqual(before);
     }
     expectSameWork(runs);
   });
-});
 
-describe('POST /store/v1/auth/password/forgot', () => {
-  it('runs the same statements for an account, an unknown email, a guest and a suspended account', async () => {
-    const forgot = t.app.get(CustomerPasswordService);
+  it('runs the same statements for a retail account, an unknown email, an email that only a guest row holds and an erased account', async () => {
+    const forgot = t.app.get(AccountPasswordService);
     const account = await makeCustomer(t);
     const guest = await makeCustomer(t, { guest: true });
-    const suspended = await makeCustomer(t, { status: 'suspended' });
+    const erased = await makeCustomer(t, { status: 'anonymized', anonymizedAt: new Date() });
 
     const runs = [await statementsOf(() => forgot.forgot(account.email, newCaller()))];
-    for (const email of [`nobody-${randomUUID()}@example.com`, guest.email, suspended.email]) {
+    for (const email of [`nobody-${randomUUID()}@example.com`, guest.email, erased.email]) {
       const before = await counts();
       runs.push(await statementsOf(() => forgot.forgot(email, newCaller())));
       expect(await counts()).toEqual(before);
     }
     expectSameWork(runs);
+  });
+
+  it('acts on the login row when a guest row holds the same email, in either order, with the statements of any other account', async () => {
+    const forgot = t.app.get(AccountPasswordService);
+    const plain = await makeCustomer(t);
+    const runs = [await statementsOf(() => forgot.forgot(plain.email, newCaller()))];
+    for (const order of ['login first', 'guest first'] as const) {
+      const email = `shared-${randomUUID()}@example.com`;
+      const rows =
+        order === 'login first'
+          ? [
+              await makeAccount(t, { rank: 'retail', email }),
+              await makeAccount(t, { rank: 'retail', guest: true, email }),
+            ]
+          : [
+              await makeAccount(t, { rank: 'retail', guest: true, email }),
+              await makeAccount(t, { rank: 'retail', email }),
+            ];
+      const login = rows.find((row) => row.row.hasAccount)!;
+      runs.push(await statementsOf(() => forgot.forgot(email, newCaller())));
+      // The link was made for the login row, never for the guest row.
+      expect(
+        accountLinks()
+          .filter((link) => link.kind === 'password_reset')
+          .map((link) => link.accountId),
+      ).toContain(login.id);
+      expect(accountLinks().some((link) => link.accountId === rows.find((row) => !row.row.hasAccount)!.id)).toBe(false);
+    }
+    // Every run kept its work (a commit) and sent the statements of the first one.
+    for (const run of runs) expect(run.at(-1)).toBe('commit');
+    for (const run of runs.slice(1)) expect(run).toEqual(runs[0]!);
   });
 });

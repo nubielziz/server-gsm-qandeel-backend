@@ -1,6 +1,7 @@
 // Minimal valid rows for database tests: just enough parents to satisfy the foreign keys and NOT NULL columns.
 // Each helper inserts with the Drizzle schema, so a schema change that breaks a fixture shows up at type-check.
 import { type Database, schema as s } from '@src/infra/db';
+import { ensureMerchantGroup } from './accounts';
 
 /** Inserts USD (the base currency) when it is not there yet. */
 export async function insertUsd(db: Database): Promise<void> {
@@ -35,20 +36,17 @@ export async function insertLedgerTransaction(
   return row!.id;
 }
 
-/** The parents an order needs: a merchant (with its group), a service (with its category) and USD. */
+/** The parents an order needs: a merchant-rank account (with its rank), a service (with its category) and USD. */
 export async function insertOrderParents(db: Database): Promise<{ clientId: number; serviceId: number }> {
   await insertUsd(db);
-  const [group] = await db
-    .insert(s.clientGroups)
-    .values({ name: 'Standard', isDefault: true })
-    .returning({ id: s.clientGroups.id });
+  const groupId = await ensureMerchantGroup(db);
   const [client] = await db
     .insert(s.clients)
     .values({
       username: 'merchant',
       email: 'merchant@example.com',
       name: 'Merchant',
-      groupId: group!.id,
+      groupId,
       referralCode: 'REF-1',
     })
     .returning({ id: s.clients.id });
@@ -82,11 +80,16 @@ export const ORDER_DEFAULTS = {
   currency: 'USD',
 } as const;
 
-/** A B2B order for the given merchant and service; returns its id. */
+/** A hold-and-settle order (door `dhru`) for the given merchant-rank account and service; returns its id. */
 export async function insertOrder(db: Database, parents: { clientId: number; serviceId: number }): Promise<number> {
   const [row] = await db
     .insert(s.orders)
-    .values({ ...ORDER_DEFAULTS, clientId: parents.clientId, serviceId: parents.serviceId })
+    .values({
+      ...ORDER_DEFAULTS,
+      accountId: parents.clientId,
+      legacyClientId: parents.clientId,
+      serviceId: parents.serviceId,
+    })
     .returning({ id: s.orders.id });
   return row!.id;
 }

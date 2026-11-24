@@ -174,7 +174,7 @@ describe('.env.production.example', () => {
     expect(productionVars.CORS_ORIGINS).toBeUndefined();
     expect(productionVars.CONSOLE_BASE_URL).toBe(`https://${deploy.ADMIN_HOST}`);
     expect(productionVars.STORE_BASE_URL).toBe(`https://${deploy.SHOP_HOST}`);
-    expect(productionVars.PORTAL_BASE_URL).toBe(`https://${deploy.SHOP_HOST}/merchant`);
+    expect(productionVars.PORTAL_BASE_URL).toBe(`https://${deploy.SHOP_HOST}/account`);
     expect(productionVars.ERRORS_BASE_URL).toBe(`https://${deploy.API_HOST}/errors`);
     expect(productionVars.TURNSTILE_HOSTNAMES).toBe(deploy.SHOP_HOST);
   });

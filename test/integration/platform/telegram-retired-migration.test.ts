@@ -106,11 +106,12 @@ describe('the migration that retires Telegram for merchants', () => {
     expect(await rows()).toEqual(once);
   });
 
-  it('ends a Telegram message still queued for a merchant, and leaves the operations alerts, sent messages and email alone', async () => {
+  it('ends a Telegram message still queued for an account, and leaves the operations alerts, sent messages and email alone', async () => {
     const { db } = await testDb();
     const merchant = await insertMerchant(db, { telegramChatId: '7001' });
     const row = (values: Partial<typeof s.notifications.$inferInsert>) => ({
-      recipientType: 'client' as const,
+      // Decision 064: the log says `account` for a merchant and a customer alike.
+      recipientType: 'account' as const,
       recipientId: merchant,
       channel: 'telegram' as const,
       event: 'wallet.low_balance',
@@ -122,7 +123,7 @@ describe('the migration that retires Telegram for merchants', () => {
       .insert(s.notifications)
       .values([
         row({}),
-        row({ recipientType: 'customer', event: 'order.completed' }),
+        row({ event: 'order.completed' }),
         row({ recipientType: 'staff', recipientId: 0, event: 'alert.fired' }),
         row({ status: 'sent', sentAt: new Date('2026-11-01T00:00:00.000Z') }),
         row({ channel: 'email' }),
@@ -135,11 +136,11 @@ describe('the migration that retires Telegram for merchants', () => {
     await migrate();
     const once = await states();
     expect(once).toEqual([
-      'client:telegram:failed:Telegram is no longer used for this message.',
-      'customer:telegram:failed:Telegram is no longer used for this message.',
+      'account:telegram:failed:Telegram is no longer used for this message.',
+      'account:telegram:failed:Telegram is no longer used for this message.',
       'staff:telegram:queued:',
-      'client:telegram:sent:',
-      'client:email:queued:',
+      'account:telegram:sent:',
+      'account:email:queued:',
     ]);
     await migrate();
     expect(await states()).toEqual(once);
@@ -154,7 +155,7 @@ describe('the migration that retires Telegram for merchants', () => {
     ]);
     const token = (purpose: 'telegram_link' | 'reset', hash: string) => ({
       purpose,
-      subjectType: 'client' as const,
+      subjectType: 'account' as const,
       subjectId: merchant,
       tokenHash: hash,
       expiresAt: new Date('2026-12-01T00:00:00.000Z'),

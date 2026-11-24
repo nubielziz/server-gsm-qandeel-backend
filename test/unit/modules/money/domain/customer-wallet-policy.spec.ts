@@ -1,5 +1,5 @@
-// Unit tests of the customer wallet policy (feature 21, plan § 5.8 and § 11.1): defaults, bad values, min above max, every top-up refusal,
-// liveness, the store status, the masked memo, available and room.
+// Unit tests of the store wallet policy (feature 21, plan § 5.8 and § 11.1, decision 064): defaults, bad values, min above max, every top-up
+// refusal, liveness, the store status, the masked memo, available and room, and what holds the erasure of an account (decision 064).
 import { describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
 import {
@@ -10,6 +10,8 @@ import {
   checkTopUp,
   customerMemo,
   customerWalletPolicy,
+  type ErasureFacts,
+  erasureRefusal,
   isLiveTopUp,
   roomOf,
   topUpStatusOf,
@@ -167,5 +169,66 @@ describe('availableOf and roomOf', () => {
     expect(roomOf(m('1000'), m('200'), m('50')).toWire()).toBe('750.0000');
     expect(roomOf(m('1000'), m('990'), m('50')).toWire()).toBe('0.0000');
     expect(roomOf(m('1000'), m('-30'), m('0')).toWire()).toBe('1030.0000');
+  });
+});
+
+describe('erasureRefusal', () => {
+  const clean: ErasureFacts = {
+    wallets: [],
+    pendingTopUpPayment: false,
+    openTopUpDisputes: 0,
+    openBalanceOrderId: undefined,
+    openBalanceRefundId: undefined,
+  };
+  const wallet = (kind: string, balance: string, frozen = false) => ({ kind, balance: m(balance), frozen });
+  const refusal = (facts: Partial<ErasureFacts>) => erasureRefusal({ ...clean, ...facts });
+
+  it('lets an account without money or open business go', () => {
+    expect(refusal({})).toBeUndefined();
+    expect(
+      refusal({ wallets: [wallet('customer_wallet', '0'), wallet('client_wallet', '0'), wallet('client_hold', '0')] }),
+    ).toBeUndefined();
+  });
+
+  it('refuses a store balance above or below zero, naming the amount', () => {
+    expect(refusal({ wallets: [wallet('customer_wallet', '4.79')] })).toContain('store balance of 4.7900 USD');
+    expect(refusal({ wallets: [wallet('customer_wallet', '-12')] })).toContain('-12.0000 USD');
+  });
+
+  it('refuses a merchant wallet or a hold that is not zero, even when the store wallet is empty', () => {
+    expect(refusal({ wallets: [wallet('customer_wallet', '0'), wallet('client_wallet', '30')] })).toContain(
+      'merchant wallet balance of 30.0000 USD',
+    );
+    expect(refusal({ wallets: [wallet('client_wallet', '0'), wallet('client_hold', '5')] })).toContain(
+      '5.0000 USD held for orders',
+    );
+  });
+
+  it('refuses a wallet on hold even at zero, after the balances', () => {
+    expect(refusal({ wallets: [wallet('customer_wallet', '0', true)] })).toContain('on hold');
+    expect(refusal({ wallets: [wallet('customer_wallet', '9', true)] })).toContain('store balance of 9.0000 USD');
+  });
+
+  it('refuses while money is on its way to the balance: a top-up, a dispute, an open balance order, a refund', () => {
+    expect(refusal({ pendingTopUpPayment: true })).toContain('top-up of this customer waits for review');
+    expect(refusal({ openTopUpDisputes: 1 })).toContain('dispute');
+    expect(refusal({ openBalanceOrderId: 77 })).toContain('ORD-77');
+    expect(refusal({ openBalanceRefundId: 12 })).toContain('RF-12');
+  });
+
+  it('answers the first reason in a fixed order', () => {
+    const everything: ErasureFacts = {
+      wallets: [wallet('customer_wallet', '3')],
+      pendingTopUpPayment: true,
+      openTopUpDisputes: 2,
+      openBalanceOrderId: 77,
+      openBalanceRefundId: 12,
+    };
+    expect(erasureRefusal(everything)).toContain('store balance');
+    expect(erasureRefusal({ ...everything, wallets: [] })).toContain('waits for review');
+    expect(erasureRefusal({ ...everything, wallets: [], pendingTopUpPayment: false })).toContain('dispute');
+    expect(erasureRefusal({ ...everything, wallets: [], pendingTopUpPayment: false, openTopUpDisputes: 0 })).toContain(
+      'ORD-77',
+    );
   });
 });

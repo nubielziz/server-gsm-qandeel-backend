@@ -39,6 +39,7 @@ const contracts: RouteSnapshot[] = contractRegistry.all().map((contract) => ({
   surface: contract.surface,
   access: contract.access,
   permission: contract.permission,
+  rank: contract.rank,
   errors: [...contract.errors],
   turnstile: contract.turnstile,
   success: {

@@ -11,6 +11,7 @@ import { clearIdentityCaches } from '../../support/auth';
 import { HOUR, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { accountFigures, ledgerTotals } from '../../support/money';
+import { makeCustomer } from '../../support/store';
 import {
   IMEIS,
   auditOf,
@@ -50,8 +51,8 @@ afterAll(async () => {
 });
 
 /** Places an order through the portal and returns its id. */
-async function place(serviceId: number, imei: string = IMEIS[0], clientId = world.merchant.id): Promise<number> {
-  const res = await (await portalFor(t, clientId)).post('/client/orders', { serviceId, imei });
+async function place(serviceId: number, imei: string = IMEIS[0], accountId = world.merchant.id): Promise<number> {
+  const res = await (await portalFor(t, accountId)).post('/client/orders', { serviceId, imei });
   expect(res.statusCode).toBe(201);
   return json(res).orders[0].id as number;
 }
@@ -100,7 +101,8 @@ describe('POST /admin/orders/:id/accept', () => {
     expect(hooks).toHaveLength(1);
     expect(hooks[0]!.payload).toMatchObject({
       orderId: id,
-      clientId: merchant.id,
+      accountId: merchant.id,
+      source: 'portal',
       fromStatus: 'pending',
       toStatus: 'processing',
     });
@@ -131,7 +133,7 @@ describe('POST /admin/orders/:id/accept', () => {
     expect((await staff.post(`/admin/orders/${id}/accept`, {})).body).toMatchObject({ code: 'ORDER_NOT_OPEN' });
 
     const held = await insertOrderRow(db, {
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
       serviceId: manual.serviceId,
       dispatchState: 'held',
     });
@@ -217,7 +219,7 @@ describe('POST /admin/orders/:id/reply', () => {
     expect(again.body).toMatchObject({ code: 'ORDER_NOT_OPEN' });
     expect((await orderRow(db, id)).resultCode).toBe('a');
     expect(await ledgerOf(db, id)).toHaveLength(2);
-    const held = await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId, dispatchState: 'held' });
+    const held = await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId, dispatchState: 'held' });
     expect((await staff.post(`/admin/orders/${held.id}/reply`, { code: 'a' })).body).toMatchObject({
       code: 'ORDER_HELD',
     });
@@ -226,7 +228,7 @@ describe('POST /admin/orders/:id/reply', () => {
   it('settles a free order without a posting', async () => {
     const { db, merchant, auto } = world;
     const free = await insertOrderRow(db, {
-      clientId: merchant.id,
+      accountId: merchant.id,
       serviceId: auto.serviceId,
       unitPrice: '0.0000',
       totalPrice: '0.0000',
@@ -386,12 +388,10 @@ describe('POST /admin/orders/:id/reopen and /refund', () => {
     expect((await staff.post(`/admin/orders/${open}/refund`, { reason: 'x' })).body).toMatchObject({
       code: 'ORDER_NOT_COMPLETED',
     });
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: 'jack@example.com', name: 'Jack Turner' })
-      .returning({ id: s.customers.id });
+    const customer = await makeCustomer(t, { guest: true, email: 'jack@example.com', name: 'Jack Turner' });
     const b2c = await insertOrderRow(db, {
-      customerId: customer!.id,
+      accountId: customer.id,
+      source: 'store',
       serviceId: auto.serviceId,
       status: 'completed',
       dispatchState: 'done',

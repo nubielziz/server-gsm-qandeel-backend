@@ -4,21 +4,27 @@ import { CacheKeys } from '@src/infra/cache';
 import { type Database, schema as s } from '@src/infra/db';
 import { CatalogPriceVersion } from '@src/modules/catalog';
 import type { TestApp } from './app';
+import { ensureRetailGroup } from './accounts';
 import { insertMerchant } from './auth';
 import { insertCategory, insertService } from './catalog';
 
-/** The demo's four groups: Standard (default, no discount), Wholesale (4 %), VIP (8 %) and the storefront retail group. */
+/**
+ * The demo's four ranks: Standard (default, no discount), Wholesale (4 %), VIP (8 %) and the one retail rank.
+ *
+ * Why: the retail rank may exist already (a retail account needs it, `ensureRetailGroup`), and there is only ever one, so it is found
+ * or made, never inserted a second time.
+ */
 export async function insertDemoGroups(db: Database) {
-  const [standard, wholesale, vip, retail] = await db
+  const [standard, wholesale, vip] = await db
     .insert(s.clientGroups)
     .values([
       { name: 'Standard', isDefault: true, discountPercent: '0', sort: 1 },
       { name: 'Wholesale', discountPercent: '4', sort: 2 },
       { name: 'VIP', discountPercent: '8', sort: 3 },
-      { name: 'Storefront retail', kind: 'b2c_retail', sort: 4 },
     ])
     .returning({ id: s.clientGroups.id });
-  return { standard: standard!.id, wholesale: wholesale!.id, vip: vip!.id, retail: retail!.id };
+  const retail = await ensureRetailGroup(db);
+  return { standard: standard!.id, wholesale: wholesale!.id, vip: vip!.id, retail };
 }
 
 /** The demo's AT&T unlock: cost 13.50, price 17.28, own minimum profit 0.81 (floor 14.31), in a new Carrier unlock category. */

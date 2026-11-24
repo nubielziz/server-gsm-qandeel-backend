@@ -4,6 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
+import { sessionStateOf } from '../accounts/account-status';
 import {
   type ApiKeyWire,
   DEFAULT_RATE_LIMIT_PER_MIN,
@@ -18,7 +19,7 @@ import {
   revokeKeyRow,
   updateKey,
 } from '../infra/api-key-manage.repository';
-import type { MerchantPrincipal } from '../security/principal';
+import type { AccountPrincipal } from '../ports/account-principal';
 import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory';
 import { ApiKeyIssuer } from './api-key-issuer';
 import { MachineCredentialHold } from './machine-credential-hold';
@@ -47,12 +48,14 @@ export interface CreatedApiKey {
 /**
  * Manages the API keys of the signed-in merchant.
  *
- * Why: B155 and decision 019. A key authenticates Dhru calls (P2.5c); the merchant creates, limits and revokes its
+ * Why: B155, decision 019 and decision 064. A key authenticates Dhru calls (P2.5c); the merchant creates, limits and revokes its
  * own. Only the keyed hash of a key and its first 8 characters are stored, so the full key exists only in the answer of the
  * creation. A key that belongs to another merchant is `404`, like an unknown one, so a merchant cannot probe other ids. Merchant
  * routes write no audit row (B121); staff see the keys in `GET /admin/clients/:id/api-keys`. A new key sends the merchant a notice that says
  * the key was made in the portal (`merchant.portal_api_key_created`; a key staff make sends the security notice that names the support team),
- * and no key is made while the account's password or email address is one staff set (`MachineCredentialHold`).
+ * and no key is made while the account's password or email address is one staff set (`MachineCredentialHold`). The rank gate already
+ * keeps a retail account off these routes; the creation checks the rank and the status again from the account row it holds locked
+ * (`api-keys:<accountId>`, then the row `FOR UPDATE`), so a key cannot be born after a concurrent move to the retail rank.
  *
  * Side effects: writes `api_keys`; a creation also writes a `merchant.portal_api_key_created` notification and its outbox event; a change or a
  * revocation drops the cached view of the key after the commit (`ApiKeyDirectory.invalidate`), so it applies on the next call and not up
@@ -74,31 +77,42 @@ export class MerchantApiKeyService {
   /**
    * Lists the merchant's keys: live keys first, then revoked ones.
    *
-   * @param principal the signed-in merchant
+   * @param principal the signed-in account (a merchant rank: the gate refuses the others)
    * @param request the range and the sort keys
    * @returns the keys in the range and the exact total
    */
-  async list(principal: MerchantPrincipal, request: ApiKeyListRequest): Promise<{ rows: ApiKeyWire[]; total: number }> {
-    const { rows, total } = await listKeysOfClient(this.db.db, principal.clientId, request);
+  async list(principal: AccountPrincipal, request: ApiKeyListRequest): Promise<{ rows: ApiKeyWire[]; total: number }> {
+    const { rows, total } = await listKeysOfClient(this.db.db, principal.accountId, request);
     return { rows: rows.map(apiKeyToWire), total };
   }
 
   /**
    * Creates a key and returns it once.
    *
-   * @param principal the signed-in merchant
+   * Why: the two locks come first and in the one order (the advisory lock `api-keys:<accountId>`, then the account row `FOR UPDATE`,
+   * decision 064): a rank change that holds the row makes this creation wait, and the locked read then shows the new rank and refuses, so no
+   * live key is left on a retail account. The hold on machine credentials is judged after, on the row this transaction holds.
+   *
+   * @param principal the signed-in account
    * @param input the name, the allowed addresses and an optional expiry
    * @returns the stored key and the full key text
    * @throws {AppError} `VALIDATION_FAILED` (422) on `allowedIps.N` (not an address or range),
-   *   `expiresAt` (not in the future) or `name` (the merchant already holds 10 live keys); `FORBIDDEN` (403: the account's password or
-   *   email address is one staff set); `UNAUTHORIZED` (401: the session ended meanwhile)
+   *   `expiresAt` (not in the future) or `name` (the account already holds 10 live keys); `RANK_NOT_ALLOWED` (403: the account is not of
+   *   a merchant rank any more); `ACCOUNT_SUSPENDED` (403: suspended or blocked); `FORBIDDEN` (403: the account's password or
+   *   email address is one staff set); `UNAUTHORIZED` (401: the account is erased, or the session ended meanwhile)
    */
-  async create(principal: MerchantPrincipal, input: CreateApiKeyInput): Promise<CreatedApiKey> {
+  async create(principal: AccountPrincipal, input: CreateApiKeyInput): Promise<CreatedApiKey> {
     const issued = await this.db.runInTransaction(async (work) => {
-      // A plain read, before the issuer's advisory lock: the lock order of staff-made keys (advisory lock, then the merchant row) stays.
-      const client = await this.hold.assertMayIssue(principal, work.tx);
+      const account = await this.issuer.lockOwner(work.tx, principal.accountId);
+      if (!account) throw new AppError('UNAUTHORIZED');
+      // The same order as the sign-in gate: the status first, then the rank.
+      const state = sessionStateOf(account.status);
+      if (state === 'gone') throw new AppError('UNAUTHORIZED');
+      if (state === 'suspended') throw new AppError('ACCOUNT_SUSPENDED');
+      if (account.rankKind !== 'merchant') throw new AppError('RANK_NOT_ALLOWED');
+      await this.hold.assertMayIssue(principal, work.tx);
       const key = await this.issuer.issue(work.tx, {
-        clientId: principal.clientId,
+        clientId: account.id,
         name: input.name,
         allowedIps: input.allowedIps ?? [],
         expiresAt: input.expiresAt,
@@ -106,7 +120,7 @@ export class MerchantApiKeyService {
         createdBy: null,
         limitMessage: `You already have ${MAX_LIVE_KEYS} active keys; revoke one first.`,
       });
-      await this.lifecycleMails.portalApiKeyCreated(work, client);
+      await this.lifecycleMails.portalApiKeyCreated(work, account);
       return key;
     });
     return { key: apiKeyToWire(issued.row), secret: issued.secret };
@@ -115,7 +129,7 @@ export class MerchantApiKeyService {
   /**
    * Renames a key or changes its allowed addresses.
    *
-   * @param principal the signed-in merchant
+   * @param principal the signed-in account
    * @param id the key id
    * @param changes the fields to change; a missing one stays as it is
    * @returns the key after the change
@@ -123,7 +137,7 @@ export class MerchantApiKeyService {
    *   `VALIDATION_FAILED` (422) on `allowedIps.N`
    */
   async update(
-    principal: MerchantPrincipal,
+    principal: AccountPrincipal,
     id: number,
     changes: { readonly name?: string | undefined; readonly allowedIps?: readonly string[] | undefined },
   ): Promise<ApiKeyWire> {
@@ -131,7 +145,7 @@ export class MerchantApiKeyService {
     if (allowed && !allowed.ok) throw new AppError('VALIDATION_FAILED', { errors: allowed.errors });
     return this.db.runInTransaction(async (work) => {
       const row = await lockKey(work.tx, id);
-      if (!row || row.clientId !== principal.clientId) throw new AppError('NOT_FOUND', { detail: 'No such API key.' });
+      if (!row || row.clientId !== principal.accountId) throw new AppError('NOT_FOUND', { detail: 'No such API key.' });
       if (row.revokedAt !== null) throw new AppError('INVALID_TRANSITION', { detail: 'This key is revoked.' });
       const updated = await updateKey(work.tx, id, {
         ...(changes.name === undefined ? {} : { name: changes.name }),
@@ -146,14 +160,14 @@ export class MerchantApiKeyService {
   /**
    * Revokes a key.
    *
-   * @param principal the signed-in merchant
+   * @param principal the signed-in account
    * @param id the key id
-   * @throws {AppError} `NOT_FOUND` (404: not the merchant's key, or unknown). A key that is already revoked is not an error.
+   * @throws {AppError} `NOT_FOUND` (404: not the account's key, or unknown). A key that is already revoked is not an error.
    */
-  async revoke(principal: MerchantPrincipal, id: number): Promise<void> {
+  async revoke(principal: AccountPrincipal, id: number): Promise<void> {
     await this.db.runInTransaction(async (work) => {
       const row = await lockKey(work.tx, id);
-      if (!row || row.clientId !== principal.clientId) throw new AppError('NOT_FOUND', { detail: 'No such API key.' });
+      if (!row || row.clientId !== principal.accountId) throw new AppError('NOT_FOUND', { detail: 'No such API key.' });
       if (row.revokedAt !== null) return;
       await revokeKeyRow(work.tx, id, this.clock.now());
       await this.directory.invalidate([row.keyHash], work);

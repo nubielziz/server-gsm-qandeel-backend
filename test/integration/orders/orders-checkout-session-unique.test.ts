@@ -55,7 +55,7 @@ describe('one order per checkout session (decision 048)', () => {
     const error = await pgErrorOf(
       insertOrderRow(db, {
         serviceId: first.serviceId,
-        customerId: first.customerId,
+        accountId: first.accountId,
         source: 'store',
         currency: first.currency,
         checkoutSessionId: first.checkoutSessionId,
@@ -64,7 +64,7 @@ describe('one order per checkout session (decision 048)', () => {
     expect(error).toMatchObject({ code: '23505', constraint: 'orders_checkout_session_uq' });
     // Orders without a checkout session are not limited.
     for (let i = 0; i < 2; i += 1) {
-      await insertOrderRow(db, { serviceId: first.serviceId, customerId: first.customerId, source: 'store' });
+      await insertOrderRow(db, { serviceId: first.serviceId, accountId: first.accountId, source: 'store' });
     }
   });
 

@@ -3,7 +3,7 @@
 import { z } from 'zod';
 import { defineRoute, zMoney } from '../../../common/contract';
 
-const PORTAL_ERRORS = ['UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'ACCOUNT_PENDING_APPROVAL', 'IP_NOT_ALLOWED'] as const;
+const PORTAL_ERRORS = ['UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED'] as const;
 
 /** What the preferences screen shows. */
 const Preferences = z.object({
@@ -39,7 +39,7 @@ export const merchantGetNotificationPreferences = defineRoute({
   summary: 'My notification preferences',
   description:
     'What the merchant is told about, by email. An event never saved is `email: true`, except the order results ' +
-    '(`order.completed`, `order.failed`), which stay off until the merchant chooses them. A merchant waiting for approval is refused (`403 ACCOUNT_PENDING_APPROVAL`).',
+    '(`order.completed`, `order.failed`), which stay off until the merchant chooses them. Only a merchant rank reaches the route: a retail account is `403 RANK_NOT_ALLOWED`.',
   tags: ['notifications'],
   surface: 'client',
   access: 'merchant-session',

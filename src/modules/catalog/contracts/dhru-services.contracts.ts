@@ -86,7 +86,7 @@ export const dhruServiceList = defineDhruAction({
       }),
     ),
   }),
-  errors: ['UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'ACCOUNT_PENDING_APPROVAL', 'IP_NOT_ALLOWED', 'RATE_LIMITED'],
+  errors: ['UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED', 'RATE_LIMITED'],
   examples: {
     response: {
       MESSAGE: 'IMEI Service List',

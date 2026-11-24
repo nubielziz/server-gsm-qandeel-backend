@@ -1,21 +1,26 @@
-// CustomerBlockService: POST /admin/customers/:id/block (map domain I, stage 18, RESOLUTIONS b2c-5, B48): block a customer for fraud
-// and add what identifies them to the blocklist, or lift the block and remove only what that block added.
+// CustomerBlockService: POST /admin/clients/:id/block (map domain I, stage 18, RESOLUTIONS b2c-5, B48; decision 064): block an account of any
+// rank for fraud and add what identifies it to the blocklist, or lift the block and remove only what that block added.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { EncryptionService } from '../../../infra/crypto';
-import { DbService, type DbExecutor } from '../../../infra/db';
-import { type SessionWork, SessionService } from '../../identity';
+import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
+import { AccountAccessEffects } from '../../identity';
 import { AuditService } from '../../platform';
 import { Blocklist, type BlockRequest } from '../../risk';
-import type { Customer } from '../db/schema';
 import { CHECKOUT_IMEI_AAD } from '../domain/checkout';
-import { BLOCK_REASONS, MAX_BLOCK_NOTE_LENGTH, appendNote, blockNoteLine } from '../domain/customer-privacy';
-import { findCustomerById, updateCustomerRow } from '../infra/customer.repository';
+import {
+  BLOCK_REASONS,
+  MAX_BLOCK_NOTE_LENGTH,
+  appendNote,
+  blockNoteLine,
+  statusAfterUnblock,
+} from '../domain/customer-privacy';
+import { type AccountRow, findCustomerById, updateCustomerRow } from '../infra/customer.repository';
 import { cardFingerprintsOf, storedImeisOf } from '../infra/privacy-reads.repository';
-import { customerNotFound } from './customer-errors';
+import { accountNotFound } from './customer-errors';
 
-/** What `POST /admin/customers/:id/block` carries. */
+/** What `POST /admin/clients/:id/block` carries. */
 export interface BlockInput {
   /** True to block, false to lift the block. */
   readonly blocked: boolean;
@@ -23,36 +28,42 @@ export interface BlockInput {
   readonly reason?: string | undefined;
 }
 
+/** The transaction a use case works in. */
+type Work = Pick<TransactionContext, 'tx' | 'afterCommit'>;
+
 /**
- * Blocks and unblocks customers.
+ * Blocks and unblocks accounts.
  *
- * Why: scenario b2c-account and b2c-chargeback. A block is for fraud (a pause is `suspend`): the customer becomes `blocked`,
- * every session ends, and the blocklist gets, with source manual, the reason, the caller and `customer_id` set:
- * the customer's email, each distinct card fingerprint of their payments and each distinct IMEI still stored on their orders and
- * checkout sessions (a device is its IMEI, B77). Each insert is `ON CONFLICT DO NOTHING`, so an entry that already exists (a risk
- * refund, a chargeback, a manual add, another customer's block) is kept unchanged and not linked. The reason is appended to the
- * internal notes (B48). Lifting moves `blocked` to `active` and deletes only the entries
- * `WHERE customer_id = :id AND source = 'manual'`. Both are one transaction with their audit row (`blocked customer`, `unblocked
- * customer`).
+ * Why: scenario b2c-account and b2c-chargeback, decision 064 (any rank). A block is for fraud (a pause is a suspension): the
+ * account becomes `blocked`, every session ends and every live API key stops (`AccountAccessEffects.statusChanged`), and the blocklist
+ * gets, with source manual, the reason, the caller and `account_id` set: the account's email always, each distinct card fingerprint of its
+ * payments and each distinct IMEI still stored on its **shop** orders and checkout sessions (a device is its IMEI, B77). A merchant orders
+ * through the portal and Dhru for other people's devices, so the IMEIs of those orders are never added. Each insert is
+ * `ON CONFLICT DO NOTHING`, so an entry that already exists (a risk refund, a chargeback, a manual add, another account's block) is kept
+ * unchanged and not linked. The reason is appended to the internal notes (B48). A suspension the account had is kept under the block
+ * (decision 046: only `clients:security` lifts a suspension), so lifting moves `blocked` back to `suspended` when one is recorded and to
+ * `active` otherwise, and deletes only the entries `WHERE account_id = :id AND source = 'manual'`. Both are one transaction with their
+ * audit row (`blocked account`, `unblocked account`); the account row is locked first, so two blocks at once make one block.
  *
- * Side effects: updates `customers`; inserts or deletes `blocklist_entries`; revokes `sessions`; inserts `audit_logs`.
+ * Side effects: updates `clients`; inserts or deletes `blocklist_entries`; ends `sessions` and revokes `api_keys` (through the access
+ * effects); inserts `audit_logs`.
  */
 @Injectable()
 export class CustomerBlockService {
   constructor(
     private readonly db: DbService,
     private readonly blocklist: Blocklist,
-    private readonly sessions: SessionService,
+    private readonly effects: AccountAccessEffects,
     private readonly encryption: EncryptionService,
     private readonly audit: AuditService,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
-   * Blocks or unblocks a customer.
+   * Blocks or unblocks an account.
    *
    * @param staffId the signed-in staff member
-   * @param id the customer id
+   * @param id the account id (any rank)
    * @param input the switch and the reason
    * @throws {AppError} `NOT_FOUND` (404), `ANONYMIZED` (409), `ALREADY_BLOCKED` (409), `NOT_BLOCKED` (409), `VALIDATION_FAILED`
    *   (422, on `reason`)
@@ -65,82 +76,76 @@ export class CustomerBlockService {
     }
     const now = this.clock.now();
     await this.db.runInTransaction(async (work) => {
-      const customer = await findCustomerById(work.tx, id, true);
-      if (!customer) throw customerNotFound();
-      if (customer.status === 'anonymized') throw new AppError('ANONYMIZED');
-      if (input.blocked) await this.block(work, customer, staffId, reason, now);
-      else await this.unblock(work, customer, reason, now);
+      // The account row is the first lock of every path of an account (decision 064).
+      const account = await findCustomerById(work.tx, id, true);
+      if (!account) throw accountNotFound();
+      if (account.status === 'anonymized') throw new AppError('ANONYMIZED');
+      if (input.blocked) await this.block(work, account, staffId, reason, now);
+      else await this.unblock(work, account, reason, now);
     });
   }
 
-  private async block(
-    work: SessionWork,
-    customer: Customer,
-    staffId: number,
-    reason: string,
-    now: Date,
-  ): Promise<void> {
-    if (customer.status === 'blocked') throw new AppError('ALREADY_BLOCKED');
+  private async block(work: Work, account: AccountRow, staffId: number, reason: string, now: Date): Promise<void> {
+    if (account.status === 'blocked') throw new AppError('ALREADY_BLOCKED');
     const { tx } = work;
-    const requests = await this.requestsFor(tx, customer, staffId, reason);
+    const requests = await this.requestsFor(tx, account, staffId, reason);
     const added = await this.blocklist.add(tx, requests);
-    await updateCustomerRow(tx, customer.id, {
+    await updateCustomerRow(tx, account.id, {
       status: 'blocked',
-      // A suspension ends here: the customer is blocked now, and a later unblock must not show a stale suspension.
-      suspendedAt: null,
-      suspendedBy: null,
-      suspendedReason: null,
-      internalNotes: appendNote(customer.internalNotes, blockNoteLine(reason)),
+      // A suspension stays recorded under the block (its columns are kept): lifting the block must not lift it (decision 046).
+      internalNotes: appendNote(account.internalNotes, blockNoteLine(reason)),
       updatedAt: now,
     });
-    await this.sessions.revokeAllOf('customer', customer.id, {}, work);
+    await this.effects.statusChanged(work, { accountId: account.id, to: 'blocked' });
     await this.audit.record(tx, {
-      action: 'blocked customer',
-      entityType: 'customer',
-      entityId: customer.id,
-      entityLabel: customer.name,
-      before: { status: customer.status },
+      action: 'blocked account',
+      entityType: 'account',
+      entityId: account.id,
+      entityLabel: account.name,
+      before: { status: account.status },
       after: { status: 'blocked', reason, blocklisted: added.length },
     });
   }
 
-  private async unblock(work: SessionWork, customer: Customer, reason: string, now: Date): Promise<void> {
-    if (customer.status !== 'blocked') throw new AppError('NOT_BLOCKED');
+  private async unblock(work: Work, account: AccountRow, reason: string, now: Date): Promise<void> {
+    if (account.status !== 'blocked') throw new AppError('NOT_BLOCKED');
     const { tx } = work;
-    const removed = await this.blocklist.removeAddedByBlockOf(tx, customer.id);
-    await updateCustomerRow(tx, customer.id, {
-      status: 'active',
-      updatedAt: now,
-    });
+    const removed = await this.blocklist.removeAddedByBlockOf(tx, account.id);
+    // Decision 046: only a holder of `clients:security` lifts a suspension, through the status change. An account that was suspended when
+    // it was blocked goes back to that suspension, with its reason, time and author as they were.
+    const to = statusAfterUnblock(account);
+    await updateCustomerRow(tx, account.id, { status: to, updatedAt: now });
+    await this.effects.statusChanged(work, { accountId: account.id, to });
     await this.audit.record(tx, {
-      action: 'unblocked customer',
-      entityType: 'customer',
-      entityId: customer.id,
-      entityLabel: customer.name,
+      action: 'unblocked account',
+      entityType: 'account',
+      entityId: account.id,
+      entityLabel: account.name,
       before: { status: 'blocked' },
-      after: { status: 'active', ...(reason === '' ? {} : { reason }), removed: removed.length },
+      after: { status: to, ...(reason === '' ? {} : { reason }), removed: removed.length },
     });
   }
 
-  /** The values that identify the customer: the email, the cards and the IMEIs still stored. */
+  /** The values that identify the account: the email, the cards and the IMEIs of its shop orders still stored. */
   private async requestsFor(
     tx: DbExecutor,
-    customer: Customer,
+    account: AccountRow,
     staffId: number,
     reason: string,
   ): Promise<BlockRequest[]> {
-    const base = { reason, source: 'manual', createdBy: staffId, customerId: customer.id } as const;
-    const requests: BlockRequest[] = [{ ...base, kind: 'email', value: customer.email }];
-    for (const fingerprint of await cardFingerprintsOf(tx, customer.id)) {
+    // `accountId` names the account a block came from, so an unblock lifts exactly the entries of this account.
+    const base = { reason, source: 'manual', createdBy: staffId, accountId: account.id } as const;
+    const requests: BlockRequest[] = [{ ...base, kind: 'email', value: account.email }];
+    for (const fingerprint of await cardFingerprintsOf(tx, account.id)) {
       requests.push({ ...base, kind: 'card', value: fingerprint });
     }
-    for (const imei of await this.imeisOf(tx, customer.id)) requests.push({ ...base, kind: 'imei', value: imei });
+    for (const imei of await this.imeisOf(tx, account.id)) requests.push({ ...base, kind: 'imei', value: imei });
     return requests;
   }
 
-  /** Every distinct 15-digit IMEI on the customer's orders and checkout sessions that is still stored. */
-  private async imeisOf(tx: DbExecutor, customerId: number): Promise<string[]> {
-    const stored = await storedImeisOf(tx, customerId);
+  /** Every distinct 15-digit IMEI on the account's shop orders and checkout sessions that is still stored. */
+  private async imeisOf(tx: DbExecutor, accountId: number): Promise<string[]> {
+    const stored = await storedImeisOf(tx, accountId);
     const found = new Set<string>();
     for (const input of stored.orderInputs) {
       const digits = input.replace(/[\s-]/g, '');

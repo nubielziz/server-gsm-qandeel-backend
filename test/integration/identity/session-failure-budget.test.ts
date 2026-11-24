@@ -46,8 +46,7 @@ beforeEach(async () => {
 
 const STAFF_URL = '/admin/t/sec/session';
 const CLIENT_URL = '/client/t/sec/as-staff';
-const unknownCookie = (subject: 'staff' | 'client' | 'customer') =>
-  `${SESSION_COOKIE_NAMES[subject]}=${'a'.repeat(43)}`;
+const unknownCookie = (subject: 'staff' | 'account') => `${SESSION_COOKIE_NAMES[subject]}=${'a'.repeat(43)}`;
 const get = (url: string, ip: string, headers: Record<string, string> = {}) =>
   t.app.inject({ method: 'GET', url, remoteAddress: ip, headers });
 
@@ -93,8 +92,8 @@ describe('the session failure budget', () => {
   it('leaves the other audiences and other addresses alone', async () => {
     const ip = freshClientIp();
     await limits.consume('ip', sessionFailureKey('staff', ip), 300);
-    // The merchant audience of the same address has its own budget.
-    expect((await get(CLIENT_URL, ip, { cookie: unknownCookie('client') })).statusCode).toBe(401);
+    // The account audience of the same address has its own budget.
+    expect((await get(CLIENT_URL, ip, { cookie: unknownCookie('account') })).statusCode).toBe(401);
     // Another address has its own budget for the staff audience.
     expect((await get(STAFF_URL, freshClientIp(), { cookie: unknownCookie('staff') })).statusCode).toBe(401);
     // An IPv6 address shares the budget of its /64 network, not of its neighbour network.
@@ -115,7 +114,7 @@ describe('the session failure budget', () => {
 });
 
 /** The `me` route of each audience these tests sign in to. */
-const ME_URL = { staff: '/admin/auth/me', client: '/client/auth/me' } as const;
+const ME_URL = { staff: '/admin/auth/me', account: '/client/auth/me' } as const;
 
 /** A cookie of an audience (default staff), shaped like a token, that names no session. */
 const inventedCookie = (subject: keyof typeof ME_URL = 'staff') =>
@@ -276,13 +275,13 @@ describe('a sign-in from an address that used up its budget', () => {
     expect(await limits.peek('ip', sessionFailureKey('staff', ip))).toMatchObject({ allowed: false });
   }, 60_000);
 
-  it('finishes for a merchant, with and without two-factor sign-in', async () => {
+  it('finishes for an account, with and without two-factor sign-in', async () => {
     await seedPortalBasics();
     const ip = freshClientIp();
     const oneStep = await makeMerchant(t);
     const twoSteps = await makeMerchant(t, { twofa: true });
-    expect((await inventedCookies(ip, 300, 'client')).filter((code) => code === 401)).toHaveLength(300);
-    expect((await get(ME_URL.client, ip, { cookie: inventedCookie('client') })).statusCode).toBe(429);
+    expect((await inventedCookies(ip, 300, 'account')).filter((code) => code === 401)).toHaveLength(300);
+    expect((await get(ME_URL.account, ip, { cookie: inventedCookie('account') })).statusCode).toBe(429);
 
     const first = new MerchantPortal(t, ip);
     expect((await first.login(oneStep.email)).json()).toEqual({ next: 'done' });
@@ -294,6 +293,23 @@ describe('a sign-in from an address that used up its budget', () => {
     const me = await second.me();
     expect(me.statusCode).toBe(200);
     expect(me.json()).toMatchObject({ id: twoSteps.id });
-    expect(await limits.peek('ip', sessionFailureKey('client', ip))).toMatchObject({ allowed: false });
+    expect(await limits.peek('ip', sessionFailureKey('account', ip))).toMatchObject({ allowed: false });
+  }, 60_000);
+});
+
+describe('one budget for both URL families of the accounts (decision 064)', () => {
+  it('charges the cookies invented on the shop routes and on the portal routes to one budget per address', async () => {
+    const ip = freshClientIp();
+    const cookie = { cookie: `${SESSION_COOKIE_NAMES.account}=${'a'.repeat(43)}` };
+    // Both families read the one account cookie, so they count in the one key `session-failures:account:<address>`.
+    for (let sent = 0; sent < 150; sent += 1) {
+      expect((await get('/store/v1/me', ip, cookie)).statusCode).toBe(401);
+      expect((await get('/client/auth/me', ip, cookie)).statusCode).toBe(401);
+    }
+    expect(await limits.peek('ip', sessionFailureKey('account', ip))).toMatchObject({ allowed: false });
+    expect((await get('/store/v1/me', ip, cookie)).statusCode).toBe(429);
+    expect((await get('/client/auth/me', ip, cookie)).statusCode).toBe(429);
+    // The staff budget of the same address is another key.
+    expect(await limits.peek('ip', sessionFailureKey('staff', ip))).toMatchObject({ allowed: true });
   }, 60_000);
 });

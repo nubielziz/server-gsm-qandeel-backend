@@ -1,5 +1,6 @@
-// Integration tests of decision 052: a temporary password set by staff works for 72 hours (staff, merchants and customers, on every
-// password sign-in route); after that it is refused exactly like a wrong password, and the refusal counts towards the email's lock.
+// Integration tests of decision 052: a temporary password set by staff works for 72 hours (staff, accounts of a merchant rank and accounts of
+// the retail rank, on every password sign-in route); after that it is refused exactly like a wrong password, and the refusal counts towards the
+// email's lock. Staff set the password of every account with the one route `POST /admin/clients/:id/password` (decision 064).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import type { LightMyRequestResponse } from 'fastify';
 import { adminWith } from '../../support/admin-api';
@@ -108,8 +109,8 @@ const KINDS: readonly Kind[] = [
     name: 'customer',
     make: async () => {
       const customer = await makeCustomer(t);
-      const staff = await adminWith(t, ['customers:read', 'customers:password']);
-      const answer = await staff.post(`/admin/customers/${customer.id}/password`, {
+      const staff = await adminWith(t, ['clients:read', 'clients:security']);
+      const answer = await staff.post(`/admin/clients/${customer.id}/password`, {
         mode: 'temporary_password',
         revokeSessions: false,
       });
@@ -158,9 +159,11 @@ describe('a password the owner chose', () => {
     expect((await staffLogin(stranger(), member.email, PASSWORD)).json()).toEqual({ next: 'totp' });
     expect((await merchantLogin(stranger(), merchant.email, MERCHANT_PASSWORD)).json()).toEqual({ next: 'done' });
     expect((await storeLogin(stranger(), customer.email, CUSTOMER_PASSWORD)).json()).toEqual({ next: 'done' });
+    // The one sign-in answers the old `kind` word until the contract release, and the rank with its kind (decision 064).
     expect((await smartSignIn(stranger(), customer.email, CUSTOMER_PASSWORD)).json()).toEqual({
       kind: 'customer',
       next: 'done',
+      rank: { id: expect.any(Number), name: expect.any(String), kind: 'retail' },
     });
   });
 });

@@ -87,7 +87,7 @@ export const listClientServices = defineRoute({
     search: ['name', 'code', 'category.name'],
   }),
   success: { status: 200, schema: CatalogRow },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'VALIDATION_FAILED', 'CSRF_FAILED'],
+  errors: ['UNAUTHORIZED', 'VALIDATION_FAILED', 'CSRF_FAILED'],
   examples: { response: [ROW_EXAMPLE] },
 });
 
@@ -110,7 +110,7 @@ export const showClientService = defineRoute({
     status: 200,
     schema: CatalogRow.extend({ fields: z.array(CatalogField), options: z.array(CatalogOption) }),
   },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'NOT_FOUND', 'CSRF_FAILED'],
+  errors: ['UNAUTHORIZED', 'NOT_FOUND', 'CSRF_FAILED'],
   examples: {
     response: {
       ...ROW_EXAMPLE,
@@ -136,5 +136,5 @@ export const exportClientPrices = defineRoute({
   originCheck: true,
   query: z.object({ type: z.enum(SERVICE_TYPES).optional(), categoryId: zIdParam.optional() }),
   success: { status: 200, contentType: 'text/csv' },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'VALIDATION_FAILED', 'CSRF_FAILED'],
+  errors: ['UNAUTHORIZED', 'VALIDATION_FAILED', 'CSRF_FAILED'],
 });

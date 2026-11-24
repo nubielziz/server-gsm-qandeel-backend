@@ -111,7 +111,7 @@ describe('PaymentAutoCredit without a risk screening (decision 050)', () => {
       reviewNote: TOP_UP_SCREENING_UNAVAILABLE,
     });
     expect(await db.select().from(s.ledgerTransactions)).toHaveLength(0);
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('0.0000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('0.0000');
   });
 
   it('logs an error at boot when no risk screening is registered, and none when the risk module registered its hook', () => {
@@ -146,7 +146,7 @@ describe('PaymentAutoCredit', () => {
     const done = await reload(payment.id);
     expect(done).toMatchObject({ status: 'approved', reviewedBy: null, autoCreditAt: null });
     expect(done.reviewedAt!.toISOString()).toBe('2026-11-01T10:10:00.000Z');
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('96.8000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('96.8000');
     expect((await accountFigures(db, 'gateway_clearing'))!.balance).toBe('100.0000');
     expect((await accountFigures(db, 'fee_income'))!.balance).toBe('3.2000');
     expect(await accountFigures(db, 'bank')).toBeUndefined();
@@ -204,7 +204,7 @@ describe('PaymentAutoCredit', () => {
     expect(await db.select().from(s.ledgerTransactions).where(eq(s.ledgerTransactions.refId, payment.id))).toHaveLength(
       1,
     );
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('96.8000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('96.8000');
   });
 
   it('leaves a payment that risk flagged after the tick listed it, so a racing staff approval credits it once', async () => {
@@ -220,7 +220,7 @@ describe('PaymentAutoCredit', () => {
     expect(await db.select().from(s.ledgerTransactions).where(eq(s.ledgerTransactions.refId, payment.id))).toHaveLength(
       1,
     );
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('96.8000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('96.8000');
     expect((await reload(payment.id)).reviewedBy).not.toBeNull();
   });
 
@@ -237,7 +237,7 @@ describe('PaymentAutoCredit', () => {
     expect(await db.select().from(s.ledgerTransactions).where(eq(s.ledgerTransactions.refId, payment.id))).toHaveLength(
       1,
     );
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('96.8000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('96.8000');
     expect((await reload(payment.id)).reviewedBy).toBeNull();
   });
 
@@ -252,7 +252,7 @@ describe('PaymentAutoCredit', () => {
     expect(flagged).toMatchObject({ status: 'pending', reviewRequired: true, autoCreditAt: null });
     expect(flagged.reviewNote).toContain('The gateway reports 50.0000 paid; the invoice is 100.0000.');
     expect(await db.select().from(s.ledgerTransactions)).toHaveLength(0);
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('0.0000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('0.0000');
   });
 
   it('sends a payment to staff when the gateway no longer confirms it, and staff can then approve it from gateway_clearing', async () => {
@@ -314,7 +314,7 @@ describe('PaymentAutoCredit', () => {
       "The gateway's record does not match the invoice. The gateway reports 50.0000 paid; the invoice is 100.0000.",
     );
     expect(await db.select().from(s.ledgerTransactions)).toHaveLength(0);
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('0.0000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('0.0000');
   });
 
   it('sends a payment whose gateway record shows it refunded or disputed since to staff (decision 048)', async () => {
@@ -393,7 +393,7 @@ describe('PaymentAutoCredit', () => {
     });
     // Nothing was credited: no deposit journal, no wallet change, the invoice is still open, no invoice.paid event.
     expect(await db.select().from(s.ledgerTransactions)).toHaveLength(0);
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('0.0000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('0.0000');
     expect((await db.select().from(s.invoices))[0]!.status).toBe('open');
     expect(await db.select().from(s.outboxEvents).where(eq(s.outboxEvents.type, 'invoice.paid'))).toHaveLength(0);
     // The decision is audited as the system's, and the next tick has nothing to do.
@@ -405,7 +405,7 @@ describe('PaymentAutoCredit', () => {
     // Staff can still decide it: the approval credits once.
     const admin = await adminWith(t, ['payments:read', 'payments:approve']);
     expect((await admin.post(`/admin/payments/${payment.id}/approve`)).status).toBe(200);
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('96.8000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('96.8000');
   });
 
   it('sends a due top-up of a merchant whose email is on the blocklist to staff review', async () => {
@@ -432,7 +432,7 @@ describe('PaymentAutoCredit', () => {
 
     expect(await tick()).toMatchObject({ credited: 1, review: 0, failed: 0 });
     expect((await reload(payment.id)).reviewRequired).toBe(false);
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('96.8000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('96.8000');
   });
 
   it('waits the gateway hold hours instead of 10 minutes and leaves a flagged payment alone', async () => {
@@ -479,7 +479,7 @@ describe('PaymentAutoCredit', () => {
     fake.status.set('cinv_9', { status: 'confirmed', confirmations: 3, requiredConfirmations: 3 });
     clock.advance(5 * MINUTE);
     expect(await tick()).toMatchObject({ credited: 1 });
-    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('99.0000');
+    expect((await accountFigures(db, 'client_wallet', { type: 'account', id: merchant.id }))!.balance).toBe('99.0000');
   });
 });
 

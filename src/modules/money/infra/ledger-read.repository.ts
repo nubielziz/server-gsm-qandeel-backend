@@ -18,17 +18,21 @@ import {
   or,
   sql,
 } from 'drizzle-orm';
-import type { AnyPgColumn } from 'drizzle-orm/pg-core';
+import { type AnyPgColumn, alias } from 'drizzle-orm/pg-core';
 import type { FilterValue, ParsedFilter, ParsedListQuery } from '../../../common/contract';
-import type { DbExecutor } from '../../../infra/db';
+import { type DbExecutor, schema as s } from '../../../infra/db';
 import {
   type LedgerAccountKind,
   type LedgerActorType,
   type LedgerOwnerType,
   type LedgerRefType,
+  disputes,
+  invoices,
   ledgerAccounts,
   ledgerEntries,
   ledgerTransactions,
+  paymentGateways,
+  payments,
 } from '../db/schema';
 import { CREDIT_NORMAL_KINDS } from '../domain/accounts';
 import { type WireRefType, storedRefTypesOf } from '../domain/ref-types';
@@ -111,7 +115,7 @@ function hasLine(condition: SQL | undefined): SQL {
 function filterCondition(filter: ParsedFilter): SQL | undefined {
   switch (filter.field) {
     case 'refType': {
-      // Resolution money-1: the wire word `system` stands for stored `system` and `client`.
+      // Resolution money-1: the wire word `system` stands for stored `system`, `account` and the older `client` and `customer`.
       const stored = [...new Set(filter.values.flatMap((value) => storedRefTypesOf(value as WireRefType)))];
       return filter.op === 'ne'
         ? notInArray(ledgerTransactions.refType, stored)
@@ -136,11 +140,7 @@ function searchCondition(search: LedgerListSearch | undefined): SQL | undefined 
   const { pattern, owners } = search.text!;
   const ownerMatches = (type: LedgerOwnerType, ids: readonly number[]) =>
     ids.length > 0 ? and(eq(ledgerAccounts.ownerType, type), inArray(ledgerAccounts.ownerId, [...ids])) : undefined;
-  const onOwners = or(
-    ownerMatches('client', owners.client),
-    ownerMatches('supplier', owners.supplier),
-    ownerMatches('customer', owners.customer),
-  );
+  const onOwners = or(ownerMatches('account', owners.account), ownerMatches('supplier', owners.supplier));
   return or(
     ilike(ledgerTransactions.memo, pattern),
     ilike(ledgerTransactions.kind, pattern),
@@ -483,7 +483,7 @@ export async function countLedger(db: DbExecutor): Promise<{ accounts: number; e
   return { accounts: accounts?.total ?? 0, entries: entries?.total ?? 0 };
 }
 
-/** The wallet and hold of a merchant as stored. */
+/** The wallet and hold of a merchant-kind account as stored. */
 export interface WalletAccounts {
   readonly walletId: number | undefined;
   readonly walletBalance: string;
@@ -492,13 +492,14 @@ export interface WalletAccounts {
 }
 
 /**
- * Reads a merchant's wallet and hold figures.
+ * Reads a merchant-kind wallet and hold figures.
  *
  * Why: the wallet view is `{ balance, reserved, creditLimit, available }` from `client_wallet` and `client_hold`
- * (decision 024). A merchant with no accounts reads as zeros. Pass `lock` to take the rows `FOR UPDATE` (credit-limit change).
+ * (decision 024), both owned by `('account', id)` (decision 064). An account with no wallet reads as zeros. Pass `lock` to take the rows
+ * `FOR UPDATE` (credit-limit change).
  *
  * @param db the database or a transaction
- * @param clientId the merchant
+ * @param clientId the account (a merchant keeps its old number as its account id; the parameter keeps its name)
  * @param currency the wallet currency
  * @param lock lock the rows for the rest of the transaction
  * @returns the figures in the accounts' normal sign (merchant side)
@@ -519,7 +520,7 @@ export async function readWalletAccounts(
     .from(ledgerAccounts)
     .where(
       and(
-        eq(ledgerAccounts.ownerType, 'client'),
+        eq(ledgerAccounts.ownerType, 'account'),
         eq(ledgerAccounts.ownerId, clientId),
         eq(ledgerAccounts.currency, currency),
         inArray(ledgerAccounts.kind, ['client_wallet', 'client_hold']),
@@ -557,4 +558,176 @@ export async function writeCreditLimit(
     .update(ledgerAccounts)
     .set({ overdraftLimit: creditLimit, version: sql`${ledgerAccounts.version} + 1`, updatedAt: now })
     .where(eq(ledgerAccounts.id, walletId));
+}
+
+/** The freeze of a wallet as stored. */
+export interface WalletFreezeRow {
+  /** When the wallet was put on hold. */
+  readonly frozenAt: Date;
+  /** Why it was put on hold; empty when no reason was given. */
+  readonly frozenReason: string;
+}
+
+/**
+ * Reads whether an account's merchant-kind wallet is on hold.
+ *
+ * Why: a frozen `client_wallet` takes no new hold (decision 064); the order placement asks before it posts the hold. The read takes no row
+ * lock on purpose: the placement already holds the account row, and locking a wallet row before the system accounts of the posting would
+ * reverse the ledger lock order (ledger accounts `FOR UPDATE` in id order, `postTransaction`).
+ *
+ * @param db the caller's transaction
+ * @param accountId the account
+ * @param currency the wallet currency
+ * @returns the freeze, or `undefined` when the wallet is not frozen or does not exist
+ */
+export async function readMerchantWalletFreeze(
+  db: DbExecutor,
+  accountId: number,
+  currency: string,
+): Promise<WalletFreezeRow | undefined> {
+  const [row] = await db
+    .select({ frozenAt: ledgerAccounts.frozenAt, frozenReason: ledgerAccounts.frozenReason })
+    .from(ledgerAccounts)
+    .where(
+      and(
+        eq(ledgerAccounts.ownerType, 'account'),
+        eq(ledgerAccounts.ownerId, accountId),
+        eq(ledgerAccounts.kind, 'client_wallet'),
+        eq(ledgerAccounts.currency, currency),
+      ),
+    )
+    .limit(1);
+  return row?.frozenAt ? { frozenAt: row.frozenAt, frozenReason: row.frozenReason } : undefined;
+}
+
+/** What the account views need of one account's wallets and top-ups, as stored: both kinds are read, the caller picks the live one. */
+export interface AccountWalletRow {
+  readonly accountId: number;
+  /** `client_groups.kind` of the account's rank: it decides which wallet is live. */
+  readonly groupKind: string;
+  /** `client_groups.overdraft_allowed` of the rank. */
+  readonly creditAllowed: boolean;
+  /** The `client_wallet`, or `undefined` while it was never opened. */
+  readonly merchant: { balance: string; creditLimit: string; frozenAt: Date | null; frozenReason: string } | undefined;
+  /** The balance of the `client_hold`, or `undefined` while it was never opened. */
+  readonly holdBalance: string | undefined;
+  /** The `customer_wallet`, or `undefined` while it was never opened. */
+  readonly store: { balance: string; frozenAt: Date | null; frozenReason: string } | undefined;
+  /** Top-ups created and not yet credited, and the net they would add. */
+  readonly pendingCount: number;
+  readonly pendingNet: string;
+  /** Disputes of the account's top-up payments that are not decided yet. */
+  readonly openDisputes: number;
+}
+
+/**
+ * Reads the wallets, pending top-ups and open top-up disputes of many accounts, with a fixed number of statements.
+ *
+ * Why: `AccountWallets.viewsOf` serves the account list (decision 064): one read per page, never one per row. Both wallet kinds are read
+ * because the live kind is the rank's kind, which the same statement joins; the caller (the application service) picks it.
+ *
+ * Side effects: none (reads only; the figures are never cached, decision 022).
+ *
+ * @param db the database or a transaction
+ * @param accountIds the accounts
+ * @param currency the wallet currency
+ * @param liveSince an automatic top-up created before this time and without a pending payment no longer counts as pending (its hosted
+ *   page has expired); a manual top-up always counts
+ * @returns one row per account that exists, in no particular order
+ */
+export async function readAccountWalletRows(
+  db: DbExecutor,
+  accountIds: readonly number[],
+  currency: string,
+  liveSince: Date,
+): Promise<AccountWalletRow[]> {
+  const ids = [...new Set(accountIds)];
+  if (ids.length === 0) return [];
+  const merchantWallet = alias(ledgerAccounts, 'merchant_wallet');
+  const merchantHold = alias(ledgerAccounts, 'merchant_hold');
+  const storeWallet = alias(ledgerAccounts, 'store_wallet');
+  const ownedBy = (
+    account: Record<'ownerType' | 'ownerId' | 'kind' | 'currency', AnyPgColumn>,
+    kind: LedgerAccountKind,
+  ) =>
+    and(
+      eq(account.ownerType, 'account'),
+      eq(account.ownerId, s.clients.id),
+      eq(account.kind, kind),
+      eq(account.currency, currency),
+    );
+  const accounts = await db
+    .select({
+      accountId: s.clients.id,
+      groupKind: s.clientGroups.kind,
+      creditAllowed: s.clientGroups.overdraftAllowed,
+      merchantBalance: merchantWallet.balance,
+      merchantCreditLimit: merchantWallet.overdraftLimit,
+      merchantFrozenAt: merchantWallet.frozenAt,
+      merchantFrozenReason: merchantWallet.frozenReason,
+      holdBalance: merchantHold.balance,
+      storeBalance: storeWallet.balance,
+      storeFrozenAt: storeWallet.frozenAt,
+      storeFrozenReason: storeWallet.frozenReason,
+    })
+    .from(s.clients)
+    .innerJoin(s.clientGroups, eq(s.clientGroups.id, s.clients.groupId))
+    .leftJoin(merchantWallet, ownedBy(merchantWallet, 'client_wallet'))
+    .leftJoin(merchantHold, ownedBy(merchantHold, 'client_hold'))
+    .leftJoin(storeWallet, ownedBy(storeWallet, 'customer_wallet'))
+    .where(inArray(s.clients.id, ids));
+  // A top-up still counts as pending while it is open and its payment can still arrive: a manual gateway waits for staff, an automatic one
+  // for 24 hours, and a pending payment is money in flight.
+  const livePending = sql`(${invoices.status} = 'open' and (
+    ${paymentGateways.isManual}
+    or ${invoices.createdAt} > ${liveSince}
+    or exists (select 1 from ${payments} p where p.invoice_id = ${invoices.id} and p.status = 'pending')
+  ))`;
+  // One after the other: `db` may be a transaction, whose single connection runs one query at a time.
+  const pending = await db
+    .select({
+      accountId: invoices.accountId,
+      count: sql<number>`count(*)::int`,
+      net: sql<string>`coalesce(sum(${invoices.netAmount}), 0)::numeric(18,4)::text`,
+    })
+    .from(invoices)
+    .leftJoin(paymentGateways, eq(paymentGateways.id, invoices.gatewayId))
+    .where(and(inArray(invoices.accountId, ids), eq(invoices.kind, 'topup'), livePending))
+    .groupBy(invoices.accountId);
+  const open = await db
+    .select({ accountId: disputes.accountId, count: sql<number>`count(*)::int` })
+    .from(disputes)
+    .innerJoin(payments, eq(payments.id, disputes.paymentId))
+    .where(
+      and(
+        inArray(disputes.accountId, ids),
+        eq(payments.purpose, 'topup'),
+        inArray(disputes.status, ['needs_response', 'under_review']),
+      ),
+    )
+    .groupBy(disputes.accountId);
+  const pendingOf = new Map(pending.map((row) => [row.accountId, row]));
+  const openOf = new Map(open.map((row) => [row.accountId, row.count]));
+  return accounts.map((row) => ({
+    accountId: row.accountId,
+    groupKind: row.groupKind,
+    creditAllowed: row.creditAllowed,
+    merchant:
+      row.merchantBalance === null
+        ? undefined
+        : {
+            balance: row.merchantBalance,
+            creditLimit: row.merchantCreditLimit ?? '0.0000',
+            frozenAt: row.merchantFrozenAt,
+            frozenReason: row.merchantFrozenReason ?? '',
+          },
+    holdBalance: row.holdBalance ?? undefined,
+    store:
+      row.storeBalance === null
+        ? undefined
+        : { balance: row.storeBalance, frozenAt: row.storeFrozenAt, frozenReason: row.storeFrozenReason ?? '' },
+    pendingCount: pendingOf.get(row.accountId)?.count ?? 0,
+    pendingNet: pendingOf.get(row.accountId)?.net ?? '0.0000',
+    openDisputes: openOf.get(row.accountId) ?? 0,
+  }));
 }

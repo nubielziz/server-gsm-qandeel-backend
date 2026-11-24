@@ -31,7 +31,7 @@ const OpenBody = z.object({
     .pipe(z.email('Enter a valid email address.'))
     .transform((value) => value.toLowerCase())
     .describe(
-      'Where the receipt and the tracking link go; with no account the email is the identity of a guest customer.',
+      'Where the receipt and the tracking link go; signed out, the email names the guest record of the buyer (never the login account of that email).',
     ),
   country: zCountryCode.describe(
     "The buyer's country: the tax of its window is locked on the session. While the shop has a tax window in force, it must be a country that has one (the `taxRates` of `GET /store/v1/config`).",
@@ -105,8 +105,8 @@ export const CheckoutSessionSchema = z.object({
   balancePayable: z
     .boolean()
     .describe(
-      'Feature 21: true when the store balance is switched on and this checkout was opened by a signed-in customer, so ' +
-        '`POST /store/v1/checkout-sessions/:token/balance-payment` may pay it (with that customer signed in). Never the balance itself: ' +
+      'Feature 21: true when the store balance is switched on and this checkout was opened by a signed-in retail account, so ' +
+        '`POST /store/v1/checkout-sessions/:token/balance-payment` may pay it (with that account signed in). Never the balance itself: ' +
         'read it from `GET /store/v1/me/wallet`.',
     ),
   trackingToken: z
@@ -148,15 +148,18 @@ export const openCheckoutSession = defineRoute({
   key: 'POST /store/v1/checkout-sessions',
   summary: 'Open a checkout',
   description:
-    "Starts a purchase, as a guest or as a signed-in customer: the session locks the retail price, the tax rate of the buyer's " +
-    "`country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) a guest customer. A request that " +
-    'carries the cookie of a signed-in customer (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the ' +
+    "Starts a purchase, as a guest or as a signed-in retail account: the session locks the retail price, the tax rate of the buyer's " +
+    "`country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) the guest record of that email: it " +
+    'never attaches to the login account of the email, whatever its rank. A request that ' +
+    'carries the cookie of a signed-in account (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the ' +
     'checkout as that account instead: ' +
     '`email` must be the email of the account in any case (else `422` on `email`: "Use the email of your account, or sign out to ' +
-    'check out as a guest."), the `guestCheckout` switch does not apply and the session belongs to the signed-in customer. A request ' +
-    'without a usable customer session is a guest. An IMEI service needs a valid `imei` (else `422 ' +
-    'INVALID_IMEI`); a service with order fields needs their `inputs`. A suspended or blocked customer is refused (`403 ' +
-    'ACCOUNT_SUSPENDED`); when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the ' +
+    'check out as a guest."), the `guestCheckout` switch does not apply and the session belongs to the signed-in account. A signed-in ' +
+    'merchant rank is refused (`403 RANK_NOT_ALLOWED`, "Your account orders from its price list.") and nothing is written. A request ' +
+    'without a usable account session is a guest. An IMEI service needs a valid `imei` (else `422 ' +
+    'INVALID_IMEI`); a service with order fields needs their `inputs`. An account or guest record that may not act is refused (`403 ' +
+    'ACCOUNT_SUSPENDED`), and so is a guest whose email belongs to a login account that is suspended, blocked or erased, with the same ' +
+    'answer as a blocklist hit and no guest record made; when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the ' +
     'shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is ' +
     '`422` on `country` (code `unsupported`, "Choose a country."), the refusal of the customer profile; a shop with no tax window in ' +
     'force accepts any country without tax. While the `country` has a regional tax window in force, `region` must name a region that ' +
@@ -172,7 +175,7 @@ export const openCheckoutSession = defineRoute({
   turnstile: true,
   body: OpenBody,
   success: { status: 201, schema: CheckoutSessionSchema },
-  errors: ['VALIDATION_FAILED', 'INVALID_IMEI', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'CSRF_FAILED'],
+  errors: ['VALIDATION_FAILED', 'INVALID_IMEI', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'CSRF_FAILED', 'RANK_NOT_ALLOWED'],
   examples: {
     request: { serviceId: 1, email: 'sam@mail.example', country: 'GB', currency: 'GBP', imei: '353890110000004' },
     response: SESSION_EXAMPLE,
@@ -213,11 +216,12 @@ export const recordCheckoutConsents = defineRoute({
   description:
     'Writes proof of what the buyer agreed to: for each purpose (`terms`, `privacy`, `refund_policy`, `withdrawal_waiver`, `marketing`) ' +
     'one record with the version of the current legal document (`terms`, `privacy` and `refund_policy` have one; the waiver and ' +
-    "marketing do not), the time and the buyer's IP. A repeat of the latest record changes nothing. When the checkout's email " +
-    "belongs to an account, `marketing` is not recorded and is left out of `records`: only the account's own page changes it. " +
+    "marketing do not), the time and the buyer's IP. A repeat of the latest record changes nothing. The records belong to the account of " +
+    'the checkout: the signed-in account that opened it, or the guest record of its email. When that is an account with a login, `marketing` ' +
+    "is not recorded and is left out of `records`: only the account's own page changes it. " +
     "The exception is the account holder: a request that also carries the cookie and `X-CSRF-Token` of that account's signed-in " +
-    "session records `marketing` too, and the account's marketing choice (`marketingOptIn`) follows the answer; a customer session " +
-    'without its CSRF header is `403 CSRF_FAILED` and nothing is written. ' +
+    "session records `marketing` too, and the account's marketing choice (`marketingOptIn`) follows the answer; an account session " +
+    'without its CSRF header is `403 CSRF_FAILED` and a merchant-rank session `403 RANK_NOT_ALLOWED`, and nothing is written. ' +
     '`422` when a purpose has no published document or a purpose is listed twice; `409 INVALID_TRANSITION` when the session is ' +
     'paid or expired. The answer says whether the session now has every required consent. The token in the path is the credential.',
   tags: ['checkout'],
@@ -239,7 +243,7 @@ export const recordCheckoutConsents = defineRoute({
       consent: CheckoutSessionSchema.shape.consent,
     }),
   },
-  errors: ['NOT_FOUND', 'VALIDATION_FAILED', 'INVALID_TRANSITION', 'CSRF_FAILED'],
+  errors: ['NOT_FOUND', 'VALIDATION_FAILED', 'INVALID_TRANSITION', 'CSRF_FAILED', 'RANK_NOT_ALLOWED'],
   examples: {
     request: {
       consents: [

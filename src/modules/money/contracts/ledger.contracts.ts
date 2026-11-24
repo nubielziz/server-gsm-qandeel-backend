@@ -2,7 +2,7 @@
 // reconciliation. Shapes match the console (docs/contract/endpoints/money.md, resolutions money-1, money-6, money-15).
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney, zSignedMoney } from '../../../common/contract';
-import { LEDGER_ACCOUNT_KINDS } from '../db/schema';
+import { LEDGER_ACCOUNT_KINDS, LEDGER_OWNER_TYPES } from '../db/schema';
 import { WIRE_REF_TYPES } from '../domain/ref-types';
 
 const LedgerEntrySchema = z.object({
@@ -12,7 +12,12 @@ const LedgerEntrySchema = z.object({
   account: z.object({
     kind: z.enum(LEDGER_ACCOUNT_KINDS),
     id: zId,
-    ownerType: z.enum(['client', 'customer', 'supplier']).nullable(),
+    ownerType: z
+      .enum(LEDGER_OWNER_TYPES)
+      .nullable()
+      .describe(
+        '`account` for a wallet or a hold (the id is the account id, of either rank kind), `supplier` for a prepaid account.',
+      ),
     ownerId: zId.nullable(),
     ownerName: z.string().nullable(),
   }),
@@ -23,11 +28,18 @@ export const LedgerTransactionSchema = z.object({
   id: zId.describe('The journal id (the console shows JRN-<id>).'),
   kind: z.string(),
   memo: z.string(),
-  refType: z.enum(WIRE_REF_TYPES).describe('A stored `client` (manual adjustments) is sent as `system`.'),
+  refType: z
+    .enum(WIRE_REF_TYPES)
+    .describe('A stored `account` (manual adjustments), or an older `client` or `customer`, is sent as `system`.'),
   refId: z.number().int().nonnegative().describe('`0` for a posting with no record behind it.'),
   createdAt: zIsoDateTime,
   createdBy: z.object({
-    type: z.enum(['staff', 'client', 'customer', 'system']),
+    type: z
+      .enum(['staff', 'account', 'client', 'customer', 'system'])
+      .describe(
+        'Journals posted from now on say `account`; an older journal keeps the word it was posted with (`client` or `customer`, ' +
+          'its id is then the old number, named through the legacy map).',
+      ),
     id: zId.nullable(),
     name: z.string().nullable(),
   }),
@@ -78,7 +90,7 @@ const journal = {
       id: 2788,
       amount: '-360.0000',
       balanceAfter: '-1209.7500',
-      account: { kind: 'client_wallet', id: 31, ownerType: 'client', ownerId: 1, ownerName: 'Zain Mobile Hub' },
+      account: { kind: 'client_wallet', id: 31, ownerType: 'account', ownerId: 1, ownerName: 'Zain Mobile Hub' },
     },
   ],
 };

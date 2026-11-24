@@ -7,19 +7,17 @@ describe('canMarkSeen', () => {
   const staffReply = { ticketId: 5, authorType: 'staff', isInternal: false } as const;
   const note = { ticketId: 5, authorType: 'staff', isInternal: true } as const;
   const system = { ticketId: 5, authorType: 'system', isInternal: true } as const;
-  const customer = { ticketId: 5, authorType: 'customer', isInternal: false } as const;
-  const merchant = { ticketId: 5, authorType: 'client', isInternal: false } as const;
+  const requester = { ticketId: 5, authorType: 'account', isInternal: false } as const;
 
   it('lets the requester mark a public staff message, never a note, a system message or its own', () => {
     expect(canMarkSeen('requester', 5, staffReply)).toBe(true);
     expect(canMarkSeen('requester', 5, note)).toBe(false);
     expect(canMarkSeen('requester', 5, system)).toBe(false);
-    expect(canMarkSeen('requester', 5, customer)).toBe(false);
+    expect(canMarkSeen('requester', 5, requester)).toBe(false);
   });
 
-  it('lets staff mark the requester’s messages only (a customer’s or a merchant’s)', () => {
-    expect(canMarkSeen('staff', 5, customer)).toBe(true);
-    expect(canMarkSeen('staff', 5, merchant)).toBe(true);
+  it('lets staff mark the requester’s messages only (an account’s, whatever its rank)', () => {
+    expect(canMarkSeen('staff', 5, requester)).toBe(true);
     expect(canMarkSeen('staff', 5, staffReply)).toBe(false);
     expect(canMarkSeen('staff', 5, system)).toBe(false);
   });

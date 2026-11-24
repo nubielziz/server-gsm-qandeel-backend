@@ -1,7 +1,8 @@
-// Integration tests of the reconcile and the nightly integrity check with customer wallets in the books (feature 21, plan § 5.6.9 and D3):
-// every wallet posting (top-up, balance payment, refund to the balance, adjustment, a top-up clawback below zero) reconciles and passes the
-// four checks; a balance payment (no gateway) without its journal is found and named `Store balance`; a customer wallet that differs from
-// its lines is labelled with the customer.
+// Integration tests of the reconcile and the nightly integrity check with store balances in the books (feature 21, plan § 5.6.9 and D3;
+// the wallet is the `customer_wallet` of a retail-rank account, decision 064): every wallet posting (top-up, balance payment, refund to the
+// balance, adjustment, a top-up clawback below zero) reconciles and passes the five checks, `wallets_follow_rank` included (the store balance of
+// a retail rank is its live wallet); a balance payment (no gateway) without its journal is found and named `Store balance`; a store balance that
+// differs from its lines is labelled with the account.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import type { Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
@@ -83,14 +84,14 @@ function post(
 }
 
 /** A balance payment row of an order (no gateway), as `CustomerWalletPayments.record` writes it. */
-async function balancePayment(orderId: number, customerId: number) {
+async function balancePayment(orderId: number, accountId: number) {
   const [row] = await db
     .insert(s.payments)
     .values({
       purpose: 'order',
       methodType: 'balance',
       gatewayId: null,
-      customerId,
+      accountId,
       orderId,
       amount: '4.7900',
       currency: 'USD',
@@ -147,7 +148,7 @@ describe('the integrity check with customer wallets', () => {
         tx,
         {
           ...topupChargeback({
-            owner: { type: 'customer', id: customer.id },
+            owner: { accountId: customer.id, kind: 'customer_wallet' },
             net: Money.of('48.50'),
             fee: Money.of('1.50'),
             disputeFee: Money.of('15'),
@@ -184,6 +185,7 @@ describe('the integrity check with customer wallets', () => {
       ['accounts_match_lines', 'pass', 0],
       ['stuck_holds', 'pass', 0],
       ['payments_without_entry', 'pass', 0],
+      ['wallets_follow_rank', 'pass', 0],
     ]);
     expect(await ledgerTotals(db)).toEqual(before);
   });
@@ -199,7 +201,7 @@ describe('the integrity check with customer wallets', () => {
     expect(found.findings[0]).toMatchObject({ kind: 'payment', id: payment.id, label: 'Payment · Store balance' });
   });
 
-  it('labels a customer wallet whose balance differs from its lines with the customer', async () => {
+  it('labels a store balance whose balance differs from its lines with the account', async () => {
     const customer = await insertCustomer(db, { hasAccount: true, name: 'Daniel Rivera' });
     await post(
       customerTopup({ customerId: customer.id, amount: Money.of('10'), from: 'bank' }),

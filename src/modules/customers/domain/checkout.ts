@@ -49,6 +49,21 @@ export function effectiveStatus(status: CheckoutSessionStatus, expiresAt: Date, 
   return status === 'open' && expiresAt.getTime() <= now.getTime() ? 'expired' : status;
 }
 
+/**
+ * Tells whether a checkout session is still in flight: open and not run out.
+ *
+ * Why: the guest claim must not move the records of a guest row that is paying right now (decision 064): an open session is a buyer
+ * who may be on a payment page. A paid or expired session is history and moves with the rest. Judged like {@link effectiveStatus}, on the
+ * injected clock.
+ *
+ * @param session the stored status and expiry
+ * @param now the clock's time
+ * @returns true when the session reads `open`
+ */
+export function isLiveCheckout(session: { status: CheckoutSessionStatus; expiresAt: Date }, now: Date): boolean {
+  return effectiveStatus(session.status, session.expiresAt, now) === 'open';
+}
+
 /** One consent record as the state needs it. */
 export interface ConsentFact {
   readonly purpose: ConsentPurpose;

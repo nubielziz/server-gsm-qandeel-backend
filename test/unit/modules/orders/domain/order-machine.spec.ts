@@ -607,8 +607,8 @@ describe('the wire view of the dispatch state (decision 044)', () => {
     expect([...WIRE_DISPATCH_STATES]).toEqual(ORDER_DISPATCH_STATES.filter((value) => value !== 'dispatching'));
   });
 
-  it('orderStateOf treats a pending order with sent_at (a claim of an earlier release) as dispatching, and maps the channel', () => {
-    const base = { status: 'pending', verificationStatus: null, clientId: 7, sentAt: null } as const;
+  it('orderStateOf treats a pending order with sent_at (a claim of an earlier release) as dispatching, and maps the channel from the door', () => {
+    const base = { status: 'pending', verificationStatus: null, source: 'portal', sentAt: null } as const;
     expect(orderStateOf({ ...base, dispatchState: 'pending' })).toEqual({
       status: 'pending',
       dispatchState: 'pending',
@@ -627,9 +627,37 @@ describe('the wire view of the dispatch state (decision 044)', () => {
     expect(orderStateOf({ ...base, dispatchState: 'needs_attention', sentAt: new Date(0) }).dispatchState).toBe(
       'needs_attention',
     );
-    expect(orderStateOf({ ...base, clientId: null, dispatchState: 'held' }, true)).toMatchObject({
+    expect(orderStateOf({ ...base, source: 'store', dispatchState: 'held' }, true)).toMatchObject({
       channel: 'b2c',
       completedBefore: true,
+    });
+  });
+
+  it('orderStateOf reads the door, never the buyer: every door but store is held from a wallet', () => {
+    const base = { status: 'pending', dispatchState: 'pending', verificationStatus: null, sentAt: null } as const;
+    for (const source of ['portal', 'dhru', 'v1', 'admin'] as const) {
+      expect(orderStateOf({ ...base, source }).channel, source).toBe('b2b');
+    }
+    expect(orderStateOf({ ...base, source: 'store' }).channel).toBe('b2c');
+  });
+
+  it('the door picks the money of a reject, a cancel and a delivery, whoever the buyer is today', () => {
+    const base = { status: 'pending', dispatchState: 'manual', verificationStatus: null, sentAt: null } as const;
+    const shop = orderStateOf({ ...base, source: 'store' });
+    const held = orderStateOf({ ...base, source: 'portal' });
+    expect(decideOrderAction(shop, { kind: 'reject' })).toMatchObject({ ok: true, money: 'b2c_refund' });
+    expect(decideOrderAction(held, { kind: 'reject' })).toMatchObject({ ok: true, money: 'reject' });
+    expect(decideOrderAction(shop, { kind: 'reply' })).toMatchObject({ ok: true, money: 'b2c_deliver' });
+    expect(decideOrderAction(held, { kind: 'reply' })).toMatchObject({ ok: true, money: 'complete' });
+    // A completed order of the shop is refunded from the refunds page; one held from a wallet is refunded here.
+    const delivered = { ...base, status: 'completed', dispatchState: 'done' } as const;
+    expect(decideOrderAction(orderStateOf({ ...delivered, source: 'store' }), { kind: 'refund' })).toEqual({
+      ok: false,
+      refusal: 'USE_REFUNDS',
+    });
+    expect(decideOrderAction(orderStateOf({ ...delivered, source: 'dhru' }), { kind: 'refund' })).toMatchObject({
+      ok: true,
+      money: 'refund',
     });
   });
 });
@@ -762,7 +790,7 @@ describe('the payment of a storefront order', () => {
       status: 'pending',
       dispatchState: 'held',
       verificationStatus: null,
-      clientId: null,
+      source: 'store',
       sentAt: null,
     } as const;
     expect(orderStateOf(base, false, false, 'disputed').paymentStop).toBe('disputed');

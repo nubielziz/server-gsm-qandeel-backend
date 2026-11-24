@@ -5,9 +5,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError, type FieldError } from '../../../common/errors';
 import { DbService, type DbExecutor } from '../../../infra/db';
+import { AccountDirectory } from '../../identity';
 import {
   AuditService,
-  CUSTOMER_DAILY_QUOTA,
   type FileMeta,
   SUPPORT_SETTINGS,
   SettingsReader,
@@ -19,6 +19,7 @@ import {
   cleanUploadName,
   lockUploadOwner,
   ticketDailyQuota,
+  uploadQuotaFor,
 } from '../../platform';
 import type { SupportTicket } from '../db/schema';
 import {
@@ -33,7 +34,7 @@ import {
   findTicket,
   lockTicketsPastAttachmentRetention,
   takeFileIdsOfTickets,
-  ticketIdsOfCustomer,
+  ticketIdsOfAccount,
   ticketMessageHoldsFile,
 } from '../infra/ticket.repository';
 import { isLockedForRequester, requesterLockedError } from './requester-lock';
@@ -84,8 +85,10 @@ const notFound = (detail = 'No file with this id.') => new AppError('NOT_FOUND',
  *
  * Why: feature 28, rule 8: PDF, JPEG or PNG, 1 byte to 5 MiB, at most 5 a message, and the content must start with the
  * type's magic bytes (there is no virus scanner, so files are never shown inline and every download is a 5-minute presigned link with an
- * attachment disposition). A sender attaches only their own uploads: the ticket's customer (uploaded through the ticket link), the
- * merchant (the portal's `POST /client/files`, which takes any file, so the type and size are checked again here) or the staff member.
+ * attachment disposition). A sender attaches only their own uploads: the ticket's requester (an account of any rank; uploaded through the
+ * ticket link, or through the upload route of its rank, which takes any file, so the type and size are checked again here) or the staff
+ * member. The quota of a requester's upload follows the rank kind of the account (decision 064): a merchant rank is never held
+ * to the 30 files of the shop rule.
  * A requester's upload through the link is stored under the ticket's own area (`tickets-<id>`, staff uploads under `tickets`), and a
  * link writer attaches only files of that area: the link must not reach the customer's other files (receipts, other tickets' uploads).
  * A requester downloads only the files of public messages of their ticket; staff with `support:read` every file of the ticket. Rule 10:
@@ -103,6 +106,7 @@ export class TicketAttachmentService {
     private readonly events: TicketEvents,
     private readonly settings: SettingsReader,
     private readonly audit: AuditService,
+    private readonly accounts: AccountDirectory,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -115,8 +119,9 @@ export class TicketAttachmentService {
    * @returns the stored file; its id goes into `fileIds` of the next message
    * @throws {AppError} `NOT_FOUND` (no such ticket, or a link of a ticket that has no customer); `TICKET_RESOLVED` (409: a requester's
    *   upload for a resolved ticket, which takes no message, so the file would be an orphan; staff may still upload); `VALIDATION_FAILED`
-   *   (422 on `file`: `empty`, `type`, `quota`: a ticket link takes 20 files (50 MiB) and its customer 30 files (100 MiB) in 24 hours,
-   *   decision 053; staff uploads have no quota); `PAYLOAD_TOO_LARGE` (over 5 MiB); `UNAVAILABLE` (the object store is down)
+   *   (422 on `file`: `empty`, `type`, `quota`: a ticket link takes 20 files (50 MiB) and its requester the quota of its rank kind in 24
+   *   hours, 30 files (100 MiB) for a retail rank and 500 files (5 GiB) for a merchant rank, decisions 053 and 064; staff uploads have no
+   *   quota); `PAYLOAD_TOO_LARGE` (over 5 MiB); `UNAVAILABLE` (the object store is down)
    */
   async upload(ticketId: number, uploader: Uploader, input: UploadInput): Promise<UploadedAttachment> {
     const mime = cleanMediaType(input.mime);
@@ -144,17 +149,17 @@ export class TicketAttachmentService {
       // B220: a resolved ticket is closed for its requester, so an upload for it could never be attached (no orphan files).
       if (uploader.side === 'requester' && isLockedForRequester(ticket)) throw requesterLockedError();
       const owner: FileOwner =
-        uploader.side === 'staff'
-          ? { type: 'staff', id: uploader.staffId }
-          : { type: ticket.requesterType, id: ticket.requesterId };
-      // Decision 053: a requester's upload counts against the ticket's quota and the customer's, checked under the owner's lock before the
-      // object is written (the lock lasts until this transaction ends).
+        uploader.side === 'staff' ? { type: 'staff', id: uploader.staffId } : requesterOwner(ticket);
+      // Decision 053: a requester's upload counts against the ticket's quota and the account's, checked under the owner's lock before the
+      // object is written (the lock lasts until this transaction ends). Decision 064: the account's quota is the one of its rank kind; an
+      // account that is gone reads as retail (the stricter rule).
       if (uploader.side === 'requester') {
-        await lockUploadOwner(tx, { type: ticket.requesterType, id: ticket.requesterId });
+        await lockUploadOwner(tx, owner);
+        const rankKind = (await this.accounts.findById(tx, ticket.requesterId))?.rankKind ?? 'retail';
         await assertUploadQuota(
           tx,
-          { type: ticket.requesterType, id: ticket.requesterId },
-          [ticketDailyQuota(ticket.id), CUSTOMER_DAILY_QUOTA],
+          owner,
+          [ticketDailyQuota(ticket.id), uploadQuotaFor(rankKind)],
           input.data.length,
           this.clock.now(),
         );
@@ -192,7 +197,7 @@ export class TicketAttachmentService {
    * Checks the files a new message wants to carry, inside the message's transaction.
    *
    * @param tx the message's transaction
-   * @param sender who writes: the ticket's requester (`customer` or `client`) or the staff member
+   * @param sender who writes: the ticket's requester (an `account`) or the staff member
    * @param fileIds the ids the body named (duplicates are attached once)
    * @param onlyArea the area every file must have as well: the ticket's upload area for a ticket link's holder; `undefined` for a
    *   signed-in requester and for staff (the owner alone decides)
@@ -264,14 +269,14 @@ export class TicketAttachmentService {
   }
 
   /**
-   * Deletes every attachment of an anonymized customer's tickets and ends their ticket streams.
+   * Deletes every attachment of an anonymized account's tickets and ends their ticket streams.
    *
    * @param tx the anonymization's transaction
-   * @param customerId the customer
+   * @param accountId the account
    * @returns how many file rows were deleted
    */
-  async eraseForCustomer(tx: DbExecutor, customerId: number): Promise<number> {
-    const ticketIds = await ticketIdsOfCustomer(tx, customerId);
+  async eraseForAccount(tx: DbExecutor, accountId: number): Promise<number> {
+    const ticketIds = await ticketIdsOfAccount(tx, accountId);
     const removed = await this.eraseForTickets(tx, ticketIds);
     for (const ticketId of ticketIds) this.events.revoked(ticketId);
     return removed;
@@ -312,7 +317,7 @@ export class TicketAttachmentService {
 }
 
 /**
- * The owner a requester's files must have: the ticket's customer or merchant.
+ * The owner a requester's files must have: the ticket's account.
  *
  * @param ticket the ticket
  * @returns the owner as the `files` table names it

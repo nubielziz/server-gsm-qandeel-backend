@@ -18,7 +18,7 @@ export const dhruAccountInfo = defineDhruAction({
       currency: z.string(),
     }),
   }),
-  errors: ['UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'ACCOUNT_PENDING_APPROVAL', 'IP_NOT_ALLOWED', 'RATE_LIMITED'],
+  errors: ['UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED', 'RATE_LIMITED'],
   examples: {
     response: {
       message: 'Your Accout Info',

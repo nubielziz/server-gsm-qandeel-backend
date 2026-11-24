@@ -1,15 +1,15 @@
 // DataRequestService: the data-subject requests (GET/PATCH /admin/data-requests, POST /store/v1/me/data-export and /data-delete, map
-// domain K, stage 18, RESOLUTIONS b2c-13, ANSWERS customers Q4, Q5 and Q12): a customer asks, staff move the request along before its
-// 30-day deadline.
+// domain K, stage 18, RESOLUTIONS b2c-13, ANSWERS customers Q4, Q5 and Q12, decision 064): an account asks, staff move the request along
+// before its 30-day deadline.
 import { Inject, Injectable } from '@nestjs/common';
-import { sql } from 'drizzle-orm';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { DbService, type DbExecutor } from '../../../infra/db';
+import { AccountDirectory, sessionStateOf } from '../../identity';
 import { AuditService } from '../../platform';
 import type { DataRequest, DataRequestKind, DataRequestStatus } from '../db/schema';
-import { type MoveTarget, dueDateOf, refuseMove } from '../domain/data-requests';
+import { type MoveTarget, dueDateOf, refuseMove, refuseOwnRequest } from '../domain/data-requests';
 import {
   type DataRequestRow,
   type DataRequestSortField,
@@ -24,7 +24,8 @@ import {
 /** A request as the console reads it. */
 export interface DataRequestView {
   readonly id: number;
-  readonly customerId: number;
+  /** The account the request is about (any rank; a merchant's number is its account number). */
+  readonly accountId: number;
   readonly kind: DataRequestKind;
   readonly status: DataRequestStatus;
   readonly requestedAt: string;
@@ -33,10 +34,10 @@ export interface DataRequestView {
   readonly handledBy: number | null;
   readonly fileId: number | null;
   readonly createdAt: string;
-  readonly customerName: string;
+  readonly accountName: string;
 }
 
-/** What the customer's own request answers. */
+/** What the account's own request answers. */
 export interface MyRequestView {
   readonly id: number;
   readonly kind: DataRequestKind;
@@ -49,7 +50,7 @@ function viewOf(row: DataRequestRow): DataRequestView {
   const r = row.request;
   return {
     id: r.id,
-    customerId: r.customerId,
+    accountId: r.accountId,
     kind: r.kind,
     status: r.status,
     requestedAt: r.requestedAt.toISOString(),
@@ -58,7 +59,7 @@ function viewOf(row: DataRequestRow): DataRequestView {
     handledBy: r.handledBy,
     fileId: r.fileId,
     createdAt: r.createdAt.toISOString(),
-    customerName: row.customerName,
+    accountName: row.accountName,
   };
 }
 
@@ -75,21 +76,23 @@ function mineOf(r: DataRequest): MyRequestView {
 /**
  * Data-subject requests.
  *
- * Why: the privacy law gives a customer the right to a copy of their data and to its erasure, and the shop 30 days to answer. The
- * customer asks from the storefront account (`POST /store/v1/me/data-export` and `/data-delete`); asking again while a request of
- * the same kind is still open returns that request instead of a second one. Staff see them in the console with the deadline and move
+ * Why: the privacy law gives a person the right to a copy of their data and to its erasure, and the shop 30 days to answer. An account
+ * of any rank asks for a copy (`POST /store/v1/me/data-export`); only the retail rank asks for erasure (`POST /store/v1/me/data-delete`):
+ * a merchant rank is told to ask staff for the move to the retail rank first, and nothing is stored. Asking again while a request
+ * of the same kind is still open returns that request instead of a second one. Staff see them in the console with the deadline and move
  * them: open to in progress, completed or rejected; a rejection needs a note (stored on the request and in the audit row); a closed
- * request cannot move (`409 REQUEST_CLOSED`); an erasure request is completed by anonymizing the customer, not by hand (`409
+ * request cannot move (`409 REQUEST_CLOSED`); an erasure request is completed by anonymizing the account, not by hand (`409
  * ERASURE_NOT_DONE`), and an export request by downloading the export or by hand.
  *
- * Side effects: `request` inserts a `data_requests` row (serialised per customer and kind by an advisory lock); `move` updates it
- * and writes an `audit_logs` row.
+ * Side effects: `request` locks the account row and inserts a `data_requests` row (the row lock serialises the taps of one account, so
+ * two at once make one request); `move` updates the request and writes an `audit_logs` row.
  */
 @Injectable()
 export class DataRequestService {
   constructor(
     private readonly db: DbService,
     private readonly audit: AuditService,
+    private readonly accounts: AccountDirectory,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -141,7 +144,7 @@ export class DataRequestService {
         from: row.request.status,
         to: input.status,
         note: input.note,
-        customerAnonymized: row.customerStatus === 'anonymized',
+        accountAnonymized: row.accountStatus === 'anonymized',
       });
       if (refusal) {
         if (refusal.code === 'VALIDATION_FAILED') {
@@ -166,9 +169,9 @@ export class DataRequestService {
             : input.status === 'completed'
               ? 'completed data request of'
               : 'rejected data request of',
-        entityType: 'customer',
-        entityId: row.request.customerId,
-        entityLabel: row.customerName,
+        entityType: 'account',
+        entityId: row.request.accountId,
+        entityLabel: row.accountName,
         before: { request: `DSR-${id}`, kind: row.request.kind, status: row.request.status },
         after: { request: `DSR-${id}`, status: changed.status, ...(note === '' ? {} : { note }) },
       });
@@ -177,39 +180,50 @@ export class DataRequestService {
   }
 
   /**
-   * Closes the customer's waiting requests of a kind because the work was done: an export was downloaded, or the customer was
+   * Closes the account's waiting requests of a kind because the work was done: an export was downloaded, or the account was
    * anonymized.
    *
    * Why: ANSWERS customers Q4: an export closes the open or in-progress export request, an anonymization the erasure request, both
    * `completed` with the time and the staff member. With no waiting request the action still runs.
    *
    * @param tx the caller's transaction
-   * @param customerId the customer
+   * @param accountId the account (any rank)
    * @param kind which kind to close
    * @param staffId the staff member who acted
    * @returns the ids of the requests that were closed
    */
-  async completePending(tx: DbExecutor, customerId: number, kind: DataRequestKind, staffId: number): Promise<number[]> {
-    const closed = await completePendingRequests(tx, customerId, kind, staffId, this.clock.now());
+  async completePending(tx: DbExecutor, accountId: number, kind: DataRequestKind, staffId: number): Promise<number[]> {
+    const closed = await completePendingRequests(tx, accountId, kind, staffId, this.clock.now());
     return closed.map((request) => request.id);
   }
 
   /**
-   * Records a customer's request.
+   * Records an account's own request.
    *
-   * @param customerId the signed-in customer
+   * Why: decision 064: every rank may ask for a copy; only the retail rank may ask for erasure. The account row is locked first
+   * (the first lock of every path of an account), so the rank and the status are read as they are now: a rank change that ended just before
+   * is seen, and two taps of the button at once queue on the row and make one request.
+   *
+   * @param accountId the signed-in account
    * @param kind `export` or `erasure`
    * @returns the new request, or the one already waiting for an answer
+   * @throws {AppError} `UNAUTHORIZED` (401: no such login account, or it is erased), `ACCOUNT_SUSPENDED` (403), `CONFLICT` (409: an
+   *   erasure asked by a merchant rank; nothing is stored)
    */
-  async request(customerId: number, kind: DataRequestKind): Promise<MyRequestView> {
+  async request(accountId: number, kind: DataRequestKind): Promise<MyRequestView> {
     const now = this.clock.now();
     return this.db.runInTransaction(async ({ tx }) => {
-      // Two taps on the button at once must make one request: serialise per customer and kind.
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`data_request:${customerId}:${kind}`}, 0))`);
-      const waiting = await findPendingRequest(tx, customerId, kind);
+      const account = await this.accounts.lockForUpdate(tx, accountId);
+      if (!account?.hasAccount) throw new AppError('UNAUTHORIZED');
+      const state = sessionStateOf(account.status);
+      if (state === 'gone') throw new AppError('UNAUTHORIZED');
+      if (state === 'suspended') throw new AppError('ACCOUNT_SUSPENDED');
+      const refusal = refuseOwnRequest(kind, account.rankKind);
+      if (refusal !== undefined) throw new AppError('CONFLICT', { detail: refusal });
+      const waiting = await findPendingRequest(tx, accountId, kind);
       if (waiting) return mineOf(waiting);
       const created = await insertDataRequest(tx, {
-        customerId,
+        accountId,
         kind,
         status: 'open',
         requestedAt: now,

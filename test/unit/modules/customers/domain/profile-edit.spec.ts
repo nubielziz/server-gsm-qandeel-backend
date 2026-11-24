@@ -1,4 +1,5 @@
-// Unit tests of the shared profile-edit rule (feature 24B): which of name, country and phone change, and the audit values.
+// Unit tests of the shared profile-edit rule (feature 24B; decision 064): which of name, country and phone of an account change, and the audit
+// values. The account is judged by those three fields only, so the full account the identity module hands over is fine.
 import { describe, expect, it } from 'bun:test';
 import { profileChanges } from '@src/modules/customers/domain/profile-edit';
 
@@ -43,6 +44,12 @@ describe('profileChanges', () => {
       after: { phone: '' },
     });
     expect(profileChanges({ ...customer, phone: '' }, { phone: '' }, undefined).columns).toEqual({});
+  });
+
+  it('judges only name, phone and country, whatever else the account carries', () => {
+    const account = { ...customer, currency: 'GBP', marketingOptIn: true, rank: { id: 4, kind: 'retail' } };
+    expect(profileChanges(account, { name: 'Daniel Whitmore' }, undefined).columns).toEqual({});
+    expect(profileChanges(account, { country: 'DE' }, 'EUR').columns).toEqual({ country: 'DE', currency: 'EUR' });
   });
 
   it('collects every changed field together', () => {

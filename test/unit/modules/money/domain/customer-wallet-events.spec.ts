@@ -1,5 +1,5 @@
-// Unit tests of the customer wallet money events (feature 21, plan § 5.4 and § 11.1): exact lines with the plan's numbers, balanced,
-// the right owners, zero lines dropped, and the pro-rata clawback split.
+// Unit tests of the store balance money events (feature 21, plan § 5.4 and § 11.1; decision 064): exact lines with the plan's numbers,
+// balanced, every wallet owned by an account, zero lines dropped, the live-wallet variants of a refund, and the pro-rata clawback split.
 import { describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
 import {
@@ -10,6 +10,7 @@ import {
   clawbackSplit,
   customerAdjust,
   customerTopup,
+  customerWalletAccount,
   topupChargeback,
   type WalletEventPosting,
 } from '@src/modules/money/domain/customer-wallet-events';
@@ -42,13 +43,19 @@ describe('wallet event ids and kinds', () => {
   });
 });
 
+describe('customerWalletAccount', () => {
+  it('is the store balance of an account: one `customer_wallet` owned by `account`, never by `customer` (decision 064)', () => {
+    expect(customerWalletAccount(7)).toEqual({ kind: 'customer_wallet', ownerType: 'account', ownerId: 7 });
+  });
+});
+
 describe('customerTopup', () => {
   it('credits the net to the customer wallet and the fee to income, from bank (manual gateway)', () => {
     const posting = customerTopup({ customerId: 7, amount: m('48.50'), fee: m('1.50'), from: 'bank' });
     expect(posting).toMatchObject({ kind: 'deposit', refType: 'payment' });
     expect(rows(posting)).toEqual([
       ['bank', '', '50.0000', '0.0000'],
-      ['customer_wallet', 'customer:7', '0.0000', '48.5000'],
+      ['customer_wallet', 'account:7', '0.0000', '48.5000'],
       ['fee_income', '', '0.0000', '1.5000'],
     ]);
   });
@@ -66,7 +73,7 @@ describe('b2cWalletPay', () => {
     const posting = b2cWalletPay({ customerId: 3, net: m('12.49'), vat: m('2.50') });
     expect(posting).toMatchObject({ kind: 'b2c_payment', refType: 'order' });
     expect(rows(posting)).toEqual([
-      ['customer_wallet', 'customer:3', '14.9900', '0.0000'],
+      ['customer_wallet', 'account:3', '14.9900', '0.0000'],
       ['customer_funds', '', '0.0000', '12.4900'],
       ['vat_payable', '', '0.0000', '2.5000'],
     ]);
@@ -84,7 +91,17 @@ describe('b2cWalletRefund', () => {
     expect(rows(posting)).toEqual([
       ['customer_funds', '', '12.4900', '0.0000'],
       ['vat_payable', '', '2.5000', '0.0000'],
-      ['customer_wallet', 'customer:3', '0.0000', '14.9900'],
+      ['customer_wallet', 'account:3', '0.0000', '14.9900'],
+    ]);
+  });
+
+  it('credits the merchant wallet when the account has become a merchant since it paid from the balance (the live wallet)', () => {
+    const posting = b2cWalletRefund({ customerId: 3, net: m('12.49'), vat: m('2.50'), wallet: 'client_wallet' });
+    expect(posting).toMatchObject({ kind: 'refund', refType: 'order' });
+    expect(rows(posting)).toEqual([
+      ['customer_funds', '', '12.4900', '0.0000'],
+      ['vat_payable', '', '2.5000', '0.0000'],
+      ['client_wallet', 'account:3', '0.0000', '14.9900'],
     ]);
   });
 
@@ -99,18 +116,18 @@ describe('b2cWalletRefund', () => {
 });
 
 describe('customerAdjust', () => {
-  it('credits from adjustments with the stored reference type customer', () => {
+  it('credits from adjustments with the reference type account (never customer)', () => {
     const posting = customerAdjust({ customerId: 9, amount: m('10'), direction: 'credit' });
-    expect(posting).toMatchObject({ kind: 'adjustment', refType: 'customer' });
+    expect(posting).toMatchObject({ kind: 'adjustment', refType: 'account' });
     expect(rows(posting)).toEqual([
       ['adjustments', '', '10.0000', '0.0000'],
-      ['customer_wallet', 'customer:9', '0.0000', '10.0000'],
+      ['customer_wallet', 'account:9', '0.0000', '10.0000'],
     ]);
   });
 
   it('debits as the exact mirror', () => {
     expect(rows(customerAdjust({ customerId: 9, amount: m('10'), direction: 'debit' }))).toEqual([
-      ['customer_wallet', 'customer:9', '10.0000', '0.0000'],
+      ['customer_wallet', 'account:9', '10.0000', '0.0000'],
       ['adjustments', '', '0.0000', '10.0000'],
     ]);
   });
@@ -119,25 +136,29 @@ describe('customerAdjust', () => {
 describe('topupChargeback', () => {
   it('claws back the credited amount, reverses the fee and books the dispute fee (gross 50, fee 1.50, dispute fee 15)', () => {
     const split = clawbackSplit({ gross: m('50'), fee: m('1.50'), disputed: m('50') });
-    const posting = topupChargeback({ owner: { type: 'customer', id: 4 }, ...split, disputeFee: m('15') });
+    const posting = topupChargeback({
+      owner: { accountId: 4, kind: 'customer_wallet' },
+      ...split,
+      disputeFee: m('15'),
+    });
     expect(posting).toMatchObject({ kind: 'chargeback', refType: 'dispute' });
     expect(rows(posting)).toEqual([
-      ['customer_wallet', 'customer:4', '48.5000', '0.0000'],
+      ['customer_wallet', 'account:4', '48.5000', '0.0000'],
       ['fee_income', '', '1.5000', '0.0000'],
       ['chargeback_loss', '', '15.0000', '0.0000'],
       ['gateway_clearing', '', '0.0000', '65.0000'],
     ]);
   });
 
-  it('debits the merchant wallet for a merchant top-up', () => {
+  it('debits the merchant wallet when the live wallet of the account is the merchant kind', () => {
     const posting = topupChargeback({
-      owner: { type: 'client', id: 11 },
+      owner: { accountId: 11, kind: 'client_wallet' },
       net: m('97'),
       fee: m('3'),
       disputeFee: m('0'),
     });
     expect(rows(posting)).toEqual([
-      ['client_wallet', 'client:11', '97.0000', '0.0000'],
+      ['client_wallet', 'account:11', '97.0000', '0.0000'],
       ['fee_income', '', '3.0000', '0.0000'],
       ['gateway_clearing', '', '0.0000', '100.0000'],
     ]);

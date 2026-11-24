@@ -1,4 +1,4 @@
-// Tests of the project's own lint rules (decisions 013, 016, 031): module boundaries with their two schema exceptions,
+// Tests of the project's own lint rules (decisions 013, 016, 031): module boundaries with their two schema exceptions and the ports one,
 // process.env only in src/config, no wall clock outside src/common/clock.ts, no console in src. Code strings are linted with the same config blocks that
 // eslint.config.mjs uses (scripts/eslint/structural-rules.mjs), without type information.
 import { join } from 'node:path';
@@ -79,6 +79,15 @@ describe('judgeImport', () => {
     expect(judgeImport('src/infra/db/schema.ts', 'src/modules/orders/application/x')).toBe('noModuleImport');
     expect(judgeImport('src/infra/db/schema.ts', 'src/modules/orders')).toBe('noModuleImport');
     expect(judgeImport('src/infra/db/client.ts', 'src/modules/orders/db/schema')).toBe('noModuleImport');
+  });
+
+  it('exception 3: a module may import a file of another module ports/ folder, and src/common and src/infra still may not', () => {
+    expect(judgeImport(ORDERS, 'src/modules/catalog/ports/rank-group-reads')).toBeUndefined();
+    expect(judgeImport(ORDERS, 'src/modules/catalog/ports/rank-group-reads.ts')).toBeUndefined();
+    expect(judgeImport(ORDERS, 'src/modules/catalog/ports')).toBe('deepImport');
+    expect(judgeImport(ORDERS, 'src/modules/catalog/application/ports/x')).toBe('deepImport');
+    expect(judgeImport('src/common/x.ts', 'src/modules/catalog/ports/rank-group-reads')).toBe('noModuleImport');
+    expect(judgeImport('src/infra/x.ts', 'src/modules/catalog/ports/rank-group-reads')).toBe('noModuleImport');
   });
 
   it('src/common and src/infra never import from src/modules, not even through an index', () => {

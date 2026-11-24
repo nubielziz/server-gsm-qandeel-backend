@@ -18,6 +18,11 @@ export interface RouteSnapshot {
   readonly surface: string;
   readonly access: string;
   readonly permission: string | null;
+  /**
+   * The rank the route serves (decision 064): `merchant` or `retail` by its access kind, `any` for a route open to every
+   * account, `null` for a route without an account session.
+   */
+  readonly rank: 'merchant' | 'retail' | 'any' | null;
   readonly errors: readonly string[];
   /** True for a route behind the anti-bot check (decision 034). */
   readonly turnstile?: boolean;

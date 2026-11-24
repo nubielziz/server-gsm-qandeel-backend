@@ -58,31 +58,32 @@ describe('uploadProblem', () => {
 });
 
 describe('attachProblem', () => {
-  const customer = { type: 'customer', id: 7 } as const;
-  const own = { ownerType: 'customer', ownerId: 7, area: 'tickets-42', mime: 'application/pdf', size: 1000 };
+  const sender = { type: 'account', id: 7 } as const;
+  const own = { ownerType: 'account', ownerId: 7, area: 'tickets-42', mime: 'application/pdf', size: 1000 };
 
   it('accepts the sender’s own file of an allowed type and size', () => {
-    expect(attachProblem(own, customer)).toBeUndefined();
+    expect(attachProblem(own, sender)).toBeUndefined();
   });
 
   it('refuses an unknown id, another owner’s file, another type and a file over 5 MiB', () => {
-    expect(attachProblem(undefined, customer)).toBe('unknown_file');
-    expect(attachProblem({ ...own, ownerId: 8 }, customer)).toBe('not_yours');
-    expect(attachProblem({ ...own, ownerType: 'client' }, customer)).toBe('not_yours');
-    expect(attachProblem({ ...own, mime: 'application/zip' }, customer)).toBe('type');
-    expect(attachProblem({ ...own, size: MAX_ATTACHMENT_BYTES + 1 }, customer)).toBe('too_large');
+    expect(attachProblem(undefined, sender)).toBe('unknown_file');
+    expect(attachProblem({ ...own, ownerId: 8 }, sender)).toBe('not_yours');
+    // A staff file with the sender's number is another owner's file, and so is an account with another number.
+    expect(attachProblem({ ...own, ownerType: 'staff' }, sender)).toBe('not_yours');
+    expect(attachProblem({ ...own, mime: 'application/zip' }, sender)).toBe('type');
+    expect(attachProblem({ ...own, size: MAX_ATTACHMENT_BYTES + 1 }, sender)).toBe('too_large');
   });
 
   it('with an area, accepts only the files of that area: another area of the same owner is not_yours', () => {
     const area = ticketUploadArea(42);
     expect(area).toBe('tickets-42');
-    expect(attachProblem(own, customer, area)).toBeUndefined();
-    expect(attachProblem({ ...own, area: 'receipts' }, customer, area)).toBe('not_yours');
-    expect(attachProblem({ ...own, area: 'files' }, customer, area)).toBe('not_yours');
-    expect(attachProblem({ ...own, area: 'tickets-43' }, customer, area)).toBe('not_yours');
-    expect(attachProblem({ ...own, area: 'tickets' }, customer, area)).toBe('not_yours');
+    expect(attachProblem(own, sender, area)).toBeUndefined();
+    expect(attachProblem({ ...own, area: 'receipts' }, sender, area)).toBe('not_yours');
+    expect(attachProblem({ ...own, area: 'files' }, sender, area)).toBe('not_yours');
+    expect(attachProblem({ ...own, area: 'tickets-43' }, sender, area)).toBe('not_yours');
+    expect(attachProblem({ ...own, area: 'tickets' }, sender, area)).toBe('not_yours');
     // Without an area (a signed-in requester, staff) the owner alone decides.
-    expect(attachProblem({ ...own, area: 'receipts' }, customer)).toBeUndefined();
-    expect(attachProblem(undefined, customer, area)).toBe('unknown_file');
+    expect(attachProblem({ ...own, area: 'receipts' }, sender)).toBeUndefined();
+    expect(attachProblem(undefined, sender, area)).toBe('unknown_file');
   });
 });

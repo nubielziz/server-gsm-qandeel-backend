@@ -1,8 +1,9 @@
 // Helpers for the order engine tests (feature 5): a world with merchants, funded wallets and services, a client for the portal's order
-// routes, and direct inserts of orders in a given state for the read and action tests.
+// routes, and direct inserts of orders in a given state for the read and action tests. The buyer of an order is an account
+// (`orders.account_id`); the door is `orders.source`.
 import { and, eq, sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
-import { type Database, schema as s } from '@src/infra/db';
+import { type Database, type DbExecutor, schema as s } from '@src/infra/db';
 import type { Order, OrderEvent } from '@src/modules/orders';
 import type { TestApp } from './app';
 import { openSession } from './auth';
@@ -34,18 +35,18 @@ export async function settledOf(db: Database, clientId: number): Promise<string>
     from ${s.ledgerEntries} entry
     join ${s.ledgerTransactions} tx on tx.id = entry.transaction_id
     join ${s.ledgerAccounts} hold on hold.id = entry.account_id
-    where hold.kind = 'client_hold' and hold.owner_type = 'client' and hold.currency = 'USD' and hold.owner_id = ${clientId}
+    where hold.kind = 'client_hold' and hold.owner_type = 'account' and hold.currency = 'USD' and hold.owner_id = ${clientId}
       and tx.kind = 'order_settle' and entry.amount > 0
       and not exists (select 1 from ${s.ledgerTransactions} reversal where reversal.idempotency_key = 'reverse:' || tx.id::text)`);
   return result.rows[0]?.settled ?? '0.0000';
 }
 
-/** The wallet figures of a merchant as the ledger holds them. */
+/** The wallet figures of a merchant-rank account as the ledger holds them (the merchant wallet and its hold). */
 export async function walletOf(db: Database, clientId: number): Promise<{ wallet: string; hold: string }> {
   const rows = await db
     .select({ kind: s.ledgerAccounts.kind, balance: s.ledgerAccounts.balance })
     .from(s.ledgerAccounts)
-    .where(and(eq(s.ledgerAccounts.ownerType, 'client'), eq(s.ledgerAccounts.ownerId, clientId)));
+    .where(and(eq(s.ledgerAccounts.ownerType, 'account'), eq(s.ledgerAccounts.ownerId, clientId)));
   return {
     wallet: rows.find((row) => row.kind === 'client_wallet')?.balance ?? '0.0000',
     hold: rows.find((row) => row.kind === 'client_hold')?.balance ?? '0.0000',
@@ -178,7 +179,7 @@ export async function ordersWorld(db: Database): Promise<OrdersWorld> {
 
 /** A merchant portal session with helpers for the order routes (cookie, CSRF token, no Origin: the guards judge the session). */
 export async function portalFor(t: TestApp, clientId: number) {
-  const session = await openSession(t, { type: 'client', id: clientId });
+  const session = await openSession(t, { type: 'account', id: clientId });
   const get = (url: string) => t.app.inject({ method: 'GET', url, headers: session.headers });
   const post = (url: string, payload: unknown = {}) =>
     t.app.inject({ method: 'POST', url, headers: session.mutationHeaders, payload: payload as never });
@@ -189,28 +190,72 @@ export async function portalFor(t: TestApp, clientId: number) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test bodies are untyped JSON: the default keeps assertions short
 export const json = (res: LightMyRequestResponse): any => res.json();
 
+/** What {@link insertOrderRow} takes: the order's columns, and the buyer under any of three names. */
+export type OrderRowValues = Omit<Partial<typeof s.orders.$inferInsert>, 'clientId' | 'customerId'> &
+  Pick<typeof s.orders.$inferInsert, 'serviceId'> & {
+    /** The buyer, an account id. `clientId` and `customerId` are the same thing under the names the old helper took. */
+    readonly clientId?: number;
+    readonly customerId?: number;
+  };
+
 /**
- * Inserts an order straight into the table, in the given state, for tests of the reads and the actions that do not need the
- * placement path. A hold is posted for B2B orders by the caller when the test needs money to move.
+ * Inserts an order that still names an old customer number, the way a migrated row stands.
+ *
+ * Why: the old customer tables are frozen (decision 064), so a new row cannot name an old customer through the foreign key. A test that
+ * proves the old number is never read as the buyer writes the old customer and the order with the row triggers and the foreign keys off
+ * (the test database's role is a superuser), in one transaction.
+ *
+ * Side effects: inserts one `customers` row with the given id and one `orders` row.
  *
  * @param db the test database
- * @param values the order columns (`clientId`, `serviceId`, prices, state, ...)
- * @returns the stored row
+ * @param oldCustomerId the number of the old customer the order names (also the id of the row made for it)
+ * @param values the order columns (`accountId`, `serviceId`, ...); `retiredCustomerId` is set here
+ * @returns the stored order
  */
-export async function insertOrderRow(
+export async function insertMigratedOrderRow(
   db: Database,
-  values: Partial<typeof s.orders.$inferInsert> & Pick<typeof s.orders.$inferInsert, 'serviceId'>,
+  oldCustomerId: number,
+  values: OrderRowValues,
 ): Promise<Order> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`set local session_replication_role = replica`);
+    await tx.execute(
+      sql`insert into customers (id, email, name, has_account) overriding system value
+          values (${oldCustomerId}, ${`old-customer-${oldCustomerId}@mail.example`}, 'Old Customer', true)`,
+    );
+    return insertOrderRow(tx, { ...values, retiredCustomerId: oldCustomerId });
+  });
+}
+
+/**
+ * Inserts an order straight into the table, in the given state, for tests of the reads and the actions that do not need the
+ * placement path. A hold is posted for hold-and-settle orders by the caller when the test needs money to move.
+ *
+ * Why: the buyer column is `account_id`; the door is `source`. A hold-and-settle order (any door but `store`) also writes
+ * `client_id` (the same account) during the expand release, and a storefront order leaves it empty (`orders_door_check`).
+ *
+ * @param db the test database, or a transaction of it
+ * @param values the order columns (`accountId`, `serviceId`, prices, state, ...); `clientId` and `customerId` are accepted as names of `accountId`
+ * @returns the stored row
+ * @throws {Error} when no buyer is given
+ */
+export async function insertOrderRow(db: DbExecutor, values: OrderRowValues): Promise<Order> {
+  const { clientId, customerId, ...columns } = values;
+  const buyer = columns.accountId ?? clientId ?? customerId;
+  if (buyer === undefined) throw new Error('An order needs a buyer: pass accountId.');
+  const source = columns.source ?? 'portal';
   const [row] = await db
     .insert(s.orders)
     .values({
       type: 'imei',
-      source: 'portal',
+      source,
       imei: IMEIS[0],
       unitPrice: '10.0000',
       totalPrice: '10.0000',
       currency: 'USD',
-      ...values,
+      accountId: buyer,
+      ...(source === 'store' ? {} : { legacyClientId: buyer }),
+      ...columns,
     })
     .returning();
   return row!;

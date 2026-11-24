@@ -10,22 +10,22 @@
     "rowFlags": "the same files may add Turnstile to a public client or store map row (rowFlags, feature 24A); the endpoint then has turnstile true and rowFlag { file, spec }"
   },
   "counts": {
-    "rows": 392,
+    "rows": 405,
     "tables": 66,
     "scenarios": 13,
     "surfaces": 9,
     "moneyEvents": 13,
     "accounts": 14,
-    "endpoints": 500,
+    "endpoints": 513,
     "map": {
       "rows": 274,
       "endpoints": 382
     },
     "additions": {
-      "rows": 118,
-      "endpoints": 118
+      "rows": 131,
+      "endpoints": 131
     },
-    "frontendRoutes": 319,
+    "frontendRoutes": 312,
     "bySurface": {
       "dhru": {
         "rows": 8,
@@ -40,8 +40,8 @@
         "endpoints": 65
       },
       "admin": {
-        "rows": 235,
-        "endpoints": 343
+        "rows": 245,
+        "endpoints": 353
       },
       "hooks": {
         "rows": 3,
@@ -56,8 +56,8 @@
         "endpoints": 4
       },
       "store": {
-        "rows": 58,
-        "endpoints": 58
+        "rows": 61,
+        "endpoints": 61
       },
       "system": {
         "rows": 4,
@@ -66,8 +66,8 @@
     },
     "byModule": {
       "money": {
-        "rows": 59,
-        "endpoints": 75
+        "rows": 62,
+        "endpoints": 78
       },
       "catalog": {
         "rows": 30,
@@ -82,8 +82,8 @@
         "endpoints": 59
       },
       "identity": {
-        "rows": 56,
-        "endpoints": 70
+        "rows": 59,
+        "endpoints": 73
       },
       "commissions": {
         "rows": 6,
@@ -106,8 +106,8 @@
         "endpoints": 17
       },
       "customers": {
-        "rows": 28,
-        "endpoints": 31
+        "rows": 35,
+        "endpoints": 38
       },
       "support": {
         "rows": 23,
@@ -3548,7 +3548,7 @@
       "description": "Active sessions of staff members and merchants.",
       "frontend": {
         "file": "src/features/access/api/sessions.ts",
-        "line": 23,
+        "line": 20,
         "fn": "listSessions"
       }
     },
@@ -3581,7 +3581,7 @@
       "description": "End a session.",
       "frontend": {
         "file": "src/features/access/api/sessions.ts",
-        "line": 33,
+        "line": 30,
         "fn": "revokeSession"
       }
     },
@@ -3746,9 +3746,9 @@
       "module": "identity",
       "description": "Merchants: creation, group, status and blocking.",
       "frontend": {
-        "file": "src/features/merchants/api/clients.ts",
-        "line": 23,
-        "fn": "listClients"
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 38,
+        "fn": "listAccounts"
       }
     },
     {
@@ -3779,9 +3779,9 @@
       "module": "identity",
       "description": "Merchants: creation, group, status and blocking.",
       "frontend": {
-        "file": "src/features/merchants/api/clients.ts",
-        "line": 32,
-        "fn": "getClient"
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 58,
+        "fn": "getAccount"
       }
     },
     {
@@ -3812,9 +3812,9 @@
       "module": "identity",
       "description": "Merchants: creation, group, status and blocking.",
       "frontend": {
-        "file": "src/features/merchants/api/clients.ts",
-        "line": 42,
-        "fn": "createClient"
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 70,
+        "fn": "createAccount"
       }
     },
     {
@@ -3845,9 +3845,9 @@
       "module": "identity",
       "description": "Merchants: creation, group, status and blocking.",
       "frontend": {
-        "file": "src/features/merchants/api/clients.ts",
-        "line": 56,
-        "fn": "updateClient"
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 83,
+        "fn": "updateAccount"
       }
     },
     {
@@ -3878,9 +3878,9 @@
       "module": "money",
       "description": "Merchant wallet: available balance, reserved balance and limit.",
       "frontend": {
-        "file": "src/features/merchants/api/wallet.ts",
-        "line": 28,
-        "fn": "getClientWallet"
+        "file": "src/features/accounts/api/wallet.ts",
+        "line": 30,
+        "fn": "getAccountWallet"
       }
     },
     {
@@ -3912,9 +3912,9 @@
       "module": "money",
       "description": "Merchant account statement.",
       "frontend": {
-        "file": "src/features/merchants/api/wallet.ts",
-        "line": 38,
-        "fn": "listClientStatement"
+        "file": "src/features/accounts/api/wallet.ts",
+        "line": 40,
+        "fn": "listAccountStatement"
       }
     },
     {
@@ -3947,9 +3947,9 @@
       "module": "money",
       "description": "Manually add to or deduct from the wallet, with a reason.",
       "frontend": {
-        "file": "src/features/merchants/api/wallet.ts",
+        "file": "src/features/accounts/api/wallet.ts",
         "line": 56,
-        "fn": "adjustClientWallet"
+        "fn": "adjustAccountWallet"
       }
     },
     {
@@ -3980,9 +3980,9 @@
       "module": "money",
       "description": "Credit limit (overdraft).",
       "frontend": {
-        "file": "src/features/merchants/api/wallet.ts",
-        "line": 73,
-        "fn": "setClientCreditLimit"
+        "file": "src/features/accounts/api/wallet.ts",
+        "line": 77,
+        "fn": "setAccountCreditLimit"
       }
     },
     {
@@ -4280,9 +4280,9 @@
       "module": "identity",
       "description": "API keys of a merchant.",
       "frontend": {
-        "file": "src/features/merchants/api/apiKeys.ts",
+        "file": "src/features/accounts/api/apiKeys.ts",
         "line": 17,
-        "fn": "listClientApiKeys"
+        "fn": "listAccountApiKeys"
       }
     },
     {
@@ -4314,7 +4314,7 @@
       "module": "identity",
       "description": "Revoke a merchant API key.",
       "frontend": {
-        "file": "src/features/merchants/api/apiKeys.ts",
+        "file": "src/features/accounts/api/apiKeys.ts",
         "line": 27,
         "fn": "revokeApiKey"
       }
@@ -4347,9 +4347,9 @@
       "module": "catalog",
       "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
-        "file": "src/features/merchants/api/groups.ts",
+        "file": "src/features/accounts/api/ranks.ts",
         "line": 22,
-        "fn": "listClientGroups"
+        "fn": "listRanks"
       }
     },
     {
@@ -4380,9 +4380,9 @@
       "module": "catalog",
       "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
-        "file": "src/features/merchants/api/groups.ts",
+        "file": "src/features/accounts/api/ranks.ts",
         "line": 31,
-        "fn": "getClientGroup"
+        "fn": "getRank"
       }
     },
     {
@@ -4413,9 +4413,9 @@
       "module": "catalog",
       "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
-        "file": "src/features/merchants/api/groups.ts",
+        "file": "src/features/accounts/api/ranks.ts",
         "line": 40,
-        "fn": "createClientGroup"
+        "fn": "createRank"
       }
     },
     {
@@ -4446,9 +4446,9 @@
       "module": "catalog",
       "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
-        "file": "src/features/merchants/api/groups.ts",
+        "file": "src/features/accounts/api/ranks.ts",
         "line": 50,
-        "fn": "updateClientGroup"
+        "fn": "updateRank"
       }
     },
     {
@@ -4479,9 +4479,9 @@
       "module": "catalog",
       "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
-        "file": "src/features/merchants/api/groups.ts",
+        "file": "src/features/accounts/api/ranks.ts",
         "line": 59,
-        "fn": "deleteClientGroup"
+        "fn": "deleteRank"
       }
     },
     {
@@ -4941,9 +4941,9 @@
       "module": "catalog",
       "description": "A special price for a merchant on a service.",
       "frontend": {
-        "file": "src/features/merchants/api/prices.ts",
-        "line": 21,
-        "fn": "listClientPrices"
+        "file": "src/features/accounts/api/prices.ts",
+        "line": 22,
+        "fn": "listAccountPrices"
       }
     },
     {
@@ -4974,9 +4974,9 @@
       "module": "catalog",
       "description": "A special price for a merchant on a service.",
       "frontend": {
-        "file": "src/features/merchants/api/prices.ts",
-        "line": 31,
-        "fn": "createClientPrice"
+        "file": "src/features/accounts/api/prices.ts",
+        "line": 32,
+        "fn": "createAccountPrice"
       }
     },
     {
@@ -5007,9 +5007,9 @@
       "module": "catalog",
       "description": "A special price for a merchant on a service.",
       "frontend": {
-        "file": "src/features/merchants/api/prices.ts",
-        "line": 40,
-        "fn": "updateClientPrice"
+        "file": "src/features/accounts/api/prices.ts",
+        "line": 41,
+        "fn": "updateAccountPrice"
       }
     },
     {
@@ -5040,9 +5040,9 @@
       "module": "catalog",
       "description": "A special price for a merchant on a service.",
       "frontend": {
-        "file": "src/features/merchants/api/prices.ts",
-        "line": 49,
-        "fn": "deleteClientPrice"
+        "file": "src/features/accounts/api/prices.ts",
+        "line": 54,
+        "fn": "deleteAccountPrice"
       }
     },
     {
@@ -5341,7 +5341,7 @@
       "description": "Orders and their queues (pending, manual, needs_attention, verification, review); filter by channel=b2b|b2c.",
       "frontend": {
         "file": "src/features/orders/api/orders.ts",
-        "line": 22,
+        "line": 23,
         "fn": "listOrders"
       }
     },
@@ -5374,7 +5374,7 @@
       "description": "Orders and their queues (pending, manual, needs_attention, verification, review); filter by channel=b2b|b2c.",
       "frontend": {
         "file": "src/features/orders/api/orders.ts",
-        "line": 32,
+        "line": 33,
         "fn": "getOrder"
       }
     },
@@ -5407,7 +5407,7 @@
       "description": "The full order timeline.",
       "frontend": {
         "file": "src/features/orders/api/orders.ts",
-        "line": 42,
+        "line": 43,
         "fn": "listOrderEvents"
       }
     },
@@ -5746,7 +5746,7 @@
       "description": "Export a CSV file according to the filters.",
       "frontend": {
         "file": "src/features/orders/api/orders.ts",
-        "line": 52,
+        "line": 53,
         "fn": "exportOrders"
       }
     },
@@ -5878,7 +5878,7 @@
       "description": "Download a file through a signed link.",
       "frontend": {
         "file": "src/features/orders/api/orders.ts",
-        "line": 61,
+        "line": 62,
         "fn": "orderFileUrl"
       }
     },
@@ -6612,7 +6612,7 @@
       "description": "Invoices; creating one issues a manual invoice for a merchant.",
       "frontend": {
         "file": "src/features/finance/api/invoices.ts",
-        "line": 19,
+        "line": 20,
         "fn": "listInvoices"
       }
     },
@@ -6645,7 +6645,7 @@
       "description": "Invoices; creating one issues a manual invoice for a merchant.",
       "frontend": {
         "file": "src/features/finance/api/invoices.ts",
-        "line": 28,
+        "line": 29,
         "fn": "getInvoice"
       }
     },
@@ -6678,7 +6678,7 @@
       "description": "Invoices; creating one issues a manual invoice for a merchant.",
       "frontend": {
         "file": "src/features/finance/api/invoices.ts",
-        "line": 38,
+        "line": 40,
         "fn": "createInvoice"
       }
     },
@@ -6711,7 +6711,7 @@
       "description": "Payments and the manual review queue.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 22,
+        "line": 24,
         "fn": "listPayments"
       }
     },
@@ -6744,7 +6744,7 @@
       "description": "Payments and the manual review queue.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 32,
+        "line": 34,
         "fn": "getPayment"
       }
     },
@@ -6779,7 +6779,7 @@
       "description": "Approve a manual payment and top up the wallet.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 42,
+        "line": 44,
         "fn": "approvePayment"
       }
     },
@@ -6812,7 +6812,7 @@
       "description": "Reject a payment with a reason.",
       "frontend": {
         "file": "src/features/finance/api/payments.ts",
-        "line": 51,
+        "line": 53,
         "fn": "rejectPayment"
       }
     },
@@ -7345,7 +7345,7 @@
       "description": "Balances, overdraft and reserved amounts.",
       "frontend": {
         "file": "src/features/finance/api/reports.ts",
-        "line": 33,
+        "line": 35,
         "fn": "getWalletExposure"
       }
     },
@@ -7413,7 +7413,7 @@
       "description": "Top merchants by volume and by profit.",
       "frontend": {
         "file": "src/features/dashboard/api/dashboard.ts",
-        "line": 42,
+        "line": 43,
         "fn": "getTopClients"
       }
     },
@@ -7446,9 +7446,9 @@
       "module": "money",
       "description": "Official account statement for a merchant.",
       "frontend": {
-        "file": "src/features/merchants/api/wallet.ts",
-        "line": 83,
-        "fn": "downloadClientStatement"
+        "file": "src/features/accounts/api/wallet.ts",
+        "line": 141,
+        "fn": "downloadAccountStatement"
       }
     },
     {
@@ -7513,7 +7513,7 @@
       "description": "Bull Board UI for monitoring the queues.",
       "frontend": {
         "file": "src/features/dashboard/api/dashboard.ts",
-        "line": 55,
+        "line": 56,
         "fn": "queuesBoardUrl"
       }
     },
@@ -9060,11 +9060,7 @@
       },
       "module": "customers",
       "description": "Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification.",
-      "frontend": {
-        "file": "src/features/customers/api/customers.ts",
-        "line": 28,
-        "fn": "listCustomers"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/customers/:id",
@@ -9098,11 +9094,7 @@
       },
       "module": "customers",
       "description": "Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification.",
-      "frontend": {
-        "file": "src/features/customers/api/customers.ts",
-        "line": 38,
-        "fn": "getCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers",
@@ -9136,11 +9128,7 @@
       },
       "module": "customers",
       "description": "Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification.",
-      "frontend": {
-        "file": "src/features/customers/api/customers.ts",
-        "line": 49,
-        "fn": "createCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "PATCH /admin/customers/:id",
@@ -9174,11 +9162,7 @@
       },
       "module": "customers",
       "description": "Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification.",
-      "frontend": {
-        "file": "src/features/customers/api/customers.ts",
-        "line": 59,
-        "fn": "updateCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/account",
@@ -9211,11 +9195,7 @@
       },
       "module": "customers",
       "description": "Create an account for a customer who bought as a guest: earlier orders are linked to the account and the customer receives a link to choose a password.",
-      "frontend": {
-        "file": "src/features/customers/api/accounts.ts",
-        "line": 17,
-        "fn": "createCustomerAccount"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/password",
@@ -9248,11 +9228,7 @@
       },
       "module": "customers",
       "description": "Send a password-setting link, or set a temporary password that must be changed at first sign-in; the current password is never shown and never enters the audit log, and the sessions can optionally be ended.",
-      "frontend": {
-        "file": "src/features/customers/api/accounts.ts",
-        "line": 32,
-        "fn": "setCustomerPassword"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/sessions/revoke",
@@ -9282,11 +9258,7 @@
       },
       "module": "customers",
       "description": "Sign the customer out of all devices: sets revoked_at on every active session.",
-      "frontend": {
-        "file": "src/features/customers/api/accounts.ts",
-        "line": 45,
-        "fn": "revokeCustomerSessions"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/suspend",
@@ -9317,11 +9289,7 @@
       },
       "module": "customers",
       "description": "Suspend the account with a reason: no sign-in and no new orders, orders in progress still complete, and sessions are ended; a temporary suspension adds nothing to the blocklist.",
-      "frontend": {
-        "file": "src/features/customers/api/accounts.ts",
-        "line": 55,
-        "fn": "suspendCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/reactivate",
@@ -9351,11 +9319,7 @@
       },
       "module": "customers",
       "description": "Reactivate a suspended account; the customer signs in again.",
-      "frontend": {
-        "file": "src/features/customers/api/accounts.ts",
-        "line": 64,
-        "fn": "reactivateCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/block",
@@ -9386,11 +9350,7 @@
       },
       "module": "customers",
       "description": "Block a customer for fraud, or lift the block, with a reason; blocking adds the customer fingerprint to the blocklist (use suspend for a temporary stop).",
-      "frontend": {
-        "file": "src/features/customers/api/accounts.ts",
-        "line": 74,
-        "fn": "blockCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/customers/:id/export",
@@ -9422,11 +9382,7 @@
       },
       "module": "customers",
       "description": "Export the customer data for a data-protection request.",
-      "frontend": {
-        "file": "src/features/customers/api/privacy.ts",
-        "line": 9,
-        "fn": "exportCustomerData"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/customers/:id/anonymize",
@@ -9457,11 +9413,7 @@
       },
       "module": "customers",
       "description": "Anonymize the name, email and IMEI while keeping payment records for accounting.",
-      "frontend": {
-        "file": "src/features/customers/api/privacy.ts",
-        "line": 19,
-        "fn": "anonymizeCustomer"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/data-requests",
@@ -9491,8 +9443,8 @@
       "module": "risk",
       "description": "Data export and deletion requests and the deadline to fulfil them.",
       "frontend": {
-        "file": "src/features/customers/api/dataRequests.ts",
-        "line": 19,
+        "file": "src/features/accounts/api/dataRequests.ts",
+        "line": 21,
         "fn": "listDataRequests"
       }
     },
@@ -9524,8 +9476,8 @@
       "module": "risk",
       "description": "Data export and deletion requests and the deadline to fulfil them.",
       "frontend": {
-        "file": "src/features/customers/api/dataRequests.ts",
-        "line": 28,
+        "file": "src/features/accounts/api/dataRequests.ts",
+        "line": 30,
         "fn": "getDataRequest"
       }
     },
@@ -9557,8 +9509,8 @@
       "module": "risk",
       "description": "Data export and deletion requests and the deadline to fulfil them.",
       "frontend": {
-        "file": "src/features/customers/api/dataRequests.ts",
-        "line": 37,
+        "file": "src/features/accounts/api/dataRequests.ts",
+        "line": 39,
         "fn": "updateDataRequest"
       }
     },
@@ -10800,7 +10752,7 @@
       "description": "VAT due by country and period, computed from ledger entries rather than invoices.",
       "frontend": {
         "file": "src/features/finance/api/reports.ts",
-        "line": 43,
+        "line": 45,
         "fn": "getVatReport"
       }
     },
@@ -10905,7 +10857,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 33,
+        "line": 34,
         "fn": "listSupportTickets"
       }
     },
@@ -10939,7 +10891,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 46,
+        "line": 47,
         "fn": "getSupportTicket"
       }
     },
@@ -10973,7 +10925,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 56,
+        "line": 57,
         "fn": "updateSupportTicket"
       }
     },
@@ -11008,7 +10960,7 @@
       "description": "Reply to the customer by email or Telegram.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 67,
+        "line": 68,
         "fn": "replyToTicket"
       }
     },
@@ -11041,7 +10993,7 @@
       "description": "Internal note that the customer does not see.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 77,
+        "line": 78,
         "fn": "addTicketNote"
       }
     },
@@ -11663,7 +11615,7 @@
       "description": "Sales funnel: check, then payment started, then paid, then delivered.",
       "frontend": {
         "file": "src/features/finance/api/reports.ts",
-        "line": 54,
+        "line": 56,
         "fn": "getFunnel"
       }
     },
@@ -12855,9 +12807,9 @@
       "module": "identity",
       "description": "Send a merchant a set-password or invitation link, or set a temporary password that must be changed at the next sign-in.",
       "frontend": {
-        "file": "src/features/merchants/api/security.ts",
+        "file": "src/features/accounts/api/security.ts",
         "line": 12,
-        "fn": "setClientPassword"
+        "fn": "setAccountPassword"
       },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
@@ -12895,9 +12847,9 @@
       "module": "identity",
       "description": "Turn off a merchant's two-factor sign-in and end their sessions.",
       "frontend": {
-        "file": "src/features/merchants/api/security.ts",
+        "file": "src/features/accounts/api/security.ts",
         "line": 25,
-        "fn": "resetClientTwoFactor"
+        "fn": "resetAccountTwoFactor"
       },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
@@ -12934,9 +12886,9 @@
       "module": "identity",
       "description": "Sign a merchant out of every device.",
       "frontend": {
-        "file": "src/features/merchants/api/security.ts",
+        "file": "src/features/accounts/api/security.ts",
         "line": 34,
-        "fn": "revokeClientSessions"
+        "fn": "revokeAccountSessions"
       },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
@@ -12975,9 +12927,9 @@
       "module": "identity",
       "description": "Send the merchant a new email verification link.",
       "frontend": {
-        "file": "src/features/merchants/api/security.ts",
+        "file": "src/features/accounts/api/security.ts",
         "line": 43,
-        "fn": "resendClientVerification"
+        "fn": "resendAccountVerification"
       },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
@@ -13014,9 +12966,9 @@
       "module": "identity",
       "description": "Create an API key for a merchant; the key is shown once.",
       "frontend": {
-        "file": "src/features/merchants/api/apiKeys.ts",
+        "file": "src/features/accounts/api/apiKeys.ts",
         "line": 39,
-        "fn": "createClientApiKey"
+        "fn": "createAccountApiKey"
       },
       "addition": {
         "file": "scripts/map-additions/20.mjs",
@@ -13053,7 +13005,7 @@
       "module": "identity",
       "description": "Change a merchant key's per-minute limit and allowed addresses.",
       "frontend": {
-        "file": "src/features/merchants/api/apiKeys.ts",
+        "file": "src/features/accounts/api/apiKeys.ts",
         "line": 56,
         "fn": "updateApiKey"
       },
@@ -13498,11 +13450,7 @@
       },
       "module": "money",
       "description": "A customer store balance: balance, hold state and pending top-ups.",
-      "frontend": {
-        "file": "src/features/customers/api/wallet.ts",
-        "line": 31,
-        "fn": "getCustomerWallet"
-      },
+      "frontend": null,
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -13537,11 +13485,7 @@
       },
       "module": "money",
       "description": "A customer balance statement.",
-      "frontend": {
-        "file": "src/features/customers/api/wallet.ts",
-        "line": 41,
-        "fn": "listCustomerWalletStatement"
-      },
+      "frontend": null,
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -13577,11 +13521,7 @@
       },
       "module": "money",
       "description": "Add to or deduct from a customer balance by hand, with a reason.",
-      "frontend": {
-        "file": "src/features/customers/api/wallet.ts",
-        "line": 60,
-        "fn": "adjustCustomerWallet"
-      },
+      "frontend": null,
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -13616,11 +13556,7 @@
       },
       "module": "money",
       "description": "Put a customer balance on hold, with a reason.",
-      "frontend": {
-        "file": "src/features/customers/api/wallet.ts",
-        "line": 78,
-        "fn": "freezeCustomerWallet"
-      },
+      "frontend": null,
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -13655,11 +13591,7 @@
       },
       "module": "money",
       "description": "Lift the hold on a customer balance.",
-      "frontend": {
-        "file": "src/features/customers/api/wallet.ts",
-        "line": 96,
-        "fn": "unfreezeCustomerWallet"
-      },
+      "frontend": null,
       "addition": {
         "file": "scripts/map-additions/21.mjs",
         "spec": "B-TBD customer-wallet-routes"
@@ -13683,7 +13615,7 @@
       "stage": 21,
       "tables": [
         "ledger_accounts",
-        "customers"
+        "clients"
       ],
       "dhruResponse": null,
       "origin": {
@@ -15278,7 +15210,7 @@
       "description": "Mark the requester's messages as seen.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 88,
+        "line": 89,
         "fn": "markTicketRead"
       },
       "addition": {
@@ -15319,7 +15251,7 @@
       "description": "Upload an attachment for a reply or a note.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 99,
+        "line": 100,
         "fn": "uploadTicketFile"
       },
       "addition": {
@@ -15359,7 +15291,7 @@
       "description": "Download an attachment of the ticket (presigned link).",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 112,
+        "line": 113,
         "fn": "ticketFileUrl"
       },
       "addition": {
@@ -17269,6 +17201,518 @@
         "spec": "B241"
       },
       "successStatus": 200
+    },
+    {
+      "key": "GET /admin/clients/counts",
+      "method": "GET",
+      "path": "/admin/clients/counts",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "The counts of accounts in one aggregate: all, retail, merchant, guests, by status and invitations pending.",
+      "access": "staff-permission",
+      "permission": "clients:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:read",
+      "stage": 48,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/clients/counts",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/clients/counts"
+      },
+      "module": "identity",
+      "description": "The counts of accounts in one aggregate: all, retail, merchant, guests, by status and invitations pending.",
+      "frontend": {
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 48,
+        "fn": "getAccountCounts"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/legacy-accounts/:type/:id",
+      "method": "GET",
+      "path": "/admin/legacy-accounts/:type/:id",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Find the account an old merchant or customer number belongs to now.",
+      "access": "staff-permission",
+      "permission": "clients:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:read",
+      "stage": 48,
+      "tables": [
+        "account_legacy_ids"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/legacy-accounts/:type/:id",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/legacy-accounts/:type/:id"
+      },
+      "module": "identity",
+      "description": "Find the account an old merchant or customer number belongs to now.",
+      "frontend": {
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 127,
+        "fn": "findLegacyAccount"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/clients/:id/account",
+      "method": "POST",
+      "path": "/admin/clients/:id/account",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Make a login account of a guest: send a set-password link or set a temporary password.",
+      "access": "staff-permission",
+      "permission": "clients:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:update",
+      "stage": 48,
+      "tables": [
+        "clients",
+        "auth_tokens",
+        "notifications",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/account",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/account"
+      },
+      "module": "identity",
+      "description": "Make a login account of a guest: send a set-password link or set a temporary password.",
+      "frontend": {
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 94,
+        "fn": "makeAccount"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/clients/:id/rank",
+      "method": "POST",
+      "path": "/admin/clients/:id/rank",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Change the rank of an account (Owner only, with an Idempotency-Key): across kinds the balance moves to the wallet of the new kind and the sessions end.",
+      "access": "staff-permission",
+      "permission": "clients:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:update",
+      "stage": 48,
+      "tables": [
+        "clients",
+        "client_groups",
+        "ledger_accounts",
+        "ledger_transactions",
+        "ledger_entries",
+        "account_rank_changes",
+        "sessions",
+        "api_keys",
+        "auth_tokens",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/rank",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/rank"
+      },
+      "module": "money",
+      "description": "Change the rank of an account (Owner only, with an Idempotency-Key): across kinds the balance moves to the wallet of the new kind and the sessions end.",
+      "frontend": {
+        "file": "src/features/accounts/api/accounts.ts",
+        "line": 106,
+        "fn": "changeAccountRank"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/clients/:id/block",
+      "method": "POST",
+      "path": "/admin/clients/:id/block",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Block an account for fraud, or lift the block, with a reason; blocking adds its email and the card and IMEI fingerprints of its shop orders to the blocklist.",
+      "access": "staff-permission",
+      "permission": "clients:block",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:block",
+      "stage": 48,
+      "tables": [
+        "clients",
+        "blocklist_entries",
+        "sessions",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/block",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/block"
+      },
+      "module": "customers",
+      "description": "Block an account for fraud, or lift the block, with a reason; blocking adds its email and the card and IMEI fingerprints of its shop orders to the blocklist.",
+      "frontend": {
+        "file": "src/features/accounts/api/privacy.ts",
+        "line": 22,
+        "fn": "blockAccount"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "GET /admin/clients/:id/privacy",
+      "method": "GET",
+      "path": "/admin/clients/:id/privacy",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "The privacy facts of an account: the marketing choice, the consents of its latest shop order and its risk signals.",
+      "access": "staff-permission",
+      "permission": "clients:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "clients:read",
+      "stage": 48,
+      "tables": [
+        "clients",
+        "consent_records",
+        "checkout_sessions",
+        "risk_assessments"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/clients/:id/privacy",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/clients/:id/privacy"
+      },
+      "module": "customers",
+      "description": "The privacy facts of an account: the marketing choice, the consents of its latest shop order and its risk signals.",
+      "frontend": {
+        "file": "src/features/accounts/api/privacy.ts",
+        "line": 11,
+        "fn": "getAccountPrivacy"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/clients/:id/export",
+      "method": "GET",
+      "path": "/admin/clients/:id/export",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Export the data of an account for a data-protection request.",
+      "access": "staff-permission",
+      "permission": "customers:privacy",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:privacy",
+      "stage": 48,
+      "tables": [
+        "clients",
+        "orders",
+        "checkout_sessions",
+        "consent_records",
+        "support_tickets",
+        "files",
+        "data_requests"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/clients/:id/export",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/clients/:id/export"
+      },
+      "module": "customers",
+      "description": "Export the data of an account for a data-protection request.",
+      "frontend": {
+        "file": "src/features/accounts/api/privacy.ts",
+        "line": 33,
+        "fn": "exportAccountData"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/clients/:id/anonymize",
+      "method": "POST",
+      "path": "/admin/clients/:id/anonymize",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Anonymize the name, email and IMEI of a retail account while keeping the payment records for accounting.",
+      "access": "staff-permission",
+      "permission": "customers:privacy",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customers:privacy",
+      "stage": 48,
+      "tables": [
+        "clients",
+        "data_requests",
+        "sessions",
+        "api_keys",
+        "ledger_accounts",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/anonymize",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/anonymize"
+      },
+      "module": "customers",
+      "description": "Anonymize the name, email and IMEI of a retail account while keeping the payment records for accounting.",
+      "frontend": {
+        "file": "src/features/accounts/api/privacy.ts",
+        "line": 45,
+        "fn": "anonymizeAccount"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 204
+    },
+    {
+      "key": "POST /admin/clients/:id/wallet/freeze",
+      "method": "POST",
+      "path": "/admin/clients/:id/wallet/freeze",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Put the live wallet of an account on hold, with a reason and an Idempotency-Key.",
+      "access": "staff-permission",
+      "permission": "wallet:adjust",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:adjust",
+      "stage": 48,
+      "tables": [
+        "ledger_accounts",
+        "wallet_action_keys",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/wallet/freeze",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/wallet/freeze"
+      },
+      "module": "money",
+      "description": "Put the live wallet of an account on hold, with a reason and an Idempotency-Key.",
+      "frontend": {
+        "file": "src/features/accounts/api/wallet.ts",
+        "line": 99,
+        "fn": "freezeAccountWallet"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/clients/:id/wallet/unfreeze",
+      "method": "POST",
+      "path": "/admin/clients/:id/wallet/unfreeze",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "clients",
+      "descriptionAr": "Lift the hold on the live wallet of an account, with an Idempotency-Key.",
+      "access": "staff-permission",
+      "permission": "wallet:adjust",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "wallet:adjust",
+      "stage": 48,
+      "tables": [
+        "ledger_accounts",
+        "wallet_action_keys",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/clients/:id/wallet/unfreeze",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/clients/:id/wallet/unfreeze"
+      },
+      "module": "money",
+      "description": "Lift the hold on the live wallet of an account, with an Idempotency-Key.",
+      "frontend": {
+        "file": "src/features/accounts/api/wallet.ts",
+        "line": 120,
+        "fn": "unfreezeAccountWallet"
+      },
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /store/v1/me/2fa/setup",
+      "method": "POST",
+      "path": "/store/v1/me/2fa/setup",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "A new authenticator secret with a QR code for the signed-in account (a password is needed first).",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customer-session",
+      "stage": 48,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/2fa/setup",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/2fa/setup"
+      },
+      "module": "customers",
+      "description": "A new authenticator secret with a QR code for the signed-in account (a password is needed first).",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      }
+    },
+    {
+      "key": "POST /store/v1/me/2fa/enable",
+      "method": "POST",
+      "path": "/store/v1/me/2fa/enable",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "Turn on two-factor sign-in for the signed-in account after confirming a code.",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customer-session",
+      "stage": 48,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/2fa/enable",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/2fa/enable"
+      },
+      "module": "customers",
+      "description": "Turn on two-factor sign-in for the signed-in account after confirming a code.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      }
+    },
+    {
+      "key": "POST /store/v1/me/2fa/disable",
+      "method": "POST",
+      "path": "/store/v1/me/2fa/disable",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "Turn off two-factor sign-in for the signed-in account with a code.",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customer-session",
+      "stage": 48,
+      "tables": [
+        "clients"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/me/2fa/disable",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/me/2fa/disable"
+      },
+      "module": "customers",
+      "description": "Turn off two-factor sign-in for the signed-in account with a code.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/48-accounts.mjs",
+        "spec": "B245"
+      }
     }
   ]
 }

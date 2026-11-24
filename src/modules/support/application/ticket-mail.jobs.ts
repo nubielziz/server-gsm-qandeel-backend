@@ -6,11 +6,12 @@ import { APP_CONFIG, type AppConfig } from '../../../config';
 import { CapabilityTokenVault } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { type Job, UnrecoverableError } from '../../../infra/queues';
+import { AccountDirectory, accountAreaUrl } from '../../identity';
 import { type NotificationInput, NotificationService, type OutboxJobData } from '../../platform';
 import type { SupportTicket } from '../db/schema';
 import type { ReplyChannel } from '../domain/reply-channels';
 import { type MailedReply, replyMailText } from '../domain/reply-mail';
-import { findRequester } from '../infra/support-foreign-reads';
+import { isRequesterProven } from '../domain/requester-proof';
 import { findMessage, findTicket, unseenEmailReplies } from '../infra/ticket.repository';
 import { SUPPORT_REPLY_EVENT, SUPPORT_TICKET_RECEIVED_EVENT } from './support-events';
 import { TICKET_MAIL_EVENT, TICKET_MAIL_KINDS, type TicketMailKind } from './ticket-mail-outbox';
@@ -59,11 +60,13 @@ export type TicketMailJob = Pick<Job<OutboxJobData>, 'data'> & {
  * Why: decision 020 and feature 12a: the outbox row keeps only ids. The ticket link carries the ticket token, a credential that the
  * notification log must never show, so it is built here and handed to `NotificationService.sendNow` as a secret: the `notifications` row
  * (dedupe key `outbox-<event id>:<channel>`) holds the other variables and the log shows them without the link. The job re-reads the ticket,
- * the requester and the message, so a customer anonymized since the event gets nothing. The receipt carries the ticket number and the link only
- * (decision 053): it repeats nothing a visitor typed. A retry resends (a message is at least once), and a
- * repeat of a job whose message already went out is skipped by its notification row.
+ * the requester and the message, so an account anonymized since the event gets nothing. The receipt carries the ticket number and the link only
+ * (decision 053): it repeats nothing a visitor typed, and it goes to any account whose address was typed on the public form, whatever its
+ * rank, because the link in it is what proves the address. A reply is worded by the rank kind of the requester (decision 064): a
+ * retail rank gets the shop text with the ticket link, a merchant rank the portal text with the link of its ticket page. A retry resends
+ * (a message is at least once), and a repeat of a job whose message already went out is skipped by its notification row.
  *
- * Side effects: reads `support_tickets`, `ticket_messages`, `customers` and `clients`; the notification delivery writes a `notifications`
+ * Side effects: reads `support_tickets`, `ticket_messages` and `clients`; the notification delivery writes a `notifications`
  * row and sends one email; a retry that ends skipped marks the row of an earlier attempt `failed`.
  *
  * @see docs/queues.md (notifications)
@@ -76,6 +79,7 @@ export class TicketMailJobs {
     private readonly db: DbService,
     private readonly notifications: NotificationService,
     private readonly vault: CapabilityTokenVault,
+    private readonly accounts: AccountDirectory,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -154,42 +158,47 @@ export class TicketMailJobs {
     const { kind, channel } = payload;
     const ticket = await findTicket(this.db.db, job.data.aggregateId);
     if (!ticket) return { sent: false, skipped: 'ticket_gone' };
-    const requester = await findRequester(this.db.db, ticket.requesterType, ticket.requesterId);
-    // An anonymized customer has no address any more; a customer or merchant that is gone cannot be written to.
-    if (!requester?.reachable) return { sent: false, skipped: 'recipient_gone' };
+    const requester = await this.accounts.findById(this.db.db, ticket.requesterId);
+    // An anonymized account has no address any more; an account that is gone cannot be written to.
+    if (!requester || requester.status === 'anonymized') return { sent: false, skipped: 'recipient_gone' };
 
-    const customer = ticket.requesterType === 'customer';
-    // A customer's ticket page is its token link; a merchant's is the portal's ticket page, by id (feature 28). Decision 054: the token
-    // is revealed from its encrypted copy, or read as issued for a ticket opened before.
-    const token = customer ? this.vault.reveal('ticket', { enc: ticket.tokenEnc, plain: ticket.token }) : null;
-    const link = !customer
-      ? `${this.config.http.storeBaseUrl}/merchant/support/${ticket.id}`
-      : token === null
-        ? ''
-        : `${this.config.http.storeBaseUrl}/support/tickets/${encodeURIComponent(token)}`;
+    const merchant = requester.rankKind === 'merchant';
+    // A ticket that has a link token has a page on the shop's site; a merchant rank's ticket page is also in the account area, by id (feature 28, decision 064).
+    // Decision 054: the token is revealed from its encrypted copy, or read as issued for a ticket opened before.
+    const token = this.vault.reveal('ticket', { enc: ticket.tokenEnc, plain: ticket.token });
+    const shopLink =
+      token === null ? '' : `${this.config.http.storeBaseUrl}/support/tickets/${encodeURIComponent(token)}`;
+    // The account area does not list a ticket whose address is not proven yet, so a merchant rank gets the ticket link until it is used.
+    const portalLink = accountAreaUrl(this.config.http.storeBaseUrl, `/support/${ticket.id}`);
+    const link = merchant && (token === null || isRequesterProven(ticket)) ? portalLink : shopLink;
     const common = { ticketNumber: ticket.number, subject: ticket.subject };
     const customerName = { customerName: requester.name.trim() || 'there' };
+    // The text follows the rank kind read above, the one the variables and the link were chosen by (a rank change between the two reads
+    // never pairs a merchant link with the customer text).
+    const audience = merchant ? 'merchant' : 'customer';
     let input: Omit<NotificationInput, 'dedupeKey'>;
     if (kind === 'reply') {
       const reply = await this.replyText(ticket, payload);
       if ('skipped' in reply) return { sent: false, skipped: reply.skipped };
       input = {
         event: SUPPORT_REPLY_EVENT,
-        recipient: { type: customer ? 'customer' : 'client', id: ticket.requesterId },
+        recipient: { type: 'account', id: ticket.requesterId },
         channel,
+        audience,
         variables: {
           ...common,
-          ...(customer ? customerName : { merchantName: requester.name }),
+          ...(merchant ? { merchantName: requester.name } : customerName),
           message: reply.text,
         },
       };
     } else {
-      // The receipt is for a customer: a merchant's ticket has no ticket page.
-      if (!customer) return { sent: false, skipped: 'recipient_gone' };
+      // The receipt carries the ticket link, so a ticket without one (a portal ticket, or one whose link an erasure cleared) has none.
+      if (token === null) return { sent: false, skipped: 'recipient_gone' };
       input = {
         event: SUPPORT_TICKET_RECEIVED_EVENT,
-        recipient: { type: 'customer', id: ticket.requesterId },
+        recipient: { type: 'account', id: ticket.requesterId },
         channel: 'email',
+        audience,
         // Decision 053: the receipt holds the ticket number and the link and nothing a visitor typed (no name, no subject).
         variables: { ticketNumber: ticket.number },
       };
@@ -197,7 +206,7 @@ export class TicketMailJobs {
 
     const result = await this.notifications.sendNow(
       { ...input, dedupeKey },
-      { link },
+      { link: kind === 'received' ? shopLink : link },
       { attempt: (job.attemptsMade ?? 0) + 1, maxAttempts: job.opts?.attempts ?? 1 },
     );
     switch (result.status) {

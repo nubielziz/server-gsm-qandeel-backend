@@ -6,8 +6,10 @@ import type { CustomerContact } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
+import { AccountDirectory } from '../../identity';
 import { AuditService } from '../../platform';
 import { fromUsd, storedOrderMethod, toUsd } from '../domain/b2c-money';
+import type { WalletLedgerKind } from '../domain/wallet-kinds';
 import {
   MAX_DECLINE_REASON_LENGTH,
   MIN_DECLINE_REASON_LENGTH,
@@ -46,7 +48,8 @@ const AMOUNT_TEXT = /^\d+(\.\d{1,4})?$/;
  * Decides storefront refunds.
  *
  * Why: scenario b2c-refund, RESOLUTIONS money-11 and user rule 7, ANSWERS refunds Q3 and Q4. Approval is one transaction under the locks
- * of the order, the payment and the refund (lock order: order, then payment, then refund, then the ledger accounts): the amount is checked against what can
+ * of the buyer's account row, the order, the payment and the refund (lock order: account row, order, payment, refund, then the ledger
+ * accounts, decision 064): the amount is checked against what can
  * still go back, the journal is posted once (from revenue for a delivered order; from customer funds for an order the system rejected while
  * `autoRefundFailed` was off), an order that is still open is cancelled through the state machine, the refund
  * moves to `processing` (gateway job) or `completed` (hand payout, or a refund to the store balance: feature 21), the timeline and the audit log say so. Decline writes the reason
@@ -70,6 +73,7 @@ export class RefundService {
     private readonly audit: AuditService,
     private readonly money: StorefrontMoney,
     private readonly mails: StorefrontMails,
+    private readonly accounts: AccountDirectory,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -113,15 +117,19 @@ export class RefundService {
    * @returns the refund after the decision (`processing`, or `completed` for a hand payout)
    * @throws {AppError} `NOT_FOUND`; `REFUND_NOT_PENDING` (409); `VALIDATION_FAILED` (422, field `amount`); `INVALID_TRANSITION`
    *   (409) for a payment in dispute; `ORDER_NOT_OPEN` (409) when the order closed meanwhile; `ALREADY_SENT` (409) while the order
-   *   is being sent to its supplier (decision 044: approve again after the supplier answered; nothing was changed)
+   *   is being sent to its supplier (decision 044: approve again after the supplier answered; nothing was changed); `ANONYMIZED` (409)
+   *   for a refund of a balance payment of an erased account (nothing can go back to its wallet; nothing was changed)
    */
   async approve(staffId: number, id: number, amountText: string | undefined): Promise<WireRefund> {
     const approved = await this.db.runInTransaction(async ({ tx }) => {
       const first = await findStorefrontRefund(tx, id);
       if (!first) throw notFound();
-      // Lock order: the order, then the payment, then the refund, then the ledger accounts. A rejection locks the order first (its guarded
-      // update), so an approval does too: taking the payment first could deadlock with it. Capture and the dispute webhook take the payment
-      // first and never wait for a locked order, so they cannot close a cycle.
+      // Lock order (decision 064): the buyer's account row (`FOR KEY SHARE`), the order, the payment, the refund, then the ledger accounts.
+      // The account row comes first, as on every money path of an account: an erasure holds it `FOR UPDATE` and then locks the account's
+      // shop orders, so an approval that held the order and then waited for the row would deadlock with it. A rejection locks the order
+      // before the payment (its guarded update), so an approval does too: taking the payment first could deadlock with it. Capture and the
+      // dispute webhook take the payment first and never wait for a locked order, so they cannot close a cycle.
+      if (first.accountId !== null) await this.accounts.lockForKeyShare(tx, first.accountId);
       const order = first.orderId === null ? undefined : await lockOrderForRefund(tx, first.orderId);
       const payment = first.paymentId === null ? undefined : await lockOrderPayment(tx, first.paymentId);
       const refund = await lockRefund(tx, id);
@@ -160,11 +168,15 @@ export class RefundService {
       const gateway = await findGateway(tx, payment.gatewayId);
       const route = refundRoute(storedOrderMethod(payment.methodType), this.refunds.capability(gateway));
       const toBalance = payment.methodType === 'balance';
-      const destination = toBalance
-        ? ' returned to the store balance'
-        : route.method === 'manual'
-          ? ' to be paid out manually'
-          : ' sent to the original payment method';
+      // A refund of a balance payment goes to the wallet the account holds now (decision 064): the line says which.
+      const destination = (wallet: WalletLedgerKind | null): string =>
+        toBalance
+          ? wallet === 'client_wallet'
+            ? ' returned to the merchant wallet'
+            : ' returned to the store balance'
+          : route.method === 'manual'
+            ? ' to be paid out manually'
+            : ' sent to the original payment method';
       const now = this.clock.now();
       const updated = await updateRefundIn(tx, refund.id, ['requested'], {
         amount: original.toWire(),
@@ -183,7 +195,7 @@ export class RefundService {
         const posted = await this.refunds.postDelivered(tx, { order, payment, refund: updated, actor });
         await this.ports.get().addTimeline(tx, order.id, actor, {
           type: 'refund',
-          message: `${partial ? 'Partial refund of ' : 'Refund of '}$${wholeCents(Money.of(posted.gross))}${destination}`,
+          message: `${partial ? 'Partial refund of ' : 'Refund of '}$${wholeCents(Money.of(posted.gross))}${destination(posted.wallet)}`,
           data: { refundId: refund.id, amount: posted.gross },
         });
         if (toBalance) {
@@ -194,7 +206,7 @@ export class RefundService {
         const posted = await this.refunds.postRejected(tx, { order, payment, refund: updated, actor });
         await this.ports.get().addTimeline(tx, order.id, actor, {
           type: 'refund',
-          message: `Refund of $${wholeCents(Money.of(posted.gross))}${destination}`,
+          message: `Refund of $${wholeCents(Money.of(posted.gross))}${destination(posted.wallet)}`,
           data: { refundId: refund.id, amount: posted.gross },
         });
         // The order was rejected without a refund (it was a request): now that the money goes back, the customer is told it failed.

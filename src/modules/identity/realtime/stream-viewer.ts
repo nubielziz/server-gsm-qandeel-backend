@@ -11,15 +11,17 @@ export interface StreamLimits {
 }
 
 /**
- * The viewer of a stream opened by a signed-in staff member, merchant or customer.
+ * The viewer of a stream opened by a signed-in staff member or account.
  *
  * Why: the hub and the sources render every event for this viewer only: its kind and id are the audience key `u:<kind>:<id>`
  * (the inbox recipient), its session id lets a sign-out close the stream, and a staff member's permissions travel with it
- * (feature 28 adds the support key for `support:read`). The name is the account's display name the session holds.
+ * (feature 28 adds the support key for `support:read`). An account of either rank is one kind, `account` (decision 064): the merchant
+ * route and the store route build the same viewer, so a merchant's and a shop account's streams share one key space. The name is the
+ * account's display name the session holds.
  *
  * @param principal the authenticated caller of the stream route
  * @returns the viewer
- * @throws {AppError} `UNAUTHORIZED` for a principal that is not a session of staff, a merchant or a customer
+ * @throws {AppError} `UNAUTHORIZED` for a principal that is not a session of staff or of an account
  */
 export function streamViewerOf(principal: Principal | undefined): StreamViewer {
   if (!principal) throw new AppError('UNAUTHORIZED');
@@ -34,20 +36,11 @@ export function streamViewerOf(principal: Principal | undefined): StreamViewer {
         name: principal.session.subject.name ?? '',
         permissions: [...principal.permissions],
       };
-    case 'merchant':
+    case 'account':
       return {
         ...common,
-        kind: 'client',
-        id: principal.clientId,
-        sessionId: principal.session.id,
-        name: principal.session.subject.name ?? '',
-        permissions: [],
-      };
-    case 'customer':
-      return {
-        ...common,
-        kind: 'customer',
-        id: principal.customerId,
+        kind: 'account',
+        id: principal.accountId,
         sessionId: principal.session.id,
         name: principal.session.subject.name ?? '',
         permissions: [],

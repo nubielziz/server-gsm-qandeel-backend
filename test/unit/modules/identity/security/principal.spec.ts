@@ -2,8 +2,11 @@
 // privilege ceiling and second-permission helpers (decision 046).
 import { describe, expect, it } from 'bun:test';
 import { AppError } from '@src/common/errors';
+import type { AccountPrincipal } from '@src/modules/identity/ports/account-principal';
 import {
   CUSTOMER_CONTACT_PERMISSION,
+  type MerchantPrincipal,
+  type SessionPrincipal,
   assertOwnerTargetAllowed,
   assertWithinCeiling,
   customerContactOf,
@@ -145,21 +148,44 @@ describe('assertWithinCeiling', () => {
   });
 });
 
-describe('customerContactOf (decision 047)', () => {
-  it('is full for customers:read, customers:* and *, masked otherwise', () => {
-    expect(CUSTOMER_CONTACT_PERMISSION).toBe('customers:read');
-    for (const permissions of [['customers:read'], ['customers:*'], ['*'], ['orders:read', 'customers:read']]) {
+describe('customerContactOf (decisions 047 and 064)', () => {
+  it('is full for clients:read, clients:* and *, masked otherwise: one permission for every account, whatever its rank', () => {
+    expect(CUSTOMER_CONTACT_PERMISSION).toBe('clients:read');
+    for (const permissions of [['clients:read'], ['clients:*'], ['*'], ['orders:read', 'clients:read']]) {
       expect(customerContactOf(holder(...permissions)), permissions.join()).toBe('full');
     }
     for (const permissions of [
       [],
       ['orders:read'],
-      ['customers:update'],
+      ['clients:update'],
+      ['clients:block', 'clients:security'],
+      // The old permission of the Customers pages no longer unmasks anything: the Accounts pages are one family.
+      ['customers:read'],
+      ['customers:*'],
       ['customers:privacy', 'support:*'],
       ['orders:*'],
     ]) {
       expect(customerContactOf(holder(...permissions)), permissions.join()).toBe('masked');
     }
+  });
+});
+
+describe('the principals of a session (decision 064)', () => {
+  it('has one account principal for every rank, and MerchantPrincipal is the same type', () => {
+    const principal: AccountPrincipal = {
+      kind: 'account',
+      accountId: 7,
+      clientId: 7,
+      rank: { id: 2, kind: 'retail' },
+      stage: 'active',
+      ip: '203.0.113.7',
+      session: { subject: { state: 'ok' } } as AccountPrincipal['session'],
+    };
+    // The old name keeps compiling for the merchant controllers; a retail account is the same shape.
+    const asMerchant: MerchantPrincipal = principal;
+    const asSession: SessionPrincipal = asMerchant;
+    expect(asSession.kind).toBe('account');
+    expect(asMerchant.clientId).toBe(asMerchant.accountId);
   });
 });
 

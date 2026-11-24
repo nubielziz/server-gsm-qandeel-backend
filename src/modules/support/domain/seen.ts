@@ -1,7 +1,7 @@
 // The seen marks of a ticket (feature 28, rule 3): one mark per side, moved forward only, over the messages the other side wrote. Pure.
 import type { TicketAuthorType } from '../db/schema';
 
-/** The two parties of a ticket: the requester (a customer or a merchant) and staff (one party: never who). */
+/** The two parties of a ticket: the requester (an account, of any rank) and staff (one party: never who). */
 export type TicketSide = 'requester' | 'staff';
 
 /** What the seen rule needs to know about a message. */
@@ -26,7 +26,7 @@ export interface SeenCandidate {
 export function canMarkSeen(side: TicketSide, ticketId: number, message: SeenCandidate | undefined): boolean {
   if (!message || message.ticketId !== ticketId) return false;
   if (side === 'requester') return message.authorType === 'staff' && !message.isInternal;
-  return message.authorType === 'customer' || message.authorType === 'client';
+  return message.authorType === 'account';
 }
 
 /**

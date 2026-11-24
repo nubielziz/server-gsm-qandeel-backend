@@ -6,8 +6,8 @@
 // the outbox backlog by type and the gateways export nothing, so this file reads `suppliers`,
 // `supplier_api_logs`, `payment_gateways`, `orders`, `services` and `outbox_events` with plain selects, like
 // the suppliers module's own `foreign-reads.repository.ts`. The orders reads use feature 5's exported `pastSlaPredicate` and
-// `queueSql`, so the age-only past-SLA rule (B92) stays in one place. Replace the bodies when readers exist; nothing outside this
-// file knows.
+// `queueSql` and decision 064's `prepaidOrderSql` (the door of an order is `orders.source`), so the age-only past-SLA rule (B92) and the
+// door stay in one place each. Replace the bodies when readers exist; nothing outside this file knows.
 import { and, eq, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import { orders } from './sibling-modules';
@@ -158,16 +158,17 @@ export interface StuckRow {
  * Orders past their SLA, by the status bucket the console links to.
  *
  * Why: orders-suppliers-1 / B92: the one age-only predicate (`pastSlaPredicate`); an order in the `needs_attention` queue is
- * counted there and not again under `pending` or `processing`. Held money is the hold of a merchant order (its total) or the
- * captured payment of a paid storefront order (total plus VAT).
+ * counted there and not again under `pending` or `processing`. Held money is the hold of a merchant-door order (its total) or the
+ * captured payment of a paid storefront order, the shop's door (total plus VAT).
  *
  * @param db the database
  * @param now the clock's time
  * @returns one row per status bucket that has orders
  */
 export async function stuckOrders(db: DbExecutor, now: Date): Promise<StuckRow[]> {
-  const { pastSlaPredicate } = await orders();
+  const { pastSlaPredicate, prepaidOrderSql } = await orders();
   const o = s.orders;
+  const shop = prepaidOrderSql(sql`${o.source}`);
   const bucket = sql<
     StuckRow['status']
   >`(case when ${o.dispatchState} = 'needs_attention' then 'needs_attention' else ${o.status} end)`;
@@ -176,7 +177,7 @@ export async function stuckOrders(db: DbExecutor, now: Date): Promise<StuckRow[]
       status: bucket,
       count: sql<number>`count(*)::int`,
       oldest: sql<Date | null>`min(${o.placedAt})`,
-      held: sql<string>`coalesce(sum(${o.totalPrice} + (case when ${o.clientId} is null then ${o.taxAmount} else 0 end)), 0)::numeric(20,4)::text`,
+      held: sql<string>`coalesce(sum(${o.totalPrice} + (case when ${shop} then ${o.taxAmount} else 0 end)), 0)::numeric(20,4)::text`,
     })
     .from(o)
     .innerJoin(s.services, eq(s.services.id, o.serviceId))
@@ -271,7 +272,7 @@ export async function typeOutcomes(db: DbExecutor, now: Date): Promise<TypeOutco
 }
 
 /**
- * Orders in the needs-attention queue and paid storefront orders the risk rules hold.
+ * Orders in the needs-attention queue and paid storefront orders (the shop's door) the risk rules hold.
  *
  * @param db the database
  * @returns the counts, the held amount (VAT included, as captured) and the oldest held order
@@ -282,14 +283,15 @@ export async function attentionAndHeld(db: DbExecutor): Promise<{
   heldAmount: string;
   heldOldest: Date | null;
 }> {
-  const { queueSql } = await orders();
+  const { queueSql, prepaidOrderSql } = await orders();
   const o = s.orders;
+  const shop = prepaidOrderSql(sql`${o.source}`);
   const [row] = await db
     .select({
       needsAttention: sql<number>`(count(*) filter (where ${queueSql} = 'needs_attention'))::int`,
-      heldCount: sql<number>`(count(*) filter (where ${o.clientId} is null and ${o.dispatchState} = 'held'))::int`,
-      heldAmount: sql<string>`coalesce(sum(${o.totalPrice} + ${o.taxAmount}) filter (where ${o.clientId} is null and ${o.dispatchState} = 'held'), 0)::numeric(20,4)::text`,
-      heldOldest: sql<Date | null>`min(${o.placedAt}) filter (where ${o.clientId} is null and ${o.dispatchState} = 'held')`,
+      heldCount: sql<number>`(count(*) filter (where ${shop} and ${o.dispatchState} = 'held'))::int`,
+      heldAmount: sql<string>`coalesce(sum(${o.totalPrice} + ${o.taxAmount}) filter (where ${shop} and ${o.dispatchState} = 'held'), 0)::numeric(20,4)::text`,
+      heldOldest: sql<Date | null>`min(${o.placedAt}) filter (where ${shop} and ${o.dispatchState} = 'held')`,
     })
     .from(o)
     .where(sql`${o.status} in ('pending', 'processing')`);

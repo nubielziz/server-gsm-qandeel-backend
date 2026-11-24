@@ -1,5 +1,6 @@
-// Helpers for the money tests (feature 3): merchants with opened wallets, postings through the real ledger writer, and reads
-// of the ledger tables to assert on. Everything goes through public code (MerchantAccounts, postTransaction), never raw ledger inserts.
+// Helpers for the money tests (feature 3): merchant-rank accounts with opened wallets, postings through the real ledger writer, and
+// reads of the ledger tables to assert on (wallets are owned by ('account', id), decision 064). Everything goes through public code
+// (MerchantAccounts, postTransaction), never raw ledger inserts.
 import { and, eq, sql } from 'drizzle-orm';
 import { Money } from '@src/common/money';
 import { type Database, schema as s } from '@src/infra/db';
@@ -14,7 +15,7 @@ export interface TestMerchant {
 }
 
 /**
- * Creates a merchant in a group that allows credit (or not) and opens its wallet and hold with a credit limit.
+ * Creates a merchant-rank account in a rank that allows credit (or not) and opens its wallet and hold with a credit limit.
  *
  * @param db the test database
  * @param options the display name and the credit limit (default none)
@@ -31,6 +32,7 @@ export async function insertWalletMerchant(
     .insert(s.clientGroups)
     .values({
       name: `Group ${crypto.randomUUID()}`,
+      kind: 'b2b',
       overdraftAllowed: options.overdraftAllowed ?? Money.of(creditLimit).isPositive(),
     })
     .returning({ id: s.clientGroups.id });
@@ -70,11 +72,11 @@ export async function fundWallet(db: Database, clientId: number, amount: string,
   return posted.id;
 }
 
-/** The stored figures of one account (normal sign). */
+/** The stored figures of one ledger account (normal sign): a wallet or hold of an account, a supplier's prepaid, or a system account. */
 export async function accountFigures(
   db: Database,
   kind: string,
-  owner?: { type: 'client' | 'supplier'; id: number },
+  owner?: { type: 'account' | 'supplier'; id: number },
 ): Promise<{ balance: string; overdraftLimit: string; version: number } | undefined> {
   const [row] = await db
     .select({

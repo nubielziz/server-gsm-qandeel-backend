@@ -139,7 +139,7 @@ describe('the receipt of a manual top-up', () => {
     expect((await admin.post(`/admin/payments/${paid.body.id}/approve`)).status).toBe(200);
     const paidPdf = await pdfOf(first.id, openPdf);
     const [stored] = await db.select().from(s.files).where(eq(s.files.id, paidPdf));
-    expect(stored).toMatchObject({ ownerType: 'client', ownerId: id, mime: 'application/pdf' });
+    expect(stored).toMatchObject({ ownerType: 'account', ownerId: id, mime: 'application/pdf' });
 
     const second = (await portal.call('POST', '/client/invoices', { amount: '100', gatewayId })).body.invoice;
     for (const fileId of [paidPdf, openPdf]) {
@@ -161,7 +161,7 @@ describe('the receipt of a manual top-up', () => {
     const topUp = (await createTopUp(store, gatewayId)).json();
     // The storefront stores the tax receipt of a paid order as the customer's file, under its own area (OrderReceipts).
     const taxReceipt = await t.app.get(StoredFiles).store(db, {
-      ownerType: 'customer',
+      ownerType: 'account',
       ownerId: customer.id,
       filename: 'INV-2026-0042.pdf',
       mime: 'application/pdf',

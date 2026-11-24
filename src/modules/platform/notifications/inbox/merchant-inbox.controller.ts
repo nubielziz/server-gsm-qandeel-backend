@@ -1,4 +1,5 @@
-// HTTP controller of the merchant inbox (feature 23, routes /client/notifications, scripts/map-additions/23.mjs).
+// HTTP controller of the merchant inbox (feature 23, routes /client/notifications, scripts/map-additions/23.mjs). The owner is the account
+// (decision 064); a retail account reads its own on /store/v1/me/notifications.
 import { Body, Controller, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../../common/contract';
 import {
@@ -12,7 +13,7 @@ import { InboxService, inboxOwner } from './inbox.service';
 /**
  * The merchant's own notifications.
  *
- * Why: owner list E: merchants read announcements, low-balance and paid-invoice items in the portal; a merchant waiting for approval may read too. Thin layer over {@link InboxService}; the person is the session's actor, never a parameter.
+ * Why: owner list E: merchants read announcements, low-balance and paid-invoice items in the portal. The inbox owner is the account. Thin layer over {@link InboxService}; the person is the session's actor, never a parameter.
  *
  * @route GET /client/notifications
  * @route GET /client/notifications/unread-count
@@ -32,7 +33,7 @@ export class MerchantInboxController {
    */
   @Route(listMerchantInbox)
   list(@Query() query: QueryOf<typeof listMerchantInbox>): Promise<ResultOf<typeof listMerchantInbox>> {
-    return this.inbox.list(inboxOwner('client'), query);
+    return this.inbox.list(inboxOwner('account'), query);
   }
 
   /**
@@ -43,7 +44,7 @@ export class MerchantInboxController {
    */
   @Route(merchantUnreadCount)
   unread(): Promise<ResultOf<typeof merchantUnreadCount>> {
-    return this.inbox.unread(inboxOwner('client'));
+    return this.inbox.unread(inboxOwner('account'));
   }
 
   /**
@@ -55,7 +56,7 @@ export class MerchantInboxController {
    */
   @Route(markMerchantInboxRead)
   read(@Param() params: ParamsOf<typeof markMerchantInboxRead>): Promise<void> {
-    return this.inbox.markRead(inboxOwner('client'), params.id);
+    return this.inbox.markRead(inboxOwner('account'), params.id);
   }
 
   /**
@@ -67,6 +68,6 @@ export class MerchantInboxController {
    */
   @Route(markAllMerchantInboxRead)
   readAll(@Body() body: BodyOf<typeof markAllMerchantInboxRead>): Promise<ResultOf<typeof markAllMerchantInboxRead>> {
-    return this.inbox.markAll(inboxOwner('client'), body.upToId);
+    return this.inbox.markAll(inboxOwner('account'), body.upToId);
   }
 }

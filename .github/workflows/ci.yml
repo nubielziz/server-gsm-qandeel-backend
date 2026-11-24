@@ -5,6 +5,7 @@
 # No job reads a secret, so a pull request from a fork runs exactly the same jobs. The production server deploys a commit of
 # main only after every job here succeeded for it (deploy/cd/auto-deploy.sh, docs/OPERATIONS.md section 8).
 # Actions are pinned to a commit; the comment names the release that commit is.
+# The console checkout of the static and tests jobs reads its ref from ci/console-ref; a push to main must name the console's main.
 name: CI
 
 on:
@@ -36,11 +37,36 @@ jobs:
         with:
           path: backend
           persist-credentials: false
+      # The console branch this commit is proved against is the first line of ci/console-ref (`main` by default). A change that spans both
+      # repositories points it at the console's own branch while its pull requests are open, so each is proved against the other. A push to
+      # main is proved against the console's main only: the file must be back to `main` before it. The ref can only name a ref of the
+      # console repository below, which only that repository's owners can write.
+      - name: A push to main reads the console's main
+        run: |
+          if [ ! -f ci/console-ref ]; then
+            echo "::error file=ci/console-ref::The file ci/console-ref is missing."
+            exit 1
+          fi
+          ref=$(head -n 1 ci/console-ref | tr -d '\r')
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ] && [ "$ref" != main ]; then
+            echo "::error file=ci/console-ref::A push to main must read the console's main. Put main back in ci/console-ref."
+            exit 1
+          fi
+      - name: Read the console ref
+        id: console_ref
+        run: |
+          ref=$(head -n 1 ci/console-ref | tr -d '\r')
+          if ! [[ "$ref" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$ ]]; then
+            echo "::error file=ci/console-ref::The first line must name a branch, a tag or a commit of the console."
+            exit 1
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       # The contract check reads the console's TypeScript, and reference/ is a link into the console's folder.
       - name: Check out the console next to it
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: nubielziz/server-gsm-qandeel-frontend-admin
+          ref: ${{ steps.console_ref.outputs.ref }}
           path: frontend-admin
           persist-credentials: false
       - name: Install Bun
@@ -95,11 +121,36 @@ jobs:
         with:
           path: backend
           persist-credentials: false
+      # The console branch this commit is proved against is the first line of ci/console-ref (`main` by default). A change that spans both
+      # repositories points it at the console's own branch while its pull requests are open, so each is proved against the other. A push to
+      # main is proved against the console's main only: the file must be back to `main` before it. The ref can only name a ref of the
+      # console repository below, which only that repository's owners can write.
+      - name: A push to main reads the console's main
+        run: |
+          if [ ! -f ci/console-ref ]; then
+            echo "::error file=ci/console-ref::The file ci/console-ref is missing."
+            exit 1
+          fi
+          ref=$(head -n 1 ci/console-ref | tr -d '\r')
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ] && [ "$ref" != main ]; then
+            echo "::error file=ci/console-ref::A push to main must read the console's main. Put main back in ci/console-ref."
+            exit 1
+          fi
+      - name: Read the console ref
+        id: console_ref
+        run: |
+          ref=$(head -n 1 ci/console-ref | tr -d '\r')
+          if ! [[ "$ref" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$ ]]; then
+            echo "::error file=ci/console-ref::The first line must name a branch, a tag or a commit of the console."
+            exit 1
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       # The contract check reads the console's TypeScript, and reference/ is a link into the console's folder.
       - name: Check out the console next to it
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: nubielziz/server-gsm-qandeel-frontend-admin
+          ref: ${{ steps.console_ref.outputs.ref }}
           path: frontend-admin
           persist-credentials: false
       - name: Install Bun

@@ -18,8 +18,7 @@ import { lockOrderPayment, updateOrderPaymentIn } from '../infra/order-payment.r
 import { findPaymentByReference, lockTopupPayment, updatePayment } from '../infra/payment.repository';
 import type { DisputeEvent } from '../infra/gateway-drivers/driver';
 import type { PaymentGateway } from '../db/schema';
-import { CustomerWallets } from './customer-wallets';
-import { DisputeLedger, topUpDisputeHold, topUpOwnerOf } from './dispute-ledger';
+import { DisputeLedger, topUpDisputeHold } from './dispute-ledger';
 import { StorefrontOrderPorts } from './storefront-ports';
 
 /** SQLSTATE `40P01` (deadlock detected) and `40001` (serialization failure): the database ended the transaction, nothing was written. */
@@ -47,11 +46,13 @@ export interface DisputeWebhookOutcome {
  * settlement takes a refund, then its payment) wrote nothing and answers `503 UNAVAILABLE`, so the gateway delivers it again (a 5xx also
  * frees the event's replay mark). The alert to staff about the deadline (scenario step 3)
  * is the notifications feature's (12a): it belongs right after a `created` dispute is stored. A dispute of a top-up payment (feature 21,
- * customers and merchants: defect D4) takes its own branch: `created` records it and freezes a customer's wallet; `lost` claws the credit back (`DisputeLedger.loseTopUp`); `won` closes it
- * and leaves the hold for staff (plan P2). The payment keeps `approved`, and the dispute never shows in `/admin/disputes` (it has no order).
+ * accounts of either rank: defect D4, decision 064) takes its own branch: `created` records it and freezes the account's live wallet,
+ * whatever its kind; `lost` claws the credit back from the live wallet (`DisputeLedger.loseTopUp`); `won` closes it and leaves the hold
+ * for staff (plan P2). The payment keeps `approved`, and the dispute never shows in `/admin/disputes` (it has no order). The account row
+ * is locked `FOR KEY SHARE` after the payment and the dispute rows, and the kind of the live wallet is read only then.
  *
  * Side effects (one transaction): inserts or updates `disputes`, updates `payments`, writes a ledger transaction on a loss, adds an
- * order timeline line; for a customer's top-up, the wallet's hold, its audit row and the `wallet.frozen` mail.
+ * order timeline line; for a top-up, the wallet's hold, its audit row and, for a store balance, the `wallet.frozen` mail.
  *
  * @see docs/contract/endpoints/money.md (POST /webhooks/disputes/:gateway)
  */
@@ -62,7 +63,6 @@ export class DisputeWebhookService {
   constructor(
     private readonly db: DbService,
     private readonly ledger: DisputeLedger,
-    private readonly wallets: CustomerWallets,
     private readonly ports: StorefrontOrderPorts,
     @Inject(CLOCK) private readonly clock: Clock,
     @Optional() private readonly reporter?: ErrorReporter,
@@ -138,7 +138,7 @@ export class DisputeWebhookService {
         const created = await insertDisputeOnce(tx, {
           paymentId: payment.id,
           orderId: payment.orderId,
-          customerId: payment.customerId,
+          accountId: payment.accountId,
           gatewayDisputeId: event.reference,
           reasonCode: event.reasonCode,
           amount: event.amount ?? payment.amount,
@@ -246,8 +246,8 @@ export class DisputeWebhookService {
   }
 
   /**
-   * The top-up branch (plan 21 § 5.6.9). Lock order: the payment, then the dispute, then the ledger (a loss) or the wallet row (a hold
-   * without a posting after it).
+   * The top-up branch (plan 21 § 5.6.9). Lock order: the payment, then the dispute, then the account row, then the ledger (a loss) or the
+   * wallet row (a hold without a posting after it).
    */
   private async handleTopUp(
     tx: DbExecutor,
@@ -258,12 +258,11 @@ export class DisputeWebhookService {
     const payment = await lockTopupPayment(tx, paymentId);
     if (!payment) return { received: true };
     const now = this.clock.now();
-    const owner = await topUpOwnerOf(tx, payment);
     if (event.kind === 'created') {
       const created = await insertDisputeOnce(tx, {
         paymentId: payment.id,
         orderId: null,
-        customerId: owner?.type === 'customer' ? owner.id : null,
+        accountId: payment.accountId,
         gatewayDisputeId: event.reference,
         reasonCode: event.reasonCode,
         amount: event.amount ?? payment.amount,
@@ -284,10 +283,10 @@ export class DisputeWebhookService {
           updatedAt: now,
         });
       }
-      // O11: the customer's balance is held at once (paying from it and card top-ups stop); a merchant's wallet has no hold.
-      if (owner?.type === 'customer') {
-        await this.wallets.freezeInTx(tx, owner.id, topUpDisputeHold(created.id, payment.id));
-      }
+      // O11 and decision 064: the live wallet is held at once, of either kind (paying from a store balance and card top-ups stop; a
+      // merchant wallet takes no new hold). The account row is locked after the payment and the dispute rows, then the kind is read.
+      const owner = await this.ledger.ownerOf(tx, payment);
+      await this.ledger.holdWallet(tx, owner, topUpDisputeHold(created.id, payment.id));
       return { received: true };
     }
     const known = await findDisputeByGatewayId(tx, payment.id, event.reference);
@@ -300,6 +299,7 @@ export class DisputeWebhookService {
     }
     if (dispute.status === 'lost' || dispute.status === 'won') return { received: true, duplicate: true };
     if (event.kind === 'lost') {
+      const owner = await this.ledger.ownerOf(tx, payment);
       await this.ledger.loseTopUp(tx, dispute, payment, owner);
       return { received: true };
     }

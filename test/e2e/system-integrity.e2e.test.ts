@@ -95,7 +95,7 @@ describe('scenario system-integrity: a difference in the ledger', () => {
       entriesChecked: before.entries,
       transactionsChecked: before.transactions,
     });
-    expect((run!.result as { checks: unknown[] }).checks).toHaveLength(4);
+    expect((run!.result as { checks: unknown[] }).checks).toHaveLength(5);
     expect(await db.$count(s.alertEvents)).toBe(0);
     expect(fired).not.toHaveBeenCalled();
     const report = (await (await console_()).get('/admin/system/integrity')).body;
@@ -168,7 +168,8 @@ describe('scenario system-integrity: a difference in the ledger', () => {
         lastEntryAt: expect.any(String),
       },
     ]);
-    expect(report.checks.filter((check: { status: string }) => check.status === 'pass')).toHaveLength(3);
+    // The other four checks, the one that every wallet follows the rank of its account included, still pass.
+    expect(report.checks.filter((check: { status: string }) => check.status === 'pass')).toHaveLength(4);
     expect(await ledgerTotals(db)).toEqual(before);
     // The alert is open and visible to the staff of the alerts page.
     expect((await (await console_()).get('/admin/alerts?open=true')).body).toMatchObject([

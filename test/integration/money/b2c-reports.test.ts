@@ -68,22 +68,26 @@ async function dispute(paid: PaidOrder, gatewayId: string, status?: 'won' | 'los
   expect((await hook(t, clock, 'disputes', world.gateway.code, body)).statusCode).toBe(200);
 }
 
+/** The buyer account of an order. */
+const buyerOf = async (orderId: number): Promise<number> =>
+  (await db.select().from(s.orders).where(eq(s.orders.id, orderId)))[0]!.accountId;
+
 /** Asks for a refund of a whole storefront payment, as the customer would. */
 async function requestRefund(paid: PaidOrder): Promise<typeof s.refunds.$inferSelect> {
-  const customerId = (await db.select().from(s.orders).where(eq(s.orders.id, paid.orderId)))[0]!.customerId!;
+  const accountId = await buyerOf(paid.orderId);
   const [row] = await db
     .insert(s.refunds)
     .values({
       paymentId: paid.paymentId,
       orderId: paid.orderId,
-      customerId,
+      accountId,
       amount: paid.charged,
       currency: 'GBP',
       reason: 'The code did not work',
       method: 'original',
       status: 'requested',
-      requestedByType: 'customer',
-      requestedById: customerId,
+      requestedByType: 'account',
+      requestedById: accountId,
       createdAt: clock.now(),
       updatedAt: clock.now(),
     })
@@ -117,7 +121,7 @@ async function books(): Promise<{ card: PaidOrder; refunded: PaidOrder; wallet: 
     .values({
       paymentId: refunded.paymentId,
       orderId: refunded.orderId,
-      customerId: (await db.select().from(s.orders).where(eq(s.orders.id, refunded.orderId)))[0]!.customerId!,
+      accountId: await buyerOf(refunded.orderId),
       amount: refunded.charged,
       currency: 'GBP',
       reason: 'The code did not work',
@@ -270,7 +274,7 @@ describe('GET /admin/reports/payments', () => {
     await db.insert(s.refunds).values({
       paymentId: card.paymentId,
       orderId: card.orderId,
-      customerId: (await db.select().from(s.orders).where(eq(s.orders.id, card.orderId)))[0]!.customerId!,
+      accountId: await buyerOf(card.orderId),
       amount: card.charged,
       currency: 'GBP',
       reason: 'Changed my mind',

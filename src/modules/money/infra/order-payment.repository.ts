@@ -2,7 +2,7 @@
 // order, locks and the guarded updates of capture, failure and refund status. Top-ups have their own file (`payment.repository.ts`).
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
-import { type NewPayment, type Payment, invoices, payments } from '../db/schema';
+import { type NewPayment, type Payment, disputes, invoices, ledgerAccounts, payments } from '../db/schema';
 
 /** The statuses of an order payment that was captured (money received), whatever happened to it since. */
 export const CAPTURED_STATUSES = ['captured', 'partial_refund', 'refunded', 'disputed', 'chargeback'] as const;
@@ -249,4 +249,109 @@ export async function loadOrderPayments(db: DbExecutor, ids: readonly number[]):
     .from(payments)
     .where(and(eq(payments.purpose, 'order'), inArray(payments.id, unique)));
   return new Map(rows.map((row) => [row.id, row]));
+}
+
+/**
+ * Tells whether a ledger account is owned by an account (a wallet or a hold that was ever opened for it).
+ *
+ * Why: the guest-order claim refuses a guest row that holds any ledger account (decision 064): money that sits on the row would have to move
+ * with it, and the claim moves records, not balances.
+ *
+ * @param db the transaction
+ * @param accountId the account (a guest row for the claim)
+ * @returns true when a ledger account names the account as its owner
+ */
+export async function hasLedgerAccount(db: DbExecutor, accountId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ id: ledgerAccounts.id })
+    .from(ledgerAccounts)
+    .where(and(eq(ledgerAccounts.ownerType, 'account'), eq(ledgerAccounts.ownerId, accountId)))
+    .limit(1);
+  return row !== undefined;
+}
+
+/**
+ * Takes the payments of an account `FOR UPDATE NOWAIT` and says whether any of them is still pending.
+ *
+ * Why: the first step of the money participant of the guest-order claim: a pending payment (a page still open, a confirmation held
+ * for staff) is mid-flight, so the claim gives up with `busy` instead of moving it; any other payment is only re-pointed. A row another
+ * request holds (a confirmation being captured, a dispute webhook) makes the lock error (SQLSTATE 55P03) that the claim answers as `busy`.
+ *
+ * Side effects: row locks until the transaction ends.
+ *
+ * @param tx the claim's transaction, inside the savepoint the claim opened
+ * @param accountId the guest row
+ * @returns how many payments it has and whether one is pending
+ * @throws the lock error (55P03) when another transaction holds one of the rows
+ */
+export async function lockGuestPayments(
+  tx: DbExecutor,
+  accountId: number,
+): Promise<{ readonly count: number; readonly pending: boolean }> {
+  const rows = await tx
+    .select({ id: payments.id, status: payments.status })
+    .from(payments)
+    .where(eq(payments.accountId, accountId))
+    .orderBy(payments.id)
+    .for('update', { noWait: true });
+  return { count: rows.length, pending: rows.some((row) => row.status === 'pending') };
+}
+
+/**
+ * Moves the payments, the invoices (the receipts) and the disputes of a guest row to the account that proved the mailbox.
+ *
+ * Why: decision 064: the money participant of the guest-order claim. Every record that hangs on a guest checkout names
+ * its owner by `account_id`, and the account that claims the orders owns what was paid for them. The rows are taken `FOR UPDATE NOWAIT`
+ * (the payments were taken by {@link lockGuestPayments} already): a dispute another request is writing makes the lock error that the claim
+ * answers as `busy`. `updated_at` is kept as it is: a change of owner is not a change of the record's state.
+ *
+ * Side effects: updates `payments.account_id`, `invoices.account_id` and `disputes.account_id`.
+ *
+ * @param tx the claim's transaction, inside the savepoint the claim opened (the payments of the guest row are locked)
+ * @param guestId the guest row that holds the records now
+ * @param accountId the account that takes them
+ * @returns how many payments, invoices and disputes moved
+ * @throws the lock error (55P03) when another transaction holds one of the rows
+ */
+export async function moveGuestPaymentRecords(
+  tx: DbExecutor,
+  guestId: number,
+  accountId: number,
+): Promise<{ readonly payments: number; readonly invoices: number; readonly disputes: number }> {
+  const movedPayments = await tx
+    .update(payments)
+    .set({ accountId, updatedAt: sql`${payments.updatedAt}` })
+    .where(eq(payments.accountId, guestId))
+    .returning({ id: payments.id });
+  const mineInvoices = eq(invoices.accountId, guestId);
+  const invoiceRows = await tx
+    .select({ id: invoices.id })
+    .from(invoices)
+    .where(mineInvoices)
+    .orderBy(invoices.id)
+    .for('update', { noWait: true });
+  const movedInvoices =
+    invoiceRows.length === 0
+      ? []
+      : await tx
+          .update(invoices)
+          .set({ accountId, updatedAt: sql`${invoices.updatedAt}` })
+          .where(mineInvoices)
+          .returning({ id: invoices.id });
+  const mineDisputes = eq(disputes.accountId, guestId);
+  const disputeRows = await tx
+    .select({ id: disputes.id })
+    .from(disputes)
+    .where(mineDisputes)
+    .orderBy(disputes.id)
+    .for('update', { noWait: true });
+  const movedDisputes =
+    disputeRows.length === 0
+      ? []
+      : await tx
+          .update(disputes)
+          .set({ accountId, updatedAt: sql`${disputes.updatedAt}` })
+          .where(mineDisputes)
+          .returning({ id: disputes.id });
+  return { payments: movedPayments.length, invoices: movedInvoices.length, disputes: movedDisputes.length };
 }

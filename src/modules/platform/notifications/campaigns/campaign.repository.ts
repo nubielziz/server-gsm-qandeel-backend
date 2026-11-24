@@ -1,13 +1,14 @@
 // Drizzle queries on `notification_campaigns` and the campaign rows of `notifications` (platform module, feature 23): CRUD, the guarded
 // transitions of the state machine, the list, the delivery counters, the recipients list and the fan-out's writes.
 //
-// DEVIATION (decision 016, same as notification.repository.ts): the recipients list joins `clients`, `staff_users` and `customers` read-only
+// DEVIATION (decision 016, same as notification.repository.ts): the recipients list joins `clients` and `staff_users` read-only
 // to mask the address; platform imports no module (decision 032).
 import { type SQL, and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere, schema as s } from '../../../../infra/db';
 import {
   type NewNotificationCampaign,
+  type NotificationAudience,
   type NotificationCampaign,
   type NotificationCampaignStatus,
   type NotificationRecipientType,
@@ -176,7 +177,7 @@ export interface RecipientRow {
 /** The status filter of the recipients list: `read`/`delivered` for in-app, `queued`/`sent`/`failed` for the others. */
 export type RecipientStatus = 'delivered' | 'read' | 'queued' | 'sent' | 'failed';
 
-const ADDRESS = sql<string | null>`coalesce(${s.clients.email}, ${s.staffUsers.email}, ${s.customers.email})`;
+const ADDRESS = sql<string | null>`coalesce(${s.clients.email}, ${s.staffUsers.email})`;
 
 /**
  * Lists the recipients of a campaign on one channel.
@@ -222,9 +223,8 @@ export async function listRecipients(
           createdAt: t.createdAt,
         })
         .from(t)
-        .leftJoin(s.clients, and(eq(t.recipientType, sql`'client'`), eq(s.clients.id, t.recipientId)))
+        .leftJoin(s.clients, and(eq(t.recipientType, sql`'account'`), eq(s.clients.id, t.recipientId)))
         .leftJoin(s.staffUsers, and(eq(t.recipientType, sql`'staff'`), eq(s.staffUsers.id, t.recipientId)))
-        .leftJoin(s.customers, and(eq(t.recipientType, sql`'customer'`), eq(s.customers.id, t.recipientId)))
         .where(where)
         .orderBy(sort(t.id))
         .limit(range.limit)
@@ -266,9 +266,8 @@ export async function listRecipients(
         createdAt: n.createdAt,
       })
       .from(n)
-      .leftJoin(s.clients, and(eq(n.recipientType, sql`'client'`), eq(s.clients.id, n.recipientId)))
+      .leftJoin(s.clients, and(eq(n.recipientType, sql`'account'`), eq(s.clients.id, n.recipientId)))
       .leftJoin(s.staffUsers, and(eq(n.recipientType, sql`'staff'`), eq(s.staffUsers.id, n.recipientId)))
-      .leftJoin(s.customers, and(eq(n.recipientType, sql`'customer'`), eq(s.customers.id, n.recipientId)))
       .where(where)
       .orderBy(sort(n.id))
       .limit(range.limit)
@@ -290,6 +289,12 @@ export interface CampaignMessageRow {
   readonly recipientId: number;
   readonly channel: 'email';
   readonly dedupeKey: string;
+  /**
+   * The audience of the group the person was selected in (`merchant` for an account of a merchant rank, `customer` for the other ranks and
+   * the guests). It is kept in the row's payload, so the send-time check asks the same group, even when a rank change came between the
+   * fan-out and the sending.
+   */
+  readonly audience: NotificationAudience;
 }
 
 /**
@@ -316,10 +321,10 @@ export async function insertCampaignMessages(
   return db
     .insert(notifications)
     .values(
-      rows.map((row) => ({
+      rows.map(({ audience, ...row }) => ({
         ...row,
         event,
-        payload: {},
+        payload: { audience },
         status: 'queued' as const,
         campaignId,
         createdAt: now,

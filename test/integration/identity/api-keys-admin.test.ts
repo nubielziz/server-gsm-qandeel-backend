@@ -134,7 +134,7 @@ describe('POST /admin/clients/:id/api-keys', () => {
     ]);
   });
 
-  it('audits the creation under the merchant without the key, and mails each merchant one security notice', async () => {
+  it('audits the creation under the account without the key, and mails each merchant one security notice', async () => {
     const api = await staff();
     const english = await insertMerchant(db, { name: 'Zain Mobile Hub' });
     const other = await insertMerchant(db, { name: 'Cedar Phones' });
@@ -146,7 +146,7 @@ describe('POST /admin/clients/:id/api-keys', () => {
       actorType: 'staff',
       actorId: api.staffId,
       action: 'created API key for',
-      entityType: 'merchant',
+      entityType: 'account',
       entityId: english,
       entityLabel: 'Zain Mobile Hub',
     });
@@ -177,9 +177,9 @@ describe('POST /admin/clients/:id/api-keys', () => {
     expect(mails.find((mail) => mail.text.startsWith('Hi Cedar Phones,'))).toBeDefined();
   });
 
-  it('refuses a pending or a suspended merchant with 409 NOT_ACTIVE and an unknown one with 404, writing nothing', async () => {
+  it('refuses a suspended or a blocked merchant with 409 NOT_ACTIVE and an unknown one with 404, writing nothing', async () => {
     const api = await staff();
-    for (const status of ['pending', 'suspended'] as const) {
+    for (const status of ['suspended', 'blocked'] as const) {
       const clientId = await insertMerchant(db, { status });
       const res = await api.post(`/admin/clients/${clientId}/api-keys`, BODY);
       expect(res.status).toBe(409);
@@ -311,7 +311,7 @@ describe('PATCH /admin/api-keys/:id', () => {
       actorType: 'staff',
       actorId: api.staffId,
       action: 'changed limits of API key of',
-      entityType: 'merchant',
+      entityType: 'account',
       entityId: clientId,
       entityLabel: 'Zain Mobile Hub',
     });

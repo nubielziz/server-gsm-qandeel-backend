@@ -1,11 +1,21 @@
-// HTTP controller of the storefront customer's sign-in routes (map domain I, /store/v1/auth/* and /store/v1/me/password, stage 14).
-// Thin: it reads the request, calls the use case and sets the cookies and headers; the rules live in the application services.
-import { Body, Controller, Header, Req, Res } from '@nestjs/common';
+// HTTP controller of the shop's sign-in routes (map domain I, /store/v1/auth/* and /store/v1/me/password, stage 14; decision 064). Thin: it
+// reads the request, calls the use case through its port and sets the cookies and headers; the password routes are aliases of the
+// `/client/auth/*` use cases and the rules live in the application services behind the ports.
+import { type ExecutionContext, Body, Controller, Header, Req, Res, createParamDecorator } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { type BodyOf, type ResultOf, Route } from '../../../common/contract';
-import { type CustomerPrincipal, requestMetaOf, SessionCookies } from '../../identity';
-import { CustomerPasswordService } from '../application/customer-password.service';
-import { CustomerSignInService } from '../application/customer-sign-in.service';
+import { AppError } from '../../../common/errors';
+import {
+  type AccountPrincipal,
+  AccountLinkSignIn,
+  AccountOwnPassword,
+  AccountSignIn,
+  CurrentAccount,
+  SessionCookies,
+  principalOf,
+  requestMetaOf,
+} from '../../identity';
+import { CustomerAccountService } from '../application/customer-account.service';
 import {
   changeMyPassword,
   forgotCustomerPassword,
@@ -15,14 +25,27 @@ import {
   setCustomerPasswordByLink,
   verifyMagicLink,
 } from '../contracts/store-auth.contracts';
-import { CurrentCustomer, CurrentLink } from './current-customer';
 
 /**
- * The storefront customer's sign-in routes.
+ * Parameter decorator: the one-time link a `link-token` route was opened with.
  *
- * Why: a customer signs in with an emailed link or a password, recovers a forgotten password, chooses one from an invitation and
- * changes it from the account (map stage 14, decision 018). Every answer carries `Cache-Control: no-store`: these responses hold
- * cookies, tokens or personal data.
+ * Why: the guard resolved the token in the body to the `auth_tokens` row without spending it; the exchange reads that row by its id.
+ *
+ * @throws {AppError} `TOKEN_INVALID` (410) when the request was not authenticated by a link token
+ */
+const CurrentLink = createParamDecorator((_data: unknown, context: ExecutionContext): number => {
+  const principal = principalOf(context.switchToHttp().getRequest<FastifyRequest>());
+  if (principal?.kind !== 'capability' || principal.access !== 'link-token') throw new AppError('TOKEN_INVALID');
+  return principal.resourceId;
+});
+
+/**
+ * The shop's sign-in routes.
+ *
+ * Why: a retail account signs in with an emailed link or a password, recovers a forgotten password, chooses one from an invitation and
+ * changes it from the account (map stage 14, decision 018). The password routes run the use cases of the `/client/auth/*` family (one
+ * sign-in, one forgot, one set-by-link, one sign-out for every account) and go when the contract release retires the aliases. Every answer
+ * carries `Cache-Control: no-store`: these responses hold cookies, tokens or personal data.
  *
  * @route POST /store/v1/auth/magic-link
  * @route POST /store/v1/auth/verify
@@ -35,8 +58,10 @@ import { CurrentCustomer, CurrentLink } from './current-customer';
 @Controller()
 export class StoreAuthController {
   constructor(
-    private readonly signIn: CustomerSignInService,
-    private readonly passwords: CustomerPasswordService,
+    private readonly signIn: AccountSignIn,
+    private readonly links: AccountLinkSignIn,
+    private readonly passwords: AccountOwnPassword,
+    private readonly accounts: CustomerAccountService,
     private readonly cookies: SessionCookies,
   ) {}
 
@@ -55,7 +80,7 @@ export class StoreAuthController {
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<void> {
-    const browser = await this.signIn.requestMagicLink(
+    const browser = await this.links.requestLink(
       body.email,
       requestMetaOf(request),
       this.cookies.readLinkBrowser(request),
@@ -67,30 +92,43 @@ export class StoreAuthController {
    * Exchanges a sign-in link for a session.
    *
    * @param linkId the one-time link the guard resolved
+   * @param body the token (read by the guard) and the choice to claim the orders of the guest row of the email
    * @param request the request (a stale session cookie on it is ended; its asking-browser cookie tells whether it asked for the link)
    * @param reply the reply, to set the session's cookies and the CSRF header
-   * @returns the customer's account, whether this browser asked for the link, and the masked address
+   * @returns the account the link opened, whether this browser asked for the link, the masked address, the next step and the claim result
    * @route POST /store/v1/auth/verify
    */
   @Route(verifyMagicLink)
   @Header('Cache-Control', 'no-store')
   async verify(
     @CurrentLink() linkId: number,
+    @Body() body: BodyOf<typeof verifyMagicLink>,
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof verifyMagicLink>> {
-    const { me, session } = await this.signIn.verifyLink(
-      linkId,
-      requestMetaOf(request),
-      this.cookies.readToken(request, 'customer'),
-      this.cookies.readLinkBrowser(request),
+    const browserKey = this.cookies.readLinkBrowser(request);
+    const exchanged = await this.links.exchange(
+      {
+        linkId,
+        claimGuestOrders: body.claimGuestOrders ?? false,
+        ...(browserKey === undefined ? {} : { browserKey }),
+      },
+      request,
+      reply,
     );
-    this.cookies.set(reply, 'customer', session.token, session.session.expiresAt);
-    return me;
+    const me = await this.accounts.meOf(exchanged.accountId);
+    return {
+      ...me,
+      requestedHere: exchanged.requestedHere,
+      maskedEmail: exchanged.maskedEmail,
+      next: exchanged.next,
+      claimedOrders: exchanged.claimedOrders,
+      ...(exchanged.claimSkipped === undefined ? {} : { claimSkipped: exchanged.claimSkipped }),
+    };
   }
 
   /**
-   * Signs in with email and password.
+   * Signs in with email and password (the alias of `POST /client/auth/sign-in` that answers the next step only).
    *
    * @param body the credentials
    * @param request the request (a stale session cookie on it is ended)
@@ -105,12 +143,7 @@ export class StoreAuthController {
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ResultOf<typeof loginCustomer>> {
-    const { next, session } = await this.signIn.login(
-      body,
-      requestMetaOf(request),
-      this.cookies.readToken(request, 'customer'),
-    );
-    this.cookies.set(reply, 'customer', session.token, session.session.expiresAt);
+    const { next } = await this.signIn.signIn(body, request, reply);
     return { next };
   }
 
@@ -124,29 +157,32 @@ export class StoreAuthController {
   @Route(forgotCustomerPassword)
   @Header('Cache-Control', 'no-store')
   async forgot(@Body() body: BodyOf<typeof forgotCustomerPassword>, @Req() request: FastifyRequest): Promise<void> {
-    await this.passwords.forgot(body.email, requestMetaOf(request));
+    await this.signIn.forgotPassword(body.email, requestMetaOf(request));
   }
 
   /**
    * Chooses a password with an invitation or reset link.
    *
-   * @param linkId the one-time link the guard resolved
-   * @param body the token (already used by the guard) and the new password
+   * @param body the token and the new password
+   * @param request the request
    * @route POST /store/v1/auth/password/set
    */
   @Route(setCustomerPasswordByLink)
   @Header('Cache-Control', 'no-store')
   async setPassword(
-    @CurrentLink() linkId: number,
     @Body() body: BodyOf<typeof setCustomerPasswordByLink>,
+    @Req() request: FastifyRequest,
   ): Promise<void> {
-    await this.passwords.setByLink(linkId, body.password);
+    await this.signIn.resetPassword(body, requestMetaOf(request));
   }
 
   /**
-   * Changes the password of the signed-in customer.
+   * Changes the password of the signed-in account.
    *
-   * @param customer the session's customer
+   * Why: an active session runs the account's own change; a `pending_password` session (a temporary password, the shop of the time before
+   * accounts became one) runs the forced change, which rotates the session and sets its cookies on the reply.
+   *
+   * @param account the session's account
    * @param body the current and the new password
    * @param request the request
    * @param reply the reply, to set the new session's cookies after a forced change
@@ -155,29 +191,31 @@ export class StoreAuthController {
   @Route(changeMyPassword)
   @Header('Cache-Control', 'no-store')
   async changePassword(
-    @CurrentCustomer() customer: CustomerPrincipal,
+    @CurrentAccount() account: AccountPrincipal,
     @Body() body: BodyOf<typeof changeMyPassword>,
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<void> {
-    const { session } = await this.passwords.change(customer, body, requestMetaOf(request));
-    if (session) this.cookies.set(reply, 'customer', session.token, session.session.expiresAt);
+    if (account.stage === 'pending_password') {
+      await this.signIn.changeForcedPassword(account, body.newPassword, request, reply);
+      return;
+    }
+    await this.passwords.change(account, body);
   }
 
   /**
    * Signs out.
    *
-   * @param customer the session's customer
-   * @param reply the reply, to clear both cookies
+   * @param account the session's account
+   * @param reply the reply, to clear the cookies
    * @route POST /store/v1/auth/logout
    */
   @Route(logoutCustomer)
   @Header('Cache-Control', 'no-store')
   async logout(
-    @CurrentCustomer() customer: CustomerPrincipal,
+    @CurrentAccount() account: AccountPrincipal,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<void> {
-    await this.signIn.logout(customer);
-    this.cookies.clear(reply, 'customer');
+    await this.signIn.signOut(account, reply);
   }
 }

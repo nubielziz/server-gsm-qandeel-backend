@@ -72,7 +72,10 @@ const PaymentLine = z.object({
   status: z.enum(PAYMENT_STATUSES),
   currency: z.string(),
   fx: zDecimal,
-  customer: z.object({ id: zId, name: z.string() }).nullable(),
+  customer: z
+    .object({ id: zId, name: z.string() })
+    .nullable()
+    .describe('The buyer account (any rank, a guest included); the key keeps its name for the console.'),
 });
 
 const MethodSummary = z.object({

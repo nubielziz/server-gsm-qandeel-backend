@@ -26,7 +26,8 @@ import { OrderOutbox } from './order-outbox';
 
 /** What the capture of a paid checkout gives placement. */
 export interface CustomerPlacementRequest {
-  readonly customerId: number;
+  /** The buyer: the account that opened the checkout (a login account or a guest row). */
+  readonly accountId: number;
   readonly checkoutSessionId: number;
   readonly serviceId: number;
   readonly quantity: number;
@@ -56,8 +57,10 @@ const CURRENCY = 'USD';
 /**
  * Places the order of a paid checkout.
  *
- * Why: scenario b2c-paid step 7: in the capture's transaction the order exists with `customer_id` and a tracking token (stored as a
- * keyed hash and an encrypted copy, decision 054) instead of a merchant, the payment is posted, and an automatic order is queued for dispatch ("B2C never dispatches before payment", CLAUDE.md).
+ * Why: scenario b2c-paid step 7: in the capture's transaction the order exists with the buyer's `account_id`, the `store` door and a tracking token
+ * (stored as a keyed hash and an encrypted copy, decision 054) and no hold, the payment is posted, and an automatic order is queued for dispatch ("B2C never dispatches before payment", CLAUDE.md).
+ * The door decides the money path, never the buyer's rank: an account that crossed to a merchant rank between the payment and the capture still gets a shop order. The
+ * capture holds the buyer's account row `FOR KEY SHARE` (decision 064) before it calls this.
  * Codes in stock are delivered at once like a merchant's order (RULES orders 10). The customer already paid the locked price, so
  * nothing here refuses: a service switched off since is still delivered or worked by hand. An order the risk rules hold (feature 18,
  * `holdReason` set) starts `held` through `placementDispatchState({ held })`: it claims no stock, queues no dispatch and carries the
@@ -128,8 +131,7 @@ export class CustomerOrderPlacement {
     // Decision 054: the tracking token is stored only as its keyed hash and an encrypted copy.
     const sealed = this.vault.seal('tracking', request.publicToken);
     const order = await insertOrder(tx, {
-      customerId: request.customerId,
-      clientId: null,
+      accountId: request.accountId,
       serviceId: service.id,
       type: service.type,
       source: 'store',
@@ -179,7 +181,8 @@ export class CustomerOrderPlacement {
       await insertEvents(tx, rows(order.id, stockDeliveryLines(claim.codes.length, moved)));
       await this.outbox.statusChanged(tx, {
         orderId: order.id,
-        clientId: null,
+        accountId: order.accountId,
+        source: order.source,
         fromStatus: STOCK_DELIVERY_FROM,
         toStatus: order.status,
       });

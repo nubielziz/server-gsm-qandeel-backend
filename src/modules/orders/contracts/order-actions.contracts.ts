@@ -119,7 +119,9 @@ export const reopenOrder = defineRoute({
   description:
     'Sends a completed order back to `processing` (dispatch state `operator`, no queue): `completed_at` and the result are cleared and ' +
     'the settled revenue returns to the hold (a reversing entry; the cost stays booked). Writes a `reopened` event, ' +
-    '`order.status_changed` and an audit row. A later reply settles it again.',
+    '`order.status_changed` and an audit row. A later reply settles it again. A reopen moves revenue back to the merchant hold, which is a ' +
+    'new debit and not a refund: when the buyer account no longer has a merchant rank (the live wallet is the store balance) it is ' +
+    '`409 RANK_CHANGED` ("Refund the order instead."), and nothing is posted. An erased account (anonymized) is `409 ANONYMIZED`.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
@@ -135,6 +137,8 @@ export const reopenOrder = defineRoute({
     'ORDER_NOT_COMPLETED',
     'ORDER_NOT_OPEN',
     'INVALID_TRANSITION',
+    'RANK_CHANGED',
+    'ANONYMIZED',
     'VALIDATION_FAILED',
   ],
   examples: { request: { reason: 'The code did not work' } },
@@ -147,7 +151,9 @@ export const refundOrder = defineRoute({
   description:
     'Refunds a completed merchant order in one step (reopen, then reject): the order becomes `rejected` with the reason as its result, ' +
     'the settled revenue goes straight back to the wallet and the supplier cost is kept (a reversing entry). Writes `rejected` and ' +
-    '`refund` events, `order.status_changed` and an audit row. Storefront orders are refunded from the Refunds page (`USE_REFUNDS`).',
+    '`refund` events, `order.status_changed` and an audit row. Storefront orders are refunded from the Refunds page (`USE_REFUNDS`). ' +
+    'The refund credits the wallet of the rank the account holds now; an erased account (anonymized) has no wallet anyone can open, so ' +
+    'its refund is `409 ANONYMIZED` and nothing is posted (pay it back another way, decision 064).',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
@@ -163,6 +169,7 @@ export const refundOrder = defineRoute({
     'ORDER_NOT_COMPLETED',
     'USE_REFUNDS',
     'INVALID_TRANSITION',
+    'ANONYMIZED',
     'VALIDATION_FAILED',
   ],
   examples: { request: { reason: 'The merchant was charged twice' } },
@@ -176,7 +183,8 @@ export const decideVerification = defineRoute({
     'Decides the verification request of a completed order. `accept` keeps the charge (`verification_status` `accepted`). `refund` ' +
     'rejects the order with the note (or a default text) as its result and refunds it like `POST /admin/orders/:id/refund`: revenue ' +
     'back to the wallet, cost kept (`verification_status` `refunded`). Writes a `verification` event (and the refund events) and an audit row. ' +
-    '`refund` also needs `orders:reopen`, the permission of `POST /admin/orders/:id/refund` (`403 FORBIDDEN`, decision 046).',
+    '`refund` also needs `orders:reopen`, the permission of `POST /admin/orders/:id/refund` (`403 FORBIDDEN`, decision 046), and is ' +
+    '`409 ANONYMIZED` for an erased account, as that route is.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
@@ -195,6 +203,7 @@ export const decideVerification = defineRoute({
     'NOT_IN_VERIFICATION',
     'USE_REFUNDS',
     'INVALID_TRANSITION',
+    'ANONYMIZED',
     'VALIDATION_FAILED',
   ],
   examples: { request: { decision: 'accept' } },
@@ -232,7 +241,7 @@ export const previewBulkReply = defineRoute({
     'whitespace, a comma or a semicolon (a line ends at a line feed, a carriage return, CRLF, U+2028 or U+2029). The input is matched to `orders.imei` with whitespace removed (a blank input never ' +
     'matches). Status per line: `invalid` (no input or no code), `not_found`, `not_open` (only closed orders carry it), `ambiguous` ' +
     '(several open orders, or one open order while another order with that input but another buyer or another service was cancelled ' +
-    `or rejected in the last ${RECENT_REJECTION_DAYS} days) or \`matched\` (with the order id and the merchant or customer and the ` +
+    `or rejected in the last ${RECENT_REJECTION_DAYS} days) or \`matched\` (with the order id and the buyer \`account\` and the ` +
     'service of that order). Changes nothing, so it writes no audit row.',
   tags: ['orders'],
   surface: 'admin',
@@ -251,16 +260,14 @@ export const previewBulkReply = defineRoute({
           code: z.string().nullable(),
           orderId: zId.nullable(),
           status: z.enum(LINE_STATUSES),
-          // The server sends these three on every line; they are optional here because the console's type and its mock answer
+          // The server sends these two on every line; they are optional here because the console's type and its mock answer
           // do not carry them yet (an additive field the console may ignore).
-          client: namedRef
+          account: namedRef
             .nullable()
             .optional()
-            .describe('The merchant of the matched order; null unless matched to a merchant order.'),
-          customer: namedRef
-            .nullable()
-            .optional()
-            .describe('The storefront customer of the matched order; null unless matched to a storefront order.'),
+            .describe(
+              'The buyer account of the matched order (a merchant, a shop customer or a guest); null unless matched.',
+            ),
           service: namedRef.nullable().optional().describe('The service of the matched order; null unless matched.'),
         }),
       ),
@@ -278,8 +285,7 @@ export const previewBulkReply = defineRoute({
           code: 'Unlocked: 8842',
           orderId: 48101,
           status: 'matched',
-          client: { id: 12, name: 'Cairo GSM Lab' },
-          customer: null,
+          account: { id: 12, name: 'Cairo GSM Lab' },
           service: { id: 7, name: 'AT&T USA Premier Unlock' },
         },
       ],

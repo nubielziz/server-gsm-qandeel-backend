@@ -1,4 +1,5 @@
-// HTTP controller of the customer inbox (feature 23, routes /store/v1/me/notifications, scripts/map-additions/23.mjs).
+// HTTP controller of the retail account's inbox (feature 23, routes /store/v1/me/notifications, scripts/map-additions/23.mjs). The owner is
+// the account (decision 064); the merchant ranks read theirs on /client/notifications.
 import { Body, Controller, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../../common/contract';
 import {
@@ -10,9 +11,9 @@ import {
 import { InboxService, inboxOwner } from './inbox.service';
 
 /**
- * The customer's own notifications.
+ * The retail account's own notifications.
  *
- * Why: owner list E: customers read order, payment and refund items and announcements in their account. Thin layer over {@link InboxService}; the person is the session's actor, never a parameter.
+ * Why: owner list E: shop accounts read order, payment and refund items and announcements in their account. The inbox owner is the account. Thin layer over {@link InboxService}; the person is the session's actor, never a parameter.
  *
  * @route GET /store/v1/me/notifications
  * @route GET /store/v1/me/notifications/unread-count
@@ -32,7 +33,7 @@ export class CustomerInboxController {
    */
   @Route(listCustomerInbox)
   list(@Query() query: QueryOf<typeof listCustomerInbox>): Promise<ResultOf<typeof listCustomerInbox>> {
-    return this.inbox.list(inboxOwner('customer'), query);
+    return this.inbox.list(inboxOwner('account'), query);
   }
 
   /**
@@ -43,7 +44,7 @@ export class CustomerInboxController {
    */
   @Route(customerUnreadCount)
   unread(): Promise<ResultOf<typeof customerUnreadCount>> {
-    return this.inbox.unread(inboxOwner('customer'));
+    return this.inbox.unread(inboxOwner('account'));
   }
 
   /**
@@ -55,7 +56,7 @@ export class CustomerInboxController {
    */
   @Route(markCustomerInboxRead)
   read(@Param() params: ParamsOf<typeof markCustomerInboxRead>): Promise<void> {
-    return this.inbox.markRead(inboxOwner('customer'), params.id);
+    return this.inbox.markRead(inboxOwner('account'), params.id);
   }
 
   /**
@@ -67,6 +68,6 @@ export class CustomerInboxController {
    */
   @Route(markAllCustomerInboxRead)
   readAll(@Body() body: BodyOf<typeof markAllCustomerInboxRead>): Promise<ResultOf<typeof markAllCustomerInboxRead>> {
-    return this.inbox.markAll(inboxOwner('customer'), body.upToId);
+    return this.inbox.markAll(inboxOwner('account'), body.upToId);
   }
 }

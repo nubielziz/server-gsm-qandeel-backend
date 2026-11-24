@@ -16,6 +16,7 @@ import {
   confirmProblem,
   contentProblems,
   linkProblems,
+  notificationSettingsUrl,
   rowsFor,
   scheduleProblem,
   statsOf,
@@ -74,9 +75,9 @@ describe('contentProblems', () => {
 describe('linkProblems', () => {
   it('accepts site paths per audience', () => {
     expect(linkProblems(null)).toEqual([]);
-    expect(
-      linkProblems({ customer: '/account/orders', merchant: '/merchant/wallet?tab=top-up#x', staff: '/' }),
-    ).toEqual([]);
+    expect(linkProblems({ customer: '/account/orders', merchant: '/account/wallet?tab=top-up#x', staff: '/' })).toEqual(
+      [],
+    );
   });
 
   it('refuses anything that could leave the site', () => {
@@ -86,19 +87,28 @@ describe('linkProblems', () => {
     expect(fields(linkProblems({ merchant: `/${'a'.repeat(200)}` }))).toEqual(['link.merchant']);
   });
 
-  it('keeps a merchant link inside the merchant portal: the inbox and the email both use the site path', () => {
-    for (const good of ['/merchant', '/merchant/orders', '/merchant?tab=x', '/merchant#top']) {
+  it('keeps a merchant link inside the account area: the inbox and the email both use the site path', () => {
+    for (const good of ['/account', '/account/orders', '/account?tab=x', '/account#top']) {
       expect(linkProblems({ merchant: good }), good).toEqual([]);
     }
-    for (const bad of ['/orders', '/merchants/x', '/account/orders', '/']) {
+    // The shop has no /merchant addresses any more: the old ones are refused, so a new campaign never carries one.
+    for (const bad of ['/orders', '/accounts/x', '/merchant/orders', '/merchant', '/']) {
       expect(linkProblems({ merchant: bad }), bad).toEqual([
         {
           field: 'link.merchant',
           code: 'invalid',
-          message: 'Use a page of the merchant portal, such as /merchant/orders.',
+          message: 'Use a page of the account area, such as /account/orders.',
         },
       ]);
     }
+  });
+});
+
+describe('notificationSettingsUrl', () => {
+  it('is the notification settings page of the account area, joined to the shop root once (decision 064)', () => {
+    expect(notificationSettingsUrl('https://shop.example')).toBe('https://shop.example/account/settings/notifications');
+    expect(linkProblems({ merchant: '/account/settings/notifications' })).toEqual([]);
+    expect(notificationSettingsUrl('https://shop.example')).not.toContain('/merchant');
   });
 });
 
@@ -195,6 +205,8 @@ describe('stats', () => {
   });
 
   it('keys a campaign row by campaign, channel and person', () => {
-    expect(campaignDedupeKey(7, 'email', 'client', 42)).toBe('campaign-7:email:client-42');
+    expect(campaignDedupeKey(7, 'email', 'account', 42)).toBe('campaign-7:email:account-42');
+    // One account is one key whatever group listed it, and a staff member with the same number is another person.
+    expect(campaignDedupeKey(7, 'email', 'staff', 42)).toBe('campaign-7:email:staff-42');
   });
 });

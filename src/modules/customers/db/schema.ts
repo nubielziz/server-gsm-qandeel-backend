@@ -1,7 +1,8 @@
-// Customers tables (map domain I): storefront customers, sign-in data, checkout sessions and consents.
+// Customers tables (map domain I): checkout sessions and consents, and the two retired customer tables (decision 064).
 // Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   check,
   index,
@@ -27,15 +28,15 @@ import {
   updatedAt,
 } from '../../../infra/db/columns';
 import { services } from '../../catalog/db/schema';
-import { staffUsers } from '../../identity/db/schema';
+import { clients, staffUsers } from '../../identity/db/schema';
 import { currencies } from '../../money/db/schema';
 import { orders } from '../../orders/db/schema';
 import { legalDocuments } from '../../storefront/db/schema';
 
 /**
- * Customer states: `suspended` is a reversible pause, `blocked` is fraud, `anonymized` is final.
+ * The states the CHECK of the retired `customers` table allows.
  *
- * Why: the console's customer wire enum (GET /admin/customers).
+ * Why: the table is frozen and unread (decision 064); the account states are `CLIENT_STATUSES`, the same four values.
  */
 export const CUSTOMER_STATUSES = ['active', 'suspended', 'blocked', 'anonymized'] as const;
 
@@ -74,23 +75,24 @@ export const CONSENT_PURPOSES = ['terms', 'privacy', 'refund_policy', 'withdrawa
 export type ConsentPurpose = (typeof CONSENT_PURPOSES)[number];
 
 /**
- * Who gave a consent: a storefront customer, or a merchant (retired).
+ * Who gave a consent: an account.
  *
- * Why: RESOLUTIONS b2c-14; `subject_id` points at `customers` or `clients` accordingly. No code ever wrote a `client` row and none writes one now;
- * the value stays in the list because the check constraint and the readers must accept an old row.
+ * Why: RESOLUTIONS b2c-14; `subject_id` is an account id (decision 064: the old `customer` and `client` words are rewritten to `account`
+ * by the expand migration; the proof columns of a row are never touched).
  */
-export const CONSENT_SUBJECT_TYPES = ['customer', 'client'] as const;
+export const CONSENT_SUBJECT_TYPES = ['account'] as const;
 
 /** One value of {@link CONSENT_SUBJECT_TYPES}. */
 export type ConsentSubjectType = (typeof CONSENT_SUBJECT_TYPES)[number];
 
 /**
- * Storefront customers: a guest with an email, or an account with a password or a sign-in link. Status is active,
- * suspended (a reversible pause), blocked (fraud) or anonymized.
+ * Retired (decision 064): the old storefront customers. Every row was copied into `clients` (a retail account or a guest) and the map
+ * `account_legacy_ids` keeps the old ids. The table stays, frozen by a trigger and unread, until the contract migration drops it; it is
+ * named `retiredCustomers` in TypeScript so the compiler finds every reader that is left.
  *
- * Why: B2C buyers: a guest with an email or an account (scenario b2c-account, routes /admin/customers).
+ * Why: B2C buyers: a guest with an email or an account (scenario b2c-account, routes /admin/customers, now served from the accounts).
  */
-export const customers = pgTable(
+export const retiredCustomers = pgTable(
   'customers',
   {
     id: pk(),
@@ -134,25 +136,29 @@ export const customers = pgTable(
   ],
 );
 
-/** A row read from `customers`. */
-export type Customer = typeof customers.$inferSelect;
+/** A row read from the retired `customers` table. */
+export type RetiredCustomer = typeof retiredCustomers.$inferSelect;
 
-/** A row to insert into `customers`. */
-export type NewCustomer = typeof customers.$inferInsert;
+/** A row to insert into the retired `customers` table. */
+export type NewRetiredCustomer = typeof retiredCustomers.$inferInsert;
 
 /**
- * Account sign-in data, kept apart from the profile: hash only. A temporary password set by a staff member forces a
- * change at first sign-in, and nobody can read the current password.
+ * Retired (decision 064): the sign-in data of the old customers (hash only). The password of a customer with a login was copied into its
+ * account; the table stays, frozen and unread, until the contract migration drops it, and is named `retiredCustomerCredentials` in
+ * TypeScript so the compiler finds every reader that is left.
  *
  * Why: Sign-in data kept apart from the profile: hash only (decision 018). The lockout counters moved to the cache Redis (keyed by
  * the email, so an email without an account locks like one with an account; identity's sign-in lock, decision 052): `failed_attempts`
- * and `locked_until` are no longer written; a later migration can drop them.
+ * and `locked_until` are no longer written.
  */
-export const customerCredentials = pgTable(
+export const retiredCustomerCredentials = pgTable(
   'customer_credentials',
   {
     id: pk(),
-    customerId: fk((): AnyPgColumn => customers.id, 'cascade').notNull(),
+    /** the old customer id (the SQL column is `customer_id`) */
+    retiredCustomerId: bigint('customer_id', { mode: 'number' })
+      .references((): AnyPgColumn => retiredCustomers.id, { onDelete: 'cascade' })
+      .notNull(),
     /** null until the customer chooses a password */
     passwordHash: text(),
     mustChangePassword: boolean().notNull().default(false),
@@ -165,16 +171,16 @@ export const customerCredentials = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    unique('customer_credentials_customer_uq').on(t.customerId),
+    unique('customer_credentials_customer_uq').on(t.retiredCustomerId),
     index('customer_credentials_updated_by_idx').on(t.updatedBy),
   ],
 );
 
-/** A row read from `customer_credentials`. */
-export type CustomerCredential = typeof customerCredentials.$inferSelect;
+/** A row read from the retired `customer_credentials` table. */
+export type RetiredCustomerCredential = typeof retiredCustomerCredentials.$inferSelect;
 
-/** A row to insert into `customer_credentials`. */
-export type NewCustomerCredential = typeof customerCredentials.$inferInsert;
+/** A row to insert into the retired `customer_credentials` table. */
+export type NewRetiredCustomerCredential = typeof retiredCustomerCredentials.$inferInsert;
 
 /**
  * The payment session before any order exists: the price, tax and exchange rate are locked in, and the order is
@@ -193,7 +199,12 @@ export const checkoutSessions = pgTable(
     tokenHash: text(),
     /** the checkout token as AES-GCM text, AAD checkout_sessions.token_enc (decisions 019, 054) */
     tokenEnc: text(),
-    customerId: fk((): AnyPgColumn => customers.id),
+    /** the old customer id: retired (decision 064), unread and unwritten; the contract migration drops the column (the SQL column is `customer_id`) */
+    retiredCustomerId: bigint('customer_id', { mode: 'number' }).references((): AnyPgColumn => retiredCustomers.id, {
+      onDelete: 'restrict',
+    }),
+    /** the account row of the buyer: a login account, or the guest row of the typed email; null only for a session that never had one */
+    accountId: fk((): AnyPgColumn => clients.id),
     email: text().notNull(),
     serviceId: fk((): AnyPgColumn => services.id).notNull(),
     /** the IMEI, AES-GCM text of decision 019 */
@@ -238,7 +249,8 @@ export const checkoutSessions = pgTable(
     check('checkout_sessions_ip_country_check', sql`${t.ipCountry} is null or ${t.ipCountry} ~ '^[A-Z]{2}$'`),
     index('checkout_sessions_status_created_idx').on(t.status, t.createdAt.desc()),
     index('checkout_sessions_created_idx').on(t.createdAt.desc()),
-    index('checkout_sessions_customer_id_idx').on(t.customerId),
+    index('checkout_sessions_customer_id_idx').on(t.retiredCustomerId),
+    index('checkout_sessions_account_id_idx').on(t.accountId),
     check('checkout_sessions_quantity_check', sql`${t.quantity} > 0 and ${t.grossAmount} >= 0`),
     index('checkout_sessions_service_id_idx').on(t.serviceId),
     index('checkout_sessions_currency_idx').on(t.currency),
@@ -264,7 +276,7 @@ export const consentRecords = pgTable(
   {
     id: pk(),
     subjectType: text().$type<ConsentSubjectType>().notNull(),
-    /** polymorphic: customers or clients by subject_type */
+    /** an account id (the old customer and merchant ids were rewritten through the legacy map) */
     subjectId: bigId().notNull(),
     legalDocumentId: fk((): AnyPgColumn => legalDocuments.id),
     purpose: text().$type<ConsentPurpose>().notNull(),

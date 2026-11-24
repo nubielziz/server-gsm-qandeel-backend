@@ -1,5 +1,5 @@
 // StoredFiles: the public side of the `files` table for other modules (decision 004): store a generated document in object storage
-// and record it, read the metadata of files by id, check which of them a merchant owns, hand out a short download link, delete files
+// and record it, read the metadata of files by id, check which of them an account owns, hand out a short download link, delete files
 // that nothing uses any more (feature 28) and find the files that hold the same bytes (decision 049). The upload routes are 7a's.
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
@@ -7,7 +7,7 @@ import { AppError } from '../../../common/errors';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { type DbExecutor, onCommit } from '../../../infra/db';
 import { DEFAULT_MAX_OBJECT_BYTES, DEFAULT_PRESIGN_SECONDS, StorageService } from '../../../infra/storage';
-import { type StoredFile, files } from '../db/schema';
+import { type FileOwnerType, type StoredFile, files } from '../db/schema';
 import { deleteUnreferencedFiles } from '../infra/file.repository';
 
 /**
@@ -52,8 +52,8 @@ export interface StoredFileRecord extends FileMeta {
 
 /** What {@link StoredFiles.store} writes. */
 export interface StoreFileInput {
-  /** `client`, `staff` or `customer`: whose file it is (a merchant may download its own, B154). */
-  readonly ownerType: 'client' | 'staff' | 'customer';
+  /** `account` or `staff`: whose file it is (an account may download its own, B154). */
+  readonly ownerType: FileOwnerType;
   readonly ownerId: number;
   /** The download name. */
   readonly filename: string;
@@ -168,7 +168,7 @@ export class StoredFiles {
   /**
    * Reads one file if it belongs to the given owner.
    *
-   * Why: a merchant may attach only the files it uploaded itself (B161, B163); another owner's id is treated like an unknown one.
+   * Why: an account may attach only the files it uploaded itself (B161, B163); another owner's id is treated like an unknown one.
    *
    * @param db the database or a transaction
    * @param id the file id
@@ -178,7 +178,7 @@ export class StoredFiles {
   async findOwned(
     db: DbExecutor,
     id: number,
-    owner: { readonly type: 'client' | 'staff' | 'customer'; readonly id: number },
+    owner: { readonly type: FileOwnerType; readonly id: number },
   ): Promise<FileMeta | undefined> {
     const [row] = await db
       .select()

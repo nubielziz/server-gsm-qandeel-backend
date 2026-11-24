@@ -1,5 +1,6 @@
-// Integration tests of SessionService, the session policy (lifetimes from settings) and the cookie helpers (decision 018):
-// create, lookup and its cache, rotation, revocation, the once-a-minute touch, invalidation, transactions, Set-Cookie output.
+// Integration tests of SessionService, the session policy (lifetimes from settings) and the cookie helpers (decisions 018 and 064):
+// create, lookup and its cache, rotation, revocation, the once-a-minute touch, invalidation, transactions, Set-Cookie output. The
+// subjects are staff and account (one subject for every rank); the cache name of a session view carries the version :v2.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { AppError } from '@src/common/errors';
@@ -15,6 +16,7 @@ import {
   TOUCH_INTERVAL_MS,
 } from '@src/modules/identity';
 import { SettingsReader } from '@src/modules/platform';
+import { makeAccount } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { SECOND, TestClock } from '../../support/clock';
 import { clearIdentityCaches, insertMerchant, insertRole, insertStaff } from '../../support/auth';
@@ -85,21 +87,22 @@ describe('create', () => {
       ['staff', 'active', SESSION_DEFAULT_MINUTES.staffAbsolute],
       ['staff', 'pending_totp', 10],
       ['staff', 'pending_password', 10],
-      ['client', 'active', 30 * 24 * 60],
-      ['customer', 'active', 30 * 24 * 60],
-      ['client', 'pending_totp', 10],
+      ['account', 'active', 30 * 24 * 60],
+      ['account', 'pending_totp', 10],
     ] as const;
     for (const [subjectType, stage, expected] of cases) {
-      const { session } = await sessions.create(input({ subjectType, stage }));
+      const subjectId = subjectType === 'account' ? await insertMerchant((await testDb()).db) : staffId;
+      const { session } = await sessions.create(input({ subjectType, subjectId, stage }));
       expect(minutes(session.createdAt, session.expiresAt), `${subjectType} ${stage}`).toBe(expected);
     }
     expect(SESSION_DEFAULT_MINUTES).toMatchObject({
       staffAbsolute: 480,
       staffIdle: 30,
       clientIdle: 10080,
-      customerIdle: 10080,
       pending: 10,
     });
+    // There is no customer lifetime any more: every account has the account limits, whatever its rank (decision 064).
+    expect(SESSION_DEFAULT_MINUTES).not.toHaveProperty('customerIdle');
   });
 
   it('takes an explicit lifetime and cuts the user agent', async () => {
@@ -205,9 +208,44 @@ describe('lookup', () => {
 
     const ghost = await sessions.create(input({ subjectId: 987_654 }));
     expect(await sessions.lookup(ghost.token)).toBeUndefined();
-    // Customers have no resolver in this app: their sessions are never valid.
-    const customer = await sessions.create(input({ subjectType: 'customer', subjectId: 3 }));
-    expect(await sessions.lookup(customer.token)).toBeUndefined();
+    // A guest row (an email that ordered without signing up) and an anonymized account have no valid session: they are gone.
+    const guest = await makeAccount(t, { rank: 'retail', guest: true });
+    const guestSession = await sessions.create(input({ subjectType: 'account', subjectId: guest.id }));
+    expect(await sessions.lookup(guestSession.token)).toBeUndefined();
+    const erased = await makeAccount(t, { rank: 'retail', status: 'anonymized', anonymizedAt: new Date() });
+    const erasedSession = await sessions.create(input({ subjectType: 'account', subjectId: erased.id }));
+    expect(await sessions.lookup(erasedSession.token)).toBeUndefined();
+  });
+
+  it('gives the view of an active account its rank, and of a suspended or blocked one the state suspended (decision 064)', async () => {
+    const retail = await makeAccount(t, { rank: 'retail' });
+    const merchant = await makeAccount(t, { rank: 'merchant' });
+    const asRetail = await sessions.create(input({ subjectType: 'account', subjectId: retail.id }));
+    const asMerchant = await sessions.create(input({ subjectType: 'account', subjectId: merchant.id }));
+    expect((await sessions.lookup(asRetail.token))?.subject).toEqual({
+      state: 'ok',
+      name: 'Test Customer',
+      rank: { id: retail.groupId, kind: 'retail' },
+    });
+    expect((await sessions.lookup(asMerchant.token))?.subject).toEqual({
+      state: 'ok',
+      name: 'Test Merchant',
+      rank: { id: merchant.groupId, kind: 'merchant' },
+    });
+    for (const status of ['suspended', 'blocked'] as const) {
+      const frozen = await makeAccount(t, { rank: 'retail', status });
+      const issued = await sessions.create(input({ subjectType: 'account', subjectId: frozen.id }));
+      expect((await sessions.lookup(issued.token))?.subject).toMatchObject({ state: 'suspended' });
+    }
+  });
+
+  it('caches the view of an account session under the versioned name (:v2), never under the name of before', async () => {
+    const retail = await makeAccount(t, { rank: 'retail' });
+    const { token } = await sessions.create(input({ subjectType: 'account', subjectId: retail.id }));
+    expect(cacheKey(token).endsWith(':v2')).toBe(true);
+    expect(await cached(token)).toBe(true);
+    const unversioned: string = cacheKey(token).slice(0, -':v2'.length);
+    expect((await t.app.get(RedisService).cache.exists(unversioned)) === 1).toBe(false);
   });
 });
 
@@ -308,9 +346,9 @@ describe('revoke', () => {
     expect(await sessions.revokeAllOf('staff', staffId)).toBe(1);
     expect(await sessions.revokeAllOf('staff', staffId)).toBe(0);
     // The same id under another subject type is another account.
-    const merchant = await sessions.create(input({ subjectType: 'client', subjectId: staffId }));
+    const account = await sessions.create(input({ subjectType: 'account', subjectId: staffId }));
     expect(await sessions.revokeAllOf('staff', staffId)).toBe(0);
-    expect(merchant.session.revokedAt).toBeNull();
+    expect(account.session.revokedAt).toBeNull();
   });
 });
 
@@ -452,16 +490,21 @@ describe('lifetimes from settings', () => {
     expect((await sessions.lookup(token))?.idleMs).toBe(2 * 60_000);
   });
 
-  it('uses the pending lifetime for sign-in steps and the merchant lifetimes for merchants', async () => {
+  it('uses the pending lifetime for sign-in steps and the account lifetimes for an account of any rank', async () => {
     const { db } = await testDb();
     await setSetting(SESSION_SETTING_KEYS.pending, 3);
     await setSetting(SESSION_SETTING_KEYS.clientAbsolute, 60);
     await setSetting(SESSION_SETTING_KEYS.clientIdle, 15);
     const pending = await sessions.create(input({ stage: 'pending_totp' }));
     expect(minutes(pending.session.createdAt, pending.session.expiresAt)).toBe(3);
-    const merchant = await sessions.create(input({ subjectType: 'client', subjectId: await insertMerchant(db) }));
+    const merchant = await sessions.create(input({ subjectType: 'account', subjectId: await insertMerchant(db) }));
     expect(minutes(merchant.session.createdAt, merchant.session.expiresAt)).toBe(60);
     expect((await sessions.lookup(merchant.token))?.idleMs).toBe(15 * 60_000);
+    // The same limits for a retail account.
+    const retail = await makeAccount(t, { rank: 'retail' });
+    const asRetail = await sessions.create(input({ subjectType: 'account', subjectId: retail.id }));
+    expect(minutes(asRetail.session.createdAt, asRetail.session.expiresAt)).toBe(60);
+    expect((await sessions.lookup(asRetail.token))?.idleMs).toBe(15 * 60_000);
   });
 
   it('falls back to the default for a value that is not a sensible whole number', async () => {

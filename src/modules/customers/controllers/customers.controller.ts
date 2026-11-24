@@ -1,11 +1,10 @@
-// HTTP controller of the admin customer routes (map domain I, /admin/customers, stage 14, scenario b2c-account). Thin: the use
-// cases are in CustomerAdminService and CustomerAccountAdminService.
-import { Body, Controller, Header, Param, Query, Req } from '@nestjs/common';
-import type { FastifyRequest } from 'fastify';
-import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
-import { CurrentStaff, type StaffPrincipal, requestMetaOf } from '../../identity';
-import { CustomerAccountAdminService } from '../application/customer-account-admin.service';
-import { CustomerAdminService } from '../application/customer-admin.service';
+// HTTP controller of the retired admin customer routes (map domain I, /admin/customers, stage 14, scenario b2c-account). Since decision 064 a
+// customer is an account of the retail rank: the one list, the detail, the create, the edit, the account, the password, the sessions and the
+// suspension of every account are the routes of `/admin/clients` (the identity module). These nine addresses answer 410 ROUTE_RETIRED and
+// change nothing. The contract release deletes this file.
+import { Controller } from '@nestjs/common';
+import { Route } from '../../../common/contract';
+import { routeRetired } from '../application/customer-errors';
 import {
   createCustomerAccount,
   reactivateCustomer,
@@ -16,10 +15,12 @@ import {
 import { createCustomer, getCustomer, listCustomers, updateCustomer } from '../contracts/customers.contracts';
 
 /**
- * The customer routes of the console's Customers page.
+ * The retired routes of the console's Customers page.
  *
- * Why: staff look customers up, add one with an account, edit the details, manage the password and the sessions, and suspend or
- * reactivate an account (scenario b2c-account). A response that carries a temporary password is never cached.
+ * Why: decision 064: there are no compatibility adapters. The old address stays registered during the expand release and answers
+ * `410 ROUTE_RETIRED` naming the account route to use, so a client that still calls it learns what to call; nothing is read or written.
+ * The access check of the route (session, permission, CSRF token) and the validation of its old contract still come first, so a request the
+ * old contract refuses is 422 and a valid one is 410.
  *
  * @route GET /admin/customers
  * @route GET /admin/customers/:id
@@ -33,157 +34,102 @@ import { createCustomer, getCustomer, listCustomers, updateCustomer } from '../c
  */
 @Controller()
 export class CustomersController {
-  constructor(
-    private readonly customers: CustomerAdminService,
-    private readonly actions: CustomerAccountAdminService,
-  ) {}
-
   /**
-   * Lists customers.
+   * Answers that the customer list moved to the account list.
    *
-   * @param query the parsed list request
-   * @returns the page and its total
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route GET /admin/customers
    */
   @Route(listCustomers)
-  list(@Query() query: QueryOf<typeof listCustomers>): Promise<ResultOf<typeof listCustomers>> {
-    return this.customers.list(query);
+  list(): never {
+    throw routeRetired('GET /admin/clients');
   }
 
   /**
-   * Reads one customer with the detail figures.
+   * Answers that the customer detail moved to the account detail.
    *
-   * @param params the customer id
-   * @returns the detail
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route GET /admin/customers/:id
    */
   @Route(getCustomer)
-  show(@Param() params: ParamsOf<typeof getCustomer>): Promise<ResultOf<typeof getCustomer>> {
-    return this.customers.get(params.id);
+  show(): never {
+    throw routeRetired('GET /admin/clients/:id');
   }
 
   /**
-   * Adds a customer with an account.
+   * Answers that adding a customer moved to the account create.
    *
-   * @param staff the signed-in staff member
-   * @param body the new customer
-   * @param request the request (its address goes into the invitation record)
-   * @returns the customer, and the temporary password in that mode
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route POST /admin/customers
    */
   @Route(createCustomer)
-  @Header('Cache-Control', 'no-store')
-  async create(
-    @CurrentStaff() staff: StaffPrincipal,
-    @Body() body: BodyOf<typeof createCustomer>,
-    @Req() request: FastifyRequest,
-  ): Promise<ResultOf<typeof createCustomer>> {
-    const { password, ...fields } = body;
-    const created = await this.customers.create(staff, { ...fields, mode: password.mode }, requestMetaOf(request).ip);
-    return {
-      ...created.customer,
-      ...(created.temporaryPassword === undefined ? {} : { temporaryPassword: created.temporaryPassword }),
-    };
+  create(): never {
+    throw routeRetired('POST /admin/clients');
   }
 
   /**
-   * Edits a customer.
+   * Answers that editing a customer moved to the account edit.
    *
-   * @param staff the signed-in staff member
-   * @param params the customer id
-   * @param body the fields to change
-   * @param request the request (its address goes into a verification-link record)
-   * @returns the customer after the edit
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route PATCH /admin/customers/:id
    */
   @Route(updateCustomer)
-  update(
-    @CurrentStaff() staff: StaffPrincipal,
-    @Param() params: ParamsOf<typeof updateCustomer>,
-    @Body() body: BodyOf<typeof updateCustomer>,
-    @Req() request: FastifyRequest,
-  ): Promise<ResultOf<typeof updateCustomer>> {
-    return this.customers.update(staff, params.id, body, requestMetaOf(request).ip);
+  update(): never {
+    throw routeRetired('PATCH /admin/clients/:id');
   }
 
   /**
-   * Creates an account for a guest.
+   * Answers that making an account of a guest moved to the account routes.
    *
-   * @param staff the signed-in staff member
-   * @param params the customer id
-   * @param body how the customer gets a password
-   * @param request the request (its address goes into the invitation record)
-   * @returns the temporary password in that mode
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route POST /admin/customers/:id/account
    */
   @Route(createCustomerAccount)
-  @Header('Cache-Control', 'no-store')
-  account(
-    @CurrentStaff() staff: StaffPrincipal,
-    @Param() params: ParamsOf<typeof createCustomerAccount>,
-    @Body() body: BodyOf<typeof createCustomerAccount>,
-    @Req() request: FastifyRequest,
-  ): Promise<ResultOf<typeof createCustomerAccount>> {
-    return this.actions.createAccount(staff, params.id, body.mode, requestMetaOf(request).ip);
+  account(): never {
+    throw routeRetired('POST /admin/clients/:id/account');
   }
 
   /**
-   * Sends a password link or sets a temporary password.
+   * Answers that the password tools moved to the account security routes.
    *
-   * @param staff the signed-in staff member
-   * @param params the customer id
-   * @param body the mode and whether to end the sessions
-   * @param request the request (its address goes into the link record)
-   * @returns the temporary password in that mode
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route POST /admin/customers/:id/password
    */
   @Route(setCustomerPassword)
-  @Header('Cache-Control', 'no-store')
-  password(
-    @CurrentStaff() staff: StaffPrincipal,
-    @Param() params: ParamsOf<typeof setCustomerPassword>,
-    @Body() body: BodyOf<typeof setCustomerPassword>,
-    @Req() request: FastifyRequest,
-  ): Promise<ResultOf<typeof setCustomerPassword>> {
-    return this.actions.setPassword(staff, params.id, body, requestMetaOf(request).ip);
+  password(): never {
+    throw routeRetired('POST /admin/clients/:id/password');
   }
 
   /**
-   * Signs the customer out of every device.
+   * Answers that ending the sessions moved to the account security routes.
    *
-   * @param params the customer id
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route POST /admin/customers/:id/sessions/revoke
    */
   @Route(revokeCustomerSessions)
-  async revokeSessions(@Param() params: ParamsOf<typeof revokeCustomerSessions>): Promise<void> {
-    await this.actions.revokeSessions(params.id);
+  revokeSessions(): never {
+    throw routeRetired('POST /admin/clients/:id/sessions/revoke');
   }
 
   /**
-   * Suspends an active customer.
+   * Answers that a suspension moved to the status of the account edit.
    *
-   * @param staff the signed-in staff member
-   * @param params the customer id
-   * @param body the reason and note
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route POST /admin/customers/:id/suspend
    */
   @Route(suspendCustomer)
-  async suspend(
-    @CurrentStaff() staff: StaffPrincipal,
-    @Param() params: ParamsOf<typeof suspendCustomer>,
-    @Body() body: BodyOf<typeof suspendCustomer>,
-  ): Promise<void> {
-    await this.actions.suspend(staff, params.id, body);
+  suspend(): never {
+    throw routeRetired('PATCH /admin/clients/:id with a status');
   }
 
   /**
-   * Reactivates a suspended customer.
+   * Answers that a reactivation moved to the status of the account edit.
    *
-   * @param params the customer id
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route POST /admin/customers/:id/reactivate
    */
   @Route(reactivateCustomer)
-  async reactivate(@Param() params: ParamsOf<typeof reactivateCustomer>): Promise<void> {
-    await this.actions.reactivate(params.id);
+  reactivate(): never {
+    throw routeRetired('PATCH /admin/clients/:id with a status');
   }
 }

@@ -84,7 +84,9 @@ const liveSessions = async (clientId: number) => {
   return db
     .select()
     .from(s.sessions)
-    .where(and(eq(s.sessions.subjectType, 'client'), eq(s.sessions.subjectId, clientId), isNull(s.sessions.revokedAt)));
+    .where(
+      and(eq(s.sessions.subjectType, 'account'), eq(s.sessions.subjectId, clientId), isNull(s.sessions.revokedAt)),
+    );
 };
 
 /** Mails a reset link to the merchant and returns its token. */

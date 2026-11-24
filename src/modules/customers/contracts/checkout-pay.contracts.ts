@@ -26,8 +26,10 @@ export const payCheckoutSession = defineRoute({
     'wallet or a crypto address on the same page) and the answer carries its address. **No order exists yet**: the order is created, the money ' +
     "booked and the service delivered only when the gateway's signed confirmation arrives (`POST /webhooks/payments/:gateway`), in one " +
     'transaction. The checkout needs every required consent first (`422` on `consent`); a paid or expired checkout is `409 ' +
-    'INVALID_TRANSITION` (so is a page that opened after its payment was already closed, and so is a checkout whose service the shop no longer sells at all: switched off, unlisted or without a retail price; a changed price is not a reason, the locked price holds), a suspended or blocked customer `403 ACCOUNT_SUSPENDED`, a method that is off or does not take the amount `422` ' +
-    'on `gateway`, a gateway that cannot open its page `502 GATEWAY_ERROR`. `Idempotency-Key` is required. The token in the path is the credential. ' +
+    'INVALID_TRANSITION` (so is a page that opened after its payment was already closed, and so is a checkout whose service the shop no longer sells at all: switched off, unlisted or without a retail price; a changed price is not a reason, the locked price holds), an account or guest record that may not act `403 ACCOUNT_SUSPENDED`, a method that is off or does not take the amount `422` ' +
+    'on `gateway`, a gateway that cannot open its page `502 GATEWAY_ERROR`. `Idempotency-Key` is required. The token in the path is the credential; ' +
+    'a request that carries an account session needs its `X-CSRF-Token` (`403 CSRF_FAILED`), and a merchant-rank session is `403 ' +
+    'RANK_NOT_ALLOWED`, as on the consents step (nothing is written). ' +
     'A checkout keeps at most 3 payment pages open (`429 RATE_LIMITED` for another; a page that failed, was paid or is held frees its ' +
     'place); an amount the method cannot charge exactly is `422` on `gateway` (`not_chargeable`); a `returnUrl` that is not an address of ' +
     "this shop is `422` on `returnUrl` (`not_shop`). The confirmation creates the order only once the gateway's own record says the " +
@@ -72,6 +74,8 @@ export const payCheckoutSession = defineRoute({
   },
   errors: [
     'NOT_FOUND',
+    'CSRF_FAILED',
+    'RANK_NOT_ALLOWED',
     'VALIDATION_FAILED',
     'INVALID_TRANSITION',
     'ACCOUNT_SUSPENDED',
@@ -102,11 +106,12 @@ export const payCheckoutFromBalance = defineRoute({
   key: 'POST /store/v1/checkout-sessions/:token/balance-payment',
   summary: 'Pay a checkout from the store balance',
   description:
-    "Pays an open checkout from the signed-in customer's store balance (USD) and creates the order **at once**, in one transaction: no " +
-    'gateway, no webhook, no polling. Besides the checkout token in the path, the request needs the customer session cookie and its ' +
+    "Pays an open checkout from the signed-in retail account's store balance (USD) and creates the order **at once**, in one transaction: no " +
+    'gateway, no webhook, no polling. Besides the checkout token in the path, the request needs the account session cookie and its ' +
     '`X-CSRF-Token`: `401 UNAUTHORIZED` means "sign in to pay from the balance" (not an ended checkout). The checkout must belong to that ' +
-    'customer **and** have been opened while signed in (`balancePayable` on the checkout), else `403 FORBIDDEN`. A paid, expired or no-longer-sold ' +
-    'checkout is `409 INVALID_TRANSITION`, a suspended customer `403 ACCOUNT_SUSPENDED`, missing consents `422` on `consent`, a balance ' +
+    'account **and** have been opened while signed in (`balancePayable` on the checkout), else `403 FORBIDDEN`. The account must hold the retail ' +
+    "rank when the payment is made (checked under the account's row lock), else `403 RANK_NOT_ALLOWED` and nothing is paid. A paid, expired or " +
+    'no-longer-sold checkout is `409 INVALID_TRANSITION`, an account that may not act `403 ACCOUNT_SUSPENDED`, missing consents `422` on `consent`, a balance ' +
     'below the gross `402 INSUFFICIENT_FUNDS`, a balance on hold `409 WALLET_FROZEN`, the store balance switched off `409 WALLET_DISABLED`. ' +
     '`Idempotency-Key` is required: a retry with the same key answers the same payment and order (header `idempotency-replayed: true`, the ' +
     'wallet as it is now); a key a `/pay` call already used on this checkout is `409 IDEMPOTENCY_KEY_REUSED`. The ledger posts Dr customer ' +
@@ -145,6 +150,7 @@ export const payCheckoutFromBalance = defineRoute({
     'UNAUTHORIZED',
     'CSRF_FAILED',
     'FORBIDDEN',
+    'RANK_NOT_ALLOWED',
     'VALIDATION_FAILED',
     'INVALID_TRANSITION',
     'ACCOUNT_SUSPENDED',

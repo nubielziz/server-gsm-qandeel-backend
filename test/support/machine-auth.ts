@@ -203,11 +203,11 @@ export interface InsertedApiKey {
 }
 
 /**
- * Inserts an API key for a merchant, stored the way decision 019 says: only the keyed hash and the display prefix.
+ * Inserts an API key for a merchant-rank account, stored the way decision 019 says: only the keyed hash and the display prefix.
  *
  * @param t the running test app (for the token pepper)
  * @param db the test database
- * @param clientId the merchant
+ * @param clientId the account (`api_keys.client_id` is the account id: merchants kept their ids)
  * @param overrides columns to change (allowed IPs, limit, expiry, revocation)
  * @returns the id, the key and its hash
  */

@@ -1,12 +1,14 @@
 // Unit tests of the pure figures of the reports (feature 11): the day window, the default profit range, the ranking and totals of the
-// profit rows, the rejection rate, the rounded mean seconds and the credit in use.
+// profit rows, the rejection rate, the rounded mean seconds, the credit in use, and the wallet a top account shows (decision 064).
 import { describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
 import {
   type ProfitBucket,
+  TOP_SCOPES,
   dayWindow,
   defaultProfitRange,
   isOrderedRange,
+  liveWalletBalance,
   overdraftUsed,
   profitRows,
   rejectionRate,
@@ -130,5 +132,30 @@ describe('roundSeconds and overdraftUsed', () => {
     expect(overdraftUsed(m('-120.5')).toWire()).toBe('120.5000');
     expect(overdraftUsed(m('10')).toWire()).toBe('0.0000');
     expect(overdraftUsed(Money.zero()).toWire()).toBe('0.0000');
+  });
+});
+
+describe('liveWalletBalance', () => {
+  const both = { client_wallet: '95.5700', customer_wallet: '3.0000' };
+
+  it('shows the merchant wallet for a merchant rank and the store balance for any other rank', () => {
+    expect(liveWalletBalance('merchant', true, both)).toBe('95.5700');
+    expect(liveWalletBalance('retail', true, both)).toBe('3.0000');
+  });
+
+  it('shows the balance of the live wallet in its own sign, negative while credit is used', () => {
+    expect(liveWalletBalance('merchant', true, { client_wallet: '-12.5000' })).toBe('-12.5000');
+  });
+
+  it('is zero for an account that never had that wallet, and for a guest whatever the books say', () => {
+    expect(liveWalletBalance('merchant', true, { customer_wallet: '3.0000' })).toBe('0.0000');
+    expect(liveWalletBalance('retail', true, undefined)).toBe('0.0000');
+    expect(liveWalletBalance('retail', false, both)).toBe('0.0000');
+  });
+});
+
+describe('TOP_SCOPES', () => {
+  it('names the doors the top accounts list can count: every door, the merchant doors and the shop', () => {
+    expect([...TOP_SCOPES]).toEqual(['all', 'b2b', 'b2c']);
   });
 });

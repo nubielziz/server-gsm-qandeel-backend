@@ -29,11 +29,11 @@ describe('dollars', () => {
 
 describe('placement lines', () => {
   it('names the source, the held price and the manual reason like the console', () => {
-    expect(createdLine('dhru', { type: 'client', id: 3 }).data).toMatchObject({
+    expect(createdLine('dhru', { type: 'account', id: 3 }).data).toMatchObject({
       message: 'Order received via Dhru API',
       source: 'dhru',
     });
-    expect(createdLine('portal', { type: 'client', id: 3 }).data.message).toBe('Order received via Portal');
+    expect(createdLine('portal', { type: 'account', id: 3 }).data.message).toBe('Order received via Portal');
     expect(holdLine('3.3100', 'Phone Doctor FZE')).toMatchObject({
       type: 'hold',
       actor: SYSTEM_ACTOR,
@@ -118,7 +118,7 @@ describe('transitionLines', () => {
   it('a verification request carries the reason of the queue; a decision carries the decision, a refund adds its lines', () => {
     const asked = transitionLines('verification', null, {
       ...base,
-      actor: { type: 'client', id: 3 },
+      actor: { type: 'account', id: 3 },
       from: 'completed',
       to: 'completed',
     });

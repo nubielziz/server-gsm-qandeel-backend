@@ -198,21 +198,21 @@ describe('GET /admin/suppliers and /:id', () => {
     const serviceId = await insertService(world.db, world.auto.categoryId, { name: 'Counts service' });
     await insertOrderRow(world.db, {
       serviceId,
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
       supplierId,
       status: 'processing',
       dispatchState: 'sent',
     });
     await insertOrderRow(world.db, {
       serviceId,
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
       supplierId,
       status: 'processing',
       dispatchState: 'needs_attention',
     });
     await insertOrderRow(world.db, {
       serviceId,
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
       supplierId,
       status: 'completed',
       dispatchState: 'done',
@@ -233,7 +233,7 @@ describe('GET /admin/suppliers and /:id', () => {
     // 49 USD of supplier cost completed in the last 7 days: 7 a day, so 70 lasts 10 days.
     await insertOrderRow(world.db, {
       serviceId,
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
       supplierId,
       status: 'completed',
       dispatchState: 'done',
@@ -411,7 +411,7 @@ describe('DELETE /admin/suppliers/:id', () => {
     const open = await insertFakeSupplier(world.db, encryption, fake, { name: 'In use open' });
     await insertOrderRow(world.db, {
       serviceId,
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
       supplierId: open,
       status: 'processing',
       dispatchState: 'sent',
@@ -423,7 +423,7 @@ describe('DELETE /admin/suppliers/:id', () => {
     const history = await insertFakeSupplier(world.db, encryption, fake, { name: 'In use history' });
     await insertOrderRow(world.db, {
       serviceId,
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
       supplierId: history,
       status: 'completed',
       dispatchState: 'done',
@@ -443,7 +443,7 @@ describe('DELETE /admin/suppliers/:id', () => {
     const called = await insertFakeSupplier(world.db, encryption, fake, { name: 'In use calls' });
     const order = await insertOrderRow(world.db, {
       serviceId,
-      clientId: world.merchant.id,
+      accountId: world.merchant.id,
       status: 'rejected',
       dispatchState: 'done',
     });
@@ -1282,7 +1282,7 @@ describe('GET /admin/supplier-api-logs', () => {
   it('lists calls newest first without bodies, filters by supplier, order, action and outcome, and shows a call with masked bodies', async () => {
     const supplierId = await insertFakeSupplier(world.db, encryption, fake, { name: 'Log Supplier' });
     const serviceId = await insertService(world.db, world.auto.categoryId, { name: 'Log service' });
-    const order = await insertOrderRow(world.db, { serviceId, clientId: world.merchant.id });
+    const order = await insertOrderRow(world.db, { serviceId, accountId: world.merchant.id });
     const [first, second] = await world.db
       .insert(s.supplierApiLogs)
       .values([

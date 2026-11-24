@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { parseEnv } from '@src/config';
+import { like } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { CUSTOMER_MAIL_EVENT_KEYS } from '@src/modules/platform';
 import { SUPPORT_DEFAULT_TEMPLATES } from '@src/modules/support';
@@ -114,24 +115,33 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
     ]);
   });
 
-  it('lists the recent merchant log newest first with masked recipients, failures with their reason and queued messages', async () => {
+  it('lists the recent log of the merchant accounts newest first with masked recipients, failures with their reason and queued messages', async () => {
     await seed();
+    const { db } = await testDb();
     const owner = await adminWith(t, ['*']);
-    const res = await owner.get('/admin/notifications?recipientType=client&_start=0&_end=48');
-    // 48 of the recent log, plus the email of the seeded campaign to merchant 1 (feature 23), dated before them.
-    expect(res.total).toBe(49);
-    expect(res.body.every((row: { event: string }) => row.event !== 'broadcast.announcement')).toBe(true);
-    expect(res.body[0]).toMatchObject({ recipientType: 'client', status: 'sent', error: null });
-    const created = res.body.map((row: { createdAt: string }) => row.createdAt);
+    // Both ranks are one recipient type now (decision 064), so the log lists the merchants' rows among the shoppers': the merchants' rows
+    // are the ones the seed keyed `seed:merchant:<n>`, and the route is asked for a page wide enough to hold the recent days of both.
+    const seeded = await db
+      .select({ id: s.notifications.id })
+      .from(s.notifications)
+      .where(like(s.notifications.dedupeKey, 'seed:merchant:%'));
+    const merchantIds = new Set(seeded.map((row) => row.id));
+    expect(merchantIds.size).toBe(48);
+    const res = await owner.get('/admin/notifications?recipientType=account&_start=0&_end=100');
+    const rows = res.body.filter((row: { id: number }) => merchantIds.has(row.id));
+    expect(rows).toHaveLength(48);
+    expect(rows.every((row: { event: string }) => row.event !== 'broadcast.announcement')).toBe(true);
+    expect(rows[0]).toMatchObject({ recipientType: 'account', status: 'sent', error: null });
+    const created = rows.map((row: { createdAt: string }) => row.createdAt);
     expect(created).toEqual([...created].sort().reverse());
-    const statuses = res.body.map((row: { status: string }) => row.status);
+    const statuses = rows.map((row: { status: string }) => row.status);
     expect(statuses.filter((status: string) => status === 'failed')).toHaveLength(7);
     // Every eleventh message (4 of them) is queued; the one that is also a seventh (the 39th) is the failed one.
     expect(statuses.filter((status: string) => status === 'queued')).toHaveLength(3);
-    const failed = res.body.filter((row: { status: string }) => row.status === 'failed');
+    const failed = rows.filter((row: { status: string }) => row.status === 'failed');
     expect(failed.every((row: { error: string }) => row.error.length > 0)).toBe(true);
     // The seeded merchants are reached by email only (decision 062): no Telegram row.
-    for (const row of res.body) {
+    for (const row of rows) {
       expect(row.channel).toBe('email');
       expect(row.recipient, row.recipient).toMatch(/^.\*\*\*@/);
       expect(row.recipient).not.toMatch(/^[^*]{4,}@/);

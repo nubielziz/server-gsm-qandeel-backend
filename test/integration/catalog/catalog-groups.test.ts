@@ -3,9 +3,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
+import { ClientGroupDirectory, RankGroupReads } from '@src/modules/catalog';
 import { MerchantAccounts } from '@src/modules/money';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
+import { makeAccount } from '../../support/accounts';
 import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { insertGateway } from '../../support/billing';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
@@ -60,12 +62,15 @@ async function demoGroups(): Promise<{ standard: number; wholesale: number; vip:
 }
 
 describe('GET /admin/client-groups', () => {
-  it('lists every group by sort with merchant counts (not for the retail group)', async () => {
+  it('lists every group by sort with its rank kind and account count (the retail rank has both too)', async () => {
     const groups = await demoGroups();
     const { db } = await testDb();
     await insertMerchant(db, { groupId: groups.wholesale });
     await insertMerchant(db, { groupId: groups.wholesale });
     await insertMerchant(db, { groupId: groups.standard });
+    // A retail login and a guest row count in the retail rank, whatever their status.
+    await makeAccount(t, { rank: 'retail', groupId: groups.retail });
+    await makeAccount(t, { rank: 'retail', groupId: groups.retail, guest: true });
 
     const res = await admin.get('/admin/client-groups?_start=0&_end=200&_sort=sort&_order=asc');
     expect(res.status).toBe(200);
@@ -85,17 +90,19 @@ describe('GET /admin/client-groups', () => {
       depositLimit: '5000.0000',
       overdraftAllowed: false,
       sort: 1,
-      merchantCount: 1,
+      rankKind: 'merchant',
+      accountCount: 1,
     });
     expect(typeof standard.createdAt).toBe('string');
     expect(wholesale).toMatchObject({
       discountPercent: '4.0000',
       overdraftAllowed: true,
-      merchantCount: 2,
+      rankKind: 'merchant',
+      accountCount: 2,
     });
-    expect(vip.merchantCount).toBe(0);
-    expect(retail.kind).toBe('b2c_retail');
-    expect('merchantCount' in retail).toBe(false);
+    expect(vip).toMatchObject({ rankKind: 'merchant', accountCount: 0 });
+    expect(retail).toMatchObject({ kind: 'b2c_retail', rankKind: 'retail', accountCount: 2 });
+    for (const row of res.body) expect(row).not.toHaveProperty('merchantCount');
   });
 
   it('answers count-only calls, searches by name and sorts', async () => {
@@ -122,7 +129,13 @@ describe('GET /admin/client-groups/:id', () => {
   it('shows one group and answers 404 for an unknown id', async () => {
     const groups = await demoGroups();
     const res = await admin.get(`/admin/client-groups/${groups.vip}`);
-    expect(res.body).toMatchObject({ id: groups.vip, name: 'VIP', depositLimit: '100000.0000', merchantCount: 0 });
+    expect(res.body).toMatchObject({
+      id: groups.vip,
+      name: 'VIP',
+      depositLimit: '100000.0000',
+      rankKind: 'merchant',
+      accountCount: 0,
+    });
     const missing = await admin.get('/admin/client-groups/999999');
     expect(missing.status).toBe(404);
     expect(missing.body.code).toBe('NOT_FOUND');
@@ -148,7 +161,8 @@ describe('POST /admin/client-groups', () => {
       depositLimit: '250000.0000',
       overdraftAllowed: true,
       sort: 5,
-      merchantCount: 0,
+      rankKind: 'merchant',
+      accountCount: 0,
     });
     const [audit] = (await auditRows()).slice(-1);
     expect(audit).toMatchObject({
@@ -288,6 +302,24 @@ describe('PATCH /admin/client-groups/:id', () => {
     expect((await admin.patch(`/admin/client-groups/${groups.vip}`, { isDefault: false })).status).toBe(200);
   });
 
+  it('never lets the retail rank allow credit: 422 retail_no_credit on overdraftAllowed, nothing changed', async () => {
+    const groups = await demoGroups();
+    const refused = await admin.patch(`/admin/client-groups/${groups.retail}`, { overdraftAllowed: true });
+    expect(refused.status).toBe(422);
+    expect(refused.body.errors).toEqual([
+      expect.objectContaining({ field: 'overdraftAllowed', code: 'retail_no_credit' }),
+    ]);
+    expect((await groupRows()).find((g) => g.id === groups.retail)!.overdraftAllowed).toBe(false);
+    // Other fields of the retail rank are still editable, and a merchant rank may still allow credit.
+    const edited = await admin.patch(`/admin/client-groups/${groups.retail}`, {
+      discountPercent: '1',
+      overdraftAllowed: false,
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body).toMatchObject({ rankKind: 'retail', overdraftAllowed: false });
+    expect((await admin.patch(`/admin/client-groups/${groups.standard}`, { overdraftAllowed: true })).status).toBe(200);
+  });
+
   it('refuses to switch overdraft off while a merchant of the group has a credit limit (user rule 2)', async () => {
     const groups = await demoGroups();
     const { db } = await testDb();
@@ -316,7 +348,13 @@ describe('PATCH /admin/client-groups/:id', () => {
     // A credit holder in another group does not count; once the limit is zero the switch goes through.
     const vipOff = await admin.patch(`/admin/client-groups/${groups.vip}`, { overdraftAllowed: false });
     expect(vipOff.status).toBe(200);
-    expect((await admin.patch(`/admin/clients/${holder}/credit-limit`, { creditLimit: '0.0000' })).status).toBe(200);
+    // A credit-limit change carries a required Idempotency-Key (decision 064).
+    const cleared = await admin.patch(
+      `/admin/clients/${holder}/credit-limit`,
+      { creditLimit: '0.0000' },
+      { 'idempotency-key': crypto.randomUUID() },
+    );
+    expect(cleared.status).toBe(200);
     const allowed = await admin.patch(`/admin/client-groups/${groups.wholesale}`, { overdraftAllowed: false });
     expect(allowed.status).toBe(200);
     expect(allowed.body.overdraftAllowed).toBe(false);
@@ -370,6 +408,39 @@ describe('DELETE /admin/client-groups/:id', () => {
     expect(vip.body.detail).toBe('Move the 2 merchants in VIP to another group first.');
     expect((await groupRows()).length).toBe(4);
     expect((await admin.delete('/admin/client-groups/999999')).status).toBe(404);
+  });
+
+  it('is not blocked by the rank history of an account, which keeps the names of both ranks (no foreign key)', async () => {
+    const groups = await demoGroups();
+    const { db } = await testDb();
+    const account = await insertMerchant(db, { groupId: groups.wholesale });
+    await db.insert(s.accountRankChanges).values({
+      accountId: account,
+      fromGroupId: groups.standard,
+      fromGroupName: 'Standard',
+      toGroupId: groups.vip,
+      toGroupName: 'VIP',
+      fromKind: 'merchant',
+      toKind: 'merchant',
+      idempotencyKey: 'history-key-1',
+      staffId: admin.staffId,
+    });
+
+    const res = await admin.delete(`/admin/client-groups/${groups.vip}`);
+    expect(res.status).toBe(204);
+    const [history] = await db.select().from(s.accountRankChanges).where(eq(s.accountRankChanges.accountId, account));
+    expect(history).toMatchObject({ toGroupId: groups.vip, toGroupName: 'VIP', fromGroupName: 'Standard' });
+  });
+
+  it('refuses a rank that holds an account of any status', async () => {
+    const groups = await demoGroups();
+    const { db } = await testDb();
+    await insertMerchant(db, { groupId: groups.wholesale, status: 'blocked' });
+    const refused = await admin.delete(`/admin/client-groups/${groups.wholesale}`);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('GROUP_IN_USE');
+    expect(refused.body.detail).toBe('Move the 1 merchant in Wholesale to another group first.');
+    expect((await groupRows()).some((g) => g.id === groups.wholesale)).toBe(true);
   });
 
   it('deletes a free group with its group prices, its pricing rules and its place in category visibility', async () => {
@@ -484,5 +555,44 @@ describe('DELETE /admin/client-groups/:id', () => {
       expect(moved.status).toBe(200);
       expect(row!.groupId).toBe(groups.vip);
     }
+  });
+});
+
+describe('ClientGroupDirectory as the rank reader (RankGroupReads)', () => {
+  const reads = () => t.app.get<RankGroupReads>(RankGroupReads);
+
+  it('is the one provider of the seam: the token answers the directory itself', () => {
+    expect(reads()).toBe(t.app.get(ClientGroupDirectory));
+  });
+
+  it('reads the kind, the retail rank and the name of a rank, and nothing for an unknown rank', async () => {
+    const groups = await demoGroups();
+    const { db } = await testDb();
+    expect(await reads().kindOf(db, groups.vip)).toBe('b2b');
+    expect(await reads().kindOf(db, groups.retail)).toBe('b2c_retail');
+    expect(await reads().kindOf(db, 999_999)).toBeUndefined();
+    expect(await reads().retailGroupId(db)).toBe(groups.retail);
+    expect(await reads().nameOf(db, groups.wholesale)).toBe('Wholesale');
+    expect(await reads().nameOf(db, 999_999)).toBeUndefined();
+  });
+
+  it('lists the ranks by sort, then id', async () => {
+    const groups = await demoGroups();
+    const { db } = await testDb();
+    expect(await reads().rankOrder(db)).toEqual([groups.standard, groups.wholesale, groups.vip, groups.retail]);
+    // Equal sort values fall back to the id; a lower sort goes first.
+    await db.update(s.clientGroups).set({ sort: 1 }).where(eq(s.clientGroups.id, groups.vip));
+    expect(await reads().rankOrder(db)).toEqual([groups.standard, groups.vip, groups.wholesale, groups.retail]);
+    await db.update(s.clientGroups).set({ sort: 0 }).where(eq(s.clientGroups.id, groups.retail));
+    expect(await reads().rankOrder(db)).toEqual([groups.retail, groups.standard, groups.vip, groups.wholesale]);
+  });
+
+  it('throws when the catalog has no retail rank', async () => {
+    const { db } = await testDb();
+    const error = await reads()
+      .retailGroupId(db)
+      .catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('no retail rank');
   });
 });

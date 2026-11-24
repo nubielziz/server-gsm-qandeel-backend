@@ -11,6 +11,7 @@ import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertOrderRow } from '../../support/orders';
 import { insertMerchantIn } from '../../support/pricing';
 import { freshClientIp } from '../../support/pipeline-routes';
+import { makeCustomer } from '../../support/store';
 import { APPLE_IMEI, storefrontWorld } from '../../support/storefront';
 
 const clock = new TestClock('2026-11-07T12:00:00.000Z');
@@ -39,10 +40,11 @@ const body = (res: { json: () => any }): any => res.json();
 async function storefrontOrder(values: Partial<typeof s.orders.$inferInsert> = {}) {
   const { db } = await testDb();
   const world = await storefrontWorld(db);
-  const [customer] = await db.insert(s.customers).values({ email: 'sam@mail.example', name: 'Sam Buyer' }).returning();
+  // The buyer of a guest checkout is a guest row of the one account table (decision 064).
+  const customer = await makeCustomer(t, { guest: true, email: 'sam@mail.example', name: 'Sam Buyer' });
   const order = await insertOrderRow(db, {
     serviceId: world.icloud.serviceId,
-    customerId: customer!.id,
+    accountId: customer.id,
     source: 'store',
     imei: APPLE_IMEI,
     publicToken: TOKEN,
@@ -50,7 +52,7 @@ async function storefrontOrder(values: Partial<typeof s.orders.$inferInsert> = {
     placedAt: new Date('2026-11-07T12:00:00.000Z'),
     ...values,
   });
-  return { db, world, order, customer: customer! };
+  return { db, world, order, customer };
 }
 
 describe('GET /store/v1/orders/:token', () => {
@@ -201,7 +203,7 @@ describe('GET /store/v1/orders/:token', () => {
   it('answers 404 with the same words for an unknown token, a nearly right token and a merchant order', async () => {
     const { db, world, order } = await storefrontOrder();
     const merchant = await insertMerchantIn(db, world.groups.standard, { name: 'Cairo GSM Lab' });
-    await insertOrderRow(db, { serviceId: world.icloud.serviceId, clientId: merchant, customerId: null });
+    await insertOrderRow(db, { serviceId: world.icloud.serviceId, accountId: merchant });
     const nearly = `${TOKEN.slice(0, -1)}${TOKEN.endsWith('A') ? 'B' : 'A'}`;
     const answers = [];
     for (const wrong of [
@@ -223,11 +225,10 @@ describe('GET /store/v1/orders/:token', () => {
   });
 
   it('does not open an order by a token that belongs to a checkout session, or the other way round', async () => {
-    const { db, world } = await storefrontOrder();
-    const [customer] = await db.select().from(s.customers);
+    const { db, world, customer } = await storefrontOrder();
     await db.insert(s.checkoutSessions).values({
       token: 'C5zq8Vw3Ny7Bm2Kd9Ts4Fa',
-      customerId: customer!.id,
+      accountId: customer.id,
       email: 'sam@mail.example',
       serviceId: world.icloud.serviceId,
       currency: 'USD',

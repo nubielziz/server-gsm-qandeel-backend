@@ -17,7 +17,7 @@ export const STAFF_PASSWORD_RESET_EVENT = 'staff.password_reset';
 
 const MERCHANT_SAMPLE = {
   merchantName: 'Zain Mobile Hub',
-  portalUrl: 'https://shop.example.com/merchant',
+  portalUrl: 'https://shop.example.com/account',
   change: 'a temporary password was set for your account',
 } as const;
 

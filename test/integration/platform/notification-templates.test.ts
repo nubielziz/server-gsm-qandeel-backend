@@ -6,7 +6,7 @@ import { schema as s } from '@src/infra/db';
 import { DEFAULT_TEMPLATES } from '@src/modules/platform';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
-import { clearIdentityCaches } from '../../support/auth';
+import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, pgErrorOf, resetDb, testDb } from '../../support/db';
 import { seedIdentityTemplates } from '../../support/identity-mail';
@@ -120,7 +120,7 @@ describe('GET /admin/notification-templates', () => {
     expect(language.body.code).toBe('VALIDATION_FAILED');
   });
 
-  it('counts the messages sent in the last 30 days per event, channel and kind of recipient', async () => {
+  it('counts the messages sent in the last 30 days per event, channel and audience', async () => {
     const { db } = await testDb();
     const sent = (days: number) => new Date(clock.nowMs() - days * DAY);
     // The one event that still has both channels is the operations alert (its messages go to the ops mailbox and chat, recipient 0).
@@ -132,7 +132,8 @@ describe('GET /admin/notification-templates', () => {
       { ...base, channel: 'email', status: 'failed', error: 'no' },
       { ...base, channel: 'email', status: 'queued' },
       { ...base, channel: 'telegram', status: 'sent', sentAt: sent(2) },
-      { ...base, recipientType: 'customer', channel: 'email', status: 'sent', sentAt: sent(2) },
+      // An account's message is not a staff message, whatever its payload says: it counts for the template of its own audience.
+      { ...base, recipientType: 'account', channel: 'email', status: 'sent', sentAt: sent(2) },
     ]);
     const rows = (await owner.get('/admin/notification-templates?event=alert.fired')).body;
     expect(rows).toHaveLength(2);
@@ -142,6 +143,35 @@ describe('GET /admin/notification-templates', () => {
     expect(countOf('telegram')).toBe(1);
     const one = await owner.get(`/admin/notification-templates/${await idOf('alert.fired', 'email', 'staff')}`);
     expect(one.body.sentLast30Days).toBe(2);
+  });
+
+  it('counts an account’s messages for the audience they were made for: the two texts of one event have two counts', async () => {
+    const { db } = await testDb();
+    const sent = (days: number) => new Date(clock.nowMs() - days * DAY);
+    const merchant = await insertMerchant(db);
+    const base = {
+      recipientType: 'account' as const,
+      recipientId: merchant,
+      event: 'order.completed',
+      channel: 'email' as const,
+      status: 'sent' as const,
+    };
+    await db.insert(s.notifications).values([
+      // The shop door's text for an account that holds a merchant rank, twice; the portal door's text once.
+      { ...base, payload: { audience: 'customer' }, sentAt: sent(1) },
+      { ...base, payload: { audience: 'customer' }, sentAt: sent(2) },
+      { ...base, payload: { audience: 'merchant' }, sentAt: sent(3) },
+      // A row made before the audience was kept reads as the audience of its account's rank (a merchant rank).
+      { ...base, payload: {}, sentAt: sent(4) },
+      // Out of the window.
+      { ...base, payload: { audience: 'customer' }, sentAt: sent(40) },
+    ]);
+    const rows = (await owner.get('/admin/notification-templates?event=order.completed')).body;
+    const countOf = (audience: string) =>
+      rows.find((row: { audience: string; channel: string }) => row.audience === audience && row.channel === 'email')
+        .sentLast30Days;
+    expect(countOf('customer')).toBe(2);
+    expect(countOf('merchant')).toBe(2);
   });
 
   it('needs a session and the notifications:read permission', async () => {

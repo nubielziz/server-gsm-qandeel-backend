@@ -9,7 +9,7 @@ import { DbService } from '../../../infra/db';
 import { type StaffPrincipal, customerContactOf, isOwner, requireOwner } from '../../identity';
 import { AuditService, RECEIPT_APPROVAL_LIMIT_KEY, SettingsReader } from '../../platform';
 import { SELF_APPROVAL_DETAIL, isIssuedBy, isTransferTopUp, paymentRef } from '../domain/invoice-rules';
-import { reviewRefusal } from '../domain/payment-rules';
+import { accountLabel, reviewRefusal } from '../domain/payment-rules';
 import {
   ADJUST_WINDOW_MS,
   adjustmentNeedsOwner,
@@ -17,7 +17,7 @@ import {
   receiptApprovalRefusalDetail,
 } from '../domain/wallet-rules';
 import { lockStaffAdjustments, staffReceiptApprovalsSince } from '../infra/adjustment.repository';
-import { findWalletCustomer, loadBillingMerchants } from '../infra/foreign-directory.repository';
+import { loadBillingMerchants } from '../infra/foreign-directory.repository';
 import { findGateway } from '../infra/gateway.repository';
 import { findInvoice, updateInvoice } from '../infra/invoice.repository';
 import {
@@ -29,10 +29,10 @@ import {
 } from '../infra/payment.repository';
 import type { WirePayment } from './billing-wire';
 import { CustomerWalletMails } from './customer-wallet-mails';
-import { PaymentCrediting, customerLabel } from './payment-crediting';
+import { PaymentCrediting } from './payment-crediting';
 import { PaymentViews } from './payment-views';
 
-/** The longest rejection reason (what the merchant is shown). */
+/** The longest rejection reason (what the account is shown). */
 export const MAX_REJECT_REASON = 500;
 
 const notFound = () => new AppError('NOT_FOUND', { detail: 'No top-up payment has this id.' });
@@ -68,7 +68,7 @@ export class PaymentReviewService {
    * Lists top-ups.
    *
    * @param query the parsed list request
-   * @param contact what the caller may see of a storefront customer's address (decision 047; it also decides whether `q` matches it)
+   * @param contact what the caller may see of an account's address (decision 047; it also decides whether `q` matches it)
    * @returns the page and the number matching the filters
    */
   async list(
@@ -83,7 +83,7 @@ export class PaymentReviewService {
    * Reads one top-up.
    *
    * @param id the payment id
-   * @param contact what the caller may see of a storefront customer's address (decision 047)
+   * @param contact what the caller may see of an account's address (decision 047)
    * @returns the payment
    * @throws {AppError} `NOT_FOUND` for an unknown id or an order payment
    */
@@ -96,7 +96,7 @@ export class PaymentReviewService {
   /**
    * Approves a top-up and credits the wallet.
    *
-   * @param caller the staff member who decides; the answer shows a storefront customer's address in the form this caller may see
+   * @param caller the staff member who decides; the answer shows an account's address in the form this caller may see
    *   (decision 047: `customerContactOf(caller)`)
    * @param id the payment id
    * @returns the payment after the decision, with the wallet balance that already includes the credit
@@ -132,12 +132,12 @@ export class PaymentReviewService {
   }
 
   /**
-   * Rejects a top-up with the reason the merchant sees.
+   * Rejects a top-up with the reason the account sees.
    *
-   * @param caller the staff member who decides; the answer shows a storefront customer's address in the form this caller may see
+   * @param caller the staff member who decides; the answer shows an account's address in the form this caller may see
    *   (decision 047: `customerContactOf(caller)`)
    * @param id the payment id
-   * @param reason why, as the merchant reads it
+   * @param reason why, as the account reads it
    * @returns the payment after the decision (its note is the reason)
    * @throws {AppError} `VALIDATION_FAILED` for an empty or too long reason; `NOT_FOUND`; `PAYMENT_ALREADY_REVIEWED`;
    *   `PAYMENT_AUTO_CREDIT_PENDING`
@@ -171,13 +171,17 @@ export class PaymentReviewService {
       if (invoice && invoice.status === 'open' && invoice.kind === 'topup') {
         await updateInvoice(tx, invoice.id, { status: 'void', updatedAt: now });
       }
-      const merchant = invoice?.clientId
-        ? (await loadBillingMerchants(tx, [invoice.clientId])).get(invoice.clientId)
-        : undefined;
-      // A storefront customer's top-up (feature 21) names the customer and tells them why.
-      const customerId = invoice?.clientId === null ? invoice.customerId : null;
-      const customer = customerId === null ? undefined : await findWalletCustomer(tx, customerId);
-      const owner = customerId === null ? (merchant?.name ?? 'a merchant') : customerLabel(customer, customerId);
+      // The account of the invoice, of either rank (decision 064); the wallet kind the invoice named tells whose top-up it was.
+      const accountId = invoice?.accountId;
+      const account =
+        accountId === undefined ? undefined : (await loadBillingMerchants(tx, [accountId])).get(accountId);
+      const forStoreBalance = invoice?.walletKind === 'customer_wallet';
+      const owner =
+        accountId === undefined
+          ? 'an account'
+          : forStoreBalance
+            ? accountLabel(account, accountId)
+            : account?.name || 'a merchant';
       await this.audit.record(tx, {
         action: 'rejected deposit of',
         entityType: 'payment',
@@ -186,8 +190,14 @@ export class PaymentReviewService {
         before: { status: 'pending' },
         after: { status: 'rejected', reason },
       });
-      if (customerId !== null) {
-        await this.walletMails.topUpRejected(tx, { customerId, paymentId: id, amount: payment.amount, reason });
+      // A top-up of a store balance (feature 21) tells the account why.
+      if (accountId !== undefined && forStoreBalance) {
+        await this.walletMails.topUpRejected(tx, {
+          customerId: accountId,
+          paymentId: id,
+          amount: payment.amount,
+          reason,
+        });
       }
     });
     return this.get(id, customerContactOf(caller));

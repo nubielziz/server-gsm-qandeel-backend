@@ -1,15 +1,8 @@
-// HTTP controller of the customer store balance (feature 21, plan § 7.1 routes 1, 2 and 11 to 16): the customer's own wallet and statement
-// on the store, and the staff wallet routes under /admin/customers/:id/wallet and /admin/customer-wallets. Thin: it maps inputs to the use case.
-import { Body, Controller, Header, Param, Query } from '@nestjs/common';
-import {
-  type BodyOf,
-  ContractHeaders,
-  type HeadersOf,
-  type ParamsOf,
-  type QueryOf,
-  type ResultOf,
-  Route,
-} from '../../../common/contract';
+// HTTP controller of the store balance of an account (feature 21, plan § 7.1 routes 1, 2 and 11 to 16, decision 064): the signed-in retail
+// account's own wallet and statement on the store, the staff list of store wallets, and the five retired staff wallet routes of
+// `/admin/customers/:id`, which answer 410 until the contract release deletes them. Thin: it maps inputs to the use case.
+import { Controller, Header, Query } from '@nestjs/common';
+import { type QueryOf, type ResultOf, Route } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { CurrentPrincipal, CurrentStaff, type Principal, type StaffPrincipal, customerContactOf } from '../../identity';
 import { CustomerWallets } from '../application/customer-wallets';
@@ -25,25 +18,50 @@ import {
 } from '../contracts/customer-wallet.contracts';
 
 /**
- * The customer behind a store session.
+ * The retail account behind a store session.
  *
- * Why: plan 21 § 5.1 invariant 5: every customer id comes from the authenticated principal (money cannot import the customers module's
- * `@CurrentCustomer`, decision 032).
+ * Why: plan 21 § 5.1 invariant 5: every account id comes from the authenticated principal, never from the request (money cannot import the
+ * customers module's decorators, decision 032). The rank gate already refuses a merchant rank on a store route with `403 RANK_NOT_ALLOWED`
+ * before a handler runs; this check keeps the wallet closed to a merchant rank even if a route were ever marked open to every rank.
  *
  * @param principal the request's principal
- * @returns the customer id
- * @throws {AppError} `UNAUTHORIZED` when the request was not authenticated as a customer
+ * @returns the account id
+ * @throws {AppError} `UNAUTHORIZED` when the request was not authenticated as an account, `RANK_NOT_ALLOWED` (403) for a merchant rank
  */
-export function customerIdOf(principal: Principal | undefined): number {
-  if (principal?.kind !== 'customer') throw new AppError('UNAUTHORIZED');
-  return principal.customerId;
+export function accountIdOf(principal: Principal | undefined): number {
+  if (principal?.kind !== 'account') throw new AppError('UNAUTHORIZED');
+  if (principal.rank.kind !== 'retail') throw new AppError('RANK_NOT_ALLOWED');
+  return principal.accountId;
 }
 
 /**
- * The customer wallet routes of the store and the console.
+ * The same function under its old name.
  *
- * Why: the owner's customer wallet (ROADMAP 2W): the customer reads the balance and a statement; staff read, adjust, freeze, unfreeze and
- * list. Every answer comes from the ledger account and is never cached; the store answers carry `Cache-Control: no-store`.
+ * Why: the top-up controller (`customer-topups.controller.ts`) still imports it under this name; the value is an account id.
+ */
+export const customerIdOf = accountIdOf;
+
+/**
+ * The answer of a staff wallet route that moved to the account routes.
+ *
+ * @param replacement the account route to use
+ * @returns the error to throw
+ */
+function routeRetired(replacement: string): AppError {
+  return new AppError('ROUTE_RETIRED', {
+    detail: `Store balances belong to accounts now. Use ${replacement}.`,
+  });
+}
+
+/**
+ * The store balance routes of the store and the console.
+ *
+ * Why: the owner's store balance (ROADMAP 2W): a retail account reads its balance and a statement; staff list every live store wallet. The
+ * staff read, adjust, freeze and unfreeze of one wallet are the wallet routes of `/admin/clients/:id` (every account, either wallet kind),
+ * so the five old `/admin/customers/:id/wallet*` addresses stay registered during the expand release (decision 064) and answer
+ * `410 ROUTE_RETIRED` naming the route to use; nothing is read or written. The access check of the route (session, permission, CSRF
+ * token) and the validation of its old contract still come first. Every answer comes from the ledger account and is never cached; the
+ * store answers carry `Cache-Control: no-store`.
  *
  * @route GET /store/v1/me/wallet
  * @route GET /store/v1/me/wallet/statement
@@ -59,24 +77,26 @@ export class CustomerWalletController {
   constructor(private readonly wallets: CustomerWallets) {}
 
   /**
-   * The signed-in customer's store balance.
+   * The signed-in account's store balance.
    *
-   * @param principal the signed-in customer
+   * @param principal the signed-in account (retail rank)
    * @returns the store wallet view
+   * @throws {AppError} `RANK_NOT_ALLOWED` (403) for a merchant rank
    * @route GET /store/v1/me/wallet
    */
   @Route(getMyStoreWallet)
   @Header('Cache-Control', 'no-store')
   mine(@CurrentPrincipal() principal: Principal | undefined): Promise<ResultOf<typeof getMyStoreWallet>> {
-    return this.wallets.viewForCustomer(customerIdOf(principal));
+    return this.wallets.viewForCustomer(accountIdOf(principal));
   }
 
   /**
-   * The signed-in customer's statement.
+   * The signed-in account's statement.
    *
-   * @param principal the signed-in customer
+   * @param principal the signed-in account (retail rank)
    * @param query the parsed list request
    * @returns the lines and their total
+   * @throws {AppError} `RANK_NOT_ALLOWED` (403) for a merchant rank
    * @route GET /store/v1/me/wallet/statement
    */
   @Route(listMyStoreWalletStatement)
@@ -85,98 +105,69 @@ export class CustomerWalletController {
     @CurrentPrincipal() principal: Principal | undefined,
     @Query() query: QueryOf<typeof listMyStoreWalletStatement>,
   ): Promise<ResultOf<typeof listMyStoreWalletStatement>> {
-    return this.wallets.statementForCustomer(customerIdOf(principal), query);
+    return this.wallets.statementForCustomer(accountIdOf(principal), query);
   }
 
   /**
-   * A customer's wallet, for staff.
+   * Answers that the staff wallet read moved to the account wallet route.
    *
-   * @param params the customer id
-   * @returns the staff wallet view
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route GET /admin/customers/:id/wallet
    */
   @Route(getCustomerWallet)
-  show(@Param() params: ParamsOf<typeof getCustomerWallet>): Promise<ResultOf<typeof getCustomerWallet>> {
-    return this.wallets.viewForStaff(params.id);
+  show(): never {
+    throw routeRetired('GET /admin/clients/:id/wallet');
   }
 
   /**
-   * A customer's statement, for staff.
+   * Answers that the staff statement moved to the account statement route.
    *
-   * @param params the customer id
-   * @param query the parsed list request
-   * @returns the lines and their total
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route GET /admin/customers/:id/wallet/statement
    */
   @Route(listCustomerWalletStatement)
-  statement(
-    @Param() params: ParamsOf<typeof listCustomerWalletStatement>,
-    @Query() query: QueryOf<typeof listCustomerWalletStatement>,
-  ): Promise<ResultOf<typeof listCustomerWalletStatement>> {
-    return this.wallets.statementForStaff(params.id, query);
+  statement(): never {
+    throw routeRetired('GET /admin/clients/:id/statement');
   }
 
   /**
-   * Adds to or deducts from a customer's balance.
+   * Answers that the manual adjustment moved to the account wallet route.
    *
-   * @param staff the signed-in staff member
-   * @param params the customer id
-   * @param body amount, direction and reason
-   * @param headers the required idempotency key
-   * @returns the journal id and the wallet after posting
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route POST /admin/customers/:id/wallet/adjust
    */
   @Route(adjustCustomerWallet)
-  adjust(
-    @CurrentStaff() staff: StaffPrincipal,
-    @Param() params: ParamsOf<typeof adjustCustomerWallet>,
-    @Body() body: BodyOf<typeof adjustCustomerWallet>,
-    @ContractHeaders() headers: HeadersOf<typeof adjustCustomerWallet>,
-  ): Promise<ResultOf<typeof adjustCustomerWallet>> {
-    return this.wallets.adjust(staff, params.id, { ...body, idempotencyKey: headers['idempotency-key'] });
+  adjust(): never {
+    throw routeRetired('POST /admin/clients/:id/wallet/adjust');
   }
 
   /**
-   * Puts a customer's balance on hold.
+   * Answers that the hold moved to the account wallet route.
    *
-   * @param params the customer id
-   * @param body the reason
-   * @param _headers the required idempotency key (validated; the use case is idempotent by state)
-   * @returns the wallet after the change
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route POST /admin/customers/:id/wallet/freeze
    */
   @Route(freezeCustomerWallet)
-  freeze(
-    @Param() params: ParamsOf<typeof freezeCustomerWallet>,
-    @Body() body: BodyOf<typeof freezeCustomerWallet>,
-    @ContractHeaders() _headers: HeadersOf<typeof freezeCustomerWallet>,
-  ): Promise<ResultOf<typeof freezeCustomerWallet>> {
-    return this.wallets.freeze(params.id, body.reason);
+  freeze(): never {
+    throw routeRetired('POST /admin/clients/:id/wallet/freeze');
   }
 
   /**
-   * Lifts the hold on a customer's balance.
+   * Answers that lifting the hold moved to the account wallet route.
    *
-   * @param params the customer id
-   * @param body the reason
-   * @param _headers the required idempotency key (validated; the use case is idempotent by state)
-   * @returns the wallet after the change
+   * @throws {AppError} `ROUTE_RETIRED` (410)
    * @route POST /admin/customers/:id/wallet/unfreeze
    */
   @Route(unfreezeCustomerWallet)
-  unfreeze(
-    @Param() params: ParamsOf<typeof unfreezeCustomerWallet>,
-    @Body() body: BodyOf<typeof unfreezeCustomerWallet>,
-    @ContractHeaders() _headers: HeadersOf<typeof unfreezeCustomerWallet>,
-  ): Promise<ResultOf<typeof unfreezeCustomerWallet>> {
-    return this.wallets.unfreeze(params.id, body.reason);
+  unfreeze(): never {
+    throw routeRetired('POST /admin/clients/:id/wallet/unfreeze');
   }
 
   /**
-   * Lists customer wallets.
+   * Lists the live store wallets of accounts.
    *
    * @param query the parsed list request
-   * @param staff the signed-in staff member (decides whether a customer's address is shown and searched, decision 047)
+   * @param staff the signed-in staff member (decides whether an account's address is shown and searched, decision 047)
    * @returns the page and the total
    * @route GET /admin/customer-wallets
    */

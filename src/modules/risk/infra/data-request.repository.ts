@@ -1,5 +1,5 @@
-// Drizzle queries on `data_requests` (risk module): the staff list with the customer's name, one request, the writes of the routes and
-// the requests a customer export or anonymization closes.
+// Drizzle queries on `data_requests` (risk module): the staff list with the account's name, one request, the writes of the routes and
+// the requests an account export or anonymization closes. A request belongs to an account (`account_id`, decision 064).
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere, schema as s } from '../../../infra/db';
@@ -22,32 +22,32 @@ const COLUMNS: ListColumns = {
   dueAt: dataRequests.dueAt,
   status: statusRank,
   kind: dataRequests.kind,
-  customerId: dataRequests.customerId,
+  accountId: dataRequests.accountId,
 };
 
 // The status filter compares words, not the rank used for sorting.
 const FILTER_COLUMNS: ListColumns = { ...COLUMNS, status: dataRequests.status };
 
-/** A request with the current name of its customer. */
+/** A request with the current name of its account. */
 export interface DataRequestRow {
   readonly request: DataRequest;
-  readonly customerName: string;
-  /** The customer's status: an erasure request cannot be completed by hand before it is `anonymized`. */
-  readonly customerStatus: string;
+  readonly accountName: string;
+  /** The account's status: an erasure request cannot be completed by hand before it is `anonymized`. */
+  readonly accountStatus: string;
 }
 
 function selectRows(db: DbExecutor) {
   return db
-    .select({ request: dataRequests, customerName: s.customers.name, customerStatus: s.customers.status })
+    .select({ request: dataRequests, accountName: s.clients.name, accountStatus: s.clients.status })
     .from(dataRequests)
-    .innerJoin(s.customers, eq(s.customers.id, dataRequests.customerId));
+    .innerJoin(s.clients, eq(s.clients.id, dataRequests.accountId));
 }
 
 /**
  * Lists data requests.
  *
  * @param db the database or a transaction
- * @param query the parsed list request (`status` repeats for IN, `kind`, `customerId`)
+ * @param query the parsed list request (`status` repeats for IN, `kind`, `accountId`)
  * @returns the page and the exact total
  */
 export async function listDataRequestRows(
@@ -70,7 +70,7 @@ export async function listDataRequestRows(
 }
 
 /**
- * Finds one request with its customer's name.
+ * Finds one request with its account's name.
  *
  * @param db the database or a transaction
  * @param id the request id
@@ -88,16 +88,16 @@ export async function findDataRequestRow(
 }
 
 /**
- * Finds the customer's request of a kind that still waits for an answer.
+ * Finds the account's request of a kind that still waits for an answer.
  *
  * @param db the database or a transaction
- * @param customerId the customer
+ * @param accountId the account
  * @param kind export or erasure
  * @returns the oldest open or in-progress request, or `undefined`
  */
 export async function findPendingRequest(
   db: DbExecutor,
-  customerId: number,
+  accountId: number,
   kind: DataRequestKind,
 ): Promise<DataRequest | undefined> {
   const [row] = await db
@@ -105,7 +105,7 @@ export async function findPendingRequest(
     .from(dataRequests)
     .where(
       and(
-        eq(dataRequests.customerId, customerId),
+        eq(dataRequests.accountId, accountId),
         eq(dataRequests.kind, kind),
         inArray(dataRequests.status, ['open', 'in_progress']),
       ),
@@ -151,13 +151,13 @@ export async function updateDataRequest(db: DbExecutor, id: number, changes: Req
 }
 
 /**
- * Completes the customer's pending requests of a kind.
+ * Completes the account's pending requests of a kind.
  *
  * Why: ANSWERS customers Q4: an export closes the open or in-progress export request, an anonymization the erasure request, both
  * `completed` with `completed_at` now and `handled_by` the staff member. With no pending request the action still runs.
  *
  * @param db the caller's transaction
- * @param customerId the customer
+ * @param accountId the account
  * @param kind which kind to close
  * @param staffId the staff member who acted
  * @param now the clock's time
@@ -165,7 +165,7 @@ export async function updateDataRequest(db: DbExecutor, id: number, changes: Req
  */
 export async function completePendingRequests(
   db: DbExecutor,
-  customerId: number,
+  accountId: number,
   kind: DataRequestKind,
   staffId: number,
   now: Date,
@@ -175,7 +175,7 @@ export async function completePendingRequests(
     .set({ status: 'completed', completedAt: now, handledBy: staffId, updatedAt: now })
     .where(
       and(
-        eq(dataRequests.customerId, customerId),
+        eq(dataRequests.accountId, accountId),
         eq(dataRequests.kind, kind),
         inArray(dataRequests.status, ['open', 'in_progress']),
       ),

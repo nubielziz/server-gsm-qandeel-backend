@@ -9,6 +9,7 @@ import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, insertMerchant, openSession } from '../../support/auth';
 import { DAY, HOUR, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
+import { makeCustomer } from '../../support/store';
 import { IMEIS, type OrdersWorld, json, ledgerOf, ordersWorld, outboxOf, walletOf } from '../../support/orders';
 
 const clock = new TestClock();
@@ -31,7 +32,7 @@ beforeEach(async () => {
   await clearIdentityCaches(t);
   await t.app.get(MaintenanceService).invalidate();
   world = await ordersWorld((await testDb()).db);
-  headers = (await openSession(t, { type: 'client', id: world.merchant.id })).mutationHeaders;
+  headers = (await openSession(t, { type: 'account', id: world.merchant.id })).mutationHeaders;
 });
 
 /** Places through the portal, with the key when one is given. */
@@ -43,10 +44,10 @@ const place = (key: string | undefined, payload: Record<string, unknown> = {}, s
     payload: { serviceId: world.auto.serviceId, imei: IMEIS[0], ...payload } as never,
   });
 
-const walletAccountOf = (clientId: number) =>
+const walletAccountOf = (accountId: number) =>
   and(
-    eq(s.ledgerAccounts.ownerType, 'client'),
-    eq(s.ledgerAccounts.ownerId, clientId),
+    eq(s.ledgerAccounts.ownerType, 'account'),
+    eq(s.ledgerAccounts.ownerId, accountId),
     eq(s.ledgerAccounts.kind, 'client_wallet'),
   );
 
@@ -170,8 +171,8 @@ describe('POST /client/orders with an Idempotency-Key', () => {
     expect(await db.select().from(s.idempotencyKeys)).toHaveLength(1);
   });
 
-  it('keeps keys apart per merchant', async () => {
-    const otherHeaders = (await openSession(t, { type: 'client', id: world.other.id })).mutationHeaders;
+  it('keeps keys apart per account', async () => {
+    const otherHeaders = (await openSession(t, { type: 'account', id: world.other.id })).mutationHeaders;
     const mine = await place('same-key');
     const theirs = await place('same-key', {}, otherHeaders);
     expect(theirs.statusCode).toBe(201);
@@ -215,13 +216,19 @@ describe('POST /client/orders with an Idempotency-Key', () => {
     expect((await place('a'.repeat(255))).statusCode).toBe(201);
   });
 
-  it('leaves the guards as they were: a pending merchant is 403, a missing CSRF token is refused, nothing is stored', async () => {
+  it('leaves the guards as they were: a retail rank and a suspended account are 403, a missing CSRF token is refused, nothing is stored', async () => {
     const { db } = world;
-    const pendingId = await insertMerchant(db, { status: 'pending' });
-    const pendingHeaders = (await openSession(t, { type: 'client', id: pendingId })).mutationHeaders;
-    const pending = await place('pending', {}, pendingHeaders);
-    expect(pending.statusCode).toBe(403);
-    expect(json(pending).code).toBe('ACCOUNT_PENDING_APPROVAL');
+    // The rank gate (decision 064): a retail account has a session, and the route is not its own.
+    const retail = await makeCustomer(t);
+    const retailHeaders = (await openSession(t, { type: 'account', id: retail.id })).mutationHeaders;
+    const wrongRank = await place('retail', {}, retailHeaders);
+    expect(wrongRank.statusCode).toBe(403);
+    expect(json(wrongRank).code).toBe('RANK_NOT_ALLOWED');
+    const suspendedId = await insertMerchant(db, { status: 'suspended' });
+    const suspendedHeaders = (await openSession(t, { type: 'account', id: suspendedId })).mutationHeaders;
+    const suspended = await place('suspended', {}, suspendedHeaders);
+    expect(suspended.statusCode).toBe(403);
+    expect(json(suspended).code).toBe('ACCOUNT_SUSPENDED');
     const noCsrf = await place('no-csrf', {}, { cookie: headers.cookie! });
     expect(noCsrf.statusCode).toBe(403);
     expect(json(noCsrf).code).toBe('CSRF_FAILED');

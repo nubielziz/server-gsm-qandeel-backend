@@ -3,11 +3,14 @@
 // SupportTicketDetail (docs/contract/endpoints/support.md, RESOLUTIONS b2c-2).
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
+import { TICKET_REQUESTER_TYPES } from '../db/schema';
 import { REPLY_CHANNELS } from '../domain/reply-channels';
 import { WIRE_TICKET_STATUSES } from '../domain/ticket-status';
 import {
   FileIdsSchema,
   MessageBodyText,
+  REQUESTER_RANK_KINDS,
+  RequesterRankKindSchema,
   RequesterTypeSchema,
   TicketCategorySchema,
   TicketChannelSchema,
@@ -24,20 +27,25 @@ export const TicketRowSchema = z.object({
   number: z.string().describe("Server-made, 'T-1042' style."),
   subject: z.string(),
   channel: TicketChannelSchema,
-  requesterType: RequesterTypeSchema.describe('`client` is a merchant.'),
-  requesterId: zId,
+  requesterType: RequesterTypeSchema.describe(
+    'Always `account`: a merchant and a shop buyer are told apart by `requester.rankKind`.',
+  ),
+  requesterId: zId.describe('The account id.'),
   requester: z.object({
     name: z
       .string()
       .describe(
-        "'Deleted customer' after an anonymize; the masked address when a customer gave no name (decision 047).",
+        "'Deleted customer' after an anonymize; the masked address when an account gave no name (decision 047).",
       ),
     email: z
       .string()
       .nullable()
       .describe(
-        "A merchant's address in full; a storefront customer's is masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
+        "An account's address, whatever its rank, is masked (`ja•••@example.com`) unless the caller holds `clients:read` (decision 047); null after an anonymize.",
       ),
+    rankKind: RequesterRankKindSchema.describe(
+      'The kind of rank the requester holds now: `merchant` or `retail` (a guest row and any account with a login of the retail rank).',
+    ),
   }),
   orderId: zId.nullable(),
   category: TicketCategorySchema,
@@ -50,7 +58,7 @@ export const TicketRowSchema = z.object({
   resolvedAt: zIsoDateTime.nullable(),
   createdAt: zIsoDateTime,
   updatedAt: zIsoDateTime.describe('The last activity.'),
-  lastPublicAt: zIsoDateTime.nullable().describe('The time of the latest message the customer could see.'),
+  lastPublicAt: zIsoDateTime.nullable().describe('The time of the latest message the requester could see.'),
   late: z.boolean().describe('A reply is awaited and `slaDueAt` has passed; never true for a resolved ticket.'),
   hasUnread: z
     .boolean()
@@ -70,9 +78,9 @@ const TICKET_EXAMPLE = {
   number: 'T-1042',
   subject: 'Where is my unlock? (SF-20431)',
   channel: 'web',
-  requesterType: 'customer',
+  requesterType: 'account',
   requesterId: 28,
-  requester: { name: 'Victor Hale', email: 'victor@mail.example' },
+  requester: { name: 'Victor Hale', email: 'vi•••@mail.example', rankKind: 'retail' },
   orderId: 20431,
   category: 'delay',
   priority: 'normal',
@@ -114,9 +122,10 @@ export const listSupportTickets = defineRoute({
   summary: 'Support inbox',
   description:
     'Tickets with their requester, assignee and reply timers. Filters: `status` (repeat the key for several; `pending` is the stored ' +
-    '`pending_customer`), `late=true` (a reply is awaited and overdue), `assigneeId`, `requesterType` (`customer` or `client`) and ' +
-    '`requesterId` (with a type: the tickets of one customer). `q` is a case-insensitive contains over the number, the subject, the ' +
-    "requester's name and the requester's email address (a customer's only for callers who hold `customers:read`, decision 047). Default order: late tickets first, then the latest activity. The console asks again every 30 seconds, and for the " +
+    '`pending_customer`), `late=true` (a reply is awaited and overdue), `assigneeId`, `requesterId` (an account id: the tickets of one ' +
+    'account, whatever its rank), `rankKind` (`retail` or `merchant`: the tickets of accounts that hold a rank of that kind) and `requesterType` ' +
+    '(`account` is the only word; an old one, `customer` or `client`, is `422`). `q` is a case-insensitive contains over the number, the ' +
+    "subject, the requester's name and the requester's email address (an address only for callers who hold `clients:read`, whatever the rank, decision 047). Default order: late tickets first, then the latest activity. The console asks again every 30 seconds, and for the " +
     'tab counts with `_start=0&_end=1`.',
   tags: ['support-tickets'],
   surface: 'admin',
@@ -132,8 +141,9 @@ export const listSupportTickets = defineRoute({
       status: { type: 'enum', values: [...WIRE_TICKET_STATUSES], ops: ['eq'] },
       late: { type: 'boolean', ops: ['eq'] },
       assigneeId: { type: 'id', ops: ['eq'] },
-      requesterType: { type: 'enum', values: ['customer', 'client'], ops: ['eq'] },
+      requesterType: { type: 'enum', values: [...TICKET_REQUESTER_TYPES], ops: ['eq'] },
       requesterId: { type: 'id', ops: ['eq'] },
+      rankKind: { type: 'enum', values: [...REQUESTER_RANK_KINDS], ops: ['eq'] },
     },
     search: ['number', 'subject', 'requester.name', 'requester.email'],
   }),

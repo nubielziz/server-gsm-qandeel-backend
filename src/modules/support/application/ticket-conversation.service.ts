@@ -75,7 +75,7 @@ export class TicketConversationService {
       const { tx } = work;
       const ticket = await lockTicket(tx, ticketId);
       if (!ticket) throw notFound();
-      const requester = await findRequester(tx, ticket.requesterType, ticket.requesterId);
+      const requester = await findRequester(tx, ticket.requesterId);
       const allowed = replyChannelsOf({ reachable: requester?.reachable ?? false });
       const channel = pickReplyChannel(input.channel, allowed);
       // The inbox of the mock answers a bad input before the resolved ticket (mocks/ticketHandlers.ts), so the channel is judged first.

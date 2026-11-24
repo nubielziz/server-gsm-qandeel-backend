@@ -1,6 +1,6 @@
 // The timeline lines of an order (RESOLUTIONS orders-suppliers-15): which `order_events` rows each transition writes and the words
 // of their `data.message`, in the console's style ("$3.31 held from Phone Doctor FZE wallet"). Pure; the use case stores them.
-import type { OrderDispatchState, OrderEventActorType, OrderEventType, OrderStatus } from '../db/schema';
+import type { CurrentOrderEventActorType, OrderDispatchState, OrderEventType, OrderStatus } from '../db/schema';
 import type { OrderMoneyMove } from './order-machine';
 
 /** The reason a manual order opens the manual queue with (the console's `REVIEW_REASONS.manual`). */
@@ -23,9 +23,14 @@ export const VERIFICATION_REFUND_REASON = 'Verification refund';
 export const CHARGED_BACK_REFUND_LINE =
   'No refund sent: the payment was charged back, so the card network already returned the money to the buyer';
 
-/** Who caused an event. */
+/**
+ * Who caused an event.
+ *
+ * Why: decision 064: a new event names an account `account`, never `client` or `customer` (those words stay readable in the events written
+ * before the accounts merged, through the map), so a writer cannot pass an old word.
+ */
 export interface TimelineActor {
-  readonly type: OrderEventActorType;
+  readonly type: CurrentOrderEventActorType;
   readonly id: number | null;
 }
 

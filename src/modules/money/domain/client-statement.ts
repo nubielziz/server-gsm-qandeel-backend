@@ -1,5 +1,6 @@
 // The client statement PDF (route GET /admin/reports/client-statement/:clientId, stage 11): the totals of a period and the document the
-// platform's PdfRenderer draws. Pure functions, unit-tested; the reads and the audit row are in application/client-statement.service.ts.
+// platform's PdfRenderer draws, for the live wallet of the account (the merchant wallet of a merchant rank, the store balance of the retail
+// rank: decision 064). Pure functions, unit-tested; the reads and the audit row are in application/client-statement.service.ts.
 import { Money } from '../../../common/money';
 import type { PdfDocument } from '../../platform';
 import { BASE_CURRENCY } from './accounts';
@@ -34,15 +35,21 @@ export interface StatementPdfInvoice {
   readonly paidAt: Date | null;
 }
 
+/** The wallet a statement is about: the merchant wallet (`client_wallet`) or the store balance (`customer_wallet`). */
+export type StatementWallet = 'merchant' | 'store';
+
 /** What the document is made from. */
 export interface StatementData {
   readonly merchant: StatementMerchant;
+  /** The account's live wallet, the one the lines and the invoices are of. */
+  readonly wallet: StatementWallet;
   /** The first and the last day of the period, `YYYY-MM-DD`, both included. */
   readonly from: string;
   readonly to: string;
   /** The wallet balance before the first day. */
   readonly opening: string;
   readonly lines: readonly StatementPdfLine[];
+  /** The credit limit of a merchant wallet (a store balance has none and the document leaves the row out). */
   readonly creditLimit: string;
   readonly invoices: readonly StatementPdfInvoice[];
   /** When the statement was made (the injected clock). */
@@ -103,14 +110,16 @@ const usd = (amount: Money): string => `${amount.toWire()} ${BASE_CURRENCY}`;
  *
  * Why: the map row "Official account statement for a merchant" (contract money.md): merchant header, period, opening balance, the
  * wallet lines with debit, credit and balance after, closing balance, the credit limit, then the invoices issued in the period.
- * Amounts keep four decimals in USD. The text is English (decision 030).
+ * Amounts keep four decimals in USD. The text is English (decision 030). The statement is of the live wallet (decision 064): for a store
+ * balance the header names the account, the credit limit row is left out (a store balance never has credit) and the activity is the
+ * store balance's.
  *
  * @param data the merchant, the period and the rows read from the ledger
  * @returns the document to render
  */
 export function statementDocument(data: StatementData): PdfDocument {
   const totals = statementTotals(data.opening, data.lines);
-  const creditLimit = Money.of(data.creditLimit);
+  const store = data.wallet === 'store';
   const lines = data.lines.map((line) => {
     const amount = Money.of(line.amount);
     return [
@@ -132,7 +141,7 @@ export function statementDocument(data: StatementData): PdfDocument {
       {
         kind: 'facts',
         rows: [
-          ['Merchant', `${data.merchant.name} (#${data.merchant.id})`],
+          [store ? 'Account' : 'Merchant', `${data.merchant.name} (#${data.merchant.id})`],
           ['Company', data.merchant.company || '-'],
           ['Country', data.merchant.country || '-'],
           ['Period', `${data.from} to ${data.to} (UTC days, both included)`],
@@ -140,13 +149,17 @@ export function statementDocument(data: StatementData): PdfDocument {
           ['Total credits', usd(totals.credits)],
           ['Total debits', usd(totals.debits)],
           ['Closing balance', usd(totals.closing)],
-          ['Credit limit', usd(creditLimit)],
+          ...(store ? [] : [['Credit limit', usd(Money.of(data.creditLimit))] as const]),
         ],
       },
       { kind: 'space' },
-      { kind: 'heading', text: 'Wallet activity' },
+      { kind: 'heading', text: store ? 'Store balance activity' : 'Wallet activity' },
       lines.length === 0
-        ? { kind: 'text', muted: true, text: 'No wallet activity in this period.' }
+        ? {
+            kind: 'text',
+            muted: true,
+            text: store ? 'No store balance activity in this period.' : 'No wallet activity in this period.',
+          }
         : {
             kind: 'table',
             columns: [

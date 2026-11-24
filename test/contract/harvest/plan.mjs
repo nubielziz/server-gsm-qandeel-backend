@@ -131,6 +131,8 @@ export const OVERRIDES = {
   'GET /admin/search/preview': { query: { q: 'unlock' } },
   // Decision 062: the console's Sessions tab always asks for staff sessions (`listSessions` adds subjectType=staff).
   'GET /admin/sessions': { query: { _start: 0, _end: 25, subjectType: 'staff' } },
+  // Decision 064: the legacy lookup answers only for a record of the old model; the console's seed turned old customer 5 into an account.
+  'GET /admin/legacy-accounts/:type/:id': { path: { type: 'customer', id: 5 } },
   'GET /admin/system/queues/:name/failed': (w) => ({ path: { name: queueName(w, true) } }),
 
   'POST /admin/system/queues/:name/pause': (w) => ({
@@ -168,7 +170,10 @@ export const OVERRIDES = {
     body: { components: [w.docs['GET /admin/system/health']?.components?.[0]?.key ?? 'api'] },
   }),
   'POST /admin/legal-documents': { body: { type: 'terms', version: '9.9' } },
-  'POST /admin/notification-templates': { body: { event: 'order.completed' } },
+  // The seed already has the order.completed email for the first audience of the console's list; the staff one is free.
+  'POST /admin/notification-templates': { body: { event: 'order.completed', audience: 'staff' } },
+  // Decision 064: "make an account" is for a guest only.
+  'POST /admin/clients/:id/account': { candidates: { list: '/admin/clients', query: { hasAccount: false } } },
   'POST /admin/payment-gateways': { body: { feePercent: '2.5000' } },
   'POST /admin/reply-templates': { body: { shortcut: '/harvest' } },
   'POST /admin/service-listings': (w) => ({

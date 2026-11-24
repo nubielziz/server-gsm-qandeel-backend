@@ -108,7 +108,8 @@ describe('placement of a stocked service', () => {
     const [changed] = await outboxOf(db, 'order.status_changed', placed.id);
     expect(changed?.payload).toMatchObject({
       orderId: placed.id,
-      clientId: merchant.id,
+      accountId: merchant.id,
+      source: 'portal',
       fromStatus: 'pending',
       toStatus: 'completed',
     });

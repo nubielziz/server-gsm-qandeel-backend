@@ -10,6 +10,7 @@ These tests keep the backend, the map and the frontend console telling the same 
 | `error-parity.test.ts` | The error catalog equals `docs/contract/error-codes.md` (code, status); every code the console references exists with the status it expects; backend-only codes are printed. | A code was added to one side only. Add it to `src/common/errors/catalog.ts` and, when no console screen references it, to `BACKEND_CODES` in `scripts/build-contract-docs.mjs`; `bun run contract:docs` regenerates `error-codes.md`. |
 | `openapi-examples.test.ts` | Every example in `docs/contract/openapi.json` and `openapi.public.json` validates against the schema next to it (ajv, draft 2020-12, formats). | Fix the `examples` of the contract, then `bun run docs:openapi`. |
 | `english-only.test.ts` | English only (decision 039): no operation of `docs/contract/openapi.json` or `openapi.public.json` has a parameter or property named `locale`, `locales`, `nameAr`, `byLocale` or `alternates`, or after the Arabic language code; the one exception is the read-only `locale` in the responses of the four legal-document staff routes. | A contract grew a language field. Remove it from the schema, then `bun run docs:openapi`. A legal row keeps `locale` only as the archive tag of a retired version (plan 4.4). |
+| `rank-open-routes.test.ts` | The rank gate (decision 064): every route behind an account session carries a rank in the snapshot (`merchant` or `retail` by its access kind, `any` when opened to every account); the `rank: 'any'` routes are exactly the pinned list of `rank-open-routes.ts`; every route that serves one rank lists `RANK_NOT_ALLOWED` and no route open to every rank does. | `declared rank: any but missing from test/contract/rank-open-routes.ts`: a contract opened a route to every account; add the key to the list in the same review, or drop `rank: 'any'`. |
 | `fixtures.test.ts` | The harvest covers every console GET route; each file belongs to one route; the mock answers obey the console's own types. | Re-run `bun run contract:harvest` after the console changed. |
 | `lib/*.test.ts` | Unit tests of the comparator (every rule), of the route comparison and of the allowlist logic. | A rule changed: update the test that names it. |
 
@@ -101,7 +102,9 @@ bun run contract:harvest      # needs `npm ci` once in ../frontend-admin (FRONTE
   alias `@` to the frontend's `src`). The script fails if `git status` of the frontend changed.
 - `harvest/harvest.vitest.mjs` signs in as the Owner (demo password and code), reads every GET route, then runs the
   mutations on a fresh seed. The clock is frozen and `Math.random` seeded, so a second run writes identical files.
-- Ids come from the lists the harvest reads first; bodies are built from the console's own types (required fields). Where
+- Ids come from the lists the harvest reads first; bodies are built from the console's own types (required fields). A mutation
+  whose console function takes an `idempotencyKey` sends an `Idempotency-Key` header (a new key per call, the same keys on every run),
+  as the console does for a wallet change, a credit limit or a rank change. Where
   the mock needs something specific (a pending payment, a valid metric), `harvest/plan.mjs` has an override. A mutation the
   mock refuses is printed as a `gap:` line and writes no fixture; a GET route without a fixture fails the run unless
   `harvest/known-gaps.json` explains why (`GET /admin/queues` has no mock: the console only links to it).

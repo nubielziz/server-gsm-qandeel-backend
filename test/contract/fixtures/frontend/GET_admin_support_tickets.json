@@ -10,11 +10,12 @@
       "number": "T-4202",
       "subject": "Phone still locked after unlock (SF-20471)",
       "channel": "web",
-      "requesterType": "customer",
-      "requesterId": 28,
+      "requesterType": "account",
+      "requesterId": 128,
       "requester": {
         "name": "Victor Silva",
-        "email": "victor.silva@webmail.example"
+        "email": "victor.silva@webmail.example",
+        "rankKind": "retail"
       },
       "orderId": 20471,
       "category": "failed_unlock",
@@ -43,11 +44,12 @@
       "number": "T-4201",
       "subject": "Order SF-20487 is taking longer than expected",
       "channel": "email",
-      "requesterType": "customer",
-      "requesterId": 9,
+      "requesterType": "account",
+      "requesterId": 109,
       "requester": {
         "name": "Jessica Moore",
-        "email": "jessica.moore@mail.example"
+        "email": "jessica.moore@mail.example",
+        "rankKind": "retail"
       },
       "orderId": 20487,
       "category": "delay",
@@ -73,11 +75,12 @@
       "number": "T-4214",
       "subject": "Rapid IMEI orders replying slowly today",
       "channel": "email",
-      "requesterType": "client",
+      "requesterType": "account",
       "requesterId": 2,
       "requester": {
         "name": "Al-Noor Telecom",
-        "email": "ops@alnoortelecom.example"
+        "email": "ops@alnoortelecom.example",
+        "rankKind": "merchant"
       },
       "orderId": null,
       "category": "delay",
@@ -103,11 +106,12 @@
       "number": "T-4210",
       "subject": "Is an iPhone 12 from AT&T eligible?",
       "channel": "web",
-      "requesterType": "customer",
-      "requesterId": 9,
+      "requesterType": "account",
+      "requesterId": 109,
       "requester": {
         "name": "Jessica Moore",
-        "email": "jessica.moore@mail.example"
+        "email": "jessica.moore@mail.example",
+        "rankKind": "retail"
       },
       "orderId": null,
       "category": "presale",
@@ -133,11 +137,12 @@
       "number": "T-4207",
       "subject": "Where is my result? SF-20472",
       "channel": "telegram",
-      "requesterType": "customer",
-      "requesterId": 8,
+      "requesterType": "account",
+      "requesterId": 108,
       "requester": {
         "name": "Marco Ricci",
-        "email": "marco.ricci@webmail.example"
+        "email": "marco.ricci@webmail.example",
+        "rankKind": "retail"
       },
       "orderId": 20472,
       "category": "delay",
@@ -163,11 +168,12 @@
       "number": "T-4213",
       "subject": "Deposit PAY-1037 not showing in the wallet",
       "channel": "telegram",
-      "requesterType": "client",
+      "requesterType": "account",
       "requesterId": 5,
       "requester": {
         "name": "Cairo GSM Lab",
-        "email": "ops@cairogsmlab.example"
+        "email": "ops@cairogsmlab.example",
+        "rankKind": "merchant"
       },
       "orderId": null,
       "category": "billing",
@@ -196,11 +202,12 @@
       "number": "T-4211",
       "subject": "Do you unlock Vodafone UK Pixel phones?",
       "channel": "chat",
-      "requesterType": "customer",
-      "requesterId": 21,
+      "requesterType": "account",
+      "requesterId": 121,
       "requester": {
         "name": "Samira Khan",
-        "email": "samira.khan@mail.example"
+        "email": "samira.khan@mail.example",
+        "rankKind": "retail"
       },
       "orderId": null,
       "category": "presale",
@@ -229,11 +236,12 @@
       "number": "T-4209",
       "subject": "Order SF-20427 was rejected",
       "channel": "email",
-      "requesterType": "customer",
-      "requesterId": 20,
+      "requesterType": "account",
+      "requesterId": 120,
       "requester": {
         "name": "Kevin Doyle",
-        "email": "kevin.doyle@webmail.example"
+        "email": "kevin.doyle@webmail.example",
+        "rankKind": "retail"
       },
       "orderId": 20427,
       "category": "failed_unlock",
@@ -262,11 +270,12 @@
       "number": "T-4206",
       "subject": "Charged twice for SF-20442",
       "channel": "email",
-      "requesterType": "customer",
-      "requesterId": 28,
+      "requesterType": "account",
+      "requesterId": 128,
       "requester": {
         "name": "Victor Silva",
-        "email": "victor.silva@webmail.example"
+        "email": "victor.silva@webmail.example",
+        "rankKind": "retail"
       },
       "orderId": 20442,
       "category": "billing",
@@ -295,11 +304,12 @@
       "number": "T-4212",
       "subject": "Chargeback warning from my bank",
       "channel": "email",
-      "requesterType": "customer",
-      "requesterId": 19,
+      "requesterType": "account",
+      "requesterId": 119,
       "requester": {
         "name": "Jack Turner",
-        "email": "jt.4569@tempbox.example"
+        "email": "jt.4569@tempbox.example",
+        "rankKind": "retail"
       },
       "orderId": null,
       "category": "refund",
@@ -328,11 +338,12 @@
       "number": "T-4203",
       "subject": "Refund request for SF-20418",
       "channel": "email",
-      "requesterType": "customer",
-      "requesterId": 11,
+      "requesterType": "account",
+      "requesterId": 111,
       "requester": {
         "name": "Priya Nair",
-        "email": "priya.nair@post.example"
+        "email": "priya.nair@post.example",
+        "rankKind": "retail"
       },
       "orderId": 20418,
       "category": "refund",
@@ -361,11 +372,12 @@
       "number": "T-4208",
       "subject": "VAT invoice for SF-20421",
       "channel": "email",
-      "requesterType": "customer",
-      "requesterId": 30,
+      "requesterType": "account",
+      "requesterId": 130,
       "requester": {
         "name": "Oscar Nilsson",
-        "email": "oscar.nilsson@inbox.example"
+        "email": "oscar.nilsson@inbox.example",
+        "rankKind": "retail"
       },
       "orderId": 20421,
       "category": "billing",
@@ -394,11 +406,12 @@
       "number": "T-4204",
       "subject": "Wrong IMEI on SF-20477",
       "channel": "chat",
-      "requesterType": "customer",
-      "requesterId": 23,
+      "requesterType": "account",
+      "requesterId": 123,
       "requester": {
         "name": "Ana Costa",
-        "email": "ana.costa@post.example"
+        "email": "ana.costa@post.example",
+        "rankKind": "retail"
       },
       "orderId": 20477,
       "category": "wrong_imei",
@@ -427,11 +440,12 @@
       "number": "T-4215",
       "subject": "API returns 429 for bulk orders",
       "channel": "email",
-      "requesterType": "client",
+      "requesterType": "account",
       "requesterId": 10,
       "requester": {
         "name": "Karachi Unlock Hub",
-        "email": "ops@karachiunlockh.example"
+        "email": "ops@karachiunlockh.example",
+        "rankKind": "merchant"
       },
       "orderId": null,
       "category": "other",
@@ -460,11 +474,12 @@
       "number": "T-4205",
       "subject": "How do I enter the unlock code?",
       "channel": "web",
-      "requesterType": "customer",
-      "requesterId": 10,
+      "requesterType": "account",
+      "requesterId": 110,
       "requester": {
         "name": "Tyler Brooks",
-        "email": "tyler.brooks@inbox.example"
+        "email": "tyler.brooks@inbox.example",
+        "rankKind": "retail"
       },
       "orderId": 20420,
       "category": "howto",

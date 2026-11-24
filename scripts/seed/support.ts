@@ -1,9 +1,10 @@
 // Seeder of the support module (feature 17): the demo's 15 tickets with their messages and its 8 canned replies, mapped as the frontend
 // mocks map them (src/features/support/mocks/store.ts of the frontend): ticket ids and numbers from the demo ids (`T-4202` is id 4202),
-// requester ids from the customer and merchant ids (`c28` is 28), message ids in order, `{name}` in a macro becomes `{{name}}`. The reply
+// requester ids from the customer and merchant ids as account numbers (`c28` is account 128, `m5` is account 5; decision 064), message ids in
+// order, `{name}` in a macro becomes `{{name}}`. The reply
 // target is worked out with the server's rule, so the inbox shows what the API would have made. Feature 28 adds what the live chat reads: the
 // newest message of each side, the seen marks (so some tickets are unread for staff and some for the requester), the delivery channel of a
-// public staff message and, when the object store is reachable, one attachment on a customer's follow-up. Runs after identity (staff,
+// public staff message and, when the object store is reachable, one attachment on a requester's follow-up. Runs after identity (staff,
 // merchants), orders and customers.
 import { and, eq, inArray } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
@@ -12,6 +13,7 @@ import type { AppConfig } from '../../src/config';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
 import { StorageService } from '../../src/infra/storage';
 import { slaDueAt } from '../../src/modules/support';
+import { accountIdOfDemo } from './account-ids';
 import { type DemoSeed, demoNumericId, demoRows, toDate } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
 
@@ -66,15 +68,16 @@ const toApiVariables = (body: string): string => body.replace(/\{(\w+)\}/g, '{{$
  *
  * Why: the console's Support page shows the demo's inbox; with the same ids, subjects, statuses and threads, switching from the mock to
  * the API changes nothing the person can see. A ticket links to its order only when that order exists (storefront orders are seeded with
- * the customers), so a ticket whose order is not there yet is stored without the link rather than refused. A customer ticket gets a
- * random token (nobody can open the ticket page of a seeded ticket by guessing); a merchant ticket has none. The demo's `pending` is the
+ * the customers), so a ticket whose order is not there yet is stored without the link rather than refused. A ticket of a retail account (a demo
+ * customer) gets a random token (nobody can open the ticket page of a seeded ticket by guessing); one of a merchant rank has none. The
+ * requester is an account whichever rank it holds, so its messages have the author type `account`. The demo's `pending` is the
  * stored `pending_customer`, and a resolved ticket's `resolved_at` is its last activity, as the mock has it.
  *
  * Feature 28 (the live chat): each ticket also gets the ids of the newest requester message and the newest public staff message and the
  * seen marks the inbox shows. Staff have seen the requester's messages of every ticket somebody picked up (`new` ones are unread for staff),
  * and the requester has seen the staff replies of a resolved ticket and of one they wrote on again (a reply the requester has not
  * answered is unread for them). A public staff message carries the channel `email`. With `config` (and an object store that answers) the
- * customer's follow-up of the first ticket that has one carries a small PDF, stored as the customer's own upload under the ticket's area,
+ * requester's follow-up of the first retail ticket that has one carries a small PDF, stored as the account's own upload under the ticket's area,
  * so the demo shows an attachment; without either, no attachment is seeded.
  *
  * @param db the transaction to write with
@@ -104,12 +107,12 @@ export async function seedSupport(db: DbExecutor, demo: DemoSeed, config?: AppCo
   const messages: Array<typeof s.ticketMessages.$inferInsert & { id: number }> = [];
   for (const ticket of demoTickets) {
     const id = demoNumericId(ticket.id);
-    const requesterId = demoNumericId(ticket.who.id);
+    const requesterId = accountIdOfDemo(ticket.who.id);
     const status = ticket.status === 'pending' ? ('pending_customer' as const) : ticket.status;
     const thread = ticket.msgs.map((message) => {
       const author =
         message.by === 'customer'
-          ? ({ authorType: ticket.who.type, authorId: requesterId } as const)
+          ? ({ authorType: 'account', authorId: requesterId } as const)
           : message.by === 'note' && message.name === 'System'
             ? ({ authorType: 'system', authorId: null } as const)
             : ({ authorType: 'staff', authorId: staff.get(message.name) ?? null } as const);
@@ -128,7 +131,7 @@ export async function seedSupport(db: DbExecutor, demo: DemoSeed, config?: AppCo
     // The live chat's marks (feature 28): the newest message of each side and who has seen what.
     const newest = (side: 'requester' | 'staff') => {
       const found = thread.findLast((message) =>
-        side === 'requester' ? message.authorType === ticket.who.type : message.notifyChannel !== null,
+        side === 'requester' ? message.authorType === 'account' : message.notifyChannel !== null,
       );
       return found && { id: found.id, at: found.createdAt };
     };
@@ -145,7 +148,7 @@ export async function seedSupport(db: DbExecutor, demo: DemoSeed, config?: AppCo
       number: ticket.id,
       subject: ticket.subject,
       channel: ticket.channel,
-      requesterType: ticket.who.type,
+      requesterType: 'account',
       requesterId,
       orderId: ticket.oid !== null && orderIds.has(demoNumericId(ticket.oid)) ? demoNumericId(ticket.oid) : null,
       category: ticket.cat,
@@ -198,10 +201,10 @@ export async function seedSupport(db: DbExecutor, demo: DemoSeed, config?: AppCo
 }
 
 /**
- * Stores the demo's attachment and puts it on a customer's follow-up message.
+ * Stores the demo's attachment and puts it on a retail account's follow-up message.
  *
- * Why: feature 28, rule 8: the demo should show a file on a thread. The first customer ticket whose thread has a customer message after a
- * public staff reply gets a small PDF as the customer's own upload (the ticket link's area `tickets-<id>`, a fixed key, so a second run
+ * Why: feature 28, rule 8: the demo should show a file on a thread. The first retail ticket whose thread has a message of the requester after a
+ * public staff reply gets a small PDF as the account's own upload (the ticket link's area `tickets-<id>`, a fixed key, so a second run
  * finds it). Needs the object store: when it does not answer, nothing is attached and the seed goes on.
  *
  * @param db the transaction to write with
@@ -218,10 +221,11 @@ async function seedAttachment(
 ): Promise<SeedReport | undefined> {
   const target = tickets
     .flatMap((ticket) => {
-      if (ticket.requesterType !== 'customer') return [];
+      // Only a retail account's ticket has a page to show the file on (its token); a merchant reads its thread in the portal.
+      if (ticket.token == null) return [];
       const thread = messages.filter((message) => message.ticketId === ticket.id);
       const lastReply = thread.findLastIndex((message) => message.notifyChannel != null);
-      const followUp = thread.slice(lastReply + 1).find((message) => message.authorType === 'customer');
+      const followUp = thread.slice(lastReply + 1).find((message) => message.authorType === 'account');
       return lastReply >= 0 && followUp ? [{ ticket, message: followUp }] : [];
     })
     .at(0);
@@ -229,7 +233,7 @@ async function seedAttachment(
   const owner = target.message.authorId;
   if (owner == null) return undefined;
   const storage = new StorageService(config, new SystemClock());
-  const key = `tickets-${target.ticket.id}/customer-${owner}/demo-receipt.pdf`;
+  const key = `tickets-${target.ticket.id}/account-${owner}/demo-receipt.pdf`;
   try {
     const [existing] = await db
       .select({ id: s.files.id })
@@ -253,7 +257,7 @@ async function seedAttachment(
         mime: 'application/pdf',
         size: object.size,
         sha256: object.sha256,
-        ownerType: 'customer',
+        ownerType: 'account',
         ownerId: owner,
         createdAt: target.message.createdAt ?? new Date(),
       })

@@ -1,6 +1,6 @@
-// Feature 20 as one story, in order (not a map scenario): invite, resend, password, sign in, change the email, verify, temporary
-// password and forced change, suspend, reactivate, and the audit history that tells it. Steps share state like a scenario file.
-// Step 11 is the staff-made API key of slice D.
+// Feature 20 as one story, in order (not a map scenario): create an account with a merchant rank, resend, password, sign in, change the
+// email, verify, temporary password and forced change, suspend, reactivate, and the audit history that tells it. Steps share state like a
+// scenario file. Step 11 is the staff-made API key of slice D. The Owner makes the account, because a merchant rank is the Owner's to give.
 import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
@@ -25,6 +25,7 @@ const clock = new TestClock();
 let t: TestApp;
 let api: AdminApi;
 let merchantId: number;
+let standardRank: number;
 let email = 'ops@story-shop.example';
 let temporary = '';
 const portal = new Map<string, MerchantPortal>();
@@ -43,7 +44,11 @@ beforeAll(async () => {
   captureEmailedLinks(t);
   const { db } = await testDb();
   await insertUsd(db);
-  await db.insert(s.clientGroups).values({ name: 'Standard', isDefault: true, discountPercent: '0' });
+  const [standard] = await db
+    .insert(s.clientGroups)
+    .values({ name: 'Standard', isDefault: true, discountPercent: '0' })
+    .returning({ id: s.clientGroups.id });
+  standardRank = standard!.id;
   await seedIdentityTemplates(db);
   mailbox(t).reset();
   api = await adminWith(t, ['*'], { name: 'Rami K.' });
@@ -56,8 +61,8 @@ afterAll(async () => {
 });
 
 describe('the life of a merchant account', () => {
-  it('1. staff invite a merchant: active at once, no password, an invitation mail with a link', async () => {
-    const res = await api.post('/admin/clients', { name: 'Story Shop', email, country: 'JO', invite: true });
+  it('1. staff create an account with a merchant rank: active at once, no password, an invitation mail with a link', async () => {
+    const res = await api.post('/admin/clients', { name: 'Story Shop', email, country: 'JO', groupId: standardRank });
     expect(res.status).toBe(201);
     merchantId = res.body.id;
     expect(res.body).toMatchObject({
@@ -190,26 +195,24 @@ describe('the life of a merchant account', () => {
     expect(JSON.stringify(await db.select().from(s.auditLogs))).not.toContain(secret);
   });
 
-  it('12. the audit history of the merchant lists every staff action of the story', async () => {
-    const res = await api.get(
-      `/admin/audit-logs?entityType=merchant&entityId=${merchantId}&_sort=id&_order=asc&_end=100`,
-    );
+  it('12. the audit history of the account lists every staff action of the story', async () => {
+    const res = await api.get(`/admin/audit-logs?accountId=${merchantId}&_sort=id&_order=asc&_end=100`);
     expect(res.status).toBe(200);
     const actions: string[] = res.body.map((row: { action: string }) => row.action);
     for (const phrase of [
-      'invited merchant',
+      'created account',
       'resent the invitation of',
       'edited details of',
       'set a temporary password for',
-      'suspended merchant',
-      'reactivated merchant',
+      'suspended account of',
+      'reactivated account of',
       'created API key for',
       'changed limits of API key of',
     ]) {
       expect(actions).toContain(phrase);
     }
-    expect(actions.indexOf('invited merchant')).toBeLessThan(actions.indexOf('edited details of'));
-    expect(actions.indexOf('suspended merchant')).toBeLessThan(actions.indexOf('reactivated merchant'));
+    expect(actions.indexOf('created account')).toBeLessThan(actions.indexOf('edited details of'));
+    expect(actions.indexOf('suspended account of')).toBeLessThan(actions.indexOf('reactivated account of'));
     const { db } = await testDb();
     const everything = JSON.stringify(await db.select().from(s.auditLogs));
     expect(everything).not.toContain(temporary);

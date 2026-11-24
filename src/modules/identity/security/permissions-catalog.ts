@@ -9,7 +9,10 @@ import { contractRegistry } from '../../../common/contract';
  * Why: ALIGNMENT § 4: `GET /admin/permissions` answers the whole catalog as `string[]` of every concrete permission
  * the server checks, without wildcards (the role summary computes area levels from it), generated from the contract
  * registry. A permission nobody checks cannot be granted by mistake, and one that a route checks cannot be missing from
- * the role editor.
+ * the role editor. Decision 064: the account family `clients:read, create, update, security, block` is in the catalog because routes require
+ * it (`clients:block` through the block route of the customers module), and `customers:privacy` stays for the three privacy routes; the old
+ * `customers:*` permissions stay while the contracts of the retired customer routes (they answer 410) still name them, and leave with those
+ * contracts in the contract release.
  */
 @Injectable()
 export class PermissionsCatalog {

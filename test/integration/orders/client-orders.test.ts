@@ -10,6 +10,7 @@ import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { fundWallet } from '../../support/money';
+import { makeCustomer } from '../../support/store';
 import {
   IMEIS,
   eventsOf,
@@ -44,8 +45,8 @@ afterAll(async () => {
   await closeTestDb();
 });
 
-async function place(serviceId: number, imei: string = IMEIS[0], clientId = world.merchant.id): Promise<number> {
-  const res = await (await portalFor(t, clientId)).post('/client/orders', { serviceId, imei });
+async function place(serviceId: number, imei: string = IMEIS[0], accountId = world.merchant.id): Promise<number> {
+  const res = await (await portalFor(t, accountId)).post('/client/orders', { serviceId, imei });
   expect(res.statusCode).toBe(201);
   return json(res).orders[0].id as number;
 }
@@ -76,6 +77,8 @@ describe('GET /client/orders', () => {
         'pricingSnapshot',
         'customer',
         'client',
+        'account',
+        'rank',
       ]) {
         expect(Object.keys(row)).not.toContain(hidden);
       }
@@ -112,15 +115,20 @@ describe('GET /client/orders', () => {
     expect((await portal.get('/client/orders?_sort=totalPrice&_order=asc')).statusCode).toBe(200);
     // No filter on a field the merchant list does not offer.
     expect((await portal.get('/client/orders?clientId=1')).statusCode).toBe(422);
+    expect((await portal.get('/client/orders?accountId=1')).statusCode).toBe(422);
     expect((await portal.get('/client/orders?queue=manual')).statusCode).toBe(422);
     expect(await orderRow(db, a)).toBeTruthy();
   });
 
-  it('refuses a pending merchant and a call without a session', async () => {
-    const pendingId = await insertMerchant((await testDb()).db, { status: 'pending' });
-    const pending = await (await portalFor(t, pendingId)).get('/client/orders');
-    expect(pending.statusCode).toBe(403);
-    expect(json(pending).code).toBe('ACCOUNT_PENDING_APPROVAL');
+  it('refuses a retail rank, a suspended account and a call without a session', async () => {
+    const retail = await makeCustomer(t);
+    const wrongRank = await (await portalFor(t, retail.id)).get('/client/orders');
+    expect(wrongRank.statusCode).toBe(403);
+    expect(json(wrongRank).code).toBe('RANK_NOT_ALLOWED');
+    const suspendedId = await insertMerchant((await testDb()).db, { status: 'suspended' });
+    const suspended = await (await portalFor(t, suspendedId)).get('/client/orders');
+    expect(suspended.statusCode).toBe(403);
+    expect(json(suspended).code).toBe('ACCOUNT_SUSPENDED');
     expect((await t.app.inject({ method: 'GET', url: '/client/orders' })).statusCode).toBe(401);
   });
 });
@@ -225,7 +233,7 @@ describe('POST /client/orders/:id/cancel', () => {
     expect(await walletOf(db, merchant.id)).toEqual({ wallet: '100.0000', hold: '0.0000' });
     expect((await ledgerOf(db, id)).map((entry) => entry.kind)).toEqual(['order_hold', 'order_release']);
     expect((await eventsOf(db, id)).slice(-2).map((event) => [event.type, event.actorType])).toEqual([
-      ['rejected', 'client'],
+      ['rejected', 'account'],
       ['release', 'system'],
     ]);
     expect((await outboxOf(db, 'order.status_changed', id))[0]!.payload).toMatchObject({

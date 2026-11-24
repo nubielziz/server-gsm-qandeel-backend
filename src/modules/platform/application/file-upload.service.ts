@@ -1,5 +1,6 @@
-// FileUploadService: the one upload path of merchant files (map domain G, B157): `POST /client/files` for the
-// merchant portal and the Dhru file order. It checks the file, stores the object in the files bucket and writes the `files` row.
+// FileUploadService: the one upload path of account files (map domain G, B157): `POST /client/files` for the merchant portal and the Dhru
+// file order, `POST /store/v1/files` for a retail account's receipt. It checks the file, stores the object in the files bucket and writes
+// the `files` row.
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
@@ -7,19 +8,9 @@ import { AppError } from '../../../common/errors';
 import { DbService, isForeignKeyViolation } from '../../../infra/db';
 import { DEFAULT_MAX_OBJECT_BYTES, StorageService } from '../../../infra/storage';
 import { PROOF_MIME_TYPES } from '../files/stored-files';
-import {
-  CUSTOMER_DAILY_QUOTA,
-  MERCHANT_DAILY_QUOTA,
-  PENDING_MERCHANT_QUOTA,
-  type UploadQuotaRule,
-  assertUploadQuota,
-} from '../files/upload-quota';
-import {
-  deleteUnreferencedClientFile,
-  insertFile,
-  lockUploadOwner,
-  merchantIsApproved,
-} from '../infra/file.repository';
+import { type UploadQuotaRule, assertUploadQuota, uploadQuotaFor } from '../files/upload-quota';
+import type { FileOwnerType } from '../db/schema';
+import { deleteUnreferencedAccountFile, insertFile, lockUploadOwner } from '../infra/file.repository';
 
 /** The largest file a merchant may upload: 25 MiB (B157). */
 export const MAX_UPLOAD_BYTES = DEFAULT_MAX_OBJECT_BYTES;
@@ -79,18 +70,19 @@ export function cleanMediaType(declared: string): string {
 }
 
 /**
- * Stores the files merchants upload.
+ * Stores the files accounts upload.
  *
  * Why: B157 and RESOLUTIONS identity-platform-16: the input of a File service order and the
- * receipt of a bank transfer are files a merchant uploads first and refers to by id. One path keeps the limits and the owner rule in
+ * receipt of a bank transfer are files an account uploads first and refers to by id. One path keeps the limits and the owner rule in
  * one place: 1 byte to 25 MiB, any media type, the name reduced to a base name, the object in the files bucket under a key built
- * here (never from the name), a `files` row owned by the merchant (`owner_type client`) with the size and the SHA-256. A storefront
- * customer uploads a transfer receipt the same way (feature 21): proof types only, at most 5 MiB, owned by the customer.
+ * here (never from the name), a `files` row owned by the account (`owner_type account`, decision 064) with the size and the SHA-256. An
+ * account of a retail rank uploads a transfer receipt the same way (feature 21): proof types only, at most 5 MiB.
  *
- * Quotas (decision 053): a merchant that waits for approval keeps at most 10 uploaded files (50 MiB); an approved merchant uploads at most
- * 500 files (5 GiB) in 24 hours; a customer 30 files (100 MiB) in 24 hours. They are checked before the object is written (no object is
- * stored for an obvious refusal) and again, under a transaction lock of the owner, together with the row insert (exact under concurrency).
- * A refusal is `422 VALIDATION_FAILED` on `file` with the code `quota`.
+ * Quotas (decisions 053 and 064): the rule follows the rank kind of the account, not the route ({@link uploadQuotaFor}): a merchant rank
+ * uploads at most 500 files (5 GiB) in 24 hours, a retail rank 30 files (100 MiB) in 24 hours. There is no waiting-for-approval quota any more.
+ * They are checked before the object is written (no object is stored for an obvious refusal) and again, under the transaction lock
+ * `upload-quota:account:<id>` of the owner, together with the row insert (exact under concurrency). A refusal is `422 VALIDATION_FAILED` on
+ * `file` with the code `quota`.
  *
  * Side effects: one object in storage, one `files` row; the access is logged at info without the file name. An object whose row could
  * not be written is deleted again (best effort).
@@ -108,45 +100,47 @@ export class FileUploadService {
   ) {}
 
   /**
-   * Stores one file for a merchant.
+   * Stores one file for an account of a merchant rank (the portal and the Dhru file order).
    *
-   * @param clientId the merchant who owns the file
+   * Why: the door is rank-gated before the body is read (`/client/files` serves merchant ranks only), so the merchant quota applies; the
+   * rule is still chosen through {@link uploadQuotaFor}, the one place that maps a rank kind to its quota.
+   *
+   * @param accountId the account that owns the file
    * @param input the file name, media type and content
    * @returns the stored file
    * @throws {AppError} `VALIDATION_FAILED` on `file` (`empty`, or `quota`: decision 053), `PAYLOAD_TOO_LARGE` (over 25 MiB), `UNAVAILABLE`
    *   (storage is down)
    */
-  async upload(clientId: number, input: UploadInput): Promise<StoredFileView> {
-    const rules = (await merchantIsApproved(this.db.db, clientId)) ? [MERCHANT_DAILY_QUOTA] : [PENDING_MERCHANT_QUOTA];
-    return this.store({ type: 'client', id: clientId }, input, MAX_UPLOAD_BYTES, rules);
+  async upload(accountId: number, input: UploadInput): Promise<StoredFileView> {
+    return this.store({ type: 'account', id: accountId }, input, MAX_UPLOAD_BYTES, [uploadQuotaFor('merchant')]);
   }
 
   /**
-   * Stores one file for a storefront customer: a receipt (PDF, JPEG or PNG) of at most 5 MiB.
+   * Stores one file for an account of a retail rank: a receipt (PDF, JPEG or PNG) of at most 5 MiB.
    *
    * Why: plan 21 § 7.1 route 9: a manual top-up needs its transfer receipt, and the store surface is public, so the upload is small and
-   * of the proof types only (risk K15). The file is owned by the customer, so only that customer's top-up can use it.
+   * of the proof types only (risk K15). The file is owned by the account, so only that account's top-up can use it.
    *
-   * Side effects: puts one object into the files bucket; inserts one `files` row (`owner_type 'customer'`).
+   * Side effects: puts one object into the files bucket; inserts one `files` row (`owner_type 'account'`).
    *
-   * @param customerId the customer who owns the file
+   * @param accountId the account that owns the file
    * @param input the file name, media type and content
    * @param maxBytes the largest file (the route's limit)
    * @returns the stored file
    * @throws {AppError} `VALIDATION_FAILED` on `file` (`empty`, `type`, `quota`: decision 053), `PAYLOAD_TOO_LARGE`, `UNAVAILABLE` (storage is down)
    */
-  async uploadForCustomer(customerId: number, input: UploadInput, maxBytes: number): Promise<StoredFileView> {
+  async uploadForCustomer(accountId: number, input: UploadInput, maxBytes: number): Promise<StoredFileView> {
     if (input.data.length > 0 && !PROOF_MIME_TYPES.includes(cleanMediaType(input.mime))) {
       throw new AppError('VALIDATION_FAILED', {
         detail: 'Upload a PDF, JPEG or PNG file.',
         errors: [{ field: 'file', code: 'type', message: 'Upload a PDF, JPEG or PNG file.' }],
       });
     }
-    return this.store({ type: 'customer', id: customerId }, input, maxBytes, [CUSTOMER_DAILY_QUOTA]);
+    return this.store({ type: 'account', id: accountId }, input, maxBytes, [uploadQuotaFor('retail')]);
   }
 
   private async store(
-    owner: { readonly type: 'client' | 'customer'; readonly id: number },
+    owner: { readonly type: FileOwnerType; readonly id: number },
     input: UploadInput,
     maxBytes: number,
     rules: readonly UploadQuotaRule[],
@@ -206,19 +200,19 @@ export class FileUploadService {
    *
    * Why: P4a (B166). The Dhru `placefileorder` stores the upload first and places the order second; when the placement is refused or rolled
    * back (price changed, not enough credit, a duplicate) the file must not stay behind. Nothing is removed when anything still points at the
-   * file (an order, a ticket message, a dispute: see {@link deleteUnreferencedClientFile}), when it is not the merchant's, or
+   * file (an order, a ticket message, a dispute: see {@link deleteUnreferencedAccountFile}), when it is not the account's, or
    * when it is already gone. It never throws: cleanup must not hide the refusal that caused it, and an object that could not be deleted is
    * only logged (the row is gone, so the file can no longer be read or attached).
    *
    * Side effects: deletes one `files` row and its object.
    *
-   * @param clientId the merchant who owns the file
+   * @param accountId the account that owns the file
    * @param fileId the file's id
    * @returns true when the file was removed
    */
-  async discard(clientId: number, fileId: number): Promise<boolean> {
+  async discard(accountId: number, fileId: number): Promise<boolean> {
     try {
-      const object = await deleteUnreferencedClientFile(this.db.db, clientId, fileId);
+      const object = await deleteUnreferencedAccountFile(this.db.db, accountId, fileId);
       if (!object) return false;
       await this.storage.delete(object.key).catch((cleanup: unknown) => {
         this.logger.warn(`Could not remove the object of discarded file ${fileId}: ${String(cleanup)}`);
@@ -227,7 +221,7 @@ export class FileUploadService {
     } catch (error) {
       // A row with a foreign key still points at the file: it is in use, keep it.
       if (!isForeignKeyViolation(error)) {
-        this.logger.warn(`Could not discard file ${fileId} of merchant ${clientId}: ${String(error)}`);
+        this.logger.warn(`Could not discard file ${fileId} of account ${accountId}: ${String(error)}`);
       }
       return false;
     }

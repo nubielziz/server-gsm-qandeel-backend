@@ -80,15 +80,15 @@ no other; `surface` matches the path prefix; the success shape is a `schema` or 
 ## Access, sessions, audit and CSRF (decision 018)
 
 `access` says how a route authenticates; the guard dispatcher in the identity module (`src/modules/identity/security`) reads
-it from the contract (`getContract(handler)`) and runs the guard of that kind. Four optional fields refine it:
+it from the contract (`getContract(handler)`) and runs the guard of that kind. These optional fields refine it (the field `rank` has its own section, "Rank", below):
 
 | Field | Default | Meaning |
 |---|---|---|
 | `sessionStages` | `['active']` | The `sessions.stage` values a **session** route accepts (`staff-session`, `staff-permission`, `merchant-session`, `customer-session`). A pending session is refused with `401` everywhere else, so the sign-in routes name theirs: `2fa` accepts `['pending_totp', 'pending_totp_setup']`, `2fa/setup` `['pending_totp_setup']`, the forced password change `['pending_password']`, `logout` all four. A `staff-permission` route can only be `['active']`. |
-| `pendingMerchant` | `'deny'` | Only for `merchant-session` routes. A merchant whose status is `pending` (waiting for staff approval) may sign in, but every merchant route refuses it with `403 ACCOUNT_PENDING_APPROVAL` (which never signs out) unless the contract says `pendingMerchant: 'allow'`. The routes that manage the merchant's own account (profile, password, 2FA, sessions, logout, `GET /client/auth/me`) allow it (user decision B153). Dhru calls of a pending merchant are always refused. |
+| `pendingMerchant` | `'deny'` | Only for `merchant-session` routes, and **ignored since decision 064**: the status `pending` no longer exists (a merchant made by staff is active at once, and the migration turned every pending merchant into a suspended one), so the one account gate never produces `403 ACCOUNT_PENDING_APPROVAL`. The field is still accepted and compiled so the contracts keep loading; the contract release removes it with the error code. |
 | `audit` | `true` | Every staff mutation (an admin route that is not a GET) must write an `audit_logs` row with `AuditService.record(tx, ...)`; otherwise the request fails with a `500` in development and tests (and logs an error in production). `audit: false` opts out for routes that write none (the sign-in steps); the description must say why. |
 | `csrf` | `true` | A mutation that authenticates with a session cookie always needs a matching `X-CSRF-Token` (`403 CSRF_FAILED`, never signs out). `csrf: false` is for routes that have no session to bind a token to (sign-in, password set by emailed token): they are refused unless the `Origin` header is one of the origins of the route's audience (`CONSOLE_ORIGINS` on `/admin`, `SHOP_ORIGINS` on `/client`; on `/store/v1` only the routes that declare `originCheck`). It is refused on session routes. The field is declarative: the CSRF guard picks the token check or the Origin check by whether a session authenticated the request, so a session-less mutation gets the Origin check with or without it; set it anyway so the contract says what the route expects. |
-| `originCheck` | `false` | `true` makes the CSRF guard check where the request was started (decision 045). On a `GET` with a session access (a route with a side effect or a download of personal data, which carries no CSRF token): `Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the origins of the route's audience (`CONSOLE_ORIGINS` on `/admin`, `SHOP_ORIGINS` on `/client` and `/store/v1`). On a `/store/v1` mutation without a session (`csrf: false`; the routes that sign a visitor in): an `Origin` of the shop. Anything else is `403 CSRF_FAILED`. Refused elsewhere: a session mutation has its CSRF token, and every session-less mutation on `/admin` and `/client` is checked without the flag. Used by the three streams, the customer export, the order export, the merchant statement, the merchant price export, and `POST /store/v1/auth/verify` and `/login`. `originCheck: 'fetch-metadata'` (a `GET` with a session access only) is the lighter rule for a read that the portal's own server calls as well as its pages, and a server call sends neither `Sec-Fetch-Site` nor `Origin`: only a request that the browser marks `cross-site` or `same-site` (or sends a repeated or unknown value), without an `Origin` of the route's audience, is `403 CSRF_FAILED`; a request without the header, or `same-origin` or `none`, is answered. Used by `GET /client/services` and `GET /client/services/:id` (they record the listed prices). |
+| `originCheck` | `false` | `true` makes the CSRF guard check where the request was started (decision 045). On a `GET` with a session access (a route with a side effect or a download of personal data, which carries no CSRF token): `Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the origins of the route's audience (`CONSOLE_ORIGINS` on `/admin`, `SHOP_ORIGINS` on `/client` and `/store/v1`). On a `/store/v1` mutation without a session (`csrf: false`; the routes that sign a visitor in): an `Origin` of the shop. Anything else is `403 CSRF_FAILED`. Refused elsewhere: a session mutation has its CSRF token, and every session-less mutation on `/admin` and `/client` is checked without the flag. Used by the three streams, the account export, the order export, the merchant statement, the merchant price export, and `POST /store/v1/auth/verify` and `/login`. `originCheck: 'fetch-metadata'` (a `GET` with a session access only) is the lighter rule for a read that the portal's own server calls as well as its pages, and a server call sends neither `Sec-Fetch-Site` nor `Origin`: only a request that the browser marks `cross-site` or `same-site` (or sends a repeated or unknown value), without an `Origin` of the route's audience, is `403 CSRF_FAILED`; a request without the header, or `same-origin` or `none`, is answered. Used by `GET /client/services` and `GET /client/services/:id` (they record the listed prices). |
 
 ```ts
 export const verifyTwoFactor = defineRoute({
@@ -107,7 +107,29 @@ export const verifyTwoFactor = defineRoute({
 ```
 
 A route without a contract is refused by the dispatcher (`DOCUMENTATION_ROUTES` keep their own guard). The OpenAPI operation of a
-session route carries `x-gsm-session-stages`, that of a merchant route `x-gsm-pending-merchant`, and that of a staff mutation `x-gsm-audit`.
+session route carries `x-gsm-session-stages`, that of a merchant route `x-gsm-pending-merchant` (always ignored by the gate, see its row), and that of a staff mutation `x-gsm-audit`.
+
+## Rank (decision 064)
+
+One account type serves merchants and retail buyers from one session, so every session route says **whom it serves**. The default is deny:
+
+| Access kind | Compiled `contract.rank` | Serves |
+|---|---|---|
+| `merchant-session` | `merchant` | accounts of a merchant rank (the stored rank kind `b2b`) |
+| `customer-session` | `retail` | accounts of the retail rank (any kind other than `b2b`) |
+| either, with `rank: 'any'` | `any` | every account |
+| every other access kind | `null` | no rank gate (staff, public, tokens, webhooks, Dhru keys judge the rank themselves) |
+
+- `rank` takes one value, `'any'`, and only on `merchant-session` and `customer-session` routes (`defineRoute` throws elsewhere). It is a reviewed change
+  of two files: the route's key must also be written in `test/contract/rank-open-routes.ts`, and a contract test fails when the registry's `any`
+  keys and that list differ. `RANK_GATED_ACCESS_KINDS`, `isRankGatedAccess`, `defaultRankOf` and the type `RouteRank` are exported by this folder.
+- The refusal is `403 RANK_NOT_ALLOWED` and it never ends the session. `defineRoute` appends the code to the `errors` of every route whose rank is
+  `merchant` or `retail` (a route that lists it itself keeps it once); a route marked `any` cannot refuse for a rank.
+- The gate lives in the one session access handler of the identity module and runs after the stage and the suspension checks and before CSRF
+  (order: 401, 403 `ACCOUNT_SUSPENDED`, 401 wrong stage, 403 `RANK_NOT_ALLOWED`, CSRF, permission, Turnstile); the upload pre-check applies the same
+  rule before a multipart body is read. A session view without a rank is refused (fail closed).
+- The routes pinned as open to every rank today: `POST /client/auth/2fa`, `POST /client/auth/logout`, `POST /client/auth/password/change`,
+  `POST /store/v1/auth/logout`, `POST /store/v1/me/data-export` and `POST /store/v1/me/data-delete`.
 
 ## What happens to a request
 

@@ -1,5 +1,6 @@
 // The routes and use cases of the storefront checkout (stages 14 and 16): open a session, read it, record consents, pay it, the capture of a confirmed payment, and the checkout token
-// resolver. Separate from CustomersModule so a test app built without a database can leave it out.
+// resolver; and the customers module's entries in two registries of decision 064 (the open-checkout check of a rank change, the guest claim's
+// move of checkout sessions and consents). Separate from CustomersModule so a test app built without a database can leave it out.
 import { Module } from '@nestjs/common';
 import { MoneyAdminModule, StorefrontMailsModule } from '../money';
 import { RiskServicesModule } from '../risk';
@@ -9,9 +10,10 @@ import { CheckoutPayService } from './application/checkout-pay.service';
 import { CheckoutSessionService } from './application/checkout-session.service';
 import { CheckoutTokenResolver } from './application/checkout-token.resolver';
 import { ConsentService } from './application/consent.service';
-import { OptionalCustomerSession } from './application/optional-customer-session';
 import { CheckoutController } from './controllers/checkout.controller';
 import { CustomerProfileRules } from './application/customer-profile-rules';
+import { CustomersGuestClaimParticipant } from './application/guest-claim.participant';
+import { OpenCheckoutGuard } from './application/open-checkout-guard';
 
 /**
  * Provides `/store/v1/checkout-sessions*` (open, read, consents, pay, and pay from the store balance: feature 21) and the capture that turns a confirmed payment into the order.
@@ -21,7 +23,11 @@ import { CustomerProfileRules } from './application/customer-profile-rules';
  * the capture): a test app that leaves this module out leaves that import out with it. `RiskServicesModule` gives the capture the screening
  * of every payment and the refund of a blocked one (feature 18). The checkout shares the profile's country rule (`CustomerProfileRules`,
  * stateless: `CustomersAccountsModule` keeps its own), so a country without a tax window is refused the way the profile refuses it
- * (decision 050).
+ * (decision 050). The signed-in shopper comes from identity's `OptionalAccountSession`, the account rows from `AccountDirectory`, and the
+ * registries from identity (`GuestClaimParticipants`) and money (`RankChangeGuards`): all global.
+ *
+ * Side effects at boot (API process only): `OpenCheckoutGuard` registers `open_checkout` with `RankChangeGuards` and
+ * `CustomersGuestClaimParticipant` registers `customers` with `GuestClaimParticipants`.
  */
 @Module({
   imports: [MoneyAdminModule, StorefrontMailsModule, RiskServicesModule],
@@ -30,11 +36,12 @@ import { CustomerProfileRules } from './application/customer-profile-rules';
     CheckoutSessionService,
     ConsentService,
     CheckoutTokenResolver,
-    OptionalCustomerSession,
     CheckoutPayService,
     CheckoutCaptureService,
     CheckoutBalancePayService,
     CustomerProfileRules,
+    OpenCheckoutGuard,
+    CustomersGuestClaimParticipant,
   ],
 })
 export class CheckoutModule {}

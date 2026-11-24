@@ -97,6 +97,9 @@ export const DEFAULT_SESSION_STAGES: readonly SessionStage[] = Object.freeze(['a
  * Why: user decision B153: a pending merchant may sign in, read its approval status and manage its own account (profile,
  * password, 2FA, sessions, logout); every other merchant route answers `403 ACCOUNT_PENDING_APPROVAL`, so the default is
  * `deny` and a route opts in with `allow`.
+ *
+ * Decision 064 (one account type): the field is still accepted and compiled, but the one account gate ignores it (it checks the rank,
+ * not an approval); the contract release removes it.
  */
 export type PendingMerchantPolicy = 'allow' | 'deny';
 
@@ -106,6 +109,52 @@ export type PendingMerchantPolicy = 'allow' | 'deny';
  * Why: B153 is default deny, so a new merchant route cannot be open to unapproved accounts by forgetting a field.
  */
 export const DEFAULT_PENDING_MERCHANT_POLICY: PendingMerchantPolicy = 'deny';
+
+/**
+ * The access kinds that sit behind the rank gate: the two kinds a signed-in account uses.
+ *
+ * Why: decision 064 (one account type) serves merchants and shop customers from one session; the rank of the account decides which
+ * routes it may call (default deny), so only these two kinds carry a `rank` and can be opened to every account with `rank: 'any'`.
+ */
+export const RANK_GATED_ACCESS_KINDS = [
+  'merchant-session',
+  'customer-session',
+] as const satisfies readonly AccessKind[];
+
+/**
+ * Who a route serves, by the rank of the account: `merchant` (a merchant rank), `retail` (the retail rank) or `any` (every rank).
+ *
+ * Why: the gate refuses an account whose rank kind is not the route's rank with 403 `RANK_NOT_ALLOWED` (a code that never signs
+ * the caller out); `any` is the reviewed exception, listed in `test/contract/rank-open-routes.ts`.
+ */
+export type RouteRank = 'merchant' | 'retail' | 'any';
+
+/**
+ * Tells whether an access kind sits behind the rank gate.
+ *
+ * Why: see {@link RANK_GATED_ACCESS_KINDS}; the definition check, the default rank and the contract tests ask the same question.
+ *
+ * @param access an access kind
+ * @returns true for `merchant-session` and `customer-session`
+ */
+export function isRankGatedAccess(access: AccessKind): boolean {
+  return (RANK_GATED_ACCESS_KINDS as readonly string[]).includes(access);
+}
+
+/**
+ * The rank a route serves when its spec does not say `rank: 'any'`.
+ *
+ * Why: the gate is default deny (decision 064): a `merchant-session` route serves merchant ranks and a `customer-session` route
+ * serves the retail rank, so a new route cannot be open to every account by forgetting a field.
+ *
+ * @param access an access kind
+ * @returns `merchant` for `merchant-session`, `retail` for `customer-session`, `null` for a kind without a rank gate
+ */
+export function defaultRankOf(access: AccessKind): Exclude<RouteRank, 'any'> | null {
+  if (access === 'merchant-session') return 'merchant';
+  if (access === 'customer-session') return 'retail';
+  return null;
+}
 
 /**
  * The switches that turn the anti-bot check on for routes whose callers are still learning to send the token.
@@ -209,6 +258,13 @@ export interface RouteSpec<
    */
   readonly pendingMerchant?: PendingMerchantPolicy;
   /**
+   * `'any'` opens a `merchant-session` or `customer-session` route to every rank (decision 064). Left out, the rank follows the access
+   * kind: `merchant-session` serves merchant ranks, `customer-session` the retail rank, and any other rank is refused with
+   * `403 RANK_NOT_ALLOWED`. The only value is `'any'`; a route that uses it must also be a key of `test/contract/rank-open-routes.ts`
+   * (a contract test compares the two). Refused on every other access kind.
+   */
+  readonly rank?: 'any';
+  /**
    * `false` marks an admin route that changes data but writes no audit row (the sign-in steps). The description must say
    * why. Every other staff mutation must call `AuditService.record` or the request fails in development and tests.
    */
@@ -291,6 +347,12 @@ export interface RouteContract<
   readonly sessionStages: readonly SessionStage[];
   /** `allow` when a pending merchant may call the route; `deny` unless the spec says otherwise (meaningless off `merchant-session`). */
   readonly pendingMerchant: PendingMerchantPolicy;
+  /**
+   * The rank the route serves: `merchant` or `retail` by the access kind unless the spec said `rank: 'any'`; `null` on a route
+   * that is not behind the rank gate (neither `merchant-session` nor `customer-session`). `RANK_NOT_ALLOWED` is in `errors` of every
+   * route whose rank is `merchant` or `retail`.
+   */
+  readonly rank: RouteRank | null;
   /** False when a staff mutation is exempt from the audit duty (`audit: false`). */
   readonly audit: boolean;
   /** False when the route declared that it has no session to bind a CSRF token to (`csrf: false`). */
@@ -528,6 +590,14 @@ export function defineRoute<
     if (spec.access !== 'merchant-session')
       problem(`pendingMerchant only applies to merchant-session routes (access is "${spec.access}")`);
   }
+  // The rank gate (decision 064): the only spec value is 'any', and only the two account session kinds have a rank.
+  if (spec.rank !== undefined) {
+    if (spec.rank !== 'any')
+      problem(`rank must be "any" when it is given, got "${String(spec.rank)}" (the default follows the access kind)`);
+    if (!isRankGatedAccess(spec.access))
+      problem(`rank only applies to merchant-session and customer-session routes (access is "${spec.access}")`);
+  }
+  const rank: RouteRank | null = spec.rank ?? defaultRankOf(spec.access);
   if (spec.audit === false) {
     if (spec.surface !== 'admin')
       problem('audit: false only applies to admin routes (the audit log records staff writes)');
@@ -620,11 +690,12 @@ export function defineRoute<
       problem(`unknown error code "${String(code)}" (add it to the catalog and docs/contract/error-codes.md)`);
   }
   if (new Set(spec.errors).size !== spec.errors.length) problem('errors lists a code twice');
-  // A route behind the anti-bot check can always answer 403 TURNSTILE_FAILED (decision 034), so the contract says so.
-  const errors: readonly ErrorCode[] =
-    spec.turnstile === true && !spec.errors.includes('TURNSTILE_FAILED')
-      ? [...spec.errors, 'TURNSTILE_FAILED']
-      : spec.errors;
+  // A route behind the rank gate can always answer 403 RANK_NOT_ALLOWED (decision 064) and one behind the anti-bot check 403
+  // TURNSTILE_FAILED (decision 034), so the contract says so. A route open to every rank never meets the rank refusal.
+  const implied: ErrorCode[] = [];
+  if (rank === 'merchant' || rank === 'retail') implied.push('RANK_NOT_ALLOWED');
+  if (spec.turnstile === true) implied.push('TURNSTILE_FAILED');
+  const errors: readonly ErrorCode[] = [...spec.errors, ...implied.filter((code) => !spec.errors.includes(code))];
 
   // Examples must satisfy the schemas they document.
   const examples = spec.examples ?? {};
@@ -675,6 +746,7 @@ export function defineRoute<
     examples: Object.freeze({ request: examples.request, response: examples.response }),
     sessionStages,
     pendingMerchant: spec.pendingMerchant ?? DEFAULT_PENDING_MERCHANT_POLICY,
+    rank,
     audit: spec.audit ?? true,
     csrf: spec.csrf ?? true,
     turnstile: spec.turnstile ?? false,

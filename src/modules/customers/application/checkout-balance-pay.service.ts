@@ -1,4 +1,4 @@
-// CheckoutBalancePayService: pays a storefront checkout from the signed-in customer's store balance (feature 21, plan § 5.6.6, route
+// CheckoutBalancePayService: pays a storefront checkout from the signed-in retail account's store balance (feature 21, plan § 5.6.6, route
 // `POST /store/v1/checkout-sessions/:token/balance-payment`). It places the order and records the payment in one transaction.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
@@ -7,6 +7,7 @@ import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService, type DbExecutor } from '../../../infra/db';
 import { EncryptionService, TokenService } from '../../../infra/crypto';
+import { AccountDirectory, type AccountRecord, canAct } from '../../identity';
 import {
   BALANCE_BRAND,
   type BalancePaymentView,
@@ -24,7 +25,6 @@ import { CHECKOUT_IMEI_AAD, consentState, effectiveStatus, requiredConsents } fr
 import type { CheckoutSession } from '../db/schema';
 import { lockCheckoutSession, markSessionPaid } from '../infra/checkout.repository';
 import { listSessionConsents } from '../infra/consent.repository';
-import { findCustomerById } from '../infra/customer.repository';
 import { assertServiceOnSale } from './checkout-on-sale';
 
 /** What the route answers. */
@@ -40,10 +40,13 @@ function inputsOf(raw: Record<string, unknown> | null): Record<string, string> {
 /**
  * Pays checkouts from the store balance.
  *
- * Why: plan 21 § 5.6.6 (R4, R10, R13, K1, K2, K4): a signed-in customer pays an open checkout from the balance and gets the order at once,
- * with no gateway, no webhook and no polling. The customer id always comes from the cookie session (with its CSRF token), never from the
- * checkout row alone: the checkout must belong to that customer **and** have been opened while signed in (a guest checkout typed with the
- * account's email, or a prepared link sent to the victim, can never spend a balance). The checkout row lock serializes every payer of one
+ * Why: plan 21 § 5.6.6 (R4, R10, R13, K1, K2, K4; decision 064): a signed-in retail account pays an open checkout from the
+ * balance and gets the order at once, with no gateway, no webhook and no polling. The account id always comes from the cookie session
+ * (with its CSRF token), never from the checkout row alone: the checkout must belong to that account **and** have been opened while signed in
+ * (a guest checkout typed with the account's email, or a prepared link sent to the victim, can never spend a balance). Lock order (decision 064):
+ * the account row `FOR KEY SHARE` first, its rank read only after that lock and refused unless it is retail now (a rank change to the
+ * merchant kind holds the row `FOR UPDATE`, so the payment either runs first and is seen by the `open_checkout` blocker, or finds the new
+ * rank and pays nothing), then the checkout row. The checkout row lock serializes every payer of one
  * checkout (a card capture racing it finds the session paid and is refunded as a duplicate); the wallet debit is guarded under the
  * wallet's row lock inside `postTransaction`, so parallel checkouts never overspend. Every payment is screened by the risk rules as a card
  * capture is: `review` places the order held, `block` places it held and refunds it to the balance at once.
@@ -66,38 +69,45 @@ export class CheckoutBalancePayService {
     private readonly quotes: StorefrontQuotes,
     private readonly risk: RiskScreening,
     private readonly decisions: RiskDecisionsService,
+    private readonly accounts: AccountDirectory,
     private readonly encryption: EncryptionService,
     private readonly tokens: TokenService,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
-   * Pays a checkout from the balance of the signed-in customer.
+   * Pays a checkout from the balance of the signed-in retail account.
    *
    * @param sessionId the session the checkout token resolved to
-   * @param customerId the customer of the cookie session (CSRF already checked); `undefined` for a guest
+   * @param accountId the retail account of the cookie session (CSRF already checked); `undefined` for a guest
    * @param key the `Idempotency-Key`
    * @returns the payment, the order and the wallet after it; `replayed` when the key answered an earlier call
-   * @throws {AppError} `UNAUTHORIZED` (no customer session), `NOT_FOUND`, `FORBIDDEN` (another account's checkout, or one opened as a
-   *   guest), `IDEMPOTENCY_KEY_REUSED`, `WALLET_DISABLED`, `INVALID_TRANSITION` (paid, expired, or the service no longer on sale), `ACCOUNT_SUSPENDED`,
+   * @throws {AppError} `UNAUTHORIZED` (no account session, or the account is gone), `RANK_NOT_ALLOWED` (the account holds a merchant rank
+   *   now; nothing is written), `NOT_FOUND`, `FORBIDDEN` (another account's checkout, or one opened as a guest), `IDEMPOTENCY_KEY_REUSED`, `WALLET_DISABLED`, `INVALID_TRANSITION` (paid, expired, or the service no longer on sale), `ACCOUNT_SUSPENDED`,
    *   `VALIDATION_FAILED` (`consent`), `WALLET_FROZEN`, `INSUFFICIENT_FUNDS` (402)
    */
   async pay(
     sessionId: number,
-    customerId: number | undefined,
+    accountId: number | undefined,
     key: string,
   ): Promise<{ view: BalancePaymentResult; replayed: boolean }> {
-    if (customerId === undefined) {
+    if (accountId === undefined) {
       throw new AppError('UNAUTHORIZED', { detail: 'Sign in to pay from your store balance.' });
     }
     // Read once before the transaction (plan § 5.6); a switch change is seen at once or within the settings cache's minute.
     const policy = await this.wallets.policy();
     return this.db.runInTransaction(async ({ tx }) => {
-      // Lock order (plan § 5.7): checkout session → (stock claim, inserts) → ledger accounts, by id, taken by the posting only.
+      // Lock order (decision 064): the account row, then the checkout session → (stock claim, inserts) → ledger accounts, by id, taken by
+      // the posting only. The rank is read after the lock and must be retail now (defence in depth behind the route's session).
+      const account = await this.accounts.lockForKeyShare(tx, accountId);
+      if (!account) throw new AppError('UNAUTHORIZED', { detail: 'Sign in to pay from your store balance.' });
+      if (account.rankKind !== 'retail') {
+        throw new AppError('RANK_NOT_ALLOWED', { detail: 'Your account orders from its price list.' });
+      }
       const session = await lockCheckoutSession(tx, sessionId);
       if (!session) throw new AppError('NOT_FOUND', { detail: 'This link is not valid.' });
       // Authorization comes before anything is revealed or replayed (K2).
-      if (session.customerId !== customerId) {
+      if (session.accountId !== accountId) {
         throw new AppError('FORBIDDEN', { detail: 'This checkout belongs to another account.' });
       }
       if (!session.openedSignedIn) {
@@ -110,15 +120,15 @@ export class CheckoutBalancePayService {
         });
       }
       if (replay) {
-        return { view: await this.answer(tx, replay.payment, replay.orderId, customerId, policy), replayed: true };
+        return { view: await this.answer(tx, replay.payment, replay.orderId, accountId, policy), replayed: true };
       }
       // The switch is checked after the replay, so a retry of a payment made just before the switch went off still gets its answer.
       if (!policy.enabled) throw new AppError('WALLET_DISABLED');
-      await this.assertPayable(tx, session);
+      await this.assertPayable(tx, session, account);
 
       const gross = Money.of(session.netAmount).add(Money.of(session.taxAmount));
       // A friendly refusal before anything is written; the authoritative checks run under the wallet's row lock in the posting.
-      const peek = await this.wallets.peek(tx, customerId);
+      const peek = await this.wallets.peek(tx, accountId);
       if (peek.frozen) {
         throw new AppError('WALLET_FROZEN', { detail: 'Paying from your store balance is on hold. Contact support.' });
       }
@@ -143,7 +153,7 @@ export class CheckoutBalancePayService {
       ).gross;
       const imei = session.imeiEnc === null ? undefined : this.encryption.decrypt(session.imeiEnc, CHECKOUT_IMEI_AAD);
       const screening = await this.risk.assess(tx, {
-        customerId,
+        accountId,
         email: session.email,
         checkoutSessionId: session.id,
         amountUsd: gross.toWire(),
@@ -162,7 +172,7 @@ export class CheckoutBalancePayService {
       const order = await this.placement.place(
         tx,
         {
-          customerId,
+          accountId,
           checkoutSessionId: session.id,
           serviceId: session.serviceId,
           quantity: session.quantity,
@@ -181,7 +191,7 @@ export class CheckoutBalancePayService {
           payment = await this.walletPayments.record(tx, {
             sessionId: session.id,
             key,
-            customerId,
+            accountId,
             order: created,
             session: captured,
           });
@@ -200,21 +210,20 @@ export class CheckoutBalancePayService {
         await this.mails.orderReceived(tx, { orderId: order.id, amount: payment.amount, currency: payment.currency });
         if (order.status === 'completed') await this.mails.orderCompleted(tx, { orderId: order.id, completions: 1 });
       }
-      return { view: await this.answer(tx, payment, order.id, customerId, policy), replayed: false };
+      return { view: await this.answer(tx, payment, order.id, accountId, policy), replayed: false };
     });
   }
 
-  /** The checks of a new payment: open (not paid, not expired), active customer, a service still on sale, every required consent (as `/pay`). */
-  private async assertPayable(tx: DbExecutor, session: CheckoutSession): Promise<void> {
+  /** The checks of a new payment: open (not paid, not expired), an account that may act, a service still on sale, every required consent (as `/pay`). */
+  private async assertPayable(tx: DbExecutor, session: CheckoutSession, account: AccountRecord): Promise<void> {
     if (session.status === 'paid') {
       throw new AppError('INVALID_TRANSITION', { detail: 'This checkout was already paid.' });
     }
     if (effectiveStatus(session.status, session.expiresAt, this.clock.now()) !== 'open') {
       throw new AppError('INVALID_TRANSITION', { detail: 'This checkout has expired. Start again.' });
     }
-    const customer = session.customerId === null ? undefined : await findCustomerById(tx, session.customerId);
-    if (!customer) throw new AppError('NOT_FOUND', { detail: 'This link is not valid.' });
-    if (customer.status !== 'active') {
+    // The account is the one locked above and equal to the session's (checked first): it may act only while active.
+    if (!canAct(account.status)) {
       throw new AppError('ACCOUNT_SUSPENDED', { detail: 'This account cannot start a new order. Contact support.' });
     }
     await assertServiceOnSale(this.quotes, tx, session.serviceId);
@@ -233,12 +242,12 @@ export class CheckoutBalancePayService {
     tx: DbExecutor,
     payment: BalancePaymentView,
     orderId: number,
-    customerId: number,
+    accountId: number,
     policy: CustomerWalletPolicy,
   ): Promise<BalancePaymentResult> {
     const [trackingToken, wallet] = await Promise.all([
       this.orders.trackingTokenOf(tx, orderId),
-      this.wallets.figuresOf(tx, customerId, policy),
+      this.wallets.figuresOf(tx, accountId, policy),
     ]);
     return { payment, order: { id: orderId, trackingToken: trackingToken ?? '' }, wallet };
   }

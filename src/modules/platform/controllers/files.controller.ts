@@ -16,28 +16,29 @@ import {
 } from '../contracts/files.contracts';
 
 /**
- * The id of the signed-in caller of a merchant or storefront route, from the request context the session guards fill in.
+ * The id of the signed-in caller of an account route, from the request context the session guards fill in.
  *
  * Why: the platform module may not import the identity module's decorators (identity imports platform: decision 032), and the
- * context carries exactly the actor type and id the guards authenticated. The staff download needs the caller's permissions too, which the
+ * context carries exactly the actor type and id the guards authenticated (`account`, the account id: decision 064). The rank gate of the
+ * route decided which rank may be here before the body was read. The staff download needs the caller's permissions too, which the
  * context does not hold: it reads the principal through `identityApi()` (decision 047).
  *
- * @param type the kind of caller the route is for
- * @returns the caller's id
- * @throws {AppError} `UNAUTHORIZED` (401) when the request was not authenticated as that kind of caller
+ * @returns the account id
+ * @throws {AppError} `UNAUTHORIZED` (401) when the request was not authenticated as an account
  */
-function callerOf(type: 'staff' | 'client' | 'customer'): number {
+function accountOf(): number {
   const actor = getRequestContext()?.actor;
-  if (actor?.type !== type) throw new AppError('UNAUTHORIZED');
+  if (actor?.type !== 'account') throw new AppError('UNAUTHORIZED');
   return actor.id;
 }
 
 /**
- * The file routes: downloads and merchant uploads.
+ * The file routes: downloads and account uploads.
  *
  * Why: the console renders a plain link to `GET /admin/files/:id` (an order's input or result file, an identity document stored earlier); the merchant portal
- * links to its own files. Downloads redirect to a link that expires after 5 minutes (B154). A merchant uploads the input of a File
- * service order and its bank transfer receipts through `POST /client/files` (B157).
+ * links to its own files. Downloads redirect to a link that expires after 5 minutes (B154). An account of a merchant rank uploads the input of a File
+ * service order and its bank transfer receipts through `POST /client/files` (B157); an account of a retail rank uploads its receipts through
+ * `POST /store/v1/files`. The owner is the account on both routes and the quota follows the rank kind (decision 064).
  *
  * @route GET /admin/files/:id
  * @route GET /client/files/:id
@@ -77,7 +78,7 @@ export class FilesController {
   }
 
   /**
-   * Redirects a merchant to one of its own files.
+   * Redirects an account of a merchant rank to one of its own files.
    *
    * @param params the file id
    * @param reply the reply, to set `Location`
@@ -88,12 +89,12 @@ export class FilesController {
     @Param() params: ParamsOf<typeof openClientFile>,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<void> {
-    const url = await this.files.linkForMerchant(callerOf('client'), params.id);
+    const url = await this.files.linkForMerchant(accountOf(), params.id);
     reply.header('location', url).header('cache-control', 'no-store');
   }
 
   /**
-   * Stores a file for the signed-in merchant (the portal).
+   * Stores a file for the signed-in account of a merchant rank (the portal).
    *
    * @param body the multipart body with the file part
    * @returns the stored file
@@ -101,7 +102,7 @@ export class FilesController {
    */
   @Route(uploadClientFile)
   uploadForMerchant(@Body() body: BodyOf<typeof uploadClientFile>): Promise<ResultOf<typeof uploadClientFile>> {
-    return this.uploads.upload(callerOf('client'), {
+    return this.uploads.upload(accountOf(), {
       filename: body.file.filename,
       mime: body.file.mime,
       data: body.file.data,
@@ -109,7 +110,7 @@ export class FilesController {
   }
 
   /**
-   * Stores a receipt for the signed-in storefront customer (feature 21).
+   * Stores a receipt for the signed-in account of a retail rank (feature 21).
    *
    * @param body the multipart body with the file part
    * @returns the stored file
@@ -119,7 +120,7 @@ export class FilesController {
   @Header('Cache-Control', 'no-store')
   uploadForCustomer(@Body() body: BodyOf<typeof uploadStoreFile>): Promise<ResultOf<typeof uploadStoreFile>> {
     return this.uploads.uploadForCustomer(
-      callerOf('customer'),
+      accountOf(),
       { filename: body.file.filename, mime: body.file.mime, data: body.file.data },
       STORE_UPLOAD_MAX_BYTES,
     );

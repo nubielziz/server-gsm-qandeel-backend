@@ -20,7 +20,7 @@ async function accountsOf(clientId: number) {
   return db
     .select({ kind: s.ledgerAccounts.kind, limit: s.ledgerAccounts.overdraftLimit, balance: s.ledgerAccounts.balance })
     .from(s.ledgerAccounts)
-    .where(and(eq(s.ledgerAccounts.ownerType, 'client'), eq(s.ledgerAccounts.ownerId, clientId)))
+    .where(and(eq(s.ledgerAccounts.ownerType, 'account'), eq(s.ledgerAccounts.ownerId, clientId)))
     .orderBy(s.ledgerAccounts.kind);
 }
 

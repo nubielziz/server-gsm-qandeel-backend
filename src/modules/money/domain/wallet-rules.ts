@@ -1,7 +1,13 @@
-// Wallet rules that need no database: the credit limit (user rule 2) and the manual adjustment limits (ANSWERS merchants Q4,
-// decision 049).
+// Wallet rules that need no database: the credit limit (user rule 2), the manual adjustment limits (ANSWERS merchants Q4, decision 049),
+// and the pure parts of the staff wallet actions of one account (decision 064): the keys, the pools by wallet kind, the replay checks,
+// the refusals and the statement window.
+import type { ParsedFilter } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
+import type { RankKind } from '../../identity';
+import type { AccountWalletKind, AccountWalletView } from '../ports/account-wallets';
+import { BASE_CURRENCY } from './accounts';
+import type { WalletLedgerKind } from './wallet-kinds';
 
 /**
  * Checks a credit limit against the merchant group's overdraft permission and returns it.
@@ -194,4 +200,265 @@ export function receiptApprovalRefusalDetail(limit: Money, total: Money): string
  */
 export function creditLimitOwnerDetail(approvalLimit: Money): string {
   return `Only an owner can set a credit limit above ${dollarsText(approvalLimit)}.`;
+}
+
+/** The two pools a staff member's credits are counted in: merchant wallets and store balances (the approval limit of each is its own). */
+export type WalletPool = AccountWalletKind;
+
+/**
+ * Names the pool and the wallet a rank kind uses.
+ *
+ * Why: the approval pools follow the wallet kind of the account now (decision 064), not the type word the old rows carried: a merchant
+ * rank gives merchant credits (`client_wallet`), any other rank gives store credits (`customer_wallet`).
+ *
+ * @param rankKind the kind of the account's rank
+ * @returns the wallet kind of the pool and the ledger account kind of its wallet
+ */
+export function poolOfRank(rankKind: RankKind): { pool: WalletPool; ledgerKind: WalletLedgerKind } {
+  return rankKind === 'merchant'
+    ? { pool: 'merchant', ledgerKind: 'client_wallet' }
+    : { pool: 'store', ledgerKind: 'customer_wallet' };
+}
+
+/**
+ * The ledger idempotency key of a staff adjustment.
+ *
+ * Why: one form for both wallet kinds, `adjust:<accountId>:<Idempotency-Key>`. The account id is global, so a retry posts once whichever kind
+ * the wallet has.
+ *
+ * @param accountId the account
+ * @param idempotencyKey the caller's `Idempotency-Key`
+ * @returns the key
+ */
+export function adjustmentKeyOf(accountId: number, idempotencyKey: string): string {
+  return `adjust:${accountId}:${idempotencyKey}`;
+}
+
+/**
+ * The keys a store adjustment of the same request carried before the accounts merged.
+ *
+ * Why: a retry of a pre-release adjustment arrives after the release, and the old key was `adjust:customer:<oldId>:<k>` with the number
+ * of the customer row; the map tells which old numbers point at the account, and a journal under one of those keys is a replay, not a second
+ * posting. A merchant's old key already has the new form (merchants kept their ids), so only the customer numbers count.
+ *
+ * @param pairs the old numbers of the account (`LegacyAccounts.legacyIdsOf`)
+ * @param idempotencyKey the caller's `Idempotency-Key`
+ * @returns the old keys, without repeats; empty for an account made after the merge
+ */
+export function legacyAdjustmentKeysOf(
+  pairs: ReadonlyArray<{ readonly type: string; readonly id: number }>,
+  idempotencyKey: string,
+): string[] {
+  const keys = pairs
+    .filter((pair) => pair.type === 'customer')
+    .map((pair) => `adjust:customer:${pair.id}:${idempotencyKey}`);
+  return [...new Set(keys)];
+}
+
+/** The posted journal of an adjustment, as far as the replay check needs it. */
+export interface PostedAdjustment {
+  readonly memo: string;
+  /** The journal lines (amount signed, debit positive) with the kind of their account. */
+  readonly entries: ReadonlyArray<{ readonly amount: string; readonly account: { readonly kind: string } }>;
+}
+
+/**
+ * Tells whether a stored journal is the adjustment a request asks for.
+ *
+ * Why: a key reused for a different adjustment is a client bug: refuse it instead of answering the first one. The journal may sit on either
+ * wallet kind (the kind can have changed since the first request), so the wallet line is the one on any wallet account.
+ *
+ * @param first the journal found under the key
+ * @param memo what this request would write (`Manual <direction>: <reason>`)
+ * @param direction `credit` or `debit`
+ * @param amount the positive amount
+ * @returns true when the memo and the wallet line agree
+ */
+export function isSameAdjustment(
+  first: PostedAdjustment,
+  memo: string,
+  direction: 'credit' | 'debit',
+  amount: Money,
+): boolean {
+  const walletLine = first.entries.find(
+    (entry) => entry.account.kind === 'client_wallet' || entry.account.kind === 'customer_wallet',
+  );
+  if (first.memo !== memo || !walletLine) return false;
+  // The wallet line is signed debit positive: a credit to the wallet is negative.
+  return Money.of(walletLine.amount).eq(direction === 'credit' ? amount.neg() : amount);
+}
+
+/**
+ * The refusal of a credit to a store balance that cannot hold one.
+ *
+ * Why: a store balance belongs to an account that can sign in and is not erased; a debit is always allowed (it can only take money back).
+ *
+ * @param account the account's status and whether it has a login
+ * @param direction `credit` or `debit`
+ * @returns the refusal code, or `undefined` when the adjustment may go on
+ */
+export function storeCreditRefusal(
+  account: { readonly status: string; readonly hasAccount: boolean },
+  direction: 'credit' | 'debit',
+): 'ANONYMIZED' | 'NO_ACCOUNT' | undefined {
+  if (direction !== 'credit') return undefined;
+  if (account.status === 'anonymized') return 'ANONYMIZED';
+  return account.hasAccount ? undefined : 'NO_ACCOUNT';
+}
+
+/** The three staff wallet actions that carry an `Idempotency-Key` stored in `wallet_action_keys` (`WALLET_ACTIONS`). */
+export type WalletActionName = 'freeze' | 'unfreeze' | 'credit_limit';
+
+/** A JSON value written with its object keys in order, so two spellings of one body hash alike. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (typeof value === 'object' && value !== null) {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, inner]) => inner !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([key, inner]) => `${JSON.stringify(key)}:${canonicalJson(inner)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/**
+ * The text a staff wallet action is hashed from.
+ *
+ * Why: the stored key must tell "the same request again" from "another request under the same key": the hash covers the action and
+ * the validated body, never the account (the key is unique per account already) and never the staff member.
+ *
+ * @param action which action
+ * @param body the validated body (reason, or the credit limit)
+ * @returns a canonical text; the caller keys-hashes it (`TokenService.lookupHash`, decision 054)
+ */
+export function walletActionRequestOf(action: WalletActionName, body: Readonly<Record<string, unknown>>): string {
+  return `wallet-action:${action}:${canonicalJson(body)}`;
+}
+
+/**
+ * The refusal of a credit limit on a store balance.
+ *
+ * Why: credit belongs to the merchant kind only; a store balance never goes below zero except by a chargeback clawback.
+ *
+ * @returns `422` on `creditLimit`, code `not_allowed`
+ */
+export function storeCreditLimitRefusal(): AppError {
+  return new AppError('VALIDATION_FAILED', {
+    errors: [{ field: 'creditLimit', code: 'not_allowed', message: 'A store balance has no credit limit.' }],
+  });
+}
+
+/** What {@link unfreezeRefusal} judges. */
+export interface UnfreezeFacts {
+  readonly kind: WalletPool;
+  /** The wallet balance in the account's own sign. */
+  readonly balance: Money;
+  /** Open disputes of the account's card top-ups. */
+  readonly openDisputes: number;
+}
+
+/**
+ * Tells why a hold may not be lifted yet.
+ *
+ * Why: a person decides to lift a hold (plan 21 P2), but a store balance below zero stays held until it is brought back (the database also
+ * refuses it at commit), and so does any wallet with an open dispute of one of its top-ups. A merchant wallet below zero is a use of
+ * credit and does not stop an unfreeze.
+ *
+ * @param facts the wallet kind, its balance and the open top-up disputes
+ * @returns `negative_balance` (409 `CONFLICT`), `open_dispute` (409 `OPEN_DISPUTE`) or `undefined`
+ */
+export function unfreezeRefusal(facts: UnfreezeFacts): 'negative_balance' | 'open_dispute' | undefined {
+  if (facts.kind === 'store' && facts.balance.isNegative()) return 'negative_balance';
+  return facts.openDisputes > 0 ? 'open_dispute' : undefined;
+}
+
+/**
+ * How an audit row names an account: the name, else the email; an anonymized one by number (its old name is personal data).
+ *
+ * @param account the account's id, name, email and status
+ * @returns the label
+ */
+export function accountLabelOf(account: {
+  readonly id: number;
+  readonly name: string;
+  readonly email: string;
+  readonly status: string;
+}): string {
+  if (account.status === 'anonymized') return `account ${account.id}`;
+  return account.name.trim() || account.email;
+}
+
+/** Which wallet a statement request asks for: the live one, or the history of an inactive one. */
+export type StatementWallet = 'live' | 'merchant' | 'store';
+
+/**
+ * Names the ledger account kind a statement reads.
+ *
+ * Why: the statement lists the live wallet; `wallet=merchant|store` reads the history of a wallet the rank change left behind.
+ *
+ * @param choice the `wallet` parameter (`live` when absent)
+ * @param liveKind the ledger kind of the account's live wallet
+ * @returns `client_wallet` or `customer_wallet`
+ */
+export function statementLedgerKindOf(
+  choice: StatementWallet | undefined,
+  liveKind: WalletLedgerKind,
+): WalletLedgerKind {
+  if (choice === 'merchant') return 'client_wallet';
+  if (choice === 'store') return 'customer_wallet';
+  return liveKind;
+}
+
+/**
+ * Reads the posting-time window of a statement request.
+ *
+ * @param filters the parsed filters of the list request (`createdAt` with `gte` and `lte`)
+ * @returns the first and last instant, each only when the request sent it
+ */
+export function statementWindowOf(filters: readonly ParsedFilter[]): { from?: Date; to?: Date } {
+  const at = (op: 'gte' | 'lte') => {
+    const value = filters.find((filter) => filter.field === 'createdAt' && filter.op === op)?.values[0];
+    return value instanceof Date ? value : undefined;
+  };
+  const from = at('gte');
+  const to = at('lte');
+  return { ...(from ? { from } : {}), ...(to ? { to } : {}) };
+}
+
+/** What {@link emptyAccountWallet} needs to describe a wallet that has no ledger row yet. */
+export interface EmptyWalletFacts {
+  readonly kind: WalletPool;
+  /** Whether the account's rank allows credit (merchant kind only). */
+  readonly creditAllowed: boolean;
+  /** The store balance's master switch (always true for a merchant wallet). */
+  readonly enabled: boolean;
+  /** The approval limit of this wallet kind. */
+  readonly adjustApprovalLimit: Money;
+}
+
+/**
+ * The wallet view of an account that never had a wallet: all zeros.
+ *
+ * Why: money.md: "zeros while no accounts exist"; the wallet is opened by its first posting, hold or credit limit, so a read before that
+ * answers the same keys with zero figures.
+ *
+ * @param facts the kind and the three facts a zero wallet still carries
+ * @returns the view
+ */
+export function emptyAccountWallet(facts: EmptyWalletFacts): AccountWalletView {
+  const zero = Money.zero().toWire();
+  return {
+    kind: facts.kind,
+    currency: BASE_CURRENCY,
+    balance: zero,
+    reserved: zero,
+    creditLimit: zero,
+    available: zero,
+    creditAllowed: facts.creditAllowed,
+    frozen: null,
+    enabled: facts.enabled,
+    pendingTopUps: { count: 0, amount: zero },
+    openDisputes: 0,
+    adjustApprovalLimit: facts.adjustApprovalLimit.toWire(),
+  };
 }

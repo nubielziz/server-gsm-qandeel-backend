@@ -4,7 +4,8 @@ import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { AppError } from '../../../common/errors';
 import type { RequestActor } from '../../../common/request-context';
-import type { MerchantPrincipal, Principal, SessionPrincipal, StaffPrincipal } from './principal';
+import { CurrentAccount } from '../ports/account-principal';
+import type { Principal, SessionPrincipal, StaffPrincipal } from './principal';
 import type { SessionView } from './session.types';
 
 /**
@@ -56,7 +57,7 @@ export function principalOf(request: FastifyRequest): Principal | undefined {
  * Describes a principal for the request context (the audit log reads it).
  *
  * @param principal the authenticated caller
- * @returns the actor type (`staff`, `client` for a merchant or one of their API keys, `customer`), id and name (the audit
+ * @returns the actor type (`staff`, or `account` for an account of any rank or one of its API keys), id and name (the audit
  *   log's snapshot); `undefined` for the holder of a capability token or a gateway webhook, who are not accounts
  */
 export function actorOf(principal: SessionPrincipal): RequestActor;
@@ -65,12 +66,10 @@ export function actorOf(principal: Principal): RequestActor | undefined {
   switch (principal.kind) {
     case 'staff':
       return { type: 'staff', id: principal.staffId, name: principal.session.subject.name ?? '' };
-    case 'merchant':
-      return { type: 'client', id: principal.clientId, name: principal.session.subject.name ?? '' };
+    case 'account':
+      return { type: 'account', id: principal.accountId, name: principal.session.subject.name ?? '' };
     case 'api-key':
-      return { type: 'client', id: principal.clientId, name: principal.clientName };
-    case 'customer':
-      return { type: 'customer', id: principal.customerId, name: principal.session.subject.name ?? '' };
+      return { type: 'account', id: principal.clientId, name: principal.clientName };
     case 'capability':
     case 'webhook':
       return undefined;
@@ -105,14 +104,27 @@ export const CurrentStaff = createParamDecorator((_data: unknown, context: Execu
 });
 
 /**
- * Parameter decorator: the signed-in merchant of a merchant-portal route.
+ * Parameter decorator: the one-time link a `link-token` route was opened with.
  *
- * Why: portal handlers act on the merchant's own records only, by this id; this fails loudly if the route is not a merchant route.
+ * Why: the guard resolved the token in the body to the `auth_tokens` row; the use case reads that row by its id. It lived with the customer
+ * decorator, which decision 064 deletes (a former customer is an account); the link routes keep it.
  *
- * @throws {AppError} `UNAUTHORIZED` (401) when the request was not authenticated as a merchant
+ * @throws {AppError} `TOKEN_INVALID` (410) when the request was not authenticated by a link token
  */
-export const CurrentMerchant = createParamDecorator((_data: unknown, context: ExecutionContext): MerchantPrincipal => {
+export const CurrentLink = createParamDecorator((_data: unknown, context: ExecutionContext): number => {
   const principal = principalOf(context.switchToHttp().getRequest<FastifyRequest>());
-  if (principal?.kind !== 'merchant') throw new AppError('UNAUTHORIZED');
-  return principal;
+  if (principal?.kind !== 'capability' || principal.access !== 'link-token') throw new AppError('TOKEN_INVALID');
+  return principal.resourceId;
 });
+
+/**
+ * Parameter decorator: the signed-in account of a merchant-portal route, by its old name.
+ *
+ * Why: there is one account type (decision 064); `CurrentAccount` reads it. This name stays for the merchant controllers written
+ * before the accounts merged, until the contract release removes it. It is a plain re-binding of the same function: the two files
+ * import each other (the account decorator reads the request through this file), so it must not wrap or call it at load time.
+ *
+ * @throws {AppError} `UNAUTHORIZED` (401) when the request was not authenticated as an account
+ * @see CurrentAccount
+ */
+export const CurrentMerchant = CurrentAccount;

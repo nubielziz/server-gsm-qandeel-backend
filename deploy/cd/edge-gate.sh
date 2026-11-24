@@ -89,7 +89,7 @@ check_folder() {
 # The number of site blocks of the Caddyfile that Caddy's container runs, and how many of them import the gate: they must be equal.
 hosts_of_caddy() {
   local hosts gated
-  in_caddy test -d "$SEEN_DIR" || fail "Caddy's container does not run, or does not mount the folder $SEEN_DIR: deploy the backend first, then: gsmc up -d caddy"
+  in_caddy test -d "$SEEN_DIR" || fail "Caddy's container does not run, or does not mount the folder $SEEN_DIR: deploy the backend first, then: gsmc up -d --no-deps caddy"
   hosts=$(in_caddy grep -c -E '^\{\$[A-Z_]+\} \{$' "$CADDYFILE" || true)
   gated=$(in_caddy grep -c -E '^[[:space:]]*import edge_gate$' "$CADDYFILE" || true)
   if [ -z "$hosts" ] || [ "$hosts" = 0 ] || [ "$hosts" != "$gated" ]; then

@@ -8,8 +8,9 @@ import { schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
 import { IpRuleCache, IpRuleHits, IpRuleHitsFlush, IpRuleHitsFlushModule, SessionService } from '@src/modules/identity';
 import { type AdminApi, adminFor, adminWith } from '../support/admin-api';
+import { ACCOUNT_PASSWORD, makeAccount } from '../support/accounts';
 import { type TestApp, createTestApp } from '../support/app';
-import { clearIdentityCaches, clearRateLimits } from '../support/auth';
+import { clearIdentityCaches, clearRateLimits, sessionOf } from '../support/auth';
 import { DAY, HOUR, TestClock } from '../support/clock';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 
@@ -24,6 +25,7 @@ const TRAVELLER = '198.51.100.9';
 const OUTSIDER = '192.0.2.99';
 const CUSTOMER_IP = '192.0.2.50';
 const OTHER_NETWORK = '192.0.2.77';
+const ACCOUNT_EMAIL = 'customer@example.com';
 const BOT_RANGE = '198.18.0.0/24';
 const BOT = '198.18.0.40';
 
@@ -32,8 +34,10 @@ let officeRule = 0;
 let colleagueRule = 0;
 let travellerRule = 0;
 let travellerExpiry = '';
-let customerId = 0;
-let customerSessionId = 0;
+let accountId = 0;
+let accountSessionId = 0;
+/** The cookie header of the retail account's session, as its browser would send it. */
+let accountCookie = '';
 let customerBlock = 0;
 let autoBlock = 0;
 
@@ -197,26 +201,24 @@ describe('scenario ip-rules: block an IP and keep an allow list', () => {
     expect((await owner.get(`/admin/ip-rules/${travellerRule}`)).status).toBe(200);
   });
 
-  it("step 5: from a customer page the Owner blocks the last address of the customer for the storefront for seven days; a range with the Owner's own address is refused", async () => {
+  it("step 5: from an account page the Owner blocks the last address of a retail account for the storefront for seven days; a range with the Owner's own address is refused", async () => {
     const { db } = await testDb();
-    const [customer] = await db
-      .insert(s.customers)
-      .values({ email: 'customer@example.com', name: 'Customer', hasAccount: true })
-      .returning({ id: s.customers.id });
-    customerId = customer!.id;
+    const account = await makeAccount(t, { rank: 'retail', email: ACCOUNT_EMAIL, name: 'Customer' });
+    accountId = account.id;
     const issued = await t.app.get(SessionService).create({
-      subjectType: 'customer',
-      subjectId: customerId,
+      subjectType: 'account',
+      subjectId: accountId,
       stage: 'active',
       ip: CUSTOMER_IP,
       userAgent: 'bun-test',
     });
-    customerSessionId = issued.session.id;
-    // The console reads the address from the customer's latest session (the last checkout session is the fallback).
+    accountSessionId = issued.session.id;
+    accountCookie = sessionOf(t, 'account', issued.token, issued.session.id).cookie;
+    // The console reads the address from the account's latest session (the last checkout session is the fallback).
     const [latest] = await db
       .select({ ip: s.sessions.ip })
       .from(s.sessions)
-      .where(and(eq(s.sessions.subjectType, 'customer'), eq(s.sessions.subjectId, customerId)))
+      .where(and(eq(s.sessions.subjectType, 'account'), eq(s.sessions.subjectId, accountId)))
       .orderBy(asc(s.sessions.id));
     expect(latest!.ip).toBe(CUSTOMER_IP);
 
@@ -262,11 +264,45 @@ describe('scenario ip-rules: block an IP and keep an allow list', () => {
     await flushHits();
     expect((await ruleRow(customerBlock))!.hitCount).toBe(1);
     const { db } = await testDb();
-    expect((await db.select().from(s.customers).where(eq(s.customers.id, customerId)))[0]).toMatchObject({
+    expect((await db.select().from(s.clients).where(eq(s.clients.id, accountId)))[0]).toMatchObject({
       status: 'active',
       hasAccount: true,
     });
-    expect((await db.select().from(s.sessions).where(eq(s.sessions.id, customerSessionId)))[0]!.revokedAt).toBeNull();
+    expect((await db.select().from(s.sessions).where(eq(s.sessions.id, accountSessionId)))[0]!.revokedAt).toBeNull();
+  });
+
+  it('after step 6: the same store block refuses the retail account on its own routes and on the shared sign-in, whatever its session says; another network still reaches them', async () => {
+    // The account's own route and the one sign-in form of every account: both count as the store audience (decision 064).
+    const notifications = await t.app.inject({
+      method: 'GET',
+      url: '/store/v1/me/notifications',
+      remoteAddress: CUSTOMER_IP,
+      headers: { cookie: accountCookie },
+    });
+    expect(notifications.statusCode).toBe(403);
+    expect(code(notifications)).toBe('IP_NOT_ALLOWED');
+    const signIn = await t.app.inject({
+      method: 'POST',
+      url: '/client/auth/sign-in',
+      remoteAddress: CUSTOMER_IP,
+      payload: { email: ACCOUNT_EMAIL, password: ACCOUNT_PASSWORD },
+    });
+    expect(signIn.statusCode).toBe(403);
+    expect(code(signIn)).toBe('IP_NOT_ALLOWED');
+    // The refusal is the address's: the same session from another network reads its inbox.
+    const elsewhere = await t.app.inject({
+      method: 'GET',
+      url: '/store/v1/me/notifications',
+      remoteAddress: OTHER_NETWORK,
+      headers: { cookie: accountCookie },
+    });
+    expect(elsewhere.statusCode).toBe(200);
+
+    // Step 6 counted one hit; these two refusals add two (the allowed request matched no rule), and nothing else about the account changed.
+    await flushHits();
+    expect((await ruleRow(customerBlock))!.hitCount).toBe(3);
+    const { db } = await testDb();
+    expect((await db.select().from(s.sessions).where(eq(s.sessions.id, accountSessionId)))[0]!.revokedAt).toBeNull();
   });
 
   it('step 7: an automatic block (written by the risk engine, feature 18) is a rule like the others: source auto, no creator, it blocks', async () => {
@@ -318,7 +354,7 @@ describe('scenario ip-rules: block an IP and keep an allow list', () => {
     // Testing counts no hit and writes no audit row.
     const actions = await auditActions();
     await flushHits();
-    expect((await ruleRow(customerBlock))!.hitCount).toBe(1);
+    expect((await ruleRow(customerBlock))!.hitCount).toBe(3);
     expect(await auditActions()).toEqual(actions);
   });
 

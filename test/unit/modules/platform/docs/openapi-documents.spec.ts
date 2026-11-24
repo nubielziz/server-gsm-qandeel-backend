@@ -180,7 +180,8 @@ describe('buildPublicDocument: components and security schemes', () => {
   it('documents the three session cookies with the names of decision 018', () => {
     expect(SECURITY_SCHEMES.staffSession).toMatchObject({ type: 'apiKey', in: 'cookie', name: 'gsm_admin_session' });
     expect(SECURITY_SCHEMES.merchantSession).toMatchObject({ in: 'cookie', name: 'gsm_client_session' });
-    expect(SECURITY_SCHEMES.customerSession).toMatchObject({ in: 'cookie', name: 'gsm_store_session' });
+    // Decision 064: one session cookie for every account; `gsm_store_session` is never read.
+    expect(SECURITY_SCHEMES.customerSession).toMatchObject({ in: 'cookie', name: 'gsm_client_session' });
     expect(SECURITY_SCHEMES.apiKey).toBeUndefined();
   });
 });

@@ -396,3 +396,17 @@ export function wireUsd(
 export function payRequestFingerprint(gatewayCode: string, returnUrl: string): string {
   return JSON.stringify([gatewayCode, returnUrl]);
 }
+
+/**
+ * Tells whether an order came through the shop door.
+ *
+ * Why: decision 064: the door is `orders.source`, never a null buyer column; a `store` order was paid first through the shop checkout and
+ * is the only kind that gets the storefront customer mails and a tax receipt. This is the rule of the orders module's `isPrepaidOrder`: money
+ * cannot import a value from orders (decision 032, orders import money), so the one word is written here too and a unit test pins it.
+ *
+ * @param order the order, or anything with its source
+ * @returns true for the `store` door
+ */
+export function isShopOrder(order: { readonly source: string }): boolean {
+  return order.source === 'store';
+}

@@ -26,7 +26,7 @@ describe('reopen', () => {
       ['revenue', 5, 0],
       ['client_hold', 0, 5],
     ]);
-    expect(posting.lines[1]!.account).toEqual({ kind: 'client_hold', ownerType: 'client', ownerId: 7 });
+    expect(posting.lines[1]!.account).toEqual({ kind: 'client_hold', ownerType: 'account', ownerId: 7 });
     expect(() => assertBalanced(posting.lines, 'USD')).not.toThrow();
   });
 
@@ -52,7 +52,7 @@ describe('refund', () => {
       ['revenue', 5, 0],
       ['client_wallet', 0, 5],
     ]);
-    expect(posting.lines[1]!.account).toEqual({ kind: 'client_wallet', ownerType: 'client', ownerId: 7 });
+    expect(posting.lines[1]!.account).toEqual({ kind: 'client_wallet', ownerType: 'account', ownerId: 7 });
     expect(() => assertBalanced(posting.lines, 'USD')).not.toThrow();
   });
 
@@ -60,6 +60,22 @@ describe('refund', () => {
     const direct = refund({ clientId: 7, amount: m('5') });
     const walletCredit = direct.lines.find((line) => line.account.kind === 'client_wallet')!;
     expect(walletCredit.credit.toWire()).toBe('5.0000');
+  });
+
+  it('credits the store balance when the account has become a retail account (the live wallet, decision 064)', () => {
+    const posting = refund({ clientId: 7, amount: m('5'), wallet: 'customer_wallet' });
+    expect(triples(posting)).toEqual([
+      ['revenue', 5, 0],
+      ['customer_wallet', 0, 5],
+    ]);
+    expect(posting.lines[1]!.account).toEqual({ kind: 'customer_wallet', ownerType: 'account', ownerId: 7 });
+    expect(posting.refType).toBe('order');
+    expect(() => assertBalanced(posting.lines, 'USD')).not.toThrow();
+  });
+
+  it('keeps the merchant wallet when the live kind is given as client_wallet', () => {
+    const posting = refund({ clientId: 7, amount: m('5'), wallet: 'client_wallet' });
+    expect(posting.lines[1]!.account).toEqual({ kind: 'client_wallet', ownerType: 'account', ownerId: 7 });
   });
 });
 

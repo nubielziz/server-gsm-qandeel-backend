@@ -8,7 +8,7 @@ import { getIntegrity, runIntegrityCheck } from '../contracts/integrity.contract
 /**
  * The integrity routes.
  *
- * Why: the console's Integrity tab shows the four ledger checks of the last run and reruns the check on demand.
+ * Why: the console's Integrity tab shows the five ledger checks of the last run and reruns the check on demand.
  *
  * @route GET /admin/system/integrity
  * @route POST /admin/system/integrity/run
@@ -20,7 +20,7 @@ export class IntegrityController {
   /**
    * The integrity report.
    *
-   * @returns the last run, the four checks and whether a run is going
+   * @returns the last run, the five checks and whether a run is going
    * @route GET /admin/system/integrity
    */
   @Route(getIntegrity)

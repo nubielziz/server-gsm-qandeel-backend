@@ -19,6 +19,14 @@ const AuditLogRow = z.object({
   before: zJsonObject.nullable(),
   after: zJsonObject.nullable(),
   ip: z.string().nullable(),
+  account: z
+    .object({ id: zId })
+    .nullable()
+    .describe(
+      'The account the entry is about, so the console links an old row without guessing: the account of the record when the record is an ' +
+        'account (`account`, an old `merchant` row, an old `customer` row through the legacy map), else the account that acted; `null` for ' +
+        'staff and system rows, and for an old number the map does not know.',
+    ),
 });
 
 const ENTRY_EXAMPLE = {
@@ -34,6 +42,7 @@ const ENTRY_EXAMPLE = {
   before: { status: 'active' },
   after: { status: 'suspended', reason: 'Left the team' },
   ip: '203.0.113.24',
+  account: null,
 } as const;
 
 /** `GET /admin/audit-logs`: the audit log, newest first. */
@@ -41,9 +50,13 @@ export const listAuditLogs = defineRoute({
   key: 'GET /admin/audit-logs',
   summary: 'List audit entries',
   description:
-    'Newest first. `actorType` is staff, client, customer or system (system rows have no `actorId`, `actorName` or `ip`; the ' +
-    'console shows "System"). `actorName` and `entityLabel` are snapshots written with the entry, so renamed or deleted ' +
-    'records still read correctly. `entityType` is a word of the closed list `AUDIT_ENTITY_TYPES`. `q` is a case-insensitive ' +
+    'Newest first. `actorType` is staff, account or system (system rows have no `actorId`, `actorName` or `ip`; the ' +
+    'console shows "System"); rows written before the accounts were merged also say client or customer. `actorName` and `entityLabel` are ' +
+    'snapshots written with the entry, so renamed or deleted records still read correctly. `entityType` is a word of the closed list ' +
+    '`AUDIT_ENTITY_TYPES`. `accountId` lists every entry about one account under every word it was written with: `account` with that id, ' +
+    '`merchant` with the same number, and `customer` with the old customer numbers of the account. `entityType=account` reads the three words ' +
+    '(with `entityId` it means one account, as `accountId`), and `actorType=account` reads `account`, `client` and `customer` actors the ' +
+    'same way. Every row carries `account`, the account it is about. `q` is a case-insensitive ' +
     'contains over `actorName`, `action` and `entityLabel`. `from` and `to` are UTC days, both included.',
   tags: ['audit'],
   surface: 'admin',
@@ -57,6 +70,7 @@ export const listAuditLogs = defineRoute({
       actorId: { type: 'id', ops: ['eq'] },
       entityType: { type: 'string', ops: ['eq'] },
       entityId: { type: 'id', ops: ['eq'] },
+      accountId: { type: 'id', ops: ['eq'] },
     },
     search: ['actorName', 'action', 'entityLabel'],
     extra: { from: zDateOnly.optional(), to: zDateOnly.optional() },

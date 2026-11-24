@@ -4,7 +4,7 @@
     "content-type": "application/json"
   },
   "body": {
-    "kind": "email",
+    "kind": "card",
     "display": "Harvest sample text.",
     "reason": "Harvest sample text.",
     "expiresAt": null,

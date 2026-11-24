@@ -5,7 +5,7 @@
   },
   "body": {
     "id": 48,
-    "recipientType": "customer",
+    "recipientType": "account",
     "recipientId": 100,
     "channel": "email",
     "event": "order.received",

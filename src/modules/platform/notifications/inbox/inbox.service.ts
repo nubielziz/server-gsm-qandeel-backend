@@ -7,7 +7,7 @@ import { AppError } from '../../../../common/errors';
 import { getRequestContext } from '../../../../common/request-context';
 import { DbService } from '../../../../infra/db';
 import type { NotificationRecipientType } from '../../db/schema';
-import { audienceOf, recipientOf } from '../notification-foreign-reads';
+import { recipientOf } from '../notification-foreign-reads';
 import { InboxDoorbell } from './inbox-doorbell';
 import { InboxTextRegistry } from './inbox-texts';
 import { type WireInboxItem, inboxView } from './inbox-views';
@@ -17,9 +17,10 @@ import { type InboxOwner, countUnread, listInboxRows, markAllRead, markItemRead 
  * The signed-in person of an inbox route.
  *
  * Why: plan 10.4: the recipient is never taken from the query, the body or the path; it is the actor the session guard put in the
- * request context (the platform module cannot import identity's decorators, decision 032).
+ * request context (the platform module cannot import identity's decorators, decision 032). An account of any rank is one kind,
+ * `account` (decision 064): the merchant portal and the shop open the same inbox of the same account.
  *
- * @param type the kind of person the surface is for
+ * @param type the kind of person the surface is for (`staff` or `account`)
  * @returns the owner of the inbox
  * @throws {AppError} `UNAUTHORIZED` when the request was not authenticated as that kind of person
  */
@@ -65,7 +66,12 @@ export class InboxService {
       listInboxRows(this.db.db, owner, query),
       recipientOf(this.db.db, owner.type, owner.id),
     ]);
-    const reader = { audience: audienceOf(owner.type), name: recipient?.name ?? '' };
+    // The audience is the rank's: a merchant rank reads the merchant texts, any other rank the customer texts (decision 064); an item made for
+    // the other audience (the door of an order) still finds its own text through the audience its occurrence key names.
+    const reader = {
+      audience: recipient?.audience ?? (owner.type === 'staff' ? 'staff' : 'customer'),
+      name: recipient?.name ?? '',
+    };
     return { rows: rows.map((row) => inboxView(row, reader, this.texts)), total };
   }
 

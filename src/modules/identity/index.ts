@@ -7,8 +7,19 @@
 // Modules whose controllers use `CurrentStaff` and whose services identity calls (money, catalog) form an import cycle with
 // this file; ES modules evaluate these re-exports in source order, so these leaves are initialised before the services that
 // lead into that cycle (decision 032; test/tooling/module-load.test.ts loads every module index on its own).
-export { CurrentMerchant, CurrentPrincipal, CurrentStaff, accessStateOf, principalOf } from './security/access-state';
+export {
+  CurrentLink,
+  CurrentMerchant,
+  CurrentPrincipal,
+  CurrentStaff,
+  accessStateOf,
+  principalOf,
+} from './security/access-state';
 export type { AccessState } from './security/access-state';
+// The principal of a signed-in account, the actor it stands for and the decorator that hands it to a handler (decision 064). A leaf like
+// `access-state`, which it reads, so it follows it.
+export { CurrentAccount, actorOf } from './ports/account-principal';
+export type { AccountActor, AccountPrincipal } from './ports/account-principal';
 export {
   ALL_PERMISSIONS,
   grants,
@@ -26,10 +37,59 @@ export {
   requireOwner,
   requirePermission,
 } from './security/principal';
+// The rank and status helpers (pure) and the seams other modules code against (decision 064): abstract classes and registries with no
+// dependencies, so they load before anything that leads into the import cycle through money and catalog.
+export { canAct, sessionStateOf } from './accounts/account-status';
+export type { SessionState } from './accounts/account-status';
+export { rankKindOf } from './ports/rank-kind';
+export type { RankKind } from './ports/rank-kind';
+export { AccountSessions } from './ports/account-sessions';
+export type { AccountSessionStart } from './ports/account-sessions';
+export { ApiKeyRevocation } from './ports/api-key-revocation';
+export { ACCOUNT_TOKEN_PURPOSES, AccountAuthTokens } from './ports/account-auth-tokens';
+export type { AccountTokenPurpose, IssueAccountTokenInput, TakenAccountToken } from './ports/account-auth-tokens';
+export { AccountMailOutbox } from './ports/account-mail-outbox';
+export type { AccountMailKind } from './ports/account-mail-outbox';
+export {
+  AccountEmailVerification,
+  AccountLinkSignIn,
+  AccountOwnPassword,
+  AccountSignIn,
+  AccountTwoFactorSetup,
+} from './ports/account-auth';
+export type {
+  AccountForcedChangeAnswer,
+  AccountLinkBrowser,
+  AccountLinkExchange,
+  AccountLinkExchangeInput,
+  AccountRankSummary,
+  AccountSignInAnswer,
+  AccountSignInInput,
+  AccountSignInStep,
+  AccountTwoFactorSetupAnswer,
+} from './ports/account-auth';
+export { OptionalAccountSession } from './ports/optional-account-session';
+export { AccountOwnProfile } from './ports/account-own-profile';
+export type { AccountMeView, RetailProfileColumns } from './ports/account-own-profile';
+export { AccountAccessEffects } from './ports/account-access-effects';
+export type { RankChangeEffects, StatusChangeEffects } from './ports/account-access-effects';
+export { AccountCreateGuards } from './ports/account-create-guards';
+export type { AccountCreateCheck, AccountCreateFacts } from './ports/account-create-guards';
+export { GuestClaimBusy, GuestClaimParticipants, ORDERS_PARTICIPANT } from './ports/guest-claim-participants';
+export type { GuestClaimIds, GuestClaimMove } from './ports/guest-claim-participants';
+export { AccountListSql } from './ports/account-list-sql';
+export type { OrderFigure, OrderFigureSql, WalletBalanceSql } from './ports/account-list-sql';
 // Leaf services other modules inject (the catalog's group routes): no dependencies, so they load before anything that leads back.
 export { MerchantGroupMembers } from './application/merchant-group-members';
 // The gateway webhook adapter registry (no dependencies): billing's verifier injects it, so it loads before the cycle through money.
 export { GATEWAY_SLUG, WebhookVerifiers } from './security/machine/webhooks/webhook-verifiers';
+// The account directory, the legacy id map and the rank writer (decision 064). They read the ranks through the catalog's `RankGroupReads`,
+// so they come after the registries above: the catalog's index leads into money, whose verifier injects `WebhookVerifiers`.
+export { AccountDirectory } from './accounts/account-directory';
+export type { AccountRecord, GuestInput, GuestResult } from './accounts/account-directory';
+export { LegacyAccounts, accountHistorySql, legacyAccountIdSql, legacySpaceOf } from './accounts/legacy-accounts';
+export type { LegacyLookupType, LegacyPair } from './accounts/legacy-accounts';
+export { AccountRanks } from './accounts/account-ranks';
 export { IdentityModule } from './identity.module';
 export { IdentityAudienceModule } from './notifications/identity-audience.module';
 export { MerchantAudience } from './notifications/merchant-audience';
@@ -47,11 +107,6 @@ export { SessionPurgeModule, SESSION_PURGE_SCHEDULER } from './jobs/session-purg
 export { SESSION_PURGE_JOB } from './jobs/session-purge.processor';
 export { PURGE_BATCH_SIZE, SESSION_RETENTION_DAYS, SessionPurge } from './jobs/session-purge';
 export { MerchantAuthModule } from './merchant-auth.module';
-// The merchant side of the smart sign-in (feature 24A): customers' POST /client/auth/sign-in verifies and opens through it.
-export { MerchantPasswordSignIn } from './application/merchant-password-sign-in';
-export type { MerchantCandidate } from './application/merchant-password-sign-in';
-export type { MerchantLoginResult } from './application/merchant-sign-in.service';
-export type { MerchantSignInStep } from './domain/merchant-sign-in-step';
 export { ApiKeysModule } from './api-keys.module';
 export { MerchantNotificationsModule } from './merchant-notifications.module';
 export { MerchantMailModule } from './merchant-mail.module';
@@ -73,25 +128,25 @@ export { MERCHANT_TOKEN_TTL_MS, MerchantAuthTokens } from './application/merchan
 export type { IssueMerchantTokenInput, IssuedMerchantToken } from './application/merchant-auth-tokens';
 export { CLIENT_TOKEN_PURPOSES } from './infra/merchant-token.repository';
 export type { ClientTokenPurpose } from './infra/merchant-token.repository';
-export { CUSTOMER_TOKEN_TTL_MS, CustomerAuthTokens, isUsableLink } from './application/customer-auth-tokens';
-export type {
-  CustomerTokenRecord,
-  IssueCustomerTokenInput,
-  IssuedCustomerToken,
-} from './application/customer-auth-tokens';
-export { CUSTOMER_PASSWORD_LINK_PURPOSES, CUSTOMER_TOKEN_PURPOSES } from './infra/customer-token.repository';
-export type { CustomerTokenPurpose } from './infra/customer-token.repository';
-export { CustomerTokensModule } from './customer-tokens.module';
 export { TEMPORARY_PASSWORD_TTL_MS, temporaryPasswordExpired, temporaryPasswordFor } from './domain/temporary-password';
-// The sign-in lock and the budget of the mails a visitor can ask for (decision 052): the customers module signs customers in and mails them.
+// The sign-in lock and the budget of the mails a visitor can ask for (decision 052): the customers module mails the links of the retail rank.
 export { SignInLockModule } from './sign-in-lock.module';
 export { SignInLock } from './application/sign-in-lock';
 export type { SignInAccount } from './application/sign-in-lock';
 export type { SignInScope } from './domain/sign-in-lock';
 export { takePublicMailPoint } from './application/public-mail-budget';
-export { MAX_LIVE_PUBLIC_LINKS, NO_ACCOUNT_ID } from './domain/public-links';
+export {
+  ACCOUNT_AREA_PATH,
+  MAX_LIVE_PUBLIC_LINKS,
+  NO_ACCOUNT_ID,
+  accountAreaUrl,
+  accountMailLink,
+} from './domain/public-links';
+export { ACCOUNT_MAIL_EVENTS } from './domain/account-mail';
 // The Owner role definition and the staff field rules `bun run setup` shares with the seed and the staff routes (P4b).
 export { OWNER_ROLE_NAME, OWNER_ROLE_PERMISSIONS } from './domain/owner-role';
+// The Owner-only rule of a rank change (decision 064): the rank route of the money module asks it.
+export { RANK_OWNER_DETAIL, assertMayChangeRank } from './domain/account-rules';
 export { EmailField, NameField } from './contracts/shared';
 export { MERCHANT_MAIL_EVENTS, MerchantMailOutbox } from './application/mail/merchant-mail-outbox';
 export type { MerchantMailKind } from './application/mail/merchant-mail-outbox';
@@ -108,7 +163,6 @@ export type {
   ApiKeyPrincipal,
   CapabilityPrincipal,
   CeilingSubject,
-  CustomerPrincipal,
   MachinePrincipal,
   MerchantPrincipal,
   PermissionHolder,

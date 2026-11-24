@@ -10,7 +10,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * small shape both sides agree on; the full principal stays in the identity module.
  */
 export interface RequestActor {
-  readonly type: 'staff' | 'client' | 'customer';
+  /** `account` for an account of any rank (a merchant or a retail buyer) and for one of its API keys (decision 064). */
+  readonly type: 'staff' | 'account';
   readonly id: number;
   /**
    * The account's name when the request started: the audit log snapshots it (`audit_logs.actor_name`), so a later rename or

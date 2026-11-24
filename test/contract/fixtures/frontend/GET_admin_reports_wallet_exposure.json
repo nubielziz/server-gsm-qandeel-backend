@@ -13,6 +13,12 @@
       "overdraftUsed": "81.9500",
       "inOverdraft": 1
     },
+    "storeBalances": {
+      "accounts": 1,
+      "balance": "50.0000",
+      "negative": 0,
+      "frozen": 0
+    },
     "rows": [
       {
         "clientId": 3,

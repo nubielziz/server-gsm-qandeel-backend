@@ -2,24 +2,40 @@
   "status": 200,
   "headers": {
     "content-type": "application/json",
-    "x-total-count": "20"
+    "x-total-count": "51"
   },
   "body": [
     {
       "id": 1,
-      "username": "zain-mobile-hub",
       "email": "ops@zainmobilehub.example",
+      "emailVerifiedAt": "2025-09-16T13:00:00.000Z",
       "name": "Zain Mobile Hub",
-      "company": "Zain Mobile Hub",
       "phone": "",
       "country": "JO",
-      "groupId": 3,
-      "status": "active",
-      "emailVerifiedAt": "2025-09-16T13:00:00.000Z",
-      "createdAt": "2025-09-16T12:00:00.000Z",
+      "company": "Zain Mobile Hub",
       "address": "Abdali Boulevard, Amman",
       "taxId": "JO-1234567",
       "internalNotes": "Pays by bank transfer on Sundays.",
+      "username": "zain-mobile-hub",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2025-09-16T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T11:54:15.000Z",
+      "rank": {
+        "id": 3,
+        "name": "VIP",
+        "kind": "merchant",
+        "discountPercent": "8.0000",
+        "creditAllowed": true
+      },
+      "invitationPending": false,
+      "ordersCount": 72,
+      "lastOrderAt": "2026-10-31T11:54:15.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -31,7 +47,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 72,
         "spend": "677.3800",
@@ -40,33 +55,46 @@
         "successRate": 95.45454545454545,
         "lastOrderAt": "2026-10-31T11:54:15.000Z"
       },
-      "group": {
-        "id": 3,
-        "name": "VIP",
-        "discountPercent": "8.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "1209.7500",
         "reserved": "71.2300",
         "creditLimit": "2000.0000",
-        "available": "3209.7500"
+        "available": "3209.7500",
+        "frozen": false
       }
     },
     {
       "id": 2,
-      "username": "al-noor-telecom",
       "email": "ops@alnoortelecom.example",
+      "emailVerifiedAt": "2025-11-15T13:00:00.000Z",
       "name": "Al-Noor Telecom",
-      "company": "Al-Noor Telecom",
       "phone": "",
       "country": "SA",
-      "groupId": 2,
-      "status": "active",
-      "emailVerifiedAt": "2025-11-15T13:00:00.000Z",
-      "createdAt": "2025-11-15T12:00:00.000Z",
+      "company": "Al-Noor Telecom",
       "address": "Olaya Street, Riyadh",
       "taxId": "SA-300112233400003",
       "internalNotes": "",
+      "username": "al-noor-telecom",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2025-11-15T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T11:50:27.000Z",
+      "rank": {
+        "id": 2,
+        "name": "Wholesale",
+        "kind": "merchant",
+        "discountPercent": "4.0000",
+        "creditAllowed": true
+      },
+      "invitationPending": false,
+      "ordersCount": 71,
+      "lastOrderAt": "2026-10-31T11:50:27.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -78,7 +106,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 71,
         "spend": "739.0900",
@@ -87,33 +114,46 @@
         "successRate": 94.20289855072464,
         "lastOrderAt": "2026-10-31T11:50:27.000Z"
       },
-      "group": {
-        "id": 2,
-        "name": "Wholesale",
-        "discountPercent": "4.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "620.9100",
         "reserved": "21.8700",
         "creditLimit": "1500.0000",
-        "available": "2120.9100"
+        "available": "2120.9100",
+        "frozen": false
       }
     },
     {
       "id": 3,
-      "username": "phone-doctor-fze",
       "email": "ops@phonedoctorfze.example",
+      "emailVerifiedAt": "2026-01-04T13:00:00.000Z",
       "name": "Phone Doctor FZE",
-      "company": "Phone Doctor FZE",
       "phone": "",
       "country": "AE",
-      "groupId": 3,
-      "status": "active",
-      "emailVerifiedAt": "2026-01-04T13:00:00.000Z",
-      "createdAt": "2026-01-04T12:00:00.000Z",
+      "company": "Phone Doctor FZE",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "phone-doctor-fze",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-01-04T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T11:52:18.000Z",
+      "rank": {
+        "id": 3,
+        "name": "VIP",
+        "kind": "merchant",
+        "discountPercent": "8.0000",
+        "creditAllowed": true
+      },
+      "invitationPending": false,
+      "ordersCount": 72,
+      "lastOrderAt": "2026-10-31T11:52:18.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -125,7 +165,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 72,
         "spend": "534.9100",
@@ -134,33 +173,46 @@
         "successRate": 91.04477611940298,
         "lastOrderAt": "2026-10-31T11:52:18.000Z"
       },
-      "group": {
-        "id": 3,
-        "name": "VIP",
-        "discountPercent": "8.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "2260.0900",
         "reserved": "23.7200",
         "creditLimit": "2500.0000",
-        "available": "4760.0900"
+        "available": "4760.0900",
+        "frozen": false
       }
     },
     {
       "id": 4,
-      "username": "basra-unlock-center",
       "email": "ops@basraunlockcen.example",
+      "emailVerifiedAt": "2026-02-13T13:00:00.000Z",
       "name": "Basra Unlock Center",
-      "company": "Basra Unlock Center",
       "phone": "",
       "country": "IQ",
-      "groupId": 2,
-      "status": "active",
-      "emailVerifiedAt": "2026-02-13T13:00:00.000Z",
-      "createdAt": "2026-02-13T12:00:00.000Z",
+      "company": "Basra Unlock Center",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "basra-unlock-center",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-02-13T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-30T15:14:16.000Z",
+      "rank": {
+        "id": 2,
+        "name": "Wholesale",
+        "kind": "merchant",
+        "discountPercent": "4.0000",
+        "creditAllowed": true
+      },
+      "invitationPending": false,
+      "ordersCount": 48,
+      "lastOrderAt": "2026-10-30T15:14:16.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -172,7 +224,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 48,
         "spend": "380.2600",
@@ -181,33 +232,46 @@
         "successRate": 93.75,
         "lastOrderAt": "2026-10-30T15:14:16.000Z"
       },
-      "group": {
-        "id": 2,
-        "name": "Wholesale",
-        "discountPercent": "4.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "219.7400",
         "reserved": "0.0000",
         "creditLimit": "800.0000",
-        "available": "1019.7400"
+        "available": "1019.7400",
+        "frozen": false
       }
     },
     {
       "id": 5,
-      "username": "cairo-gsm-lab",
       "email": "ops@cairogsmlab.example",
+      "emailVerifiedAt": "2026-03-05T13:00:00.000Z",
       "name": "Cairo GSM Lab",
-      "company": "Cairo GSM Lab",
       "phone": "",
       "country": "EG",
-      "groupId": 3,
-      "status": "active",
-      "emailVerifiedAt": "2026-03-05T13:00:00.000Z",
-      "createdAt": "2026-03-05T12:00:00.000Z",
+      "company": "Cairo GSM Lab",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "cairo-gsm-lab",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-03-05T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T11:49:46.000Z",
+      "rank": {
+        "id": 3,
+        "name": "VIP",
+        "kind": "merchant",
+        "discountPercent": "8.0000",
+        "creditAllowed": true
+      },
+      "invitationPending": false,
+      "ordersCount": 61,
+      "lastOrderAt": "2026-10-31T11:49:46.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -219,7 +283,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 61,
         "spend": "932.4700",
@@ -228,33 +291,46 @@
         "successRate": 98.30508474576271,
         "lastOrderAt": "2026-10-31T11:49:46.000Z"
       },
-      "group": {
-        "id": 3,
-        "name": "VIP",
-        "discountPercent": "8.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "1223.7700",
         "reserved": "15.3100",
         "creditLimit": "1500.0000",
-        "available": "2723.7700"
+        "available": "2723.7700",
+        "frozen": false
       }
     },
     {
       "id": 6,
-      "username": "erbil-mobile-parts",
       "email": "ops@erbilmobilepar.example",
+      "emailVerifiedAt": "2026-04-04T13:00:00.000Z",
       "name": "Erbil Mobile Parts",
-      "company": "Erbil Mobile Parts",
       "phone": "",
       "country": "IQ",
-      "groupId": 1,
-      "status": "active",
-      "emailVerifiedAt": "2026-04-04T13:00:00.000Z",
-      "createdAt": "2026-04-04T12:00:00.000Z",
+      "company": "Erbil Mobile Parts",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "erbil-mobile-parts",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-04-04T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T11:57:27.000Z",
+      "rank": {
+        "id": 1,
+        "name": "Standard",
+        "kind": "merchant",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 37,
+      "lastOrderAt": "2026-10-31T11:57:27.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -266,7 +342,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 37,
         "spend": "423.8700",
@@ -275,33 +350,46 @@
         "successRate": 94.44444444444444,
         "lastOrderAt": "2026-10-31T11:57:27.000Z"
       },
-      "group": {
-        "id": 1,
-        "name": "Standard",
-        "discountPercent": "0.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "141.1300",
         "reserved": "9.1700",
         "creditLimit": "500.0000",
-        "available": "641.1300"
+        "available": "641.1300",
+        "frozen": false
       }
     },
     {
       "id": 7,
-      "username": "tripoli-repair-group",
       "email": "ops@tripolirepairg.example",
+      "emailVerifiedAt": "2026-04-24T13:00:00.000Z",
       "name": "Tripoli Repair Group",
-      "company": "Tripoli Repair Group",
       "phone": "",
       "country": "LY",
-      "groupId": 1,
-      "status": "active",
-      "emailVerifiedAt": "2026-04-24T13:00:00.000Z",
-      "createdAt": "2026-04-24T12:00:00.000Z",
+      "company": "Tripoli Repair Group",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "tripoli-repair-group",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-04-24T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T06:41:24.000Z",
+      "rank": {
+        "id": 1,
+        "name": "Standard",
+        "kind": "merchant",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 23,
+      "lastOrderAt": "2026-10-31T06:41:24.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -313,7 +401,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 23,
         "spend": "452.8300",
@@ -322,33 +409,46 @@
         "successRate": 86.36363636363636,
         "lastOrderAt": "2026-10-31T06:41:24.000Z"
       },
-      "group": {
-        "id": 1,
-        "name": "Standard",
-        "discountPercent": "0.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "42.1700",
         "reserved": "7.4100",
         "creditLimit": "400.0000",
-        "available": "442.1700"
+        "available": "442.1700",
+        "frozen": false
       }
     },
     {
       "id": 8,
-      "username": "casablanca-unlock",
       "email": "ops@casablancaunlo.example",
+      "emailVerifiedAt": "2026-06-03T13:00:00.000Z",
       "name": "Casablanca Unlock",
-      "company": "Casablanca Unlock",
       "phone": "",
       "country": "MA",
-      "groupId": 2,
-      "status": "active",
-      "emailVerifiedAt": "2026-06-03T13:00:00.000Z",
-      "createdAt": "2026-06-03T12:00:00.000Z",
+      "company": "Casablanca Unlock",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "casablanca-unlock",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-06-03T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T11:55:38.000Z",
+      "rank": {
+        "id": 2,
+        "name": "Wholesale",
+        "kind": "merchant",
+        "discountPercent": "4.0000",
+        "creditAllowed": true
+      },
+      "invitationPending": false,
+      "ordersCount": 42,
+      "lastOrderAt": "2026-10-31T11:55:38.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -360,7 +460,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 42,
         "spend": "529.0700",
@@ -369,33 +468,46 @@
         "successRate": 92.85714285714286,
         "lastOrderAt": "2026-10-31T11:55:38.000Z"
       },
-      "group": {
-        "id": 2,
-        "name": "Wholesale",
-        "discountPercent": "4.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "310.9300",
         "reserved": "0.0000",
         "creditLimit": "800.0000",
-        "available": "1110.9300"
+        "available": "1110.9300",
+        "frozen": false
       }
     },
     {
       "id": 9,
-      "username": "lagos-gadget-fix",
       "email": "ops@lagosgadgetfix.example",
+      "emailVerifiedAt": "2026-07-03T13:00:00.000Z",
       "name": "Lagos Gadget Fix",
-      "company": "Lagos Gadget Fix",
       "phone": "",
       "country": "NG",
-      "groupId": 1,
-      "status": "active",
-      "emailVerifiedAt": "2026-07-03T13:00:00.000Z",
-      "createdAt": "2026-07-03T12:00:00.000Z",
+      "company": "Lagos Gadget Fix",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "lagos-gadget-fix",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-07-03T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T06:41:29.000Z",
+      "rank": {
+        "id": 1,
+        "name": "Standard",
+        "kind": "merchant",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 43,
+      "lastOrderAt": "2026-10-31T06:41:29.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -407,7 +519,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 43,
         "spend": "639.4300",
@@ -416,33 +527,46 @@
         "successRate": 90,
         "lastOrderAt": "2026-10-31T06:41:29.000Z"
       },
-      "group": {
-        "id": 1,
-        "name": "Standard",
-        "discountPercent": "0.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "95.5700",
         "reserved": "71.7300",
         "creditLimit": "500.0000",
-        "available": "595.5700"
+        "available": "595.5700",
+        "frozen": false
       }
     },
     {
       "id": 10,
-      "username": "karachi-unlock-hub",
       "email": "ops@karachiunlockh.example",
+      "emailVerifiedAt": "2026-07-13T13:00:00.000Z",
       "name": "Karachi Unlock Hub",
-      "company": "Karachi Unlock Hub",
       "phone": "",
       "country": "PK",
-      "groupId": 2,
-      "status": "active",
-      "emailVerifiedAt": "2026-07-13T13:00:00.000Z",
-      "createdAt": "2026-07-13T12:00:00.000Z",
+      "company": "Karachi Unlock Hub",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "karachi-unlock-hub",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-07-13T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T11:58:46.000Z",
+      "rank": {
+        "id": 2,
+        "name": "Wholesale",
+        "kind": "merchant",
+        "discountPercent": "4.0000",
+        "creditAllowed": true
+      },
+      "invitationPending": false,
+      "ordersCount": 48,
+      "lastOrderAt": "2026-10-31T11:58:46.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -454,7 +578,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 48,
         "spend": "469.5700",
@@ -463,33 +586,46 @@
         "successRate": 97.87234042553192,
         "lastOrderAt": "2026-10-31T11:58:46.000Z"
       },
-      "group": {
-        "id": 2,
-        "name": "Wholesale",
-        "discountPercent": "4.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "480.4300",
         "reserved": "16.2600",
         "creditLimit": "900.0000",
-        "available": "1380.4300"
+        "available": "1380.4300",
+        "frozen": false
       }
     },
     {
       "id": 11,
-      "username": "istanbul-gsm-care",
       "email": "ops@istanbulgsmcar.example",
+      "emailVerifiedAt": "2026-07-28T13:00:00.000Z",
       "name": "Istanbul GSM Care",
-      "company": "Istanbul GSM Care",
       "phone": "",
       "country": "TR",
-      "groupId": 2,
-      "status": "active",
-      "emailVerifiedAt": "2026-07-28T13:00:00.000Z",
-      "createdAt": "2026-07-28T12:00:00.000Z",
+      "company": "Istanbul GSM Care",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "istanbul-gsm-care",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-07-28T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T11:55:47.000Z",
+      "rank": {
+        "id": 2,
+        "name": "Wholesale",
+        "kind": "merchant",
+        "discountPercent": "4.0000",
+        "creditAllowed": true
+      },
+      "invitationPending": false,
+      "ordersCount": 42,
+      "lastOrderAt": "2026-10-31T11:55:47.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -501,7 +637,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 42,
         "spend": "289.0400",
@@ -510,33 +645,46 @@
         "successRate": 90,
         "lastOrderAt": "2026-10-31T11:55:47.000Z"
       },
-      "group": {
-        "id": 2,
-        "name": "Wholesale",
-        "discountPercent": "4.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "265.9600",
         "reserved": "7.9800",
         "creditLimit": "900.0000",
-        "available": "1165.9600"
+        "available": "1165.9600",
+        "frozen": false
       }
     },
     {
       "id": 12,
-      "username": "jeddah-tech-bar",
       "email": "ops@jeddahtechbar.example",
+      "emailVerifiedAt": "2026-08-12T13:00:00.000Z",
       "name": "Jeddah Tech Bar",
-      "company": "Jeddah Tech Bar",
       "phone": "",
       "country": "SA",
-      "groupId": 1,
-      "status": "active",
-      "emailVerifiedAt": "2026-08-12T13:00:00.000Z",
-      "createdAt": "2026-08-12T12:00:00.000Z",
+      "company": "Jeddah Tech Bar",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "jeddah-tech-bar",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-08-12T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T11:50:16.000Z",
+      "rank": {
+        "id": 1,
+        "name": "Standard",
+        "kind": "merchant",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 36,
+      "lastOrderAt": "2026-10-31T11:50:16.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -548,7 +696,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 36,
         "spend": "417.2700",
@@ -557,33 +704,46 @@
         "successRate": 93.75,
         "lastOrderAt": "2026-10-31T11:50:16.000Z"
       },
-      "group": {
-        "id": 1,
-        "name": "Standard",
-        "discountPercent": "0.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "177.7300",
         "reserved": "48.4000",
         "creditLimit": "600.0000",
-        "available": "777.7300"
+        "available": "777.7300",
+        "frozen": false
       }
     },
     {
       "id": 13,
-      "username": "muscat-mobile-clinic",
       "email": "ops@muscatmobilecl.example",
+      "emailVerifiedAt": "2026-10-09T13:00:00.000Z",
       "name": "Muscat Mobile Clinic",
-      "company": "Muscat Mobile Clinic",
       "phone": "",
       "country": "OM",
-      "groupId": 1,
-      "status": "active",
-      "emailVerifiedAt": "2026-10-09T13:00:00.000Z",
-      "createdAt": "2026-10-09T12:00:00.000Z",
+      "company": "Muscat Mobile Clinic",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "muscat-mobile-clinic",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-10-09T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T11:59:09.000Z",
+      "rank": {
+        "id": 1,
+        "name": "Standard",
+        "kind": "merchant",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 28,
+      "lastOrderAt": "2026-10-31T11:59:09.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -595,7 +755,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 28,
         "spend": "270.2500",
@@ -604,33 +763,46 @@
         "successRate": 91.66666666666666,
         "lastOrderAt": "2026-10-31T11:59:09.000Z"
       },
-      "group": {
-        "id": 1,
-        "name": "Standard",
-        "discountPercent": "0.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "74.7500",
         "reserved": "26.5000",
         "creditLimit": "400.0000",
-        "available": "474.7500"
+        "available": "474.7500",
+        "frozen": false
       }
     },
     {
       "id": 14,
-      "username": "kuwait-sim-center",
       "email": "ops@kuwaitsimcente.example",
+      "emailVerifiedAt": "2026-10-13T13:00:00.000Z",
       "name": "Kuwait SIM Center",
-      "company": "Kuwait SIM Center",
       "phone": "",
       "country": "KW",
-      "groupId": 1,
-      "status": "active",
-      "emailVerifiedAt": "2026-10-13T13:00:00.000Z",
-      "createdAt": "2026-10-13T12:00:00.000Z",
+      "company": "Kuwait SIM Center",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "kuwait-sim-center",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-10-13T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-30T15:31:58.000Z",
+      "rank": {
+        "id": 1,
+        "name": "Standard",
+        "kind": "merchant",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 29,
+      "lastOrderAt": "2026-10-30T15:31:58.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -642,7 +814,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 29,
         "spend": "258.8900",
@@ -651,33 +822,46 @@
         "successRate": 89.28571428571429,
         "lastOrderAt": "2026-10-30T15:31:58.000Z"
       },
-      "group": {
-        "id": 1,
-        "name": "Standard",
-        "discountPercent": "0.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "131.1100",
         "reserved": "8.9700",
         "creditLimit": "500.0000",
-        "available": "631.1100"
+        "available": "631.1100",
+        "frozen": false
       }
     },
     {
       "id": 15,
-      "username": "doha-phone-lab",
       "email": "ops@dohaphonelab.example",
+      "emailVerifiedAt": "2026-09-01T13:00:00.000Z",
       "name": "Doha Phone Lab",
-      "company": "Doha Phone Lab",
       "phone": "",
       "country": "QA",
-      "groupId": 2,
-      "status": "active",
-      "emailVerifiedAt": "2026-09-01T13:00:00.000Z",
-      "createdAt": "2026-09-01T12:00:00.000Z",
+      "company": "Doha Phone Lab",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "doha-phone-lab",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-09-01T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-30T18:15:07.000Z",
+      "rank": {
+        "id": 2,
+        "name": "Wholesale",
+        "kind": "merchant",
+        "discountPercent": "4.0000",
+        "creditAllowed": true
+      },
+      "invitationPending": false,
+      "ordersCount": 45,
+      "lastOrderAt": "2026-10-30T18:15:07.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -689,7 +873,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 45,
         "spend": "447.9100",
@@ -698,33 +881,46 @@
         "successRate": 100,
         "lastOrderAt": "2026-10-30T18:15:07.000Z"
       },
-      "group": {
-        "id": 2,
-        "name": "Wholesale",
-        "discountPercent": "4.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "357.0900",
         "reserved": "0.0000",
         "creditLimit": "800.0000",
-        "available": "1157.0900"
+        "available": "1157.0900",
+        "frozen": false
       }
     },
     {
       "id": 16,
-      "username": "beirut-unlock-co",
       "email": "ops@beirutunlockco.example",
+      "emailVerifiedAt": "2026-10-20T13:00:00.000Z",
       "name": "Beirut Unlock Co",
-      "company": "Beirut Unlock Co",
       "phone": "",
       "country": "LB",
-      "groupId": 1,
-      "status": "active",
-      "emailVerifiedAt": "2026-10-20T13:00:00.000Z",
-      "createdAt": "2026-10-20T12:00:00.000Z",
+      "company": "Beirut Unlock Co",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "beirut-unlock-co",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-10-20T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-30T17:37:17.000Z",
+      "rank": {
+        "id": 1,
+        "name": "Standard",
+        "kind": "merchant",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 23,
+      "lastOrderAt": "2026-10-30T17:37:17.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -736,7 +932,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 23,
         "spend": "211.1900",
@@ -745,33 +940,46 @@
         "successRate": 91.30434782608695,
         "lastOrderAt": "2026-10-30T17:37:17.000Z"
       },
-      "group": {
-        "id": 1,
-        "name": "Standard",
-        "discountPercent": "0.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "58.8100",
         "reserved": "0.0000",
         "creditLimit": "300.0000",
-        "available": "358.8100"
+        "available": "358.8100",
+        "frozen": false
       }
     },
     {
       "id": 17,
-      "username": "sana-a-repair",
       "email": "ops@sanaarepair.example",
+      "emailVerifiedAt": "2026-10-22T13:00:00.000Z",
       "name": "Sana'a Repair",
-      "company": "Sana'a Repair",
       "phone": "",
       "country": "YE",
-      "groupId": 1,
-      "status": "active",
-      "emailVerifiedAt": "2026-10-22T13:00:00.000Z",
-      "createdAt": "2026-10-22T12:00:00.000Z",
+      "company": "Sana'a Repair",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "sana-a-repair",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-10-22T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T11:56:46.000Z",
+      "rank": {
+        "id": 1,
+        "name": "Standard",
+        "kind": "merchant",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 27,
+      "lastOrderAt": "2026-10-31T11:56:46.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -783,7 +991,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 27,
         "spend": "261.9500",
@@ -792,33 +999,49 @@
         "successRate": 100,
         "lastOrderAt": "2026-10-31T11:56:46.000Z"
       },
-      "group": {
-        "id": 1,
-        "name": "Standard",
-        "discountPercent": "0.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "-81.9500",
         "reserved": "23.1100",
         "creditLimit": "300.0000",
-        "available": "218.0500"
+        "available": "218.0500",
+        "frozen": false
       }
     },
     {
       "id": 18,
-      "username": "algiers-service-plus",
       "email": "ops@algiersservice.example",
+      "emailVerifiedAt": null,
       "name": "Algiers Service Plus",
-      "company": "Algiers Service Plus",
       "phone": "",
       "country": "DZ",
-      "groupId": 1,
-      "status": "active",
-      "emailVerifiedAt": null,
-      "createdAt": "2026-10-29T12:00:00.000Z",
+      "company": "Algiers Service Plus",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "algiers-service-plus",
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-10-29T12:00:00.000Z",
+      "createdBy": {
+        "id": 1,
+        "name": "Rami K."
+      },
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": null,
+      "rank": {
+        "id": 1,
+        "name": "Standard",
+        "kind": "merchant",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": true,
+      "ordersCount": 0,
+      "lastOrderAt": null,
       "security": {
         "hasPassword": false,
         "mustChangePassword": false,
@@ -830,7 +1053,6 @@
         "linkSentAt": "2026-10-31T11:40:00.000Z",
         "verificationSentAt": null
       },
-      "suspension": null,
       "stats": {
         "orders": 0,
         "spend": "0.0000",
@@ -839,33 +1061,53 @@
         "successRate": null,
         "lastOrderAt": null
       },
-      "group": {
-        "id": 1,
-        "name": "Standard",
-        "discountPercent": "0.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "0.0000",
         "reserved": "0.0000",
         "creditLimit": "300.0000",
-        "available": "300.0000"
+        "available": "300.0000",
+        "frozen": false
       }
     },
     {
       "id": 19,
-      "username": "tunis-fix-point",
       "email": "ops@tunisfixpoint.example",
+      "emailVerifiedAt": "2026-06-13T13:00:00.000Z",
       "name": "Tunis Fix Point",
-      "company": "Tunis Fix Point",
       "phone": "",
       "country": "TN",
-      "groupId": 1,
-      "status": "suspended",
-      "emailVerifiedAt": "2026-06-13T13:00:00.000Z",
-      "createdAt": "2026-06-13T12:00:00.000Z",
+      "company": "Tunis Fix Point",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "tunis-fix-point",
+      "status": "suspended",
+      "hasAccount": true,
+      "createdAt": "2026-06-13T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": {
+        "at": "2026-10-25T12:00:00.000Z",
+        "reason": "Chargeback dispute",
+        "by": {
+          "id": 1,
+          "name": "Rami K."
+        }
+      },
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-31T11:55:41.000Z",
+      "rank": {
+        "id": 1,
+        "name": "Standard",
+        "kind": "merchant",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 13,
+      "lastOrderAt": "2026-10-31T11:55:41.000Z",
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -877,14 +1119,6 @@
         "linkSentAt": null,
         "verificationSentAt": null
       },
-      "suspension": {
-        "at": "2026-10-25T12:00:00.000Z",
-        "reason": "Chargeback dispute",
-        "by": {
-          "id": 1,
-          "name": "Rami K."
-        }
-      },
       "stats": {
         "orders": 13,
         "spend": "59.8200",
@@ -893,33 +1127,50 @@
         "successRate": 90.9090909090909,
         "lastOrderAt": "2026-10-31T11:55:41.000Z"
       },
-      "group": {
-        "id": 1,
-        "name": "Standard",
-        "discountPercent": "0.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "20.1800",
         "reserved": "1.5300",
         "creditLimit": "300.0000",
-        "available": "320.1800"
+        "available": "320.1800",
+        "frozen": false
       }
     },
     {
       "id": 20,
-      "username": "accra-devices",
       "email": "ops@accradevices.example",
+      "emailVerifiedAt": null,
       "name": "Accra Devices",
-      "company": "Accra Devices",
       "phone": "",
       "country": "GH",
-      "groupId": 1,
-      "status": "pending",
-      "emailVerifiedAt": null,
-      "createdAt": "2026-10-30T12:00:00.000Z",
+      "company": "Accra Devices",
       "address": "",
       "taxId": "",
       "internalNotes": "",
+      "username": "accra-devices",
+      "status": "suspended",
+      "hasAccount": true,
+      "createdAt": "2026-10-30T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "USD",
+      "marketingOptIn": false,
+      "suspension": {
+        "at": "2026-10-30T12:00:00.000Z",
+        "reason": "Waiting for approval before the accounts were merged",
+        "by": null
+      },
+      "anonymizedAt": null,
+      "lastLoginAt": null,
+      "rank": {
+        "id": 1,
+        "name": "Standard",
+        "kind": "merchant",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 0,
+      "lastOrderAt": null,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -931,7 +1182,6 @@
         "linkSentAt": null,
         "verificationSentAt": "2026-10-31T10:00:00.000Z"
       },
-      "suspension": null,
       "stats": {
         "orders": 0,
         "spend": "0.0000",
@@ -940,16 +1190,272 @@
         "successRate": null,
         "lastOrderAt": null
       },
-      "group": {
-        "id": 1,
-        "name": "Standard",
-        "discountPercent": "0.0000"
-      },
       "wallet": {
+        "kind": "merchant",
         "balance": "0.0000",
         "reserved": "0.0000",
         "creditLimit": "300.0000",
-        "available": "300.0000"
+        "available": "300.0000",
+        "frozen": false
+      }
+    },
+    {
+      "id": 101,
+      "email": "daniel.whitmore@mail.example",
+      "emailVerifiedAt": "2026-09-30T12:00:00.000Z",
+      "name": "Daniel Whitmore",
+      "phone": "",
+      "country": "GB",
+      "company": "",
+      "address": "",
+      "taxId": "",
+      "internalNotes": "",
+      "username": null,
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-09-30T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "GBP",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-24T12:00:00.000Z",
+      "rank": {
+        "id": 4,
+        "name": "Storefront retail",
+        "kind": "retail",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 4,
+      "lastOrderAt": "2026-10-29T15:29:34.000Z",
+      "security": {
+        "hasPassword": true,
+        "mustChangePassword": false,
+        "passwordChangedAt": "2026-09-12T12:00:00.000Z",
+        "twofaEnabled": false,
+        "lastLoginAt": "2026-10-24T12:00:00.000Z",
+        "lastLoginIp": "203.0.113.177",
+        "activeSessions": 1,
+        "linkSentAt": null,
+        "verificationSentAt": null
+      },
+      "stats": {
+        "orders": 4,
+        "spend": "31.9700",
+        "profit": "18.3000",
+        "margin": "57.2",
+        "successRate": 75,
+        "lastOrderAt": "2026-10-29T15:29:34.000Z"
+      },
+      "wallet": {
+        "kind": "store",
+        "balance": "50.0000",
+        "reserved": "0.0000",
+        "creditLimit": "0.0000",
+        "available": "50.0000",
+        "frozen": false
+      }
+    },
+    {
+      "id": 102,
+      "email": "sofia.alvarez@inbox.example",
+      "emailVerifiedAt": null,
+      "name": "Sofia Alvarez",
+      "phone": "",
+      "country": "ES",
+      "company": "",
+      "address": "",
+      "taxId": "",
+      "internalNotes": "",
+      "username": null,
+      "status": "active",
+      "hasAccount": false,
+      "createdAt": "2026-10-27T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "EUR",
+      "marketingOptIn": true,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": null,
+      "rank": {
+        "id": 4,
+        "name": "Storefront retail",
+        "kind": "retail",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 0,
+      "lastOrderAt": null,
+      "security": null,
+      "stats": {
+        "orders": 0,
+        "spend": "0.0000",
+        "profit": "0.0000",
+        "margin": null,
+        "successRate": null,
+        "lastOrderAt": null
+      }
+    },
+    {
+      "id": 103,
+      "email": "lukas.brandt@post.example",
+      "emailVerifiedAt": "2026-10-04T12:00:00.000Z",
+      "name": "Lukas Brandt",
+      "phone": "",
+      "country": "DE",
+      "company": "",
+      "address": "",
+      "taxId": "",
+      "internalNotes": "",
+      "username": null,
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-10-04T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "EUR",
+      "marketingOptIn": true,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-11T12:00:00.000Z",
+      "rank": {
+        "id": 4,
+        "name": "Storefront retail",
+        "kind": "retail",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 3,
+      "lastOrderAt": "2026-10-31T11:57:05.000Z",
+      "security": {
+        "hasPassword": true,
+        "mustChangePassword": false,
+        "passwordChangedAt": "2026-07-15T12:00:00.000Z",
+        "twofaEnabled": false,
+        "lastLoginAt": "2026-10-11T12:00:00.000Z",
+        "lastLoginIp": "203.0.113.110",
+        "activeSessions": 3,
+        "linkSentAt": null,
+        "verificationSentAt": null
+      },
+      "stats": {
+        "orders": 3,
+        "spend": "11.9700",
+        "profit": "3.9500",
+        "margin": "33.0",
+        "successRate": 100,
+        "lastOrderAt": "2026-10-31T11:57:05.000Z"
+      },
+      "wallet": {
+        "kind": "store",
+        "balance": "0.0000",
+        "reserved": "0.0000",
+        "creditLimit": "0.0000",
+        "available": "0.0000",
+        "frozen": false
+      }
+    },
+    {
+      "id": 104,
+      "email": "emma.dubois@webmail.example",
+      "emailVerifiedAt": null,
+      "name": "Emma Dubois",
+      "phone": "",
+      "country": "FR",
+      "company": "",
+      "address": "",
+      "taxId": "",
+      "internalNotes": "",
+      "username": null,
+      "status": "active",
+      "hasAccount": false,
+      "createdAt": "2026-10-09T07:54:48.000Z",
+      "createdBy": null,
+      "currencyCode": "EUR",
+      "marketingOptIn": true,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": null,
+      "rank": {
+        "id": 4,
+        "name": "Storefront retail",
+        "kind": "retail",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 5,
+      "lastOrderAt": "2026-10-31T11:58:23.000Z",
+      "security": null,
+      "stats": {
+        "orders": 5,
+        "spend": "77.9500",
+        "profit": "36.5600",
+        "margin": "46.9",
+        "successRate": 100,
+        "lastOrderAt": "2026-10-31T11:58:23.000Z"
+      }
+    },
+    {
+      "id": 105,
+      "email": "noah.van@mail.example",
+      "emailVerifiedAt": null,
+      "name": "Noah van Dijk",
+      "phone": "",
+      "country": "NL",
+      "company": "",
+      "address": "",
+      "taxId": "",
+      "internalNotes": "",
+      "username": null,
+      "status": "active",
+      "hasAccount": true,
+      "createdAt": "2026-10-13T12:00:00.000Z",
+      "createdBy": null,
+      "currencyCode": "EUR",
+      "marketingOptIn": false,
+      "suspension": null,
+      "anonymizedAt": null,
+      "lastLoginAt": "2026-10-04T12:00:00.000Z",
+      "rank": {
+        "id": 4,
+        "name": "Storefront retail",
+        "kind": "retail",
+        "discountPercent": "0.0000",
+        "creditAllowed": false
+      },
+      "invitationPending": false,
+      "ordersCount": 1,
+      "lastOrderAt": "2026-10-24T18:30:29.000Z",
+      "security": {
+        "hasPassword": true,
+        "mustChangePassword": false,
+        "passwordChangedAt": "2026-09-11T12:00:00.000Z",
+        "twofaEnabled": false,
+        "lastLoginAt": "2026-10-04T12:00:00.000Z",
+        "lastLoginIp": "198.51.100.125",
+        "activeSessions": 1,
+        "linkSentAt": null,
+        "verificationSentAt": null
+      },
+      "stats": {
+        "orders": 1,
+        "spend": "14.9900",
+        "profit": "7.4900",
+        "margin": "50.0",
+        "successRate": 100,
+        "lastOrderAt": "2026-10-24T18:30:29.000Z"
+      },
+      "wallet": {
+        "kind": "store",
+        "balance": "0.0000",
+        "reserved": "0.0000",
+        "creditLimit": "0.0000",
+        "available": "0.0000",
+        "frozen": false
       }
     }
   ]

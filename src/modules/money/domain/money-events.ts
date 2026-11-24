@@ -2,8 +2,10 @@
 // the journal lines exactly as the map writes them, plus the ledger kind and the reference type the posting carries. The map's
 // `commission` event has no builder any more (decision 062: commissions are retired); its old journals stay valid and readable.
 import { Money } from '../../../common/money';
-import type { LedgerRefType } from '../db/schema';
+import type { CurrentLedgerRefType } from '../db/schema';
+import { holdAccountOf, storeWalletAccountOf, walletAccountOf } from './accounts';
 import { type AccountRef, type LedgerLine, creditLine, debitLine } from './ledger-lines';
+import type { WalletLedgerKind } from './wallet-kinds';
 
 /** The ids of the map's money events that can still be posted (the map has 13; `commission` is retired). */
 export const MONEY_EVENT_IDS = [
@@ -55,20 +57,20 @@ export const MONEY_EVENT_KINDS: Readonly<Record<MoneyEventId, string>> = {
 export interface MoneyEventPosting {
   readonly event: MoneyEventId;
   readonly kind: string;
-  readonly refType: LedgerRefType;
+  readonly refType: CurrentLedgerRefType;
   readonly lines: readonly LedgerLine[];
 }
 
 const SYSTEM = (kind: AccountRef['kind']): AccountRef => ({ kind });
-const wallet = (clientId: number): AccountRef => ({ kind: 'client_wallet', ownerType: 'client', ownerId: clientId });
-const hold = (clientId: number): AccountRef => ({ kind: 'client_hold', ownerType: 'client', ownerId: clientId });
+const wallet = walletAccountOf;
+const hold = holdAccountOf;
 const prepaid = (supplierId: number): AccountRef => ({
   kind: 'supplier_prepaid',
   ownerType: 'supplier',
   ownerId: supplierId,
 });
 
-function posting(event: MoneyEventId, refType: LedgerRefType, ...groups: LedgerLine[][]): MoneyEventPosting {
+function posting(event: MoneyEventId, refType: CurrentLedgerRefType, ...groups: LedgerLine[][]): MoneyEventPosting {
   return { event, kind: MONEY_EVENT_KINDS[event], refType, lines: groups.flat() };
 }
 
@@ -191,23 +193,24 @@ export function topup(input: { supplierId: number; amount: Money }): MoneyEventP
 /**
  * Event `adjust`: staff add to or deduct from a wallet by hand.
  *
- * Why: the map's "manual adjustment 10$" money event shows the credit; a debit is its exact mirror (B30). The posting keeps `ref_type client`
- * (the merchant is the reference, B34); the wire sends it as `system` (resolution money-1).
+ * Why: the map's "manual adjustment 10$" money event shows the credit; a debit is its exact mirror (B30). The posting writes `ref_type account`
+ * (the account is the reference, B34; decision 064: never `client`); the wire sends it as `system` (resolution money-1), as it did
+ * for the older `client` rows.
  *
- * @param input merchant, amount and direction
- * @returns credit: Dr adjustments / Cr client_wallet; debit: Dr client_wallet / Cr adjustments; reference type `client`
+ * @param input merchant (the account id; the key keeps its old name), amount and direction
+ * @returns credit: Dr adjustments / Cr client_wallet; debit: Dr client_wallet / Cr adjustments; reference type `account`
  */
 export function adjust(input: { clientId: number; amount: Money; direction: 'credit' | 'debit' }): MoneyEventPosting {
   return input.direction === 'credit'
     ? posting(
         'adjust',
-        'client',
+        'account',
         debitLine(SYSTEM('adjustments'), input.amount),
         creditLine(wallet(input.clientId), input.amount),
       )
     : posting(
         'adjust',
-        'client',
+        'account',
         debitLine(wallet(input.clientId), input.amount),
         creditLine(SYSTEM('adjustments'), input.amount),
       );
@@ -384,7 +387,7 @@ export const REVERSAL_KINDS: Readonly<Record<ReversalEventId, string>> = { reope
 export interface ReversalPosting {
   readonly event: ReversalEventId;
   readonly kind: string;
-  readonly refType: LedgerRefType;
+  readonly refType: CurrentLedgerRefType;
   readonly lines: readonly LedgerLine[];
 }
 
@@ -425,16 +428,20 @@ export function reopenB2c(input: { net: Money }): ReversalPosting {
  * Event `refund` (B2B): a completed merchant order is refunded; the revenue goes straight back to the wallet, the cost stays.
  *
  * Why: the map's refund is "reopen, then reject" in one step (decision 024): the hold is not touched because the order price is
- * no longer on it. "A refund after delivery loses the supplier cost" (the console's own words, OrderFooter).
+ * no longer on it. "A refund after delivery loses the supplier cost" (the console's own words, OrderFooter). Decision 064: a refund
+ * always credits the account's live wallet, so after a rank change from merchant to retail the credit goes to the store balance
+ * (`wallet: 'customer_wallet'`); the key `reverse:<settlement>` is the same either way, so a second refund is still refused.
  *
- * @param input merchant and the order price that was recognised
- * @returns Dr revenue / Cr client_wallet; reference type `order`
+ * @param input merchant (the account id; the key keeps its old name), the order price that was recognised and the live wallet kind
+ *   (`client_wallet` unless given)
+ * @returns Dr revenue / Cr client_wallet (or customer_wallet); reference type `order`
  */
-export function refund(input: { clientId: number; amount: Money }): ReversalPosting {
+export function refund(input: { clientId: number; amount: Money; wallet?: WalletLedgerKind }): ReversalPosting {
+  const target = input.wallet === 'customer_wallet' ? storeWalletAccountOf(input.clientId) : wallet(input.clientId);
   return {
     event: 'refund',
     kind: REVERSAL_KINDS.refund,
     refType: 'order',
-    lines: [...debitLine(SYSTEM('revenue'), input.amount), ...creditLine(wallet(input.clientId), input.amount)],
+    lines: [...debitLine(SYSTEM('revenue'), input.amount), ...creditLine(target, input.amount)],
   };
 }

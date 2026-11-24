@@ -1,9 +1,10 @@
-// Rules of the merchant invoices (map routes /admin/invoices, /client/invoices, stage 8): the number, the due date, the tax and
-// the totals of a manual and of a top-up invoice, the checks on what staff and merchants type, and the limits of decision 049
-// (open top-ups, receipts in review, the issuer's own approval). Pure.
+// Rules of the invoices (map routes /admin/invoices, /client/invoices, stage 8): the number, the due date, the tax and the totals of
+// a manual and of a top-up invoice, the checks on what staff and merchants type, the limits of decision 049 (open top-ups, receipts in
+// review, the issuer's own approval) and, since decision 064, the one idempotency rule of both top-up creates and the side of an
+// invoice on the staff wire. Pure.
 import type { FieldError } from '../../../common/errors';
 import { Money } from '../../../common/money';
-import type { InvoiceKind } from '../db/schema';
+import type { InvoiceKind, InvoiceStatus, InvoiceWalletKind } from '../db/schema';
 
 /** The kinds a list filter accepts: every kind of an invoice but the retired `statement` (decision 062; old rows may still carry it). */
 export const INVOICE_FILTER_KINDS = ['topup', 'manual', 'receipt'] as const satisfies readonly InvoiceKind[];
@@ -218,3 +219,81 @@ export function isTransferTopUp(
 
 /** The refusal of the issuer's own approval (`403 FORBIDDEN`, decision 049). */
 export const SELF_APPROVAL_DETAIL = 'You issued this invoice: another staff member, or an owner, approves its payment.';
+
+/** How long an automatic top-up may wait for its hosted page before a retry with its key takes over (the `/pay` rule). */
+export const TOPUP_OPENING_GRACE_MS = 60_000;
+
+/**
+ * The fingerprint of a top-up create request.
+ *
+ * Why: decision 064: both top-up creates (the merchant's `POST /client/invoices` and the store's
+ * `POST /store/v1/me/wallet/top-ups`) store the `Idempotency-Key` of the request with this fingerprint, so the same key with another
+ * gateway or amount is refused instead of answered with a top-up nobody asked for.
+ *
+ * @param gatewayId the payment method the request names
+ * @param amount the amount the request names, as parsed
+ * @returns a stable text of the two
+ */
+export function topUpFingerprint(gatewayId: number, amount: Money): string {
+  return JSON.stringify([gatewayId, amount.toWire()]);
+}
+
+/** What a create does with the invoice an earlier request left under the same key. */
+export type PriorTopUpVerdict = 'reused' | 'replay' | 'in_progress' | 'restart';
+
+/**
+ * Decides what a top-up create does when its `Idempotency-Key` already names an invoice of the account.
+ *
+ * Why: one rule for both creates (decision 064). The key names one request: another gateway, another amount or another wallet kind is
+ * `reused` (409 `IDEMPOTENCY_KEY_REUSED`); the same request is a `replay` that answers the invoice as it is now. An automatic top-up
+ * whose hosted page was never stored is still opening: within the grace time the retry is `in_progress` (409 `IDEMPOTENCY_IN_PROGRESS`),
+ * after it the retry may `restart` (void the stale invoice, which frees the key, and create again).
+ *
+ * @param prior the invoice found by the key
+ * @param request the fingerprint and the wallet kind of the new request
+ * @param gatewayIsManual whether the invoice's gateway is a manual one (a manual top-up has no page to wait for)
+ * @param now the clock's time
+ * @returns the verdict
+ */
+export function judgePriorTopUp(
+  prior: {
+    readonly requestFingerprint: string | null;
+    readonly walletKind: InvoiceWalletKind | null;
+    readonly status: InvoiceStatus;
+    readonly checkoutUrl: string | null;
+    readonly createdAt: Date;
+  },
+  request: { readonly fingerprint: string; readonly walletKind: InvoiceWalletKind },
+  gatewayIsManual: boolean,
+  now: Date,
+): PriorTopUpVerdict {
+  if (prior.requestFingerprint !== request.fingerprint || prior.walletKind !== request.walletKind) return 'reused';
+  const opening = prior.status === 'open' && prior.checkoutUrl === null && !gatewayIsManual;
+  if (!opening) return 'replay';
+  return now.getTime() - prior.createdAt.getTime() < TOPUP_OPENING_GRACE_MS ? 'in_progress' : 'restart';
+}
+
+/**
+ * Tells which side of the staff wire an invoice's account is on.
+ *
+ * Why: one account type (decision 064): an invoice has one owner, `account_id`, and the console's `Invoice` still names a `client` (a
+ * merchant) or a `customer` (a storefront buyer). The wallet kind says it: a merchant top-up and a manual invoice fill the merchant
+ * wallet (and a retired statement was always a merchant's); a store top-up and the tax receipt of a storefront order belong to the
+ * account as a customer. The rank of the account today does not matter: a converted account keeps showing its old invoices as they were.
+ *
+ * @param invoice the invoice's kind and wallet kind
+ * @returns `client` for a merchant invoice, `customer` for any other
+ */
+export function invoiceWireSide(invoice: {
+  readonly kind: InvoiceKind;
+  readonly walletKind: InvoiceWalletKind | null;
+}): 'client' | 'customer' {
+  return invoice.walletKind === 'client_wallet' || invoice.kind === 'statement' ? 'client' : 'customer';
+}
+
+/** The answer when staff issue an invoice to an account that has no merchant wallet (`422` on `clientId`, code `not_merchant`). */
+export const NOT_MERCHANT_PROBLEM: FieldError = {
+  field: 'clientId',
+  code: 'not_merchant',
+  message: 'Choose a merchant account: this account has no merchant wallet to pay an invoice into.',
+};

@@ -1,5 +1,6 @@
-// EventNotifier: turns an outbox event that a merchant may want to hear about into notifications (platform module, feature 12a): low
-// balance, an order result, a paid invoice, an approved deposit, and the daily digest of price changes.
+// EventNotifier: turns an outbox event that an account holding a merchant wallet may want to hear about into notifications (platform module,
+// feature 12a): low balance, an order result, a paid invoice, an approved deposit, and the daily digest of price changes. The text is the
+// merchant's by the door of the order or the kind of the wallet, never by the rank the account holds when the job runs (decision 064).
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { DbService } from '../../../infra/db';
@@ -9,7 +10,7 @@ import { addDigestItem, digestCycleOf, digestKey, digestSendDelay, shortMoney, t
 import { NotificationInbox } from './inbox/notification-inbox';
 import { channelsFor } from './merchant-preferences';
 import { NotificationEventRegistry } from './notification-events';
-import { invoiceFacts, orderFacts, recipientOf, serviceNameOf } from './notification-foreign-reads';
+import { invoiceFacts, orderFacts, recipientOf, serviceNameOf, withAudience } from './notification-foreign-reads';
 import { itemsOf } from './notification-payload';
 import { NOTIFICATION_SEND_EVENT, NotificationService } from './notification.service';
 import {
@@ -93,19 +94,25 @@ export class EventNotifier {
     }
   }
 
-  /** `order.completed` or `order.failed` for a merchant that chose them. */
+  /**
+   * `order.completed` or `order.failed` for an account that chose them, for an order held from a wallet.
+   *
+   * Why: the door decides whose notice applies (decision 064): an order of the `store` door is paid first through the shop and its mails
+   * (the customer text, with the tracking link) belong to the storefront flows, whatever rank its account has today; any other door gets the
+   * merchant text. The door is read from the order (the payload's is only a hint).
+   */
   private async orderResult(job: OutboxJobData): Promise<PlanResult> {
-    const clientId = job.payload['clientId'];
-    // A storefront order has no merchant: its customer mails belong to the storefront features.
-    if (clientId === null) return { created: 0, skipped: 'no_merchant' };
+    if (job.payload['source'] === 'store') return { created: 0, skipped: 'no_merchant' };
     const toStatus = text(job.payload['toStatus']);
     const key = toStatus === 'completed' ? 'order.completed' : toStatus === 'rejected' ? 'order.failed' : undefined;
     if (key === undefined) return { created: 0, skipped: 'not_notified' };
     const orderId = whole(job.payload['orderId']) ?? job.aggregateId;
     const facts = await orderFacts(this.db.db, orderId);
-    if (!facts || (typeof clientId === 'number' && clientId !== facts.clientId))
-      return { created: 0, skipped: 'source_gone' };
-    return this.notifyMerchant(job, key, facts.clientId, (merchantName) => ({
+    // The order is gone, or it is not the one the event was about (the payload's account is a hint, never the recipient).
+    const claimed = whole(job.payload['accountId']);
+    if (!facts || (claimed !== undefined && claimed !== facts.accountId)) return { created: 0, skipped: 'source_gone' };
+    if (facts.source === 'store') return { created: 0, skipped: 'no_merchant' };
+    return this.notifyMerchant(job, key, facts.accountId, (merchantName) => ({
       merchantName,
       orderId: String(facts.orderId),
       service: facts.serviceName,
@@ -114,16 +121,16 @@ export class EventNotifier {
     }));
   }
 
-  /** `wallet.low_balance`. */
+  /** `wallet.low_balance` (only a merchant-kind wallet raises it). */
   private async lowBalance(job: OutboxJobData): Promise<PlanResult> {
-    const clientId = this.merchantOf(job);
+    const accountId = this.accountOf(job);
     const currency = text(job.payload['currency']);
     const available = text(job.payload['available']);
     const threshold = text(job.payload['threshold']);
     if (currency === undefined || available === undefined || threshold === undefined) {
       throw new UnrecoverableError(`The ${job.type} event ${job.eventId} lacks its figures.`);
     }
-    return this.notifyMerchant(job, 'wallet.low_balance', clientId, (merchantName) => ({
+    return this.notifyMerchant(job, 'wallet.low_balance', accountId, (merchantName) => ({
       merchantName,
       currency,
       available: shortMoney(available),
@@ -131,11 +138,17 @@ export class EventNotifier {
     }));
   }
 
-  /** `invoice.paid`: feature 8 writes it with the invoice as the aggregate. */
+  /**
+   * `invoice.paid`: feature 8 writes it with the invoice as the aggregate.
+   *
+   * Why: a wallet mail follows the kind of the wallet the invoice fills (`client_wallet`: the merchant text); a receipt, a statement and the
+   * top-up of a shop balance are not merchant mails, whatever rank the account holds now.
+   */
   private async invoicePaid(job: OutboxJobData): Promise<PlanResult> {
     const invoice = await invoiceFacts(this.db.db, whole(job.payload['invoiceId']) ?? job.aggregateId);
     if (!invoice) return { created: 0, skipped: 'source_gone' };
-    return this.notifyMerchant(job, 'invoice.paid', invoice.clientId, (merchantName) => ({
+    if (invoice.walletKind !== 'client_wallet') return { created: 0, skipped: 'no_merchant' };
+    return this.notifyMerchant(job, 'invoice.paid', invoice.accountId, (merchantName) => ({
       merchantName,
       invoiceNumber: invoice.number,
       amount: shortMoney(invoice.amount),
@@ -143,33 +156,45 @@ export class EventNotifier {
     }));
   }
 
-  /** The merchant of an event that must have one. */
-  private merchantOf(job: OutboxJobData): number {
-    const clientId = whole(job.payload['clientId']);
-    if (clientId === undefined)
-      throw new UnrecoverableError(`The ${job.type} event ${job.eventId} carries no clientId.`);
-    return clientId;
+  /**
+   * The account of an event that must have one.
+   *
+   * Why: decision 064: a job carries `accountId`. A merchant's number is its account id, so the older key `clientId` is
+   * read as the same number; a customer number (`customerId`) is never read as an account id.
+   */
+  private accountOf(job: OutboxJobData): number {
+    const accountId = whole(job.payload['accountId']) ?? whole(job.payload['clientId']);
+    if (accountId === undefined)
+      throw new UnrecoverableError(`The ${job.type} event ${job.eventId} carries no accountId.`);
+    return accountId;
   }
 
-  /** Makes one notification per channel the merchant uses for the event, in one transaction. */
+  /**
+   * Makes one notification per channel the account uses for the event, in one transaction.
+   *
+   * Why: the text is the merchant's (`audience: 'merchant'`) because the event is about a merchant door or a merchant wallet; the account's
+   * own switches (`notification_prefs`) choose the channels.
+   */
   private async notifyMerchant(
     job: OutboxJobData,
     key: string,
-    clientId: number,
+    accountId: number,
     variables: (merchantName: string) => Record<string, string>,
   ): Promise<PlanResult> {
     return this.db.runInTransaction(async ({ tx }) => {
-      const merchant = await recipientOf(tx, 'client', clientId);
-      if (!merchant) return { created: 0, skipped: 'merchant_gone' };
+      const found = await recipientOf(tx, 'account', accountId);
+      if (!found) return { created: 0, skipped: 'merchant_gone' };
+      const merchant = withAudience(found, 'merchant');
       const definition = this.registry.get(key, 'merchant');
       if (!definition) return { created: 0, skipped: 'unknown_event' };
       // Feature 23, S9: the in-app item comes before the channel check, so a merchant who switched email off still gets it;
       // the same occurrence key makes the item of `NotificationService.enqueue` below a no-op.
       await this.inbox.addForEvent(tx, {
-        recipient: { type: 'client', id: clientId },
+        recipient: { type: 'account', id: accountId },
         event: key,
         variables: variables(merchant.name),
         occurrence: `outbox-${job.eventId}`,
+        audience: 'merchant',
       });
       const channels = channelsFor(definition, merchant.prefs);
       if (channels.length === 0) return { created: 0, skipped: 'opted_out' };
@@ -180,7 +205,8 @@ export class EventNotifier {
           { tx },
           {
             event: key,
-            recipient: { type: 'client', id: clientId },
+            recipient: { type: 'account', id: accountId },
+            audience: 'merchant',
             channel,
             variables: variables(merchant.name),
             dedupeKey: `outbox-${job.eventId}:${channel}`,
@@ -193,9 +219,9 @@ export class EventNotifier {
     });
   }
 
-  /** `service.price_changed`: joins the merchant's digest of the day on each channel it uses. */
+  /** `service.price_changed`: joins the digest of the day of an account of a merchant rank, on each channel it uses. */
   private async priceChanged(job: OutboxJobData): Promise<PlanResult> {
-    const clientId = this.merchantOf(job);
+    const accountId = this.accountOf(job);
     const serviceId = whole(job.payload['serviceId']) ?? job.aggregateId;
     const price = text(job.payload['price']);
     const currency = text(job.payload['currency']);
@@ -210,14 +236,16 @@ export class EventNotifier {
       price,
       currency,
     };
-    const merchant = await recipientOf(this.db.db, 'client', clientId);
+    const merchant = await recipientOf(this.db.db, 'account', accountId);
     if (!merchant) return { created: 0, skipped: 'merchant_gone' };
+    // Prices of a merchant rank: an account that holds another rank now has no digest (its shop prices are not individual).
+    if (merchant.audience !== 'merchant') return { created: 0, skipped: 'no_merchant' };
     const definition = this.registry.get('service.price_changed', 'merchant');
     if (!definition) return { created: 0, skipped: 'unknown_event' };
     const channels = channelsFor(definition, merchant.prefs);
     if (channels.length === 0) return { created: 0, skipped: 'opted_out' };
     let created = 0;
-    for (const channel of channels) if (await this.collect(clientId, merchant.name, channel, item)) created += 1;
+    for (const channel of channels) if (await this.collect(accountId, merchant.name, channel, item)) created += 1;
     return { created };
   }
 
@@ -233,7 +261,7 @@ export class EventNotifier {
    * @returns true when this call made the row
    */
   private async collect(
-    clientId: number,
+    accountId: number,
     merchantName: string,
     channel: NotificationChannel,
     item: DigestItem,
@@ -241,7 +269,8 @@ export class EventNotifier {
     return this.db.runInTransaction(async ({ tx }) => {
       const check = await this.notifications.check(tx, {
         event: 'service.price_changed',
-        recipient: { type: 'client', id: clientId },
+        recipient: { type: 'account', id: accountId },
+        audience: 'merchant',
         channel,
       });
       if ('skipped' in check) return false;
@@ -249,11 +278,16 @@ export class EventNotifier {
       let cycle = digestCycleOf(now);
       // One hop is enough: the next period's row cannot be closed before it exists.
       for (let hop = 0; hop < 2; hop += 1) {
-        const key = digestKey('service.price_changed', channel, clientId, cycle);
-        const payload: NotificationPayload = { variables: { merchantName }, items: [item], cycle: cycle.day };
+        const key = digestKey('service.price_changed', channel, accountId, cycle);
+        const payload: NotificationPayload = {
+          variables: { merchantName },
+          items: [item],
+          cycle: cycle.day,
+          audience: 'merchant',
+        };
         const { row, created } = await insertNotificationOnce(tx, {
-          recipientType: 'client',
-          recipientId: clientId,
+          recipientType: 'account',
+          recipientId: accountId,
           channel,
           event: 'service.price_changed',
           payload,

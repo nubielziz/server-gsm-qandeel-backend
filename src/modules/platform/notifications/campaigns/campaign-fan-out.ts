@@ -11,7 +11,13 @@ import { QueuesService, UnrecoverableError, queueJobId } from '../../../../infra
 import type { NotificationCampaign, NotificationRecipientType } from '../../db/schema';
 import { InboxDoorbell } from '../inbox/inbox-doorbell';
 import { insertCampaignItems } from '../inbox/inbox.repository';
-import { AUDIENCE_TYPE_ORDER, parseStoredAudience, selectionsOf } from './audience-spec';
+import {
+  AUDIENCE_KIND_ORDER,
+  type AudienceKind,
+  audienceOfKind,
+  parseStoredAudience,
+  selectionsOf,
+} from './audience-spec';
 import { BROADCAST_ANNOUNCEMENT_EVENT } from './broadcast-events';
 import { BROADCAST_QUEUE, BROADCAST_SEND_JOB } from './broadcast-send.processor';
 import {
@@ -52,9 +58,9 @@ export const DEFAULT_FANOUT_OPTIONS: CampaignFanOutOptions = {
   waitMs: 15_000,
 };
 
-/** Where the next chunk starts: a recipient type and the last id done. */
+/** Where the next chunk starts: a group of people (staff, merchant ranks, retail) and the last id done. */
 export interface FanOutCursor {
-  readonly type: NotificationRecipientType;
+  readonly kind: AudienceKind;
   readonly afterId: number;
 }
 
@@ -84,8 +90,8 @@ interface ChunkResult {
   readonly inApp?: { readonly type: NotificationRecipientType; readonly ids: readonly number[] };
 }
 
-const isType = (value: unknown): value is NotificationRecipientType =>
-  typeof value === 'string' && (AUDIENCE_TYPE_ORDER as readonly string[]).includes(value);
+const isKind = (value: unknown): value is AudienceKind =>
+  typeof value === 'string' && (AUDIENCE_KIND_ORDER as readonly string[]).includes(value);
 
 /**
  * Reads the stored cursor.
@@ -95,8 +101,8 @@ const isType = (value: unknown): value is NotificationRecipientType =>
  */
 export function cursorOf(value: unknown): FanOutCursor | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { type, afterId } = value as Record<string, unknown>;
-  return isType(type) && typeof afterId === 'number' && Number.isInteger(afterId) ? { type, afterId } : undefined;
+  const { kind, afterId } = value as Record<string, unknown>;
+  return isKind(kind) && typeof afterId === 'number' && Number.isInteger(afterId) ? { kind, afterId } : undefined;
 }
 
 /**
@@ -140,7 +146,7 @@ export class CampaignFanOut {
    * @param campaignId the campaign
    * @param round how many backpressure pauses came before
    * @returns what the run did
-   * @throws {UnrecoverableError} when the stored audience no longer parses or a recipient type has no provider (the campaign is `failed`)
+   * @throws {UnrecoverableError} when the stored audience no longer parses or a group of people has no provider (the campaign is `failed`)
    * @throws {Error} a Postgres or Redis error (the queue retries; the sweep re-kicks a stalled campaign)
    */
   async run(campaignId: number, round = 0): Promise<FanOutResult> {
@@ -184,22 +190,22 @@ export class CampaignFanOut {
     const spec = parseStoredAudience(campaign.audience);
     if (!spec) return this.fail(tx, campaign, 'The stored audience is no longer valid.');
     const selections = selectionsOf(spec);
-    const missing = selections.find((selection) => !this.audiences.has(selection.type));
-    if (missing) return this.fail(tx, campaign, `No audience provider is registered for "${missing.type}".`);
+    const missing = selections.find((selection) => !this.audiences.has(selection.kind));
+    if (missing) return this.fail(tx, campaign, `No audience provider is registered for "${missing.kind}".`);
 
     let cursor = campaign.status === 'queued' ? undefined : cursorOf(campaign.fanoutCursor);
     if (!cursor) {
       const first = selections[0];
       if (!first) return this.finish(tx, campaign, EMPTY_STATS, 0, now, []);
-      cursor = { type: first.type, afterId: 0 };
+      cursor = { kind: first.kind, afterId: 0 };
     }
-    const index = selections.findIndex((selection) => selection.type === cursor.type);
+    const index = selections.findIndex((selection) => selection.kind === cursor.kind);
     const selection = selections[index];
     if (!selection) return this.finish(tx, campaign, EMPTY_STATS, 0, now, []);
 
     const channels = channelsOf(campaign);
     const members = await this.audiences
-      .get(selection.type)
+      .get(selection.kind)
       .page(tx, { ...selection, purpose: campaign.purpose, channels }, cursor.afterId, this.options.chunkSize);
 
     const inbox: number[] = [];
@@ -215,6 +221,8 @@ export class CampaignFanOut {
           recipientId: member.id,
           channel: 'email',
           dedupeKey: campaignDedupeKey(campaign.id, 'email', selection.type, member.id),
+          // The group the person was selected in: the send-time check asks the same one (a rank change in between is no new audience).
+          audience: audienceOfKind(selection.kind),
         });
       }
       if (plan.inApp || plan.email) reached += 1;
@@ -235,10 +243,10 @@ export class CampaignFanOut {
 
     const last = members[members.length - 1];
     let next: FanOutCursor | undefined =
-      members.length >= this.options.chunkSize && last ? { type: selection.type, afterId: last.id } : undefined;
+      members.length >= this.options.chunkSize && last ? { kind: selection.kind, afterId: last.id } : undefined;
     if (!next) {
       const following = selections[index + 1];
-      next = following ? { type: following.type, afterId: 0 } : undefined;
+      next = following ? { kind: following.kind, afterId: 0 } : undefined;
     }
     const rows = created.map((row) => ({ id: row.id, channel: 'email' as const }));
     if (!next) return { ...(await this.finish(tx, campaign, stats, reached, now, rows)), inApp };

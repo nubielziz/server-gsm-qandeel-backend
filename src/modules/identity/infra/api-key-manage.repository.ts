@@ -163,13 +163,61 @@ export async function revokeKeyRow(db: DbExecutor, id: number, now: Date): Promi
 }
 
 /**
- * Reads a merchant's name and whether it exists.
+ * Revokes every key of an account that is not revoked yet.
+ *
+ * Why: an account that leaves the merchant kind (a rank change) or is erased keeps no key, and a later change back never restores one
+ * (decision 064). The caller holds the account row; this function never takes the advisory lock `api-keys:<accountId>` (the two key
+ * creations take it before the row, so taking it after would invite a cycle).
+ *
+ * Side effects: sets `api_keys.revoked_at` and `updated_at`; a key that was revoked earlier keeps its own time.
+ *
+ * @param db the caller's transaction
+ * @param clientId the account id (`api_keys.client_id` already names the account)
+ * @param now the time to write (the injected clock's)
+ * @returns how many keys were revoked
+ */
+export async function revokeLiveKeysOfClient(db: DbExecutor, clientId: number, now: Date): Promise<number> {
+  const rows = await db
+    .update(apiKeys)
+    .set({ revokedAt: now, updatedAt: sql`now()` })
+    .where(and(eq(apiKeys.clientId, clientId), isNull(apiKeys.revokedAt)))
+    .returning({ id: apiKeys.id });
+  return rows.length;
+}
+
+/**
+ * Reads an account's name and whether it exists.
  *
  * @param db the database or a transaction
- * @param clientId the merchant id
- * @returns the name, or `undefined` when there is no such merchant
+ * @param clientId the account id (a merchant or any other rank: staff read the keys an account had)
+ * @returns the name, or `undefined` when there is no such account
  */
-export async function merchantNameOf(db: DbExecutor, clientId: number): Promise<string | undefined> {
+export async function accountNameOf(db: DbExecutor, clientId: number): Promise<string | undefined> {
   const [row] = await db.select({ name: clients.name }).from(clients).where(eq(clients.id, clientId)).limit(1);
   return row?.name;
+}
+
+/** The two marks of an account that stop it handing out machine credentials: a password or an email address that staff set. */
+export interface MachineHoldFlags {
+  readonly passwordSetByStaff: boolean;
+  readonly emailSetByStaff: boolean;
+}
+
+/**
+ * Reads the two holds on an account's machine credentials.
+ *
+ * Why: `MachineCredentialHold` judges them on the account itself, never on the session's cached copy (decision 018); the caller has the
+ * account row locked, so the read is the state its decision is made on.
+ *
+ * @param db the database or a transaction
+ * @param clientId the account id
+ * @returns the flags, or `undefined` when there is no such account
+ */
+export async function machineHoldOf(db: DbExecutor, clientId: number): Promise<MachineHoldFlags | undefined> {
+  const [row] = await db
+    .select({ passwordSetByStaff: clients.passwordSetByStaff, emailSetByStaff: clients.emailSetByStaff })
+    .from(clients)
+    .where(eq(clients.id, clientId))
+    .limit(1);
+  return row;
 }

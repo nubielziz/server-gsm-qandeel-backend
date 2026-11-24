@@ -1,5 +1,6 @@
-// Seeder of billing (stage 8): the demo's four payment gateways, its 54 wallet top-ups with an invoice each (linked to the deposit
-// journals the money seed replayed: `ledger_transactions.ref_type = 'payment'`, `ref_id` = the payment id) and three manual invoices.
+// Seeder of billing (stage 8): the demo's four payment gateways, its 54 merchant wallet top-ups with an invoice each (linked to the deposit
+// journals the money seed replayed: `ledger_transactions.ref_type = 'payment'`, `ref_id` = the payment id) and three manual invoices. A
+// merchant is an account of a merchant rank (decision 064), so each invoice and payment names its account.
 // Mapped as the frontend mocks map them: src/features/settings/mocks/seedPayments.ts (gateways), src/features/finance/mocks/
 // paymentStore.ts and invoices.ts.
 import type { AppConfig } from '../../src/config';
@@ -11,6 +12,7 @@ import {
 } from '../../src/modules/money/application/gateway-credentials';
 import { topupMethodOf } from '../../src/modules/money/domain/gateway-rules';
 import { invoiceNumber } from '../../src/modules/money/domain/invoice-rules';
+import { accountIdOfDemo } from './account-ids';
 import { type DemoSeed, demoNumericId, demoRows, toDate, toMoney } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
 
@@ -114,7 +116,7 @@ export async function seedBilling(db: DbExecutor, demo: DemoSeed, config?: AppCo
   for (const demoPayment of demoRows<DemoPayment>(demo, 'payments')) {
     const merchant = merchants.get(demoPayment.mid);
     const gateway = gatewayOf.get(methodGateway[demoPayment.method]);
-    if (!merchant || !gateway || !present.has(demoNumericId(merchant.id))) {
+    if (!merchant || !gateway || !present.has(accountIdOfDemo(merchant.id))) {
       skipped++;
       continue;
     }
@@ -123,10 +125,15 @@ export async function seedBilling(db: DbExecutor, demo: DemoSeed, config?: AppCo
     const created = toDate(demoPayment.created)!;
     const reviewedAt = toDate(demoPayment.reviewedAt);
     const approved = demoPayment.status === 'approved';
+    const accountId = accountIdOfDemo(merchant.id);
     invoiceRows.push({
       id: invoiceId,
       number: invoiceNumber(created.getUTCFullYear(), invoiceId),
-      clientId: demoNumericId(merchant.id),
+      accountId,
+      // A merchant top-up fills the merchant wallet (the kind is fixed when the invoice is made) and repeats its account in the old
+      // column for the readers of the previous release (`invoices_client_account_check`).
+      walletKind: 'client_wallet',
+      legacyClientId: accountId,
       kind: 'topup',
       amount: toMoney(demoPayment.gross),
       fee: toMoney(demoPayment.fee),
@@ -146,6 +153,7 @@ export async function seedBilling(db: DbExecutor, demo: DemoSeed, config?: AppCo
     paymentRows.push({
       id,
       invoiceId,
+      accountId,
       purpose: 'topup',
       gatewayId: gateway.id,
       gatewayTxnId: demoPayment.ref || null,
@@ -174,13 +182,17 @@ export async function seedBilling(db: DbExecutor, demo: DemoSeed, config?: AppCo
   ];
   manual.forEach((spec, index) => {
     const merchant = merchants.get(spec.mid);
-    if (!merchant || !present.has(demoNumericId(merchant.id))) return;
+    if (!merchant || !present.has(accountIdOfDemo(merchant.id))) return;
     const id = nextInvoice + index;
     const created = new Date(demo.now - spec.days * DAY_MS);
+    const accountId = accountIdOfDemo(merchant.id);
     invoiceRows.push({
       id,
       number: invoiceNumber(created.getUTCFullYear(), id),
-      clientId: demoNumericId(merchant.id),
+      accountId,
+      // A manual invoice is always a merchant's (`invoices_wallet_kind_check`).
+      walletKind: 'client_wallet',
+      legacyClientId: accountId,
       kind: 'manual',
       amount: toMoney(spec.amount),
       fee: toMoney(0),

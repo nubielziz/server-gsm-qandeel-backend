@@ -1,7 +1,7 @@
-// The merchant audience of notification campaigns (identity module, feature 23, plan section 5.3): merchants by status, group and
-// country, plus listed people; the email flag is the SQL twin of `choiceFor` for `broadcast.announcement`.
+// The merchant audience of notification campaigns (identity module, feature 23, plan section 5.3): the accounts that hold a merchant rank, by rank
+// and country, plus listed people of that kind; the email flag is the SQL twin of `choiceFor` for `broadcast.announcement`.
 import { Injectable } from '@nestjs/common';
-import { type SQL, and, asc, gt, inArray, notInArray, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, eq, gt, inArray, notInArray, or, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import {
   type AudienceCounts,
@@ -33,10 +33,18 @@ const FLAGS: AudienceFlagsSql = {
 };
 
 /**
+ * True for an account whose rank is a merchant rank: the stored kind `b2b` (the SQL twin of `rankKindOf`: only `b2b` gives merchant rights,
+ * every other kind, a kind this code has never heard of included, is a retail rank).
+ */
+const MERCHANT_RANK = sql`exists (select 1 from client_groups grp where grp.id = ${clients.groupId} and grp.kind = 'b2b')`;
+
+/**
  * The condition of the merchant audience.
  *
- * Why: plan 5.1: a listed merchant counts when `active` or `pending`; the segment takes its own statuses (default `active`), groups
- * and countries; suspended merchants are never in; excluded people are removed last.
+ * Why: decision 064 and plan 5.1: a merchant is an account that holds a merchant rank, and only an `active` one is reached (the SQL twin of
+ * `canAct`; a suspended or blocked account and an erased one never are, and the old `pending` status no longer exists, so a stored
+ * status filter changes nothing). The segment takes its ranks and countries; a person added by hand counts when it holds a merchant
+ * rank (an account of another rank is the retail audience's, so nobody is reached twice); excluded people are removed last.
  *
  * @param query the selection
  * @returns a condition over `clients`
@@ -47,7 +55,7 @@ export function merchantAudienceSql(query: AudienceQuery): SQL {
   if (segment !== undefined) {
     parts.push(
       and(
-        inArray(clients.status, segment.statuses ?? ['active']),
+        sql`true`,
         segment.groupIds ? inArray(clients.groupId, segment.groupIds) : undefined,
         segment.countries ? inArray(clients.country, segment.countries) : undefined,
       )!,
@@ -56,20 +64,22 @@ export function merchantAudienceSql(query: AudienceQuery): SQL {
   if (query.include.length > 0) parts.push(inArray(clients.id, [...query.include]));
   const selected = parts.length === 0 ? sql`false` : (or(...parts) ?? sql`false`);
   return and(
-    inArray(clients.status, ['active', 'pending']),
+    eq(clients.status, 'active'),
+    MERCHANT_RANK,
     selected,
     query.exclude.length > 0 ? notInArray(clients.id, [...query.exclude]) : undefined,
   )!;
 }
 
 /**
- * Selects and counts merchants for campaigns.
+ * Selects and counts merchant-rank accounts for campaigns.
  *
- * Why: identity owns `clients`; platform reaches the table only through this provider (decision 032).
+ * Why: identity owns `clients`; platform reaches the table only through this provider (decision 032). The class keeps its name; it
+ * serves the `merchant` group of an audience.
  */
 @Injectable()
 export class MerchantAudience implements AudienceProvider {
-  readonly type = 'client' as const;
+  readonly kind = 'merchant' as const;
 
   /**
    * Counts the audience.
@@ -114,7 +124,7 @@ export class MerchantAudience implements AudienceProvider {
    * @param db the pool or a transaction
    * @param purpose the campaign's purpose
    * @param id the merchant
-   * @returns the member, or `undefined` when gone or suspended
+   * @returns the member, or `undefined` when gone, not active, or no longer holding a merchant rank
    */
   async member(db: DbExecutor, purpose: NotificationCampaignPurpose, id: number): Promise<AudienceMember | undefined> {
     const [member] = await this.page(db, memberQuery(purpose, id), 0, 1);

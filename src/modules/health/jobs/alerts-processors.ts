@@ -48,7 +48,7 @@ export class LedgerIntegrityProcessor implements JobProcessor<HealthJobData, voi
    * Handles one nightly tick or manual run.
    *
    * @param job the BullMQ job
-   * @returns nothing; the four checks and their findings are in the run's `result` (MISMATCHES B99)
+   * @returns nothing; the five checks and their findings are in the run's `result` (MISMATCHES B99)
    */
   async process(job: Job<HealthJobData, void, string>): Promise<void> {
     const run = await this.runs.run(optionsOf(INTEGRITY_JOB, job.data), async () => {

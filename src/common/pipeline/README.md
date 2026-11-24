@@ -9,7 +9,7 @@ hooks, cheap and independent of the Nest guards, and they run in one explicit or
 | 1 | `ip-rules`                | identity: `src/modules/identity/security/ip-rules/`        | `403 IP_NOT_ALLOWED`                                 |
 | 2 | `maintenance`             | platform: `src/modules/platform/maintenance/`              | `503 MAINTENANCE` (Dhru envelope on `/api/index.php`) |
 | 3 | `rate-limit`              | rate-limit infrastructure: `src/infra/rate-limit/public-ip-limit.hook.ts` | `429 RATE_LIMITED` with `Retry-After` |
-| 4 | `upload-session`          | identity: `src/modules/identity/security/upload-session.hook.ts` | `401 UNAUTHORIZED` (no live session), `429 RATE_LIMITED` (the failed-lookup budget of the address) |
+| 4 | `upload-session`          | identity: `src/modules/identity/security/upload-session.hook.ts` | `401 UNAUTHORIZED` (no live session), `403 RANK_NOT_ALLOWED` (a rank the route does not serve), `429 RATE_LIMITED` (the failed-lookup budget of the address) |
 
 Authentication, CSRF and permissions are Nest guards and run after these.
 
@@ -30,8 +30,9 @@ Authentication, CSRF and permissions are Nest guards and run after these.
   before both (`registerMultipartBodies`, `src/common/multipart.ts`, feature 7a) on the routes that take one (`/api/index.php`,
   `/client/files` and the other upload routes; `415` elsewhere), so the `action` of a multipart Dhru call is visible to maintenance too.
 - The fourth stage (decision 053) reads no body: a multipart body of a route that signs in with a session cookie (the portal upload, the
-  customer receipt upload, the three console uploads) is read only when the request carries a live session of the route's audience;
-  `401` otherwise. The full checks (suspension, stage, approval, CSRF, permission) stay in the access guard.
+  shop's receipt and ticket uploads, the three console uploads) is read only when the request carries a live session of the route's audience
+  and, for a session route, a rank the route serves (the same rule as the access guard: `403 RANK_NOT_ALLOWED` before any body is read);
+  `401` otherwise. The full checks (suspension, stage, rank, CSRF, permission) stay in the access guard.
 - A stage without a handler is skipped; `onApplicationBootstrap` logs a warning naming it (a test app without Redis has none).
   The real application has all four, which `test/integration/infra/pipeline-hooks.test.ts` checks.
 

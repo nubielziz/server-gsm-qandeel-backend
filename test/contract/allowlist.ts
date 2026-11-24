@@ -2,16 +2,6 @@
 import type { AllowlistEntry } from './lib/allowlist-check';
 
 /**
- * The reason of the four B148 entries below (`Customer.currency` may be null).
- *
- * Why: `customers.currency` is a foreign key to `currencies`, so a code that is not in the table cannot be stored. The wire id is null
- * only when the column itself is null, or when the USD row the country rule falls back to is missing (lead resolution b2c-1).
- */
-const CUSTOMER_CURRENCY_NULL =
-  'The console types Customer.currency as an id; it is null only for a customer whose currency column is null, or when the USD row ' +
-  'of the currencies table is missing (customers.currency is a foreign key), as lead resolution b2c-1 says.';
-
-/**
  * Deviations the contract tests accept, each tied to a decision in docs/contract/MISMATCHES.md.
  *
  * Why: the frontend decides the wire format and the map decides the rules; where the lead chose otherwise the choice
@@ -155,38 +145,6 @@ export const ALLOWLIST: readonly AllowlistEntry[] = [
       'ticket lists, so it never sends it against this one.',
   },
   {
-    route: 'GET /admin/customers',
-    part: 'response',
-    path: 'data[].currency',
-    rule: 'nullable',
-    mismatch: 'B148',
-    reason: CUSTOMER_CURRENCY_NULL,
-  },
-  {
-    route: 'GET /admin/customers/:id',
-    part: 'response',
-    path: 'currency',
-    rule: 'nullable',
-    mismatch: 'B148',
-    reason: CUSTOMER_CURRENCY_NULL,
-  },
-  {
-    route: 'POST /admin/customers',
-    part: 'response',
-    path: 'currency',
-    rule: 'nullable',
-    mismatch: 'B148',
-    reason: CUSTOMER_CURRENCY_NULL,
-  },
-  {
-    route: 'PATCH /admin/customers/:id',
-    part: 'response',
-    path: 'currency',
-    rule: 'nullable',
-    mismatch: 'B148',
-    reason: CUSTOMER_CURRENCY_NULL,
-  },
-  {
     route: 'GET /admin/content-pages',
     part: 'fixture',
     path: 'data[]',
@@ -250,5 +208,44 @@ export const ALLOWLIST: readonly AllowlistEntry[] = [
     reason:
       "The drafts the generator answers are admin content page rows and carry `canonicalUrl` (ANSWERS storefront Q8); the console's " +
       'ContentPage type does not declare it yet, so its mock rows, which the harvested fixture is made of, lack it.',
+  },
+  {
+    route: 'GET /admin/audit-logs',
+    part: 'fixture',
+    path: 'data[]',
+    rule: 'fixture',
+    mismatch: 'B257',
+    reason:
+      'Decision 064: every audit row carries `account`, the account it is about or null. The console types the field as optional and ' +
+      'its mock leaves it out of the rows that are about no account, so the harvested fixture lacks it there.',
+  },
+  {
+    route: 'GET /admin/audit-logs/:id',
+    part: 'fixture',
+    path: '',
+    rule: 'fixture',
+    mismatch: 'B257',
+    reason:
+      'Same as GET /admin/audit-logs: the mock leaves `account` out of a row that is about no account (decision 064).',
+  },
+  {
+    route: 'GET /admin/clients/:id/privacy',
+    part: 'fixture',
+    path: 'latestConsents.records[].document',
+    rule: 'fixture',
+    mismatch: 'B256',
+    reason:
+      'Decision 064: the consent document is an empty string when the purpose has no legal document, and the console reads an empty ' +
+      'string as none. The console still types the field as nullable and its mock answers null for the withdrawal waiver.',
+  },
+  {
+    route: 'GET /admin/clients/:id/privacy',
+    part: 'fixture',
+    path: 'latestConsents',
+    rule: 'fixture',
+    mismatch: 'B256',
+    reason:
+      'The same null document seen from the nullable object around it: the record list is not the object the schema describes, and it ' +
+      'is not null either (decision 064).',
   },
 ];

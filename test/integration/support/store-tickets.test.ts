@@ -4,11 +4,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { CacheKeys } from '@src/infra/cache';
-import { schema as s } from '@src/infra/db';
+import { type Database, schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
 import { TicketEvents } from '@src/modules/support/application/ticket-events';
 import type { TicketCategory, TicketPriority } from '@src/modules/support/db/schema';
 import { PROVEN_TICKET_NOTE, UNPROVEN_TICKET_NOTE } from '@src/modules/support/domain/requester-proof';
+import { ensureRetailGroup, makeAccount } from '../../support/accounts';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
@@ -46,6 +47,8 @@ beforeEach(async () => {
   // The tests open many tickets from the same few addresses: the 3-an-hour counters of the Redis outlive them.
   await clearTicketEmailLimits(t);
   const { db } = await testDb();
+  // the reset removed the one retail rank that the migrations insert; the public form's guests hold it
+  await ensureRetailGroup(db);
   await seedSupportTemplates(db);
   mailbox(t).reset();
 });
@@ -106,6 +109,9 @@ async function trackedOrder(token = TRACKING_TOKEN, email = 'victor@mail.example
   return { db, customer, order };
 }
 
+/** The guest rows of the account table: the accounts without a login that the public form and the checkouts make. */
+const guestRows = (db: Database) => db.select().from(s.clients).where(eq(s.clients.hasAccount, false));
+
 describe('POST /store/v1/tickets', () => {
   it('opens a ticket for a first-time visitor: a guest customer, the category’s priority and target, the first message, a receipt', async () => {
     const res = await open({ ...VALID, name: ' Victor ', category: 'failed_unlock' });
@@ -135,7 +141,7 @@ describe('POST /store/v1/tickets', () => {
     ]);
 
     const { db } = await testDb();
-    const [customer] = await db.select().from(s.customers);
+    const [customer] = await guestRows(db);
     expect(customer).toMatchObject({
       email: 'victor@mail.example',
       name: 'Victor',
@@ -147,7 +153,7 @@ describe('POST /store/v1/tickets', () => {
     const rowToken = tokenOf(row)!;
     expect(rowToken).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(row).toMatchObject({
-      requesterType: 'customer',
+      requesterType: 'account',
       requesterId: customer!.id,
       channel: 'web',
       status: 'new',
@@ -168,7 +174,7 @@ describe('POST /store/v1/tickets', () => {
     const [notification] = await notificationRows(db);
     expect(notification).toMatchObject({
       event: 'support.ticket_received',
-      recipientType: 'customer',
+      recipientType: 'account',
       channel: 'email',
       status: 'sent',
     });
@@ -187,13 +193,13 @@ describe('POST /store/v1/tickets', () => {
     const known = await insertCustomer(db, { email: 'victor@mail.example', name: 'Victor Hale' });
     await open(VALID);
     await open({ ...VALID, email: 'VICTOR@mail.example', name: 'Someone else' });
-    expect(await db.select().from(s.customers)).toHaveLength(1);
+    expect(await guestRows(db)).toHaveLength(1);
     const tickets = await db.select().from(s.supportTickets);
     expect(tickets).toHaveLength(2);
     expect(new Set(tickets.map((ticket) => ticket.requesterId))).toEqual(new Set([known.id]));
     expect(new Set(tickets.map(tokenOf)).size).toBe(2);
     // The name a stranger types never renames the customer.
-    expect((await db.select().from(s.customers))[0]!.name).toBe('Victor Hale');
+    expect((await guestRows(db))[0]!.name).toBe('Victor Hale');
   });
 
   it('makes one guest for two first tickets from one new address at once', async () => {
@@ -203,8 +209,35 @@ describe('POST /store/v1/tickets', () => {
     ]);
     expect(results.map((res) => res.statusCode)).toEqual([201, 201]);
     const { db } = await testDb();
-    expect(await db.select().from(s.customers)).toHaveLength(1);
+    expect(await guestRows(db)).toHaveLength(1);
     expect(await db.select().from(s.supportTickets)).toHaveLength(2);
+  });
+
+  it('files a ticket typed with a login account’s address under that account, of either rank, unproven, and makes no guest row (decision 064)', async () => {
+    const { db } = await testDb();
+    const merchant = await makeAccount({ db, rank: 'merchant', email: 'zain@mail.example' });
+    const retail = await makeAccount({ db, rank: 'retail', email: 'buyer@mail.example' });
+    for (const holder of [merchant, retail]) {
+      const res = await open({ ...VALID, email: holder.email });
+      expect(res.statusCode).toBe(201);
+      expect(body(res)).not.toHaveProperty('token');
+      const row = await ticketByNumber(body(res).number);
+      expect(row).toMatchObject({ requesterType: 'account', requesterId: holder.id });
+      // The address is not proven until the mailed link is used; staff are told by a note at the start of the thread.
+      expect(row.requesterProvenAt).toBeNull();
+      expect((await threadOf(row.id)).map((message) => [message.authorType, message.authorId])).toEqual([
+        ['account', holder.id],
+        ['system', null],
+      ]);
+    }
+    expect(await guestRows(db)).toHaveLength(0);
+    // The receipt goes to the account's address, whatever its rank (the merchant text for the merchant rank): its link proves the address.
+    expect(await sendTicketMails(t)).toEqual([{ sent: true }, { sent: true }]);
+    expect(
+      mailbox(t)
+        .sent.map((mail) => mail.to)
+        .sort(),
+    ).toEqual(['buyer@mail.example', 'zain@mail.example']);
   });
 
   it('keeps the token out of the answer on the email path, for a known address and a new one alike, and the receipt carries the link', async () => {
@@ -289,7 +322,7 @@ describe('POST /store/v1/tickets', () => {
     expect(row).toMatchObject({ orderId: order.id, requesterId: customer.id, priority: 'normal' });
     // delay is normal: due 8 hours after the message.
     expect(row.slaDueAt?.toISOString()).toBe('2026-11-08T20:00:00.000Z');
-    expect(await db.select().from(s.customers)).toHaveLength(1);
+    expect(await guestRows(db)).toHaveLength(1);
     await sendTicketMails(t);
     expect(mailbox(t).sent[0]!.to).toBe('victor@mail.example');
   });
@@ -355,7 +388,7 @@ describe('POST /store/v1/tickets', () => {
     }
     const { db } = await testDb();
     expect(await db.select().from(s.supportTickets)).toHaveLength(0);
-    expect(await db.select().from(s.customers)).toHaveLength(0);
+    expect(await guestRows(db)).toHaveLength(0);
   });
 
   it('lets one email address open 3 tickets an hour in any case, then answers 429 RATE_LIMITED with Retry-After and writes nothing', async () => {
@@ -374,7 +407,7 @@ describe('POST /store/v1/tickets', () => {
     expect(tickets).toHaveLength(3);
     expect(tickets.map((ticket) => ticket.subject)).not.toContain('Win a prize');
     expect(await ticketMailEvents(db)).toHaveLength(3);
-    expect(await db.select().from(s.customers)).toHaveLength(1);
+    expect(await guestRows(db)).toHaveLength(1);
 
     // Another address has its own budget, and the counter key holds no address.
     expect((await open({ ...VALID, email: 'other@mail.example' })).statusCode).toBe(201);
@@ -411,9 +444,14 @@ describe('POST /store/v1/tickets', () => {
   it('refuses the order link of an anonymized customer like an unknown one, before anything is counted or written', async () => {
     const { db, customer } = await trackedOrder(TRACKING_TOKEN, 'gone@mail.example');
     await db
-      .update(s.customers)
-      .set({ status: 'anonymized', name: 'Deleted customer', email: 'deleted-9@redacted.invalid' })
-      .where(eq(s.customers.id, customer.id));
+      .update(s.clients)
+      .set({
+        status: 'anonymized',
+        anonymizedAt: new Date(NOW),
+        name: 'Deleted customer',
+        email: 'deleted-9@redacted.invalid',
+      })
+      .where(eq(s.clients.id, customer.id));
     for (let n = 0; n < 4; n += 1) {
       const res = await open({ subject: 'Hi', message: 'Hello', orderToken: TRACKING_TOKEN });
       expect(res.statusCode).toBe(422);
@@ -462,9 +500,14 @@ describe('POST /store/v1/tickets', () => {
     expect(res.statusCode).toBe(201);
     expect(body(res).orderId).toBe(order.id);
     await db
-      .update(s.customers)
-      .set({ status: 'anonymized', name: 'Deleted customer', email: 'deleted-1@redacted.invalid' })
-      .where(eq(s.customers.id, customer.id));
+      .update(s.clients)
+      .set({
+        status: 'anonymized',
+        anonymizedAt: new Date(NOW),
+        name: 'Deleted customer',
+        email: 'deleted-1@redacted.invalid',
+      })
+      .where(eq(s.clients.id, customer.id));
     // The job re-reads the customer: an anonymized one has no address, so nothing is sent.
     expect(await ticketMailEvents(db)).toHaveLength(1);
     expect(await sendTicketMails(t)).toEqual([{ sent: false, skipped: 'recipient_gone' }]);
@@ -593,10 +636,10 @@ describe('POST /store/v1/tickets/:token/messages', () => {
     // The two staff notes of decision 053 sit between the customer's two messages: the first at the opening, the second when this write
     // proved the address.
     expect(messages.map((message) => [message.authorType, message.authorId, message.isInternal])).toEqual([
-      ['customer', row.requesterId, false],
+      ['account', row.requesterId, false],
       ['system', null, true],
       ['system', null, true],
-      ['customer', row.requesterId, false],
+      ['account', row.requesterId, false],
     ]);
   });
 
@@ -692,7 +735,7 @@ describe('the ticket token', () => {
   it('never opens a ticket that has no token (a merchant’s ticket)', async () => {
     const { db } = await testDb();
     const merchant = await insertClient(db);
-    await insertSupportTicket(db, { requesterType: 'client', requesterId: merchant.id, token: null });
+    await insertSupportTicket(db, { requesterType: 'account', requesterId: merchant.id, token: null });
     expect((await show('0000000000000000000000')).statusCode).toBe(404);
   });
 });
@@ -720,7 +763,7 @@ describe('the address of a ticket opened with a typed email (decision 053)', () 
         m.body,
       ]),
     ).toEqual([
-      ['customer', false, VALID.message],
+      ['account', false, VALID.message],
       ['system', true, UNPROVEN_TICKET_NOTE],
     ]);
     // The first message stays the requester's newest, and the note is not a message the customer sees.
@@ -769,7 +812,7 @@ describe('the address of a ticket opened with a typed email (decision 053)', () 
     expect(refused.statusCode).toBe(409);
     expect((await ticketRow(opened.token)).requesterProvenAt).toBeNull();
     expect((await threadOf((await ticketRow(opened.token)).id)).map((message) => message.authorType)).toEqual([
-      'customer',
+      'account',
       'system',
     ]);
     expect((await show(opened.token)).statusCode).toBe(200);
@@ -782,7 +825,7 @@ describe('the address of a ticket opened with a typed email (decision 053)', () 
     expect(res.statusCode).toBe(201);
     const row = await ticketByNumber(body(res).number);
     expect(row.requesterProvenAt?.toISOString()).toBe(NOW);
-    expect((await threadOf(row.id)).map((message) => message.authorType)).toEqual(['customer']);
+    expect((await threadOf(row.id)).map((message) => message.authorType)).toEqual(['account']);
   });
 
   it('leaves a ticket that was proven when it was made untouched: no write, no note', async () => {

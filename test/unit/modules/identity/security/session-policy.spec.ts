@@ -35,12 +35,12 @@ describe('SessionPolicy', () => {
       idleMs: 30 * MINUTE,
       pendingMs: 10 * MINUTE,
     });
-    expect(await p.limits('client')).toEqual({
+    // One limit for every account, whatever its rank (decision 064): 30 days absolute, 7 days idle.
+    expect(await p.limits('account')).toEqual({
       absoluteMs: 30 * 24 * 60 * MINUTE,
       idleMs: 7 * 24 * 60 * MINUTE,
       pendingMs: 10 * MINUTE,
     });
-    expect(await p.limits('customer')).toEqual(await p.limits('client'));
   });
 
   it("reads each subject's own settings", async () => {
@@ -48,13 +48,17 @@ describe('SessionPolicy', () => {
       [SESSION_SETTING_KEYS.staffAbsolute]: 60,
       [SESSION_SETTING_KEYS.staffIdle]: 5,
       [SESSION_SETTING_KEYS.clientAbsolute]: 120,
-      [SESSION_SETTING_KEYS.customerIdle]: 15,
+      [SESSION_SETTING_KEYS.clientIdle]: 15,
       [SESSION_SETTING_KEYS.pending]: 2,
     });
     expect(await p.limits('staff')).toEqual({ absoluteMs: 60 * MINUTE, idleMs: 5 * MINUTE, pendingMs: 2 * MINUTE });
-    expect((await p.limits('client')).absoluteMs).toBe(120 * MINUTE);
-    expect((await p.limits('client')).idleMs).toBe(SESSION_DEFAULT_MINUTES.clientIdle * MINUTE);
-    expect((await p.limits('customer')).idleMs).toBe(15 * MINUTE);
+    expect((await p.limits('account')).absoluteMs).toBe(120 * MINUTE);
+    expect((await p.limits('account')).idleMs).toBe(15 * MINUTE);
+  });
+
+  it('keeps the default of a setting that is not set, per limit', async () => {
+    const p = policy({ [SESSION_SETTING_KEYS.clientAbsolute]: 120 });
+    expect((await p.limits('account')).idleMs).toBe(SESSION_DEFAULT_MINUTES.clientIdle * MINUTE);
   });
 
   it('gives a sign-in step the pending time and a full session the absolute time', async () => {
@@ -75,6 +79,13 @@ describe('SessionPolicy', () => {
 
   it('names its settings with the sessions. prefix', () => {
     expect(Object.values(SESSION_SETTING_KEYS).every((key) => key.startsWith('sessions.'))).toBe(true);
-    expect(new Set(Object.values(SESSION_SETTING_KEYS)).size).toBe(7);
+    expect(new Set(Object.values(SESSION_SETTING_KEYS)).size).toBe(5);
+  });
+
+  it('has no settings of a customer subject: the two client settings serve every account (decision 064)', () => {
+    expect(Object.keys(SESSION_SETTING_KEYS).sort()).toEqual(
+      ['clientAbsolute', 'clientIdle', 'pending', 'staffAbsolute', 'staffIdle'].sort(),
+    );
+    expect(Object.keys(SESSION_DEFAULT_MINUTES).sort()).toEqual(Object.keys(SESSION_SETTING_KEYS).sort());
   });
 });

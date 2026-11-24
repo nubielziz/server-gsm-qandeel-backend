@@ -200,7 +200,8 @@ export const resolvePrice = defineRoute({
     'the winning rule), the group discount, then the optional `rounding` step. A client or group price is fixed and skips the ' +
     'rule, the discount and the rounding. `price` is the final price after the floor clamp; `rawPrice` the price before it; ' +
     '`floor` = `cost` (the effective cost) + `minProfit`; `clamped` says the price was raised to the floor. `otherGroups` prices ' +
-    'the same service for every merchant group without a client override. Archived services are `404`.',
+    'the same service for every merchant group without a client override. Archived services are `404`; an account of the retail ' +
+    'rank is `422` on `clientId` (code `retail_rank`): the shop prices it from the one retail rank, so there is nothing to resolve.',
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',

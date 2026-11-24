@@ -8,12 +8,12 @@ import { type FileReferences, auditedKindsOf, fileKindsOf } from './file-kinds';
 /**
  * Writes the audit rows for a staff member who opens a file, when the file is an identity document or a payment proof.
  *
- * Why: decision 047: who opened which identity document or payment proof is in the audit log of the merchant or the payment, whichever
+ * Why: decision 047: who opened which identity document or payment proof is in the audit log of the account or the payment, whichever
  * page the staff member opened the file from. The kinds come from {@link auditedKindsOf}, so every route applies the same rule. The rows are
  * written in a short transaction of their own, before the caller makes the link: no row, no link. Decision 061: the documents stored
  * before the document check was retired stay readable and stay audited; nothing creates a new one.
  *
- * Side effects: one `audit_logs` row per audited kind the file has (`merchant` for an identity document, `payment` for a payment proof);
+ * Side effects: one `audit_logs` row per audited kind the file has (`account` for an identity document, `payment` for a payment proof);
  * none for any other file.
  *
  * @param db the database
@@ -36,7 +36,8 @@ export async function auditStaffFileOpening(
       if (kind === 'identity_document' && found.identityDocument !== undefined) {
         await audit.record(tx, {
           action: 'opened an identity document of',
-          entityType: 'merchant',
+          // Decision 064: one word for every account (merchants kept their numbers, so the stored client id is the account id).
+          entityType: 'account',
           entityId: found.identityDocument.clientId,
           entityLabel: found.identityDocument.clientName,
           // The key keeps the name of the old rows, so the audit log reads the same before and after decision 061.

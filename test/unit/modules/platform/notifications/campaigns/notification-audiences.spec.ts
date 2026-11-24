@@ -1,5 +1,5 @@
-// Unit tests of the audience-provider registry and the shared SQL helpers (feature 23, plan section 5.2): one provider per type, a
-// clear error for a missing one, the "reachable" condition per channel set and the send-time query.
+// Unit tests of the audience-provider registry and the shared SQL helpers (feature 23, plan section 5.2): one provider per group of people
+// (staff, merchant ranks, retail), a clear error for a missing one, the "reachable" condition per channel set and the send-time query.
 import { describe, expect, it } from 'bun:test';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -12,8 +12,8 @@ import {
   reachableSql,
 } from '@src/modules/platform/notifications/campaigns/notification-audiences';
 
-const provider = (type: AudienceProvider['type']): AudienceProvider => ({
-  type,
+const provider = (kind: AudienceProvider['kind']): AudienceProvider => ({
+  kind,
   count: () => Promise.resolve(NO_COUNTS),
   page: () => Promise.resolve([]),
   member: () => Promise.resolve(undefined),
@@ -24,24 +24,34 @@ const text = (query: ReturnType<typeof reachableSql>) => dialect.sqlToQuery(quer
 const FLAGS = { inApp: sql`IN_APP`, email: sql`EMAIL` };
 
 describe('NotificationAudiences', () => {
-  it('registers one provider per type and finds it', () => {
+  it('registers one provider per group and finds it', () => {
     const audiences = new NotificationAudiences();
     const staff = provider('staff');
     audiences.register(staff);
-    audiences.register(provider('customer'));
+    audiences.register(provider('retail'));
     expect(audiences.get('staff')).toBe(staff);
-    expect(audiences.has('client')).toBe(false);
-    expect(audiences.types()).toEqual(['staff', 'customer']);
+    expect(audiences.has('merchant')).toBe(false);
+    expect(audiences.kinds()).toEqual(['staff', 'retail']);
   });
 
-  it('refuses a second provider of one type (a boot-time mistake)', () => {
+  it('refuses a second provider of one group (a boot-time mistake)', () => {
     const audiences = new NotificationAudiences();
-    audiences.register(provider('client'));
-    expect(() => audiences.register(provider('client'))).toThrow('already registered');
+    audiences.register(provider('merchant'));
+    expect(() => audiences.register(provider('merchant'))).toThrow('already registered');
   });
 
-  it('names the type when no provider is registered', () => {
-    expect(() => new NotificationAudiences().get('customer')).toThrow('"customer"');
+  it('holds the two account groups apart: merchant ranks and retail are two providers of one table', () => {
+    const audiences = new NotificationAudiences();
+    const merchants = provider('merchant');
+    const retail = provider('retail');
+    audiences.register(merchants);
+    audiences.register(retail);
+    expect(audiences.get('merchant')).toBe(merchants);
+    expect(audiences.get('retail')).toBe(retail);
+  });
+
+  it('names the group when no provider is registered', () => {
+    expect(() => new NotificationAudiences().get('retail')).toThrow('"retail"');
   });
 });
 

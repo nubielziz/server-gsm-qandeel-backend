@@ -1,4 +1,4 @@
-// Helpers for the support tests (feature 17): the default templates of the support events, customers, merchants, tickets and messages
+// Helpers for the support tests (feature 17): the default templates of the support events, accounts of both ranks, tickets and messages
 // inserted straight into the test database, and a staff console with the support permissions.
 import { eq } from 'drizzle-orm';
 import { CacheKeys } from '@src/infra/cache';
@@ -13,6 +13,7 @@ import {
 } from '@src/modules/support';
 import { type AdminApi, adminWith } from './admin-api';
 import type { TestApp } from './app';
+import { makeAccount } from './accounts';
 import { insertMerchant } from './auth';
 import { installTemplates, seedDefaultTemplates } from './notifications';
 
@@ -29,31 +30,31 @@ export async function seedSupportTemplates(db: Database): Promise<void> {
 let customers = 0;
 
 /**
- * Inserts a customer with a unique email.
+ * Inserts a retail account with a unique email and no login (a guest, as a support form or a checkout makes it).
  *
  * @param db the test database
  * @param values columns to override
- * @returns the stored customer
+ * @returns the stored account row
  */
-export async function insertCustomer(db: Database, values: Partial<typeof s.customers.$inferInsert> = {}) {
+export async function insertCustomer(db: Database, values: Partial<typeof s.clients.$inferInsert> = {}) {
   customers += 1;
-  const [row] = await db
-    .insert(s.customers)
-    .values({
-      email: `customer-${customers}-${crypto.randomUUID().slice(0, 6)}@mail.example`,
-      name: 'Sam Buyer',
-      ...values,
-    })
-    .returning();
-  return row!;
+  const made = await makeAccount({
+    db,
+    rank: 'retail',
+    guest: true,
+    email: `customer-${customers}-${crypto.randomUUID().slice(0, 6)}@mail.example`,
+    name: 'Sam Buyer',
+    ...values,
+  });
+  return made.row;
 }
 
 /**
- * Inserts a merchant (with its default group) and returns the stored row.
+ * Inserts an account of the merchant rank (with its rank) and returns the stored row.
  *
  * @param db the test database
  * @param values columns to override
- * @returns the merchant
+ * @returns the account
  */
 export async function insertClient(db: Database, values: Partial<typeof s.clients.$inferInsert> = {}) {
   const id = await insertMerchant(db, values);
@@ -64,7 +65,7 @@ export async function insertClient(db: Database, values: Partial<typeof s.client
 let tickets = 0;
 
 /**
- * Inserts a ticket straight into the table (a `new` ticket of a customer by default).
+ * Inserts a ticket straight into the table (a `new` ticket of an account by default).
  *
  * @param db the test database
  * @param values columns to override; `requesterId` is required
@@ -80,7 +81,7 @@ export async function insertSupportTicket(
     .values({
       number: `T-${9000 + tickets}`,
       subject: `Ticket ${tickets}`,
-      requesterType: 'customer',
+      requesterType: 'account',
       token: `tok-${crypto.randomUUID().replace(/-/g, '')}`,
       ...values,
     })

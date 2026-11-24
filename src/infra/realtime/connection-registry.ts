@@ -7,7 +7,7 @@ import type { CapKey } from './realtime.types';
 export interface RegisteredStream {
   /** Unique in the process; also picks the heartbeat bucket (`id % buckets`). */
   readonly id: number;
-  /** The audience keys the stream listens to (`u:customer:42`). */
+  /** The audience keys the stream listens to (`u:account:42`). */
   readonly keys: readonly string[];
   /** The caps the stream counts against (`session:91`, `ip:203.0.113.9`). */
   readonly caps: readonly CapKey[];
