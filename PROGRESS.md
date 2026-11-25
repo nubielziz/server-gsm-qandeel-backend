@@ -4,6 +4,20 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**Code-stock services and a service's own cost (2026-11-25, decision 069): merged, not released.** The owner sells gift-card codes
+they buy themselves. `services.stock_delivery` ("Delivered from code stock", migration `0070_code_stock`, backfilled true for services that
+hold any code that is not void): only such a service accepts a code import and only its orders take codes at placement (every path goes through
+`InventoryStock.claim`); before, every service could hold codes and every order tried the stock first. A stock service with an available code
+counts as supplied (shop publish, `supplyStates`, the `no_supplier` attention); with none and no usable supplier the publish reason is the new
+`out_of_stock`, and an automatic order waits for staff ("No codes in stock and no supplier: deliver it by hand."). A service's own cost
+(`services.cost`) is editable as `ownCost` on create and PATCH (`pricing:update`, cap 1e9, a create under the new floor refused like PATCH) with
+every consequence of a supplier cost change; `recomputeEffectiveCost` now locks its rows in id order first (a race with an ownCost PATCH is
+tested on two connections). Rows carry `stockDelivery`, `stockAvailable`, `ownCost`; `GET /admin/services` filters `stockDelivery`.
+Built by an Opus implementer (backend) beside a Sonnet one (console, its decision 027), each reviewed by an Opus reviewer, one fix round
+each; contract re-extracted against the console's main, fixtures harvested. **Checks:** typecheck, lint, format, English, routes, contract,
+OpenAPI, coverage; the whole suite run locally (its only failures were files run against the same test database at once, rerun alone: green).
+**Release order:** console, then backend.
+
 **Shop content trimmed (2026-11-25, decision 068): merged, not released.** On the owner's order the landing pages, the TAC catalogue's admin
 routes and the search tools of the console are retired; the search index status and "Rebuild index" stay. A content page is a static page or a
 blog post (`POST /admin/content-pages/generate` and the five landing kinds are gone); the four `/admin/tac-catalog` routes are gone (the table,

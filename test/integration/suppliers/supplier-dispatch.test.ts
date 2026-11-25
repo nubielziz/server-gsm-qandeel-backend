@@ -13,7 +13,7 @@ import { SupplierBusyError } from '@src/modules/suppliers/application/supplier-d
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
-import { insertService } from '../../support/catalog';
+import { insertService, markStockService } from '../../support/catalog';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { fundWallet } from '../../support/money';
 import {
@@ -300,6 +300,29 @@ describe('the choice of the supplier (user rule 9, B117 (6))', () => {
     });
     expect(fake.calls).toHaveLength(0);
     expect(await orderRow(world.db, orderId)).toMatchObject({ supplierId: null, dispatchState: 'needs_attention' });
+  });
+
+  it('an order of a service delivered from code stock with no usable supplier is to be delivered by hand (decision 069)', async () => {
+    await freshRoute({ supplier: { status: 'disabled' } });
+    await markStockService(world.db, serviceId);
+    // No code in stock: the placement sends the order the usual way, and the dispatch finds no supplier to take it.
+    const orderId = await place();
+    expect(await run(orderId)).toEqual({
+      status: 'needs_attention',
+      reason: 'No codes in stock and no supplier: deliver it by hand.',
+    });
+    expect(fake.calls).toHaveLength(0);
+    expect(await orderRow(world.db, orderId)).toMatchObject({ dispatchState: 'needs_attention', supplierId: null });
+  });
+
+  it('keeps the reason of a costlier supplier for an order of a stock service', async () => {
+    await freshRoute({ credit: '20.0000' });
+    await markStockService(world.db, serviceId);
+    const orderId = await place();
+    expect(await run(orderId)).toMatchObject({
+      status: 'needs_attention',
+      reason: expect.stringContaining('costs more than the price charged'),
+    });
   });
 
   it('with every supplier paused the order waits for attention, and a service no longer listed is skipped too', async () => {

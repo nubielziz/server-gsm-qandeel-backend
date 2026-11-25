@@ -504,7 +504,8 @@ export type PublishItemState = (typeof PUBLISH_ITEM_STATES)[number];
 /**
  * Why a publish row cannot be published now, in the order they are judged (the first that applies is the row's).
  *
- * Why: plan 31 section 3.2, the table of blocking reasons.
+ * Why: plan 31 section 3.2, the table of blocking reasons; `out_of_stock` (decision 069): an automatic service delivered from code
+ * stock that has no usable supplier and no available code.
  */
 export const PUBLISH_BLOCK_REASONS = [
   'already_listed',
@@ -513,6 +514,7 @@ export const PUBLISH_BLOCK_REASONS = [
   'b2b_only',
   'not_orderable',
   'supplier_unavailable',
+  'out_of_stock',
   'title_missing',
   'title_too_long',
   'price_missing',

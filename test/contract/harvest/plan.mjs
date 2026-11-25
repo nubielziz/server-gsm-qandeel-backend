@@ -172,6 +172,10 @@ export const OVERRIDES = {
   'POST /admin/notification-templates': { body: { event: 'order.completed', audience: 'staff' } },
   // Decision 064: "make an account" is for a guest only.
   'POST /admin/clients/:id/account': { candidates: { list: '/admin/clients', query: { hasAccount: false } } },
+  // Decision 069: only a code-stock service takes an import; pick one from the list's own filter.
+  'POST /admin/services/:id/inventory/import': {
+    candidates: { list: '/admin/services', query: { stockDelivery: true } },
+  },
   'POST /admin/payment-gateways': { body: { feePercent: '2.5000' } },
   'POST /admin/reply-templates': { body: { shortcut: '/harvest' } },
   'POST /admin/service-listings': (w) => ({

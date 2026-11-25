@@ -1,13 +1,14 @@
 // Integration tests of the storefront availability flag (feature 22, slice B): `in_stock` / `on_request` follows inventory imports, voids
-// and sales, respects fixed packs, and its SQL test (the filter) equals the domain rule.
+// and sales, respects fixed packs, counts only the codes of a service delivered from code stock (decision 069), and its SQL test (the
+// filter) equals the domain rule.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { DbService, schema as s } from '@src/infra/db';
-import { InventoryStock, StorefrontServices, coversSmallestOrder } from '@src/modules/catalog';
+import { InventoryStock, StorefrontServices, showsInStock } from '@src/modules/catalog';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
-import { insertInventoryCodes } from '../../support/catalog';
+import { insertInventoryCodes, markStockService } from '../../support/catalog';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertService } from '../../support/catalog';
 import { insertCustomerRow, insertStoreOrder, storefrontWorld } from '../../support/storefront';
@@ -47,6 +48,7 @@ describe('availability of a storefront card', () => {
     expect(await availabilityOf(world.icloud.slug)).toBe('on_request');
     expect(await inStockSlugs()).toEqual([]);
 
+    await markStockService(db, world.icloud.serviceId);
     const imported = await admin.post(`/admin/services/${world.icloud.serviceId}/inventory/import`, {
       codes: ['AAAAAA-111111', 'BBBBBB-222222'],
     });
@@ -64,6 +66,7 @@ describe('availability of a storefront card', () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
     // A real import, so the code can be decrypted when the order takes it.
+    await markStockService(db, world.icloud.serviceId);
     await admin.post(`/admin/services/${world.icloud.serviceId}/inventory/import`, { codes: ['ONLY-CODE-1'] });
     const [only] = (await db.select().from(s.inventoryCodes)).map((row) => row.id);
     await insertInventoryCodes(db, world.icloud.serviceId, 3, { status: 'reserved' });
@@ -97,7 +100,17 @@ describe('availability of a storefront card', () => {
     expect(await availabilityOf(world.att.slug)).toBe('in_stock');
   });
 
-  it('keeps the SQL test and the domain rule equal over minimum quantities, packs and stock levels', async () => {
+  it('never reads in_stock for a service that is not delivered from code stock, whatever codes it holds', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    await insertInventoryCodes(db, world.icloud.serviceId, 3);
+    expect(await availabilityOf(world.icloud.slug)).toBe('in_stock');
+    await markStockService(db, world.icloud.serviceId, false);
+    expect(await availabilityOf(world.icloud.slug)).toBe('on_request');
+    expect(await inStockSlugs()).toEqual([]);
+  });
+
+  it('keeps the SQL test and the domain rule equal over the stock flag, minimum quantities, packs and stock levels', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
     const services = t.app.get(StorefrontServices, { strict: false });
@@ -107,16 +120,21 @@ describe('availability of a storefront card', () => {
       { minQty: 1, maxQty: 30, qtyOptions: [10, 5, 20] },
       { minQty: 2, maxQty: 30, qtyOptions: [25] },
     ];
-    for (const [index, shape] of shapes.entries()) {
-      for (const stock of [0, 1, 3, 4, 5, 10, 11]) {
-        const serviceId = await insertService(db, world.icloud.categoryId, {
-          name: `Shape ${index}/${stock}`,
-          ...shape,
-        });
-        await insertInventoryCodes(db, serviceId, stock);
-        await insertInventoryCodes(db, serviceId, 2, { status: 'sold' });
-        const sql = (await services.inStockIds(db, [serviceId])).has(serviceId);
-        expect(sql, `shape ${index} stock ${stock}`).toBe(coversSmallestOrder(stock, shape.minQty, shape.qtyOptions));
+    for (const stockDelivery of [true, false]) {
+      for (const [index, shape] of shapes.entries()) {
+        for (const stock of [0, 1, 3, 4, 5, 10, 11]) {
+          const serviceId = await insertService(db, world.icloud.categoryId, {
+            name: `Shape ${String(stockDelivery)} ${index}/${stock}`,
+            ...shape,
+          });
+          await insertInventoryCodes(db, serviceId, stock);
+          await insertInventoryCodes(db, serviceId, 2, { status: 'sold' });
+          await markStockService(db, serviceId, stockDelivery);
+          const sql = (await services.inStockIds(db, [serviceId])).has(serviceId);
+          expect(sql, `${String(stockDelivery)} shape ${index} stock ${stock}`).toBe(
+            showsInStock(stockDelivery, stock, shape.minQty, shape.qtyOptions),
+          );
+        }
       }
     }
     expect((await services.inStockIds(db, [])).size).toBe(0);

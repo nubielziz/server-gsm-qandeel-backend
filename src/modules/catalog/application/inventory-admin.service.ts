@@ -9,6 +9,7 @@ import { AppError } from '../../../common/errors';
 import { AuditService } from '../../platform';
 import { CatalogSignals } from './catalog-signals';
 import type { InventoryCodeStatus } from '../db/schema';
+import { NOT_STOCK_SERVICE, NOT_STOCK_SERVICE_MESSAGE } from '../domain/code-stock';
 import {
   INVENTORY_CODE_AAD,
   batchRefOf,
@@ -56,7 +57,9 @@ export interface VoidResult {
  * batches and void unsold ones (RESOLUTIONS catalog-15, MISMATCHES B18, RULES services 9). Each code is AES-GCM encrypted
  * (decision 019, context `inventory_codes.code_enc`) with an HMAC of the code (`code_hash`, keyed with `LOOKUP_HASH_KEY`, decision 054, and domain-separated from every other
  * token) so duplicates are found without decrypting, and its last four characters in clear for the mask. The service row is
- * locked `FOR SHARE` during an import, so a delete (which decides between archive and delete from what refers to it) waits.
+ * locked `FOR SHARE` during an import, so a delete (which decides between archive and delete from what refers to it) waits. Only a
+ * service delivered from code stock takes codes (decision 069): its flag is read under that lock, so a change that turns it off
+ * (`FOR UPDATE`, refused while codes are available) either finished before or waits for the import.
  *
  * Side effects: inserts or updates `inventory_codes`, draws from `inventory_batch_ref_seq`, writes `audit_logs` (entity
  * `service`, or `inventory_code` for a void).
@@ -103,7 +106,8 @@ export class InventoryAdminService {
    * @param serviceId the service the codes belong to
    * @param input the pasted lines and an optional batch reference
    * @returns how many codes were stored, counted as duplicates and rejected, and the batch reference used
-   * @throws {AppError} `NOT_FOUND` (404: unknown or archived service)
+   * @throws {AppError} `NOT_FOUND` (404: unknown or archived service); `VALIDATION_FAILED` (422 on `codes`, code
+   *   `not_stock_service`: the service is not delivered from code stock, decision 069)
    */
   async import(
     staffId: number,
@@ -113,6 +117,12 @@ export class InventoryAdminService {
     return this.db.runInTransaction(async ({ tx }) => {
       const service = await lockLiveService(tx, serviceId, 'share');
       if (!service) throw new AppError('NOT_FOUND', { detail: 'No service has this id.' });
+      if (!service.stockDelivery) {
+        throw new AppError('VALIDATION_FAILED', {
+          detail: NOT_STOCK_SERVICE_MESSAGE,
+          errors: [{ field: 'codes', code: NOT_STOCK_SERVICE, message: NOT_STOCK_SERVICE_MESSAGE }],
+        });
+      }
       const prepared = prepareCodes(input.codes);
       const batchRef = input.batchRef ?? batchRefOf(await nextBatchNumber(tx));
 

@@ -1,6 +1,7 @@
 // The retail price follow pass (feature 31 slice B5, decision 040, plan 31 sections 3.4, 5.4, 6.4, 6.5 and 8.3): the table of 3.4 against
 // the database, the life of a proposal, the routes that list and resolve it, the pass against everything that runs beside it (a typed
-// price, a rule edit or delete, a supplier sync, a publish run, a second pass), its scheduling, the hourly message and `job_runs`.
+// price, a rule edit or delete, a supplier sync, a publish run, a second pass), its scheduling, the hourly message and `job_runs`; and an
+// own cost staff type (decision 069), which a following price follows like a supplier cost change.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { AppModule } from '@src/app.module';
@@ -2107,5 +2108,43 @@ describe('RetailPrices.set against a proposal', () => {
     expect(row).toMatchObject({ resolution: 'superseded', resolvedBy: null });
     expect(row!.resolvedAt).toEqual(clock.now());
     expect(await followOf(service.id)).toBeUndefined();
+  });
+});
+
+describe('an own cost typed by staff (decision 069)', () => {
+  it('moves a following shop price like a supplier cost change, for a service with no supplier', async () => {
+    const w = await world();
+    // A gift card the owner holds: no supplier link, so its own cost is the cost the rule reads.
+    const id = await insertService(db, w.categoryId, {
+      name: 'iTunes 10 USD',
+      cost: '10.0000',
+      effectiveCost: '10.0000',
+      basePrice: '5.0000',
+      minProfit: null,
+    });
+    await startFollowing(id);
+    expect(await retailOf(w, id)).toBe('13.9900');
+    clock.advance(MINUTE);
+    const before = await catalogVersionOf(t);
+
+    const res = await admin.patch(`/admin/services/${id}`, { ownCost: '12.0000' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ownCost: '12.0000', cost: '12.0000', costChangedFrom: '10.0000' });
+    // The version moved after the commit, which asks for a pass (RetailFollowScheduler), as after a supplier sync.
+    expect(await catalogVersionOf(t)).not.toBe(before);
+
+    expect(await pass()).toMatchObject({ checked: 1, candidates: 1, followed: 1, proposed: 0 });
+    expect(await retailOf(w, id)).toBe('15.9900');
+    expect(await changes(id)).toEqual([
+      expect.objectContaining({
+        kind: 'followed',
+        reason: 'cost_changed',
+        oldPrice: '13.9900',
+        newPrice: '15.9900',
+        oldCost: '10.0000',
+        newCost: '12.0000',
+      }),
+    ]);
+    expect(await followOf(id)).toMatchObject({ appliedPrice: '15.9900', appliedCost: '12.0000' });
   });
 });

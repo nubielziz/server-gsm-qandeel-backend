@@ -12,6 +12,7 @@ import {
   isListedSql,
   latestPublishRefusedSql,
 } from './foreign-reads.repository';
+import { suppliedFromStockSql } from './inventory.repository';
 import { belowFloorSql } from './service-figures.sql';
 
 // Every reason is about an enabled service: a switched-off service needs nothing (an archived one is never in the list).
@@ -38,7 +39,8 @@ const b2bOnlySql = sql`(exists (
 /**
  * The condition of one attention reason (NULL-free, in parentheses).
  *
- * Why: decision 060: `no_supplier` is an automatic service with no active supplier link (a manual one needs none); `below_floor`
+ * Why: decision 060: `no_supplier` is an automatic service with no active supplier link (a manual one needs none) and, decision 069,
+ * not supplied by its code stock (a service delivered from code stock with an available code needs no supplier); `below_floor`
  * is `belowFloorSql` at the clock's now, the dashboard's figure; `price_proposal` a waiting proposal of the shop price;
  * `publish_failed` a refused last publish attempt of a service that has no listing at all. Each needs an enabled service.
  *
@@ -49,7 +51,7 @@ const b2bOnlySql = sql`(exists (
 export function attentionReasonSql(reason: AttentionReason, at: Date): SQL<boolean> {
   switch (reason) {
     case 'no_supplier':
-      return sql`(${ACTIVE} and "services"."fulfillment" = 'auto' and not ${hasActiveSupplierLinkSql})`;
+      return sql`(${ACTIVE} and "services"."fulfillment" = 'auto' and not ${hasActiveSupplierLinkSql} and not ${suppliedFromStockSql})`;
     case 'below_floor':
       return sql`(${ACTIVE} and ${belowFloorSql(at)})`;
     case 'price_proposal':

@@ -78,12 +78,22 @@ const IMMUTABLE = new Set([
  * kyc_submissions.submitted_note (migration 0009), and services.sort, the stored order of services (decision 063, migration 0063), and
  * the columns of the one account type (decision 064): the five new columns of `clients` and the `account_id` buyer column of every table
  * that named a customer (the old columns keep their SQL names and stay in the map's lists until the contract release drops them), and
- * service_fields.is_main_input, the flag of a service's main input (decision 065, migration 0068).
+ * service_fields.is_main_input, the flag of a service's main input (decision 065, migration 0068), and services.stock_delivery,
+ * "Delivered from code stock" (decision 069, migration 0070).
  */
 const ADDITIONS: Record<string, string[]> = {
   sessions: ['stage'],
   audit_logs: ['entity_label', 'actor_name'],
-  services: ['code', 'sla_minutes', 'min_profit', 'cost_was', 'effective_cost', 'archived_at', 'sort'],
+  services: [
+    'code',
+    'sla_minutes',
+    'min_profit',
+    'cost_was',
+    'effective_cost',
+    'archived_at',
+    'sort',
+    'stock_delivery',
+  ],
   pricing_rules: ['starts_at', 'ends_at'],
   inventory_codes: ['code_hash', 'code_last4'],
   clients: [

@@ -28,7 +28,12 @@ interface DemoService {
   sla: number;
   status: 'active' | 'disabled';
   auto: boolean;
+  /** "Delivered from code stock" (decision 069) once the demo carries it; else the seed's choice ({@link STOCK_SERVICE_CODES}). */
+  stockDelivery?: boolean;
 }
+
+/** The two digital-code services whose codes the seed stocks: they deliver from code stock (decision 069). */
+const STOCK_SERVICE_CODES: ReadonlySet<string> = new Set(['SRV-Z3X-10', 'SRV-UT-1D']);
 
 /** The demo's merchant group keys and the ids the identity seed gives them. */
 const GROUP_IDS: Readonly<Record<string, number>> = { std: 1, whl: 2, vip: 3 };
@@ -101,6 +106,8 @@ export async function seedCatalog(db: DbExecutor, demo: DemoSeed, config?: AppCo
       effectiveCost: toMoney(service.cost),
       costWas: service.costWas === null ? null : toMoney(service.costWas),
       minProfit: toMoney(service.minProfit),
+      // Decision 069: only a service delivered from code stock holds codes; the stocked ones are, also without the inventory.
+      stockDelivery: service.stockDelivery ?? STOCK_SERVICE_CODES.has(service.code),
       code: service.code,
       slaMinutes: service.sla,
       // What a merchant may do with its orders over the portal (feature 7a): an order that was not sent yet can be cancelled

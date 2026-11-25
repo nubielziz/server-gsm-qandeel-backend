@@ -27,8 +27,9 @@ beforeEach(async () => {
   admin = await adminWith(t, ['inventory:*', 'catalog:*'], { name: 'Rami K.' });
   const { db } = await testDb();
   const category = await insertCategory(db, { type: 'server' });
-  serviceId = await insertService(db, category, { name: 'UnlockTool 1-day', type: 'server' });
-  otherServiceId = await insertService(db, category, { name: 'Z3X credits', type: 'server' });
+  // Decision 069: only a service delivered from code stock takes codes.
+  serviceId = await insertService(db, category, { name: 'UnlockTool 1-day', type: 'server', stockDelivery: true });
+  otherServiceId = await insertService(db, category, { name: 'Z3X credits', type: 'server', stockDelivery: true });
 });
 afterAll(async () => {
   await resetDb();

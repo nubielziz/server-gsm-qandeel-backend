@@ -1,5 +1,6 @@
 // Integration tests of delivering stocked codes at placement (RULES orders 10, resolution orders-suppliers-11): an order of a
-// service with available codes completes at once with them as its result; a short stock sends the order the usual way; two
+// service delivered from code stock (decision 069) with available codes completes at once with them as its result; codes held by any
+// other service are never taken; a short stock sends the order the usual way; two
 // placements at the same moment never get the same code; a bulk order uses what the stock has; a delivered code stays sold
 // after a reopen. Also the placement time from the injected clock (decision 031).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
@@ -7,6 +8,7 @@ import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, signInStaff } from '../../support/auth';
+import { insertInventoryCodes, markStockService } from '../../support/catalog';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import {
@@ -43,8 +45,9 @@ afterAll(async () => {
   await closeTestDb();
 });
 
-/** Imports codes for a service through the admin route, as staff would. */
+/** Imports codes for a service through the admin route, as staff would, after turning "Delivered from code stock" on (decision 069). */
 async function stock(serviceId: number, codes: string[]): Promise<void> {
+  await markStockService((await testDb()).db, serviceId);
   const staff = await signInStaff(t, ['inventory:write']);
   const res = await t.app.inject({
     method: 'POST',
@@ -126,6 +129,29 @@ describe('placement of a stocked service', () => {
       imei: IMEIS[1],
     });
     expect(json(res).orders[0]).toMatchObject({ status: 'completed', result: { code: 'MANUAL-STOCK-01' } });
+  });
+
+  it('never takes codes of a service that is not delivered from code stock: the order goes the usual way (decision 069)', async () => {
+    const { db, merchant, auto, manual } = world;
+    // Codes put on an unlock service by mistake: the helper stocks them, then the service is a plain one again.
+    await insertInventoryCodes(db, auto.serviceId, 2);
+    await insertInventoryCodes(db, manual.serviceId, 1);
+    await markStockService(db, auto.serviceId, false);
+    await markStockService(db, manual.serviceId, false);
+    const portal = await portalFor(t, merchant.id);
+
+    const sent = json(await portal.post('/client/orders', { serviceId: auto.serviceId, imei: IMEIS[0] })).orders[0];
+    expect(sent).toMatchObject({ status: 'pending', result: { code: null } });
+    expect((await orderRow(db, sent.id)).dispatchState).toBe('pending');
+    expect(await outboxOf(db, 'order.dispatch_requested', sent.id)).toHaveLength(1);
+
+    const handled = json(await portal.post('/client/orders', { serviceId: manual.serviceId, imei: IMEIS[1] }))
+      .orders[0];
+    expect(handled).toMatchObject({ status: 'pending', result: { code: null } });
+    expect((await orderRow(db, handled.id)).dispatchState).toBe('manual');
+
+    expect((await codesOf(auto.serviceId)).map((code) => code.status)).toEqual(['available', 'available']);
+    expect((await codesOf(manual.serviceId)).map((code) => code.status)).toEqual(['available']);
   });
 
   it('places the order the usual way when no code is available, and never uses a void code', async () => {

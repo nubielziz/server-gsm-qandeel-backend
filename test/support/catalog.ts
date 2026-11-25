@@ -1,4 +1,5 @@
 // Helpers for the catalog tests (feature 4a): categories, services and supplier links inserted straight into the test database.
+import { eq } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
 
 /** Inserts a service category and returns its id. */
@@ -77,7 +78,21 @@ export async function insertSupplierLink(
 }
 
 /**
- * Inserts inventory codes straight into the table (no encryption: the tests that use this read statuses and counts only).
+ * Turns "Delivered from code stock" on (or off) for a service straight in the table (decision 069): only such a service takes codes
+ * through the import route and hands them to orders.
+ *
+ * @param db the test database
+ * @param serviceId the service
+ * @param on the value to store (default true)
+ */
+export async function markStockService(db: Database, serviceId: number, on = true): Promise<void> {
+  await db.update(s.services).set({ stockDelivery: on }).where(eq(s.services.id, serviceId));
+}
+
+/**
+ * Inserts inventory codes straight into the table (no encryption: the tests that use this read statuses and counts only). The service
+ * becomes a stock service first (decision 069: only such a service holds codes); a test of codes held by another service turns the flag
+ * off again with {@link markStockService}.
  *
  * @param db the test database
  * @param serviceId the service the codes belong to
@@ -92,6 +107,7 @@ export async function insertInventoryCodes(
   values: Partial<typeof s.inventoryCodes.$inferInsert> = {},
 ): Promise<number[]> {
   if (count === 0) return [];
+  await markStockService(db, serviceId);
   const rows = await db
     .insert(s.inventoryCodes)
     .values(

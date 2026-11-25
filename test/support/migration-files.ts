@@ -19,6 +19,9 @@ export const ACCOUNT_PERMISSIONS_SUFFIX = '_account_permissions.sql';
 /** The end of the file name of the migration that makes a field's Name its supplier key and adds the main-input flag (decision 065). */
 export const FIELD_NAMES_SUFFIX = '_field_names.sql';
 
+/** The end of the file name of the migration that adds "Delivered from code stock" and `out_of_stock` (decision 069). */
+export const CODE_STOCK_SUFFIX = '_code_stock.sql';
+
 /**
  * The file name of the migration that ends with a suffix.
  *

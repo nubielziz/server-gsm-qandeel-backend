@@ -1,5 +1,6 @@
-// The smallest quantity a buyer can order of a service (feature 22, slice B): the amount of stock that makes the shop say "in stock".
-// Pure; the SQL twin is IN_STOCK_SQL (infra/storefront-services.repository.ts), kept equal by test/integration/catalog/storefront-availability.test.ts.
+// The smallest quantity a buyer can order of a service (feature 22, slice B): the amount of stock that makes the shop say "in stock", for a
+// service delivered from code stock (decision 069). Pure; the SQL twin of `showsInStock` is IN_STOCK_SQL
+// (infra/storefront-services.repository.ts), kept equal by test/integration/catalog/storefront-availability.test.ts.
 
 /**
  * Works out the smallest order a service accepts.
@@ -26,4 +27,25 @@ export function smallestOrder(minQty: number, qtyOptions: readonly number[]): nu
  */
 export function coversSmallestOrder(availableCodes: number, minQty: number, qtyOptions: readonly number[]): boolean {
   return availableCodes >= smallestOrder(minQty, qtyOptions);
+}
+
+/**
+ * Tells whether the shop shows a service `in_stock`: it is delivered from code stock and its available codes cover the smallest order.
+ *
+ * Why: decision 069: only a service delivered from code stock takes codes at placement, so only its codes can make an order complete at
+ * once; codes of any other service (none after the migration) never make it read "in stock".
+ *
+ * @param stockDelivery the service is delivered from code stock (`services.stock_delivery`)
+ * @param availableCodes how many `available` inventory codes the service holds
+ * @param minQty the service's minimum quantity
+ * @param qtyOptions the fixed pack sizes
+ * @returns true when the shop says `in_stock`
+ */
+export function showsInStock(
+  stockDelivery: boolean,
+  availableCodes: number,
+  minQty: number,
+  qtyOptions: readonly number[],
+): boolean {
+  return stockDelivery && coversSmallestOrder(availableCodes, minQty, qtyOptions);
 }

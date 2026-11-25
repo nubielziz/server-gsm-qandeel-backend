@@ -904,7 +904,7 @@
       "description": "Services: type, execution, pricing mode and rules.",
       "frontend": {
         "file": "src/features/services/api/services.ts",
-        "line": 45,
+        "line": 46,
         "fn": "createService"
       }
     },
@@ -937,7 +937,7 @@
       "description": "Services: type, execution, pricing mode and rules.",
       "frontend": {
         "file": "src/features/services/api/services.ts",
-        "line": 58,
+        "line": 61,
         "fn": "updateService"
       }
     },
@@ -970,7 +970,7 @@
       "description": "Services: type, execution, pricing mode and rules.",
       "frontend": {
         "file": "src/features/services/api/services.ts",
-        "line": 68,
+        "line": 71,
         "fn": "deleteService"
       }
     },

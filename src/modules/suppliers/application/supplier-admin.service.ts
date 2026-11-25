@@ -224,7 +224,7 @@ export class SupplierAdminService {
         throw error;
       }
       // User rule 9: the effective cost follows the first link an order can use, and a paused or disabled supplier takes none. The
-      // supplier row is held first, as the sync holds it, then the linked service rows the recompute changes.
+      // supplier row is held first, as the sync holds it, then the linked service rows (the recompute locks them in id order).
       if (after!.status !== before.status) {
         const moved = await recomputeEffectiveCost(tx, await serviceIdsLinkedToSupplier(tx, id));
         if (moved.length > 0) this.priceVersion.bumpAfterCommit(work);

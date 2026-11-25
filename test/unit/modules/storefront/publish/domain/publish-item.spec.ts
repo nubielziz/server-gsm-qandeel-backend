@@ -483,6 +483,7 @@ describe('evaluateItem', () => {
         [{ serviceType: 'file', supply: 'no_link' }, '', undefined, true, 'not_orderable'],
         [{ supply: 'supplier_unavailable' }, '', undefined, true, 'supplier_unavailable'],
         [{ supply: 'no_link' }, '', undefined, true, 'supplier_unavailable'],
+        [{ supply: 'out_of_stock' }, '', undefined, true, 'out_of_stock'],
         [{}, '   ', undefined, true, 'title_missing'],
         [{}, 'x'.repeat(201), undefined, true, 'title_too_long'],
         [
@@ -513,6 +514,28 @@ describe('evaluateItem', () => {
       expect(result.state).toBe('blocked');
       expect(result.included).toBe(false);
     }
+  });
+
+  it('blocks an automatic stock service with no supplier and no code out_of_stock, and lets one with a code through (decision 069)', () => {
+    // `supplyStates` reads a stock service with an available code as `ok`, so the row is judged on the title and the price only.
+    expect(evaluateItem({ facts: facts({ supply: 'ok' }), title: 'T', flags: [] }).blockedReason).toBeNull();
+    const empty = evaluateItem({ facts: facts({ supply: 'out_of_stock' }), title: 'T', flags: [] });
+    expect(empty).toMatchObject({ state: 'blocked', blockedReason: 'out_of_stock', included: false });
+    // A manual stock service waits for staff when its stock runs out: never blocked for it.
+    expect(
+      evaluateItem({ facts: facts({ fulfillment: 'manual', supply: 'out_of_stock' }), title: 'T', flags: [] })
+        .blockedReason,
+    ).toBeNull();
+    // The facts come first: a disabled service stays service_disabled.
+    expect(
+      evaluateItem({ facts: facts({ serviceStatus: 'disabled', supply: 'out_of_stock' }), title: 'T', flags: [] })
+        .blockedReason,
+    ).toBe('service_disabled');
+  });
+
+  it('lists out_of_stock right after supplier_unavailable among the blocking reasons', () => {
+    const reasons: readonly string[] = PUBLISH_BLOCK_REASONS;
+    expect(reasons.indexOf('out_of_stock')).toBe(reasons.indexOf('supplier_unavailable') + 1);
   });
 
   it('lets a manual service without a supplier through, a 200 character title, and a B2B category that names the retail group', () => {

@@ -1,6 +1,6 @@
 // Drizzle queries of the code inventory routes on `inventory_codes`: the masked list, the batch insert, the batch reference
-// sequence and the guarded void.
-import { and, eq, inArray, sql } from 'drizzle-orm';
+// sequence and the guarded void; the count of a service's available codes (decision 069) as a query and as SQL over `services`.
+import { type SQL, and, eq, inArray, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
 import { type InventoryCode, type NewInventoryCode, inventoryCodes, services } from '../db/schema';
@@ -157,4 +157,62 @@ export async function sellLockedCodes(db: DbExecutor, ids: readonly number[], or
     .where(and(inArray(inventoryCodes.id, [...ids]), eq(inventoryCodes.status, 'available')))
     .returning({ id: inventoryCodes.id });
   return rows.length;
+}
+
+/**
+ * How many available codes the outer `services` row holds, as SQL (an int; refers to the outer table `services` by name).
+ *
+ * Why: decision 069: the admin service row's `stockAvailable`. The count reads the partial index `inventory_codes_available_idx`
+ * (service_id, id), so a page of services costs one index range per row.
+ */
+export const availableCodeCountSql: SQL<number> = sql<number>`(select count(*)::int from ${inventoryCodes} ic where ic.service_id = "services"."id" and ic.status = 'available')`;
+
+/**
+ * "The outer `services` row holds at least one available code", as SQL (NULL-free; the partial index stops at the first code).
+ *
+ * Why: decision 069: the publish rule's `supplyStates` reads it next to the flag.
+ */
+export const hasAvailableCodeSql: SQL<boolean> = sql<boolean>`(exists (select 1 from ${inventoryCodes} ic where ic.service_id = "services"."id" and ic.status = 'available'))`;
+
+/**
+ * "The outer `services` row is delivered from code stock and holds at least one available code", as SQL (NULL-free).
+ *
+ * Why: decision 069: such a service is supplied by its stock, with or without a supplier (the attention reason `no_supplier` reads it;
+ * `supplyStateOf` is the same rule in code).
+ */
+export const suppliedFromStockSql: SQL<boolean> = sql<boolean>`("services"."stock_delivery" and ${hasAvailableCodeSql})`;
+
+/**
+ * Counts the available codes of one service.
+ *
+ * Why: decision 069: "Delivered from code stock" is turned off only when no code is available (`codes_in_stock` names the count).
+ *
+ * @param db the transaction (the caller holds the service row `FOR UPDATE`, so no import adds codes meanwhile)
+ * @param serviceId the service
+ * @returns how many of its codes are `available`
+ */
+export async function countAvailableCodes(db: DbExecutor, serviceId: number): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(inventoryCodes)
+    .where(and(eq(inventoryCodes.serviceId, serviceId), eq(inventoryCodes.status, 'available')));
+  return row?.n ?? 0;
+}
+
+/**
+ * Tells whether a service is delivered from code stock.
+ *
+ * Why: decision 069: only such a service's orders take codes at placement (`InventoryStock.claim`).
+ *
+ * @param db the placement transaction
+ * @param serviceId the service
+ * @returns `services.stock_delivery`; false for an unknown service
+ */
+export async function isStockDeliveryService(db: DbExecutor, serviceId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ stockDelivery: services.stockDelivery })
+    .from(services)
+    .where(eq(services.id, serviceId))
+    .limit(1);
+  return row?.stockDelivery ?? false;
 }

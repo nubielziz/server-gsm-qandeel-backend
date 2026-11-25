@@ -59,7 +59,10 @@ describe('stored lookups are keyed with LOOKUP_HASH_KEY', () => {
 
   it('an inventory import stores the code hash under the lookup key', async () => {
     const admin = await adminWith(t, ['inventory:*', 'catalog:*']);
-    const serviceId = await insertService(db, await insertCategory(db, { type: 'server' }), { type: 'server' });
+    const serviceId = await insertService(db, await insertCategory(db, { type: 'server' }), {
+      type: 'server',
+      stockDelivery: true,
+    });
     const res = await admin.post(`/admin/services/${serviceId}/inventory/import`, { codes: ['UT-1000-A1B2'] });
     expect(res.status).toBe(200);
     const [code] = await db.select().from(s.inventoryCodes);

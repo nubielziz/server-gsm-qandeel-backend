@@ -1,4 +1,5 @@
-// Choosing the supplier service an order goes to (resolutions orders-suppliers-11 and -12, user rule 9 / B117 (6)). Pure.
+// Choosing the supplier service an order goes to (resolutions orders-suppliers-11 and -12, user rule 9 / B117 (6)), and the reason a
+// waiting order stops for when none can take it (decision 069 for a service delivered from code stock). Pure.
 import { Money } from '../../../common/money';
 
 /** A supplier service a service is linked to, with what the choice needs to know. */
@@ -70,4 +71,26 @@ export function pickLink(links: readonly RoutingLink[], unitPrice: Money): LinkC
     reason: 'costs_more',
     message: `Every available supplier costs more than the price charged (cheapest ${cheapest.toWire()}, charged ${unitPrice.toWire()}).`,
   };
+}
+
+/** The reason of an order of a service delivered from code stock that no supplier can take (decision 069). */
+export const NO_STOCK_NO_SUPPLIER_MESSAGE = 'No codes in stock and no supplier: deliver it by hand.';
+
+/**
+ * The reason an automatic order stops in `needs_attention` for when no link could take it.
+ *
+ * Why: decision 069: an order of a service delivered from code stock reaches the dispatch only when its stock was short at placement;
+ * with no usable supplier (`no_link`, `supplier_unavailable`) staff deliver it by hand, so the reason says that rather than naming a
+ * missing supplier. A usable supplier that costs more than the price charged (`costs_more`) keeps its own reason, and so does every
+ * order of any other service.
+ *
+ * @param choice why {@link pickLink} found no link, and its message
+ * @param stockDelivery the order's service is delivered from code stock
+ * @returns the reason the order's `needs_attention` line carries
+ */
+export function noLinkReason(
+  choice: { readonly reason: NoLinkReason; readonly message: string },
+  stockDelivery: boolean,
+): string {
+  return stockDelivery && choice.reason !== 'costs_more' ? NO_STOCK_NO_SUPPLIER_MESSAGE : choice.message;
 }

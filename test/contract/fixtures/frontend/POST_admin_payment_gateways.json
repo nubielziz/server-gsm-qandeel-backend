@@ -7,7 +7,7 @@
     "code": "HARVEST-1",
     "driver": "Harvest sample text.",
     "name": "Harvest sample",
-    "audience": "b2c",
+    "audience": "b2b",
     "feePercent": "2.5000",
     "feeFixed": "10.0000",
     "minAmount": "10.0000",

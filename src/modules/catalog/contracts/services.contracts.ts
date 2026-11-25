@@ -4,8 +4,12 @@
 // facts of a row (attention reasons, shop price, shop page), its filters and the shop price sort: `attention`, `retailPrice` and
 // `retailPriceSource` reach every reader and are required; the keys that depend on a permission stay optional for good. The merchant
 // switches of feature 7a (`allowCancel`, `allowVerify`, `verifyWindowH`) are required since the console reads them (decision 063).
+// Decision 069 adds `stockDelivery`, `stockAvailable` and `ownCost` to the row (required: the console carries them), `stockDelivery` and
+// `ownCost` (0 to 1,000,000,000) to the create and change bodies, and the list filter `stockDelivery`.
+import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
+import { MAX_OWN_COST } from '../domain/code-stock';
 import { MAX_QTY_OPTIONS, MAX_QUANTITY } from '../domain/quantity-rule';
 import { ATTENTION_REASONS, SHOP_BLOCKS } from '../domain/service-attention';
 import { SERVICE_FIELD_TYPES, SERVICE_OPTION_LISTS, SERVICE_TYPES } from '../db/schema';
@@ -35,7 +39,11 @@ const ServiceRow = z.object({
   category: NamedRef.nullable(),
   basePrice: zMoney,
   cost: zMoney.describe(
-    'The effective cost (B117): the larger of the service cost and the cost of the first supplier link an order can use.',
+    'The effective cost (B117): the larger of `ownCost` and the cost of the first supplier link an order can use.',
+  ),
+  ownCost: zMoney.describe(
+    "The service's own cost that staff set (decision 069; a supplier import writes the supplier's cost here). `cost` never falls " +
+      'under it.',
   ),
   costChangedFrom: zMoney
     .nullable()
@@ -46,6 +54,17 @@ const ServiceRow = z.object({
   floorPrice: zMoney.describe('cost + minProfit.'),
   marginPct: zDecimal.describe('(basePrice - cost) / basePrice x 100, four decimals.'),
   belowFloor: z.boolean(),
+  stockDelivery: z
+    .boolean()
+    .describe(
+      'Delivered from code stock (decision 069): only such a service holds inventory codes, and only its orders take codes from the ' +
+        'stock at placement.',
+    ),
+  stockAvailable: z
+    .number()
+    .int()
+    .min(0)
+    .describe("How many of the service's codes are `available` now; `0` for a service without codes (decision 069)."),
   slaMinutes: z.number().int().min(1),
   supplier: NamedRef.nullable().describe('The first active supplier link by priority.'),
   fallbackSupplier: NamedRef.nullable().describe('The second active supplier link by priority.'),
@@ -95,7 +114,7 @@ const ServiceRow = z.object({
     .array(z.enum(ATTENTION_REASONS))
     .describe(
       'Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active ' +
-        'supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), ' +
+        'supplier link and, when it is delivered from code stock, no available code: decision 069), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), ' +
         '`publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have ' +
         'reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without ' +
         '`storefront:read`. Sent to every reader.',
@@ -217,11 +236,14 @@ const SERVICE_EXAMPLE = {
   category: { id: 4, name: 'Carrier unlock' },
   basePrice: '17.2800',
   cost: '13.5000',
+  ownCost: '0.0000',
   costChangedFrom: null,
   minProfit: '0.8100',
   floorPrice: '14.3100',
   marginPct: '21.8750',
   belowFloor: false,
+  stockDelivery: false,
+  stockAvailable: 0,
   slaMinutes: 1440,
   supplier: { id: 3, name: 'DHRU Pro' },
   fallbackSupplier: null,
@@ -273,6 +295,19 @@ const QuantityBound = z
   .int('Enter a whole number.')
   .min(1, 'Enter 1 or more.')
   .max(MAX_QUANTITY, `Use at most ${MAX_QUANTITY}.`);
+const StockDelivery = z
+  .boolean()
+  .describe(
+    'Delivered from code stock (decision 069): only such a service takes inventory codes and only its orders take codes from the ' +
+      'stock (default `false`).',
+  );
+const OwnCost = NonNegativeMoney.refine(
+  (value) => new Decimal(value).lte(MAX_OWN_COST),
+  `Use at most ${MAX_OWN_COST}.0000.`,
+).describe(
+  "The service's own cost, from 0 to 1000000000 like a supplier's price (decisions 051 and 069, default `0`): the effective `cost` " +
+    'is the larger of it and the cost of the first usable supplier link.',
+);
 const MinQty = QuantityBound.describe('The smallest quantity of one order (default `1`).');
 const MaxQty = QuantityBound.describe('The largest quantity of one order (default `1`).');
 const QtyOptions = z
@@ -293,7 +328,8 @@ export const listServices = defineRoute({
     'decision 060 (`attention`, the shop price, the shop page). Filters: `type`, `status`, `categoryId`, `belowFloor`, ' +
     '`needsAttention` (any reason of `attention` the caller may see), `hasSupplier` (an active supplier link), `supplierId` ' +
     "(the primary supplier: the first active link by priority, the row's `supplier`), `isListed` and `notOnShop` (an " +
-    'enabled service that is not listed and that nothing blocks, `shopBlocked` null); they combine. `isListed` and ' +
+    'enabled service that is not listed and that nothing blocks, `shopBlocked` null), `stockDelivery` (Delivered from code stock, ' +
+    'decision 069: the Inventory menu lists the services with `stockDelivery=true`); they combine. `isListed` and ' +
     '`notOnShop` need `storefront:read`: `403 FORBIDDEN` without it, before anything is read. `q` is a case-insensitive ' +
     'contains over name, code and category name. Sorts: name (default), type, cost, basePrice, retailPrice (a service without ' +
     'a shop price last) and `sort`, the order merchants see: the category position, then the service `sort` (decision 063), then ' +
@@ -315,6 +351,7 @@ export const listServices = defineRoute({
       supplierId: { type: 'id', ops: ['eq'] },
       isListed: { type: 'boolean' },
       notOnShop: { type: 'boolean' },
+      stockDelivery: { type: 'boolean' },
     },
     search: ['name', 'code', 'category.name'],
   }),
@@ -362,7 +399,10 @@ export const createService = defineRoute({
     'none. A service sells a range or packs: with `qtyOptions` the server stores `minQty` as the smallest and `maxQty` as the ' +
     'largest pack and refuses a different one sent (`422` `packs_set`); without packs a `maxQty` under `minQty` is `422` ' +
     '`below_min` on `maxQty` (`above_max` on `minQty` when only `minQty` was sent). Every pack problem (`invalid_pack`, ' +
-    '`duplicate_pack`) is on `qtyOptions`. The values are in the audit row `created service`.',
+    '`duplicate_pack`) is on `qtyOptions`. The optional `stockDelivery` (default `false`) makes it a service delivered from code ' +
+    'stock, and the optional `ownCost` (0 to 1000000000, default `0`) is its own cost: the effective `cost` starts equal to it (decision ' +
+    '069). With `ownCost` sent, a `basePrice` under the floor it sets is `422` on `basePrice` with the code `below_floor`, as on a ' +
+    'change. The values are in the audit row `created service`.',
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',
@@ -380,6 +420,8 @@ export const createService = defineRoute({
     minQty: MinQty.optional(),
     maxQty: MaxQty.optional(),
     qtyOptions: QtyOptions.optional(),
+    stockDelivery: StockDelivery.optional(),
+    ownCost: OwnCost.optional(),
   }),
   success: { status: 201, schema: ServiceRow },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'VALIDATION_FAILED', 'CODE_TAKEN'],
@@ -424,7 +466,12 @@ export const updateService = defineRoute({
     'largest pack. `qtyOptions: []` clears the packs; the service then sells the range `minQty..maxQty`, so send both in the ' +
     'same request (left out, the stored ones, the former smallest and largest pack, stay). Example body: `{ "qtyOptions": [5, ' +
     '10, 25] }`. The audit row `edited service` holds the three values before and after. ' +
-    'Sending `basePrice` or `minProfit` also needs `pricing:update` (`403 FORBIDDEN`, decision 046).',
+    'Decision 069: `stockDelivery` turns "Delivered from code stock" on or off; `false` while the service has available codes is ' +
+    '`422` on `stockDelivery` with the code `codes_in_stock` ("Void the N codes in stock first."). `ownCost` (0 to 1000000000) sets the ' +
+    "service's own cost: the effective `cost` is worked out again and moves like a supplier cost change (`costChangedFrom` when it " +
+    'rose, the floor, cached price lists, a following shop price); a `basePrice` sent with it is judged against the new floor. The ' +
+    'audit row holds `ownCost` and `stockDelivery` before and after. ' +
+    'Sending `basePrice`, `minProfit` or `ownCost` also needs `pricing:update` (`403 FORBIDDEN`, decisions 046 and 069).',
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',
@@ -447,6 +494,8 @@ export const updateService = defineRoute({
       minQty: MinQty.optional(),
       maxQty: MaxQty.optional(),
       qtyOptions: QtyOptions.optional(),
+      stockDelivery: StockDelivery.optional(),
+      ownCost: OwnCost.optional(),
     })
     .refine((body) => Object.values(body).some((value) => value !== undefined), 'Send at least one field to change.'),
   success: { status: 200, schema: ServiceRow },

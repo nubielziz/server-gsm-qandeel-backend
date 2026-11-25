@@ -54,7 +54,13 @@ import { PublishPrepareProcessor } from '@src/modules/storefront/publish/jobs/pu
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
-import { insertCategory, insertService, insertSupplierLink } from '../../support/catalog';
+import {
+  insertCategory,
+  insertInventoryCodes,
+  insertService,
+  insertSupplierLink,
+  markStockService,
+} from '../../support/catalog';
 import { MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { eventually } from '../../support/infra';
@@ -570,6 +576,31 @@ describe('the prepare job', () => {
       blocked: 7,
       included: 0,
     });
+  });
+
+  it('drafts a stock service with no supplier by its codes: ready with one, out_of_stock with none, and other codes never count (decision 069)', async () => {
+    const w = await world();
+    await makeRule();
+    const stocked = await service(w, { name: 'iTunes 10 USD', link: 'none', values: { stockDelivery: true } });
+    await insertInventoryCodes(db, stocked, 1);
+    const empty = await service(w, { name: 'iTunes 25 USD', link: 'none', values: { stockDelivery: true } });
+    await insertInventoryCodes(db, empty, 2, { status: 'sold' });
+    const plain = await service(w, { name: 'Unlock with stray codes', link: 'none' });
+    await insertInventoryCodes(db, plain, 3);
+    await markStockService(db, plain, false);
+
+    const facts = await t.app.get(PublishDraftFacts, { strict: false }).read(db, [stocked, empty, plain]);
+    expect([stocked, empty, plain].map((id) => facts.get(id)!.facts.supply)).toEqual(['ok', 'out_of_stock', 'no_link']);
+
+    const id = await prepared({ scope: { kind: 'all' } });
+    const ready = await itemOf(id, stocked);
+    expect(ready.blockedReason).toBeNull();
+    expect(ready.state).not.toBe('blocked');
+    expect(await itemOf(id, empty)).toMatchObject({ blockedReason: 'out_of_stock', state: 'blocked', included: false });
+    expect(await itemOf(id, plain)).toMatchObject({ blockedReason: 'supplier_unavailable', state: 'blocked' });
+    expect(BLOCK_SENTENCES.out_of_stock).toBe(
+      'No codes in stock and no supplier. Import codes or link a supplier first.',
+    );
   });
 
   it('with no rule every row without a price waits for one (price_missing, no_rule), and Check again readies it after a rule', async () => {

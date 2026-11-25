@@ -230,7 +230,8 @@ export class OrderPlacement {
           });
         }
       }
-      // Codes are claimed per order, after the duplicate check: a short stock sends the order the usual way.
+      // Codes are claimed per order, after the duplicate check, and only for a service delivered from code stock (decision 069:
+      // `claim` reads the flag): a short stock, or any other service, sends the order the usual way.
       const claim = await this.stock.claim(tx, service.id, quantity);
       const begin = claim ? fromStock : start;
       const order = await insertOrder(tx, {

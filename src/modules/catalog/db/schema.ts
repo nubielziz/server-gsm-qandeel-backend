@@ -317,6 +317,10 @@ export const services = pgTable(
     priceMode: text().$type<ServicePriceMode>().notNull().default('fixed'),
     /** the price of the default group, always above zero (RESOLUTIONS catalog-9) */
     basePrice: money().notNull(),
+    /**
+     * the service's own cost (decision 069: staff set it as `ownCost`; a supplier import writes the supplier's cost here); the
+     * effective cost never falls under it
+     */
     cost: money().notNull().default('0'),
     /**
      * the floor of every price: the larger of the service cost and the latest synced supplier cost of its first
@@ -347,6 +351,11 @@ export const services = pgTable(
      * API clients read is ordered by the category's position, then this, then the name
      */
     sort: integer().notNull().default(0),
+    /**
+     * the service is delivered from code stock (decision 069): only such a service holds inventory codes, and only its orders take
+     * codes from the stock at placement; turned off only when no code is available. A column beyond the map (migration 0070).
+     */
+    stockDelivery: boolean().notNull().default(false),
     /** set when staff delete a service that orders already use; an archived service is disabled (RESOLUTIONS catalog-3) */
     archivedAt: timestampTz(),
     createdAt: createdAt(),

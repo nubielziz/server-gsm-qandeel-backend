@@ -334,10 +334,9 @@ export class SupplierSync {
     const { tx } = work;
     const wanted = (await alignmentCandidates(tx, supplierId)).filter(needsAlignment);
     if (wanted.length === 0) return 0;
-    // Locks: the supplier row is held since the start of the sync. `recomputeEffectiveCost` above already updated, and so locked, the
-    // linked service rows whose effective cost moved, in no fixed order; here the candidates are locked in id order (a row already
-    // held is a no-op). A deadlock with another writer is possible in principle: Postgres aborts one side, and the sync job retries
-    // (a staff sync answers an error). Then everything is read again under the locks, so a staff change of the links or the fields
+    // Locks: the supplier row is held since the start of the sync. `recomputeEffectiveCost` above already locked every linked service
+    // row in id order (decision 069); here the candidates are locked in id order too (a row already held is a no-op). A deadlock with
+    // another writer is possible in principle: Postgres aborts one side, and the sync job retries (a staff sync answers an error). Then everything is read again under the locks, so a staff change of the links or the fields
     // (which locks the service row first) either finished before or waits for this commit.
     for (const row of wanted) await lockLiveServiceRow(tx, row.serviceId);
     const candidates = (

@@ -29,7 +29,7 @@ import { SearchSyncProcessor } from '@src/modules/storefront/search/jobs/search-
 import { ensureSearchKeys, scriptClient } from '../../../scripts/search-keys';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { clearIdentityCaches } from '../../support/auth';
-import { insertCategory, insertService } from '../../support/catalog';
+import { insertCategory, insertService, markStockService } from '../../support/catalog';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { deleteBullKeys } from '../../support/queues';
@@ -119,6 +119,8 @@ describe('the change signals (each writer, in its own transaction)', () => {
         })
       ).status,
     ).toBe(200);
+    // Decision 069: only a service delivered from code stock takes codes (set in the table: no event of its own).
+    await markStockService(await db(), att.serviceId);
     const imported = await admin.post(`/admin/services/${att.serviceId}/inventory/import`, { codes: ['CODE-0001'] });
     expect(imported.status).toBe(200);
     const [code] = await (await db()).select().from(s.inventoryCodes);
@@ -226,6 +228,7 @@ describe('the change signals (each writer, in its own transaction)', () => {
   it('writes a stock event in the placement transaction of a claim, and none for a Quick add import', async () => {
     const database = await db();
     const world = await storefrontWorld(database);
+    await markStockService(database, world.att.serviceId);
     expect(
       (
         await admin.post(`/admin/services/${world.att.serviceId}/inventory/import`, {
@@ -338,6 +341,7 @@ describe('the sync (search_sync through the alias)', () => {
 
     const inStock = async () => indexedIds(t.prefix, '*', { filter_by: 'in_stock:true' });
     expect(await inStock()).toEqual([]);
+    await markStockService(database, world.att.serviceId);
     expect(
       (await admin.post(`/admin/services/${world.att.serviceId}/inventory/import`, { codes: ['CODE-0009'] })).status,
     ).toBe(200);

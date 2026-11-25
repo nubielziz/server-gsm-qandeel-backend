@@ -36,8 +36,11 @@ feature 6.
 - **Services** (`service-admin.service.ts`, `infra/service.repository.ts`, `infra/service-figures.sql.ts`): `cost` on the wire is
   the effective cost, `minProfit` the service's own or the default policy `max(round(6 % of cost, 2), 0.02)`, `floorPrice` =
   cost + minProfit, `marginPct`, `belowFloor`; all worked out in SQL so the list can filter and sort on them
-  (`domain/service-figures.ts` is the same rule in code; a test compares the two). Create sets the server defaults (`active`,
-  `auto`, `fixed`, `block_open`, cost 0) and derives `delivery_time` from `slaMinutes`; change refuses a `basePrice` under the
+  (`domain/service-figures.ts` is the same rule in code; a test compares the two). Decision 069: a row also carries `ownCost`
+  (`services.cost`), `stockDelivery` and `stockAvailable` (available codes, counted in SQL: `availableCodeCountSql`). Create sets the
+  server defaults (`active`, `auto`, `fixed`, `block_open`, own cost 0 or the `ownCost` sent, effective cost equal to it, no code stock
+  unless `stockDelivery` is sent) and derives `delivery_time` from `slaMinutes`; with `ownCost` sent it refuses a `basePrice` under the
+  floor that cost sets, as a change does; change refuses a `basePrice` under the
   floor (the minimum profit being saved counts), clears `cost_was` when a base price is saved, keeps category and type in
   agreement (composite FK), maps a code clash to `409 CODE_TAKEN`; a `basePrice` or `minProfit` change also needs `pricing:update` (decision 046); delete archives (`archived_at`, status `disabled`, service
   pricing rules off) when anything refers to the service and hard deletes otherwise. Archived services are hidden from every
@@ -50,7 +53,8 @@ feature 6.
   `listingId`, `isListed` and `shopBlocked` (`storefront:read`); the detail adds `publishFailure` (`storefront:read`). A key the
   caller may not read is left out, and a reason it may not read is not in `attention` nor in `needsAttention`. `serviceReadAccess`
   is the one rule for the four routes. The list filters `needsAttention`, `hasSupplier`, `supplierId` (the primary supplier),
-  `isListed` and `notOnShop` (the last two `403` without `storefront:read`, before any query) and sorts on `retailPrice`. Each
+  `stockDelivery` (decision 069, the console's Inventory menu), `isListed` and `notOnShop` (the last two `403` without
+  `storefront:read`, before any query) and sorts on `retailPrice`. Each
   reason, the shop block and "not on the shop" is one SQL expression in `service-attention.sql.ts`, used by the filters, the count
   and the flags (their own select per page, not the page query, which the bulk price change shares); the parts over supplier and
   storefront tables are built in `foreign-reads.repository.ts`. `shopBlocked` repeats the first checks of the storefront's publish
@@ -74,9 +78,21 @@ feature 6.
   rejected, never logs a clear code; void only `available` codes, idempotent. `InventoryStock` (`application/inventory-stock.ts`,
   public, in `CatalogModule`) hands codes to an order at placement: `claim` locks the oldest available codes of a service
   (`FOR UPDATE SKIP LOCKED`) and decrypts them as the order's result, `sell` marks them sold with the order id (RULES orders 10).
+  **Decision 069:** only a service delivered from code stock (`services.stock_delivery`) takes codes: an import into another service is
+  `422` on `codes` (`not_stock_service`), and `claim` answers no claim for it. The flag goes off only when no code is available (`PATCH`
+  `stockDelivery: false` is `422` on `stockDelivery`, `codes_in_stock`, counted under the service row lock that an import takes too).
+- **The own cost** (decision 069, `writeOwnCost` in `application/effective-cost.ts`): 0 to 1,000,000,000 (`MAX_OWN_COST`, the
+  supplier price range of decision 051, so the floor and the shop price rules never overflow). `PATCH ownCost` (needs `pricing:update`) writes
+  `services.cost` with a raised effective cost in one statement (the `cost_was` rule of `recomputeEffectiveCost`), then recomputes; the
+  use case moves the price version after the commit (so the follow pass moves a following shop price, decision 040), signals the search
+  index and audits `ownCost`/`stockDelivery` before and after. It is written before the floor check of a `basePrice` sent with it.
+- **Supply** (decision 069, `domain/code-stock.ts`): `supplyStateOf` (read by `supplyStates`) counts one available code of a stock service
+  as supply; a stock service with no usable supplier and no code is `out_of_stock`. The attention reason `no_supplier` uses the same rule
+  (`suppliedFromStockSql`).
 - **`recomputeEffectiveCost(tx, serviceIds)`** (`application/effective-cost.ts`): the one writer of `services.effective_cost`:
   `greatest(cost, credit x credit_rate)` of the first link an order can use (switched on, supplier `active`, service still listed),
-  else the highest of the switched-on links, else 0.
+  else the highest of the switched-on links, else 0. It first locks the service rows `FOR NO KEY UPDATE` in id order and then reads
+  and writes from the locked rows (decision 069), so an own cost change racing a supplier sync is never worked out from a stale cost.
 
 ### TAC catalog (read only since decision 068)
 
@@ -301,8 +317,9 @@ calls it from sync, import and link changes), the figure rules (`defaultMinProfi
 `SERVICE_TYPES`, the inventory helpers the seed uses, and the storefront's read-only views (feature 14a): `StorefrontServices`
 (`sellable(db, ids, groupId)`: the merchant catalog's visibility rule for the retail group, no cost or supplier; `priced(db, groupId, filter?)`: the
 sellable ids that also have a fixed price for the group, optionally narrowed by service type, category and stock (feature 22:
-`SellableFilter`, the SQL test `IN_STOCK_SQL`); `inStockIds(db, ids)`: which services have enough available inventory codes for their
-smallest order (`smallestOrder` / `coversSmallestOrder`, `domain/storefront-availability.ts`); `categoriesOf(db, ids)`: the categories of
+`SellableFilter`, the SQL test `IN_STOCK_SQL`); `inStockIds(db, ids)`: which services are delivered from code stock and have enough
+available inventory codes for their smallest order (`showsInStock` / `smallestOrder` / `coversSmallestOrder`,
+`domain/storefront-availability.ts`; decision 069); `categoriesOf(db, ids)`: the categories of
 some services with counts (a category has one name, English only since decision 039); `names(db, ids)`: name, type and delivery time whatever the service's state;
 `fields(db, serviceId)`). Other modules import only `src/modules/catalog/index.ts` (lint rule
 `gsm/module-boundaries`). The export order matters (decision 032): the leaves identity injects come first, `CatalogAdminModule`

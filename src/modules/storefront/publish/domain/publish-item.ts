@@ -138,7 +138,7 @@ export interface PublishFacts {
   readonly categoryAllowedGroupIds: readonly number[];
   /** The storefront retail group, or `null` when it does not exist. */
   readonly retailGroupId: number | null;
-  /** Whether a supplier can take an order now (catalog `supplyStates`). */
+  /** Whether a supplier, or for a service delivered from code stock an available code, can take an order now (catalog `supplyStates`). */
   readonly supply: SupplyState;
 }
 
@@ -224,7 +224,10 @@ function factBlock(facts: PublishFacts, title: string): PublishBlockReason | nul
   });
   if (lock.locked) return 'b2b_only';
   if (facts.serviceType === 'file') return 'not_orderable';
-  if (facts.fulfillment === 'auto' && facts.supply !== 'ok') return 'supplier_unavailable';
+  // Decision 069: a service delivered from code stock is supplied by an available code too; with neither it is `out_of_stock`.
+  if (facts.fulfillment === 'auto' && facts.supply !== 'ok') {
+    return facts.supply === 'out_of_stock' ? 'out_of_stock' : 'supplier_unavailable';
+  }
   if (title.trim() === '') return 'title_missing';
   if (title.length > MAX_PUBLISH_TITLE_LENGTH) return 'title_too_long';
   return null;
@@ -243,7 +246,7 @@ function priceFlags(price: PriceDecision): PublishFlag[] {
  *
  * Why: plan 31 sections 3.2 and 6.2: one function judges a row at prepare, after an edit and again at apply on the locked service
  * (the stored state is never trusted for a write). The blocking reasons are judged in their order: the facts (`already_listed` to
- * `supplier_unavailable`), the title, the price (`price_missing`, `below_floor`, from `price`) and the address (`slug_taken`, a
+ * `supplier_unavailable` and `out_of_stock`, decision 069), the title, the price (`price_missing`, `below_floor`, from `price`) and the address (`slug_taken`, a
  * slug staff typed that a listing holds). At apply the publisher passes the facts alone (step 6) and judges the price and the
  * address itself (steps 7 and 8), so `cost_moved` stays a result and never a state. The tick: a row that becomes `blocked` loses it;
  * a row that leaves `blocked` (or is new) gets the default of its new state (`ready`: ticked); otherwise it stays as staff left it.

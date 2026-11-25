@@ -118258,6 +118258,7 @@
                               "b2b_only",
                               "not_orderable",
                               "supplier_unavailable",
+                              "out_of_stock",
                               "title_missing",
                               "title_too_long",
                               "price_missing",
@@ -119942,6 +119943,7 @@
                             "b2b_only",
                             "not_orderable",
                             "supplier_unavailable",
+                            "out_of_stock",
                             "title_missing",
                             "title_too_long",
                             "price_missing",
@@ -149197,7 +149199,7 @@
     },
     "/admin/services": {
       "get": {
-        "description": "Live services (archived ones are gone) with category, supplier chain and the figures worked out in SQL: `cost` is the effective cost, `floorPrice` = cost + `minProfit`, `marginPct` and `belowFloor`; with the Catalog page's facts of decision 060 (`attention`, the shop price, the shop page). Filters: `type`, `status`, `categoryId`, `belowFloor`, `needsAttention` (any reason of `attention` the caller may see), `hasSupplier` (an active supplier link), `supplierId` (the primary supplier: the first active link by priority, the row's `supplier`), `isListed` and `notOnShop` (an enabled service that is not listed and that nothing blocks, `shopBlocked` null); they combine. `isListed` and `notOnShop` need `storefront:read`: `403 FORBIDDEN` without it, before anything is read. `q` is a case-insensitive contains over name, code and category name. Sorts: name (default), type, cost, basePrice, retailPrice (a service without a shop price last) and `sort`, the order merchants see: the category position, then the service `sort` (decision 063), then the name, in the direction asked for.",
+        "description": "Live services (archived ones are gone) with category, supplier chain and the figures worked out in SQL: `cost` is the effective cost, `floorPrice` = cost + `minProfit`, `marginPct` and `belowFloor`; with the Catalog page's facts of decision 060 (`attention`, the shop price, the shop page). Filters: `type`, `status`, `categoryId`, `belowFloor`, `needsAttention` (any reason of `attention` the caller may see), `hasSupplier` (an active supplier link), `supplierId` (the primary supplier: the first active link by priority, the row's `supplier`), `isListed` and `notOnShop` (an enabled service that is not listed and that nothing blocks, `shopBlocked` null), `stockDelivery` (Delivered from code stock, decision 069: the Inventory menu lists the services with `stockDelivery=true`); they combine. `isListed` and `notOnShop` need `storefront:read`: `403 FORBIDDEN` without it, before anything is read. `q` is a case-insensitive contains over name, code and category name. Sorts: name (default), type, cost, basePrice, retailPrice (a service without a shop price last) and `sort`, the order merchants see: the category position, then the service `sort` (decision 063), then the name, in the direction asked for.",
         "operationId": "getAdminServices",
         "parameters": [
           {
@@ -149444,6 +149446,24 @@
             },
             "style": "form",
             "explode": true
+          },
+          {
+            "name": "stockDelivery",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where stockDelivery equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
           }
         ],
         "responses": {
@@ -149544,7 +149564,16 @@
                         "type": "string",
                         "pattern": "^\\d{1,14}\\.\\d{4}$",
                         "x-gsm-alias": "Money",
-                        "description": "The effective cost (B117): the larger of the service cost and the cost of the first supplier link an order can use.",
+                        "description": "The effective cost (B117): the larger of `ownCost` and the cost of the first supplier link an order can use.",
+                        "examples": [
+                          "12.4900"
+                        ]
+                      },
+                      "ownCost": {
+                        "type": "string",
+                        "pattern": "^\\d{1,14}\\.\\d{4}$",
+                        "x-gsm-alias": "Money",
+                        "description": "The service's own cost that staff set (decision 069; a supplier import writes the supplier's cost here). `cost` never falls under it.",
                         "examples": [
                           "12.4900"
                         ]
@@ -149596,6 +149625,16 @@
                       },
                       "belowFloor": {
                         "type": "boolean"
+                      },
+                      "stockDelivery": {
+                        "type": "boolean",
+                        "description": "Delivered from code stock (decision 069): only such a service holds inventory codes, and only its orders take codes from the stock at placement."
+                      },
+                      "stockAvailable": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "How many of the service's codes are `available` now; `0` for a service without codes (decision 069)."
                       },
                       "slaMinutes": {
                         "type": "integer",
@@ -149707,7 +149746,7 @@
                             "publish_failed"
                           ]
                         },
-                        "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Sent to every reader."
+                        "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link and, when it is delivered from code stock, no available code: decision 069), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Sent to every reader."
                       },
                       "retailPrice": {
                         "anyOf": [
@@ -149827,11 +149866,14 @@
                       "category",
                       "basePrice",
                       "cost",
+                      "ownCost",
                       "costChangedFrom",
                       "minProfit",
                       "floorPrice",
                       "marginPct",
                       "belowFloor",
+                      "stockDelivery",
+                      "stockAvailable",
                       "slaMinutes",
                       "supplier",
                       "fallbackSupplier",
@@ -149863,11 +149905,14 @@
                     },
                     "basePrice": "17.2800",
                     "cost": "13.5000",
+                    "ownCost": "0.0000",
                     "costChangedFrom": null,
                     "minProfit": "0.8100",
                     "floorPrice": "14.3100",
                     "marginPct": "21.8750",
                     "belowFloor": false,
+                    "stockDelivery": false,
+                    "stockAvailable": 0,
                     "slaMinutes": 1440,
                     "supplier": {
                       "id": 3,
@@ -150198,7 +150243,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Starts `active`, `auto`, with a fixed price mode, the `block_open` duplicate rule, no minimum profit of its own and a cost of 0 until a supplier is linked or imported. The type must be the type of the category: `422` on `categoryId` otherwise. A code that another live service has (ignoring case) is `409 CODE_TAKEN` on `code`. `basePrice` must be above zero. The optional `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) switch on the merchant's cancel and verification of this service's orders; all three start off. The optional `minQty`, `maxQty` (whole, 1 to 100000) and `qtyOptions` (at most 50 whole pack sizes, no repeats) say what one order may buy; they start at 1, 1 and none. A service sells a range or packs: with `qtyOptions` the server stores `minQty` as the smallest and `maxQty` as the largest pack and refuses a different one sent (`422` `packs_set`); without packs a `maxQty` under `minQty` is `422` `below_min` on `maxQty` (`above_max` on `minQty` when only `minQty` was sent). Every pack problem (`invalid_pack`, `duplicate_pack`) is on `qtyOptions`. The values are in the audit row `created service`.",
+        "description": "Starts `active`, `auto`, with a fixed price mode, the `block_open` duplicate rule, no minimum profit of its own and a cost of 0 until a supplier is linked or imported. The type must be the type of the category: `422` on `categoryId` otherwise. A code that another live service has (ignoring case) is `409 CODE_TAKEN` on `code`. `basePrice` must be above zero. The optional `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) switch on the merchant's cancel and verification of this service's orders; all three start off. The optional `minQty`, `maxQty` (whole, 1 to 100000) and `qtyOptions` (at most 50 whole pack sizes, no repeats) say what one order may buy; they start at 1, 1 and none. A service sells a range or packs: with `qtyOptions` the server stores `minQty` as the smallest and `maxQty` as the largest pack and refuses a different one sent (`422` `packs_set`); without packs a `maxQty` under `minQty` is `422` `below_min` on `maxQty` (`above_max` on `minQty` when only `minQty` was sent). Every pack problem (`invalid_pack`, `duplicate_pack`) is on `qtyOptions`. The optional `stockDelivery` (default `false`) makes it a service delivered from code stock, and the optional `ownCost` (0 to 1000000000, default `0`) is its own cost: the effective `cost` starts equal to it (decision 069). With `ownCost` sent, a `basePrice` under the floor it sets is `422` on `basePrice` with the code `below_floor`, as on a change. The values are in the audit row `created service`.",
         "operationId": "postAdminServices",
         "parameters": [],
         "requestBody": {
@@ -150284,6 +150329,19 @@
                       "type": "number"
                     },
                     "description": "Fixed pack sizes: at most 50 whole numbers from 1 to 100000, no repeats; stored ascending. When set, `minQty` is the smallest and `maxQty` the largest pack (default `[]`)."
+                  },
+                  "stockDelivery": {
+                    "type": "boolean",
+                    "description": "Delivered from code stock (decision 069): only such a service takes inventory codes and only its orders take codes from the stock (default `false`)."
+                  },
+                  "ownCost": {
+                    "type": "string",
+                    "pattern": "^\\d{1,14}\\.\\d{4}$",
+                    "x-gsm-alias": "Money",
+                    "description": "The service's own cost, from 0 to 1000000000 like a supplier's price (decisions 051 and 069, default `0`): the effective `cost` is the larger of it and the cost of the first usable supplier link.",
+                    "examples": [
+                      "12.4900"
+                    ]
                   }
                 },
                 "required": [
@@ -150406,7 +150464,16 @@
                       "type": "string",
                       "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
-                      "description": "The effective cost (B117): the larger of the service cost and the cost of the first supplier link an order can use.",
+                      "description": "The effective cost (B117): the larger of `ownCost` and the cost of the first supplier link an order can use.",
+                      "examples": [
+                        "12.4900"
+                      ]
+                    },
+                    "ownCost": {
+                      "type": "string",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
+                      "x-gsm-alias": "Money",
+                      "description": "The service's own cost that staff set (decision 069; a supplier import writes the supplier's cost here). `cost` never falls under it.",
                       "examples": [
                         "12.4900"
                       ]
@@ -150458,6 +150525,16 @@
                     },
                     "belowFloor": {
                       "type": "boolean"
+                    },
+                    "stockDelivery": {
+                      "type": "boolean",
+                      "description": "Delivered from code stock (decision 069): only such a service holds inventory codes, and only its orders take codes from the stock at placement."
+                    },
+                    "stockAvailable": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "How many of the service's codes are `available` now; `0` for a service without codes (decision 069)."
                     },
                     "slaMinutes": {
                       "type": "integer",
@@ -150569,7 +150646,7 @@
                           "publish_failed"
                         ]
                       },
-                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Sent to every reader."
+                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link and, when it is delivered from code stock, no available code: decision 069), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Sent to every reader."
                     },
                     "retailPrice": {
                       "anyOf": [
@@ -150689,11 +150766,14 @@
                     "category",
                     "basePrice",
                     "cost",
+                    "ownCost",
                     "costChangedFrom",
                     "minProfit",
                     "floorPrice",
                     "marginPct",
                     "belowFloor",
+                    "stockDelivery",
+                    "stockAvailable",
                     "slaMinutes",
                     "supplier",
                     "fallbackSupplier",
@@ -150723,11 +150803,14 @@
                   },
                   "basePrice": "17.2800",
                   "cost": "0.0000",
+                  "ownCost": "0.0000",
                   "costChangedFrom": null,
                   "minProfit": "0.0200",
                   "floorPrice": "0.0200",
                   "marginPct": "100.0000",
                   "belowFloor": false,
+                  "stockDelivery": false,
+                  "stockAvailable": 0,
                   "slaMinutes": 1440,
                   "supplier": null,
                   "fallbackSupplier": null,
@@ -153354,7 +153437,16 @@
                       "type": "string",
                       "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
-                      "description": "The effective cost (B117): the larger of the service cost and the cost of the first supplier link an order can use.",
+                      "description": "The effective cost (B117): the larger of `ownCost` and the cost of the first supplier link an order can use.",
+                      "examples": [
+                        "12.4900"
+                      ]
+                    },
+                    "ownCost": {
+                      "type": "string",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
+                      "x-gsm-alias": "Money",
+                      "description": "The service's own cost that staff set (decision 069; a supplier import writes the supplier's cost here). `cost` never falls under it.",
                       "examples": [
                         "12.4900"
                       ]
@@ -153406,6 +153498,16 @@
                     },
                     "belowFloor": {
                       "type": "boolean"
+                    },
+                    "stockDelivery": {
+                      "type": "boolean",
+                      "description": "Delivered from code stock (decision 069): only such a service holds inventory codes, and only its orders take codes from the stock at placement."
+                    },
+                    "stockAvailable": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "How many of the service's codes are `available` now; `0` for a service without codes (decision 069)."
                     },
                     "slaMinutes": {
                       "type": "integer",
@@ -153517,7 +153619,7 @@
                           "publish_failed"
                         ]
                       },
-                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Sent to every reader."
+                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link and, when it is delivered from code stock, no available code: decision 069), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Sent to every reader."
                     },
                     "retailPrice": {
                       "anyOf": [
@@ -153809,11 +153911,14 @@
                     "category",
                     "basePrice",
                     "cost",
+                    "ownCost",
                     "costChangedFrom",
                     "minProfit",
                     "floorPrice",
                     "marginPct",
                     "belowFloor",
+                    "stockDelivery",
+                    "stockAvailable",
                     "slaMinutes",
                     "supplier",
                     "fallbackSupplier",
@@ -153846,11 +153951,14 @@
                   },
                   "basePrice": "17.2800",
                   "cost": "13.5000",
+                  "ownCost": "0.0000",
                   "costChangedFrom": null,
                   "minProfit": "0.8100",
                   "floorPrice": "14.3100",
                   "marginPct": "21.8750",
                   "belowFloor": false,
+                  "stockDelivery": false,
+                  "stockAvailable": 0,
                   "slaMinutes": 1440,
                   "supplier": {
                     "id": 3,
@@ -154200,7 +154308,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Only the keys sent change. Saving `basePrice` clears `costChangedFrom`; a `minProfit`-only change does not; `minProfit: null` goes back to the default policy. A `basePrice` under the floor (effective cost plus the minimum profit being saved) or not above zero is `422` on `basePrice`. The category and type must agree (`422` on `categoryId`, or on `type` when only the type was sent). A code another live service has is `409 CODE_TAKEN`. `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) set what a merchant may do with this service's orders. `minQty`, `maxQty` and `qtyOptions` set what one order may buy; a key left out keeps its stored value, and when any of them is sent the whole rule is checked again (the same refusals as on create: `below_min`, `above_max`, `invalid_pack`, `duplicate_pack`, `packs_set`, all `422`). Packs are stored ascending and set `minQty` and `maxQty` to the smallest and largest pack. `qtyOptions: []` clears the packs; the service then sells the range `minQty..maxQty`, so send both in the same request (left out, the stored ones, the former smallest and largest pack, stay). Example body: `{ \"qtyOptions\": [5, 10, 25] }`. The audit row `edited service` holds the three values before and after. Sending `basePrice` or `minProfit` also needs `pricing:update` (`403 FORBIDDEN`, decision 046).",
+        "description": "Only the keys sent change. Saving `basePrice` clears `costChangedFrom`; a `minProfit`-only change does not; `minProfit: null` goes back to the default policy. A `basePrice` under the floor (effective cost plus the minimum profit being saved) or not above zero is `422` on `basePrice`. The category and type must agree (`422` on `categoryId`, or on `type` when only the type was sent). A code another live service has is `409 CODE_TAKEN`. `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) set what a merchant may do with this service's orders. `minQty`, `maxQty` and `qtyOptions` set what one order may buy; a key left out keeps its stored value, and when any of them is sent the whole rule is checked again (the same refusals as on create: `below_min`, `above_max`, `invalid_pack`, `duplicate_pack`, `packs_set`, all `422`). Packs are stored ascending and set `minQty` and `maxQty` to the smallest and largest pack. `qtyOptions: []` clears the packs; the service then sells the range `minQty..maxQty`, so send both in the same request (left out, the stored ones, the former smallest and largest pack, stay). Example body: `{ \"qtyOptions\": [5, 10, 25] }`. The audit row `edited service` holds the three values before and after. Decision 069: `stockDelivery` turns \"Delivered from code stock\" on or off; `false` while the service has available codes is `422` on `stockDelivery` with the code `codes_in_stock` (\"Void the N codes in stock first.\"). `ownCost` (0 to 1000000000) sets the service's own cost: the effective `cost` is worked out again and moves like a supplier cost change (`costChangedFrom` when it rose, the floor, cached price lists, a following shop price); a `basePrice` sent with it is judged against the new floor. The audit row holds `ownCost` and `stockDelivery` before and after. Sending `basePrice`, `minProfit` or `ownCost` also needs `pricing:update` (`403 FORBIDDEN`, decisions 046 and 069).",
         "operationId": "patchAdminServicesById",
         "parameters": [
           {
@@ -154329,6 +154437,19 @@
                       "type": "number"
                     },
                     "description": "Fixed pack sizes: at most 50 whole numbers from 1 to 100000, no repeats; stored ascending. When set, `minQty` is the smallest and `maxQty` the largest pack (default `[]`)."
+                  },
+                  "stockDelivery": {
+                    "type": "boolean",
+                    "description": "Delivered from code stock (decision 069): only such a service takes inventory codes and only its orders take codes from the stock (default `false`)."
+                  },
+                  "ownCost": {
+                    "type": "string",
+                    "pattern": "^\\d{1,14}\\.\\d{4}$",
+                    "x-gsm-alias": "Money",
+                    "description": "The service's own cost, from 0 to 1000000000 like a supplier's price (decisions 051 and 069, default `0`): the effective `cost` is the larger of it and the cost of the first usable supplier link.",
+                    "examples": [
+                      "12.4900"
+                    ]
                   }
                 }
               },
@@ -154438,7 +154559,16 @@
                       "type": "string",
                       "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
-                      "description": "The effective cost (B117): the larger of the service cost and the cost of the first supplier link an order can use.",
+                      "description": "The effective cost (B117): the larger of `ownCost` and the cost of the first supplier link an order can use.",
+                      "examples": [
+                        "12.4900"
+                      ]
+                    },
+                    "ownCost": {
+                      "type": "string",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
+                      "x-gsm-alias": "Money",
+                      "description": "The service's own cost that staff set (decision 069; a supplier import writes the supplier's cost here). `cost` never falls under it.",
                       "examples": [
                         "12.4900"
                       ]
@@ -154490,6 +154620,16 @@
                     },
                     "belowFloor": {
                       "type": "boolean"
+                    },
+                    "stockDelivery": {
+                      "type": "boolean",
+                      "description": "Delivered from code stock (decision 069): only such a service holds inventory codes, and only its orders take codes from the stock at placement."
+                    },
+                    "stockAvailable": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "How many of the service's codes are `available` now; `0` for a service without codes (decision 069)."
                     },
                     "slaMinutes": {
                       "type": "integer",
@@ -154601,7 +154741,7 @@
                           "publish_failed"
                         ]
                       },
-                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Sent to every reader."
+                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link and, when it is delivered from code stock, no available code: decision 069), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Sent to every reader."
                     },
                     "retailPrice": {
                       "anyOf": [
@@ -154721,11 +154861,14 @@
                     "category",
                     "basePrice",
                     "cost",
+                    "ownCost",
                     "costChangedFrom",
                     "minProfit",
                     "floorPrice",
                     "marginPct",
                     "belowFloor",
+                    "stockDelivery",
+                    "stockAvailable",
                     "slaMinutes",
                     "supplier",
                     "fallbackSupplier",
@@ -154755,11 +154898,14 @@
                   },
                   "basePrice": "18.0000",
                   "cost": "13.5000",
+                  "ownCost": "0.0000",
                   "costChangedFrom": null,
                   "minProfit": "0.8100",
                   "floorPrice": "14.3100",
                   "marginPct": "21.8750",
                   "belowFloor": false,
+                  "stockDelivery": false,
+                  "stockAvailable": 0,
                   "slaMinutes": 1440,
                   "supplier": {
                     "id": 3,
@@ -156735,7 +156881,7 @@
     },
     "/admin/services/{id}/inventory/import": {
       "post": {
-        "description": "One entry per pasted or uploaded line. Each is trimmed. A line shorter than 6 or longer than 128 characters, or with whitespace or a control character inside, is counted in `rejected` (not an error). A code that repeats an earlier line of the batch, or matches a code that is not void of any service, is counted in `duplicates`. The rest is stored encrypted (AES-GCM) with a keyed hash and the last four characters; a clear code is never logged or returned. `batchRef` (1 to 40 of `A-Za-z0-9._-`) names the batch; without it one is generated (`B-0031`). An empty list or more than 10,000 entries is `422` on `codes`; an unknown or archived service is `404`.",
+        "description": "One entry per pasted or uploaded line. Each is trimmed. A line shorter than 6 or longer than 128 characters, or with whitespace or a control character inside, is counted in `rejected` (not an error). A code that repeats an earlier line of the batch, or matches a code that is not void of any service, is counted in `duplicates`. The rest is stored encrypted (AES-GCM) with a keyed hash and the last four characters; a clear code is never logged or returned. `batchRef` (1 to 40 of `A-Za-z0-9._-`) names the batch; without it one is generated (`B-0031`). An empty list or more than 10,000 entries is `422` on `codes`; an unknown or archived service is `404`. Only a service delivered from code stock (`stockDelivery` on the service, decision 069) takes codes: any other service is `422` on `codes` with the code `not_stock_service` (\"Turn on Delivered from code stock for this service first.\") and nothing is stored.",
         "operationId": "postAdminServicesByIdInventoryImport",
         "parameters": [
           {

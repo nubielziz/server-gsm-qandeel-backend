@@ -1,7 +1,8 @@
 // Read-only lookups into tables other modules own, kept in this one file: the services a supplier service is linked to (name, code,
 // status, SLA, cost), the custom fields of a service (to map an order's inputs to the supplier's field names), whether it exists, the
-// services the sync may bring in line with their supplier (decision 042, feature 33) and the category staff pick for an import
-// (decision 063; where the import puts a service without a pick is the catalog's `ServiceImporter.categoriesForGroups`).
+// services the sync may bring in line with their supplier (decision 042, feature 33), the category staff pick for an import
+// (decision 063; where the import puts a service without a pick is the catalog's `ServiceImporter.categoriesForGroups`) and whether a
+// service is delivered from code stock (decision 069, for the dispatch's reason).
 //
 // DEVIATION to resolve later: decision 016 wants these reads through the owning module's public service. The catalog exports no
 // service or category reader, so this file reads `services`, `service_fields` and `service_categories` with plain selects, like the
@@ -43,6 +44,25 @@ export async function liveServiceInfo(db: DbExecutor, id: number): Promise<Servi
     .where(and(eq(s.services.id, id), sql`${s.services.archivedAt} is null`))
     .limit(1);
   return row ? { ...row, archived: false } : undefined;
+}
+
+/**
+ * Tells whether a service is delivered from code stock.
+ *
+ * Why: decision 069: an automatic order of such a service that reaches the dispatch with no usable supplier says that staff deliver it
+ * by hand (its stock was short at placement).
+ *
+ * @param db the database or a transaction
+ * @param id the service id
+ * @returns `services.stock_delivery`; false for an unknown service
+ */
+export async function isStockDeliveryService(db: DbExecutor, id: number): Promise<boolean> {
+  const [row] = await db
+    .select({ stockDelivery: s.services.stockDelivery })
+    .from(s.services)
+    .where(eq(s.services.id, id))
+    .limit(1);
+  return row?.stockDelivery ?? false;
 }
 
 /**

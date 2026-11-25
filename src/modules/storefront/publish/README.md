@@ -45,6 +45,13 @@ pages of 1000 (`catalog/application/publish-sources.ts`), and the POST counts wi
 `GET /admin/publish-runs?quickAddRunId=` finds the automatic run of a Quick add run (`source_run_id`) and a run staff started with that
 scope.
 
+## Supply (decision 069)
+
+An automatic service needs supply to be published: a usable supplier link, or, for a service delivered from code stock, one available
+code (catalog `supplyStates`, the rule `supplyStateOf`). A stock service with neither is `blocked: out_of_stock` (judged right after
+`supplier_unavailable`, the sentence "No codes in stock and no supplier. Import codes or link a supplier first."); codes of any other
+service never count. A manual service is never blocked for supply.
+
 ## The Quick add hand-over (`publish_from_quick_add`, plan 31 section 6.3)
 
 A Quick add run that asked to publish (`publish: { listed }`) and created at least one service writes the outbox event

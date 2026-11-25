@@ -87,7 +87,7 @@ export class ServicesController {
   /**
    * Changes a service.
    *
-   * @param staff the signed-in staff member (decision 046: `basePrice` and `minProfit` also need `pricing:update`)
+   * @param staff the signed-in staff member (decisions 046 and 069: `basePrice`, `minProfit` and `ownCost` also need `pricing:update`)
    * @param params the service id
    * @param body the keys to change
    * @returns the updated service

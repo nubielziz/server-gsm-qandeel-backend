@@ -82,14 +82,16 @@ const MAX_PRICED_IDS = 10_000;
 const NEED_SQL = sql`coalesce((select min(q) from unnest(services.qty_options) as q), services.min_qty)`;
 
 /**
- * "The service has enough available inventory codes for its smallest order", as a condition on the outer table `services`.
+ * "The service is delivered from code stock and has enough available inventory codes for its smallest order", as a condition on the
+ * outer table `services`.
  *
- * Why: feature 22 shows `in_stock` / `on_request` and filters by it. The count is bounded by the smallest order and uses the
+ * Why: feature 22 shows `in_stock` / `on_request` and filters by it; decision 069: only a service delivered from code stock takes codes
+ * at placement, so only its codes count. The count is bounded by the smallest order and uses the
  * partial index `inventory_codes_available_idx (service_id, id)`, so a service with a million codes costs the same as one with
  * three. Written with the table name `services` as text so it also works in a select from `services` alone (Drizzle prints
- * columns without their table there). The domain twin is `coversSmallestOrder`.
+ * columns without their table there). The domain twin is `showsInStock`.
  */
-export const IN_STOCK_SQL: SQL = sql`((select count(*) from (select 1 from inventory_codes ic where ic.service_id = services.id and ic.status = 'available' limit ${NEED_SQL}) s) >= ${NEED_SQL})`;
+export const IN_STOCK_SQL: SQL = sql`(services.stock_delivery and (select count(*) from (select 1 from inventory_codes ic where ic.service_id = services.id and ic.status = 'available' limit ${NEED_SQL}) s) >= ${NEED_SQL})`;
 
 /** What narrows the storefront's priced ids: service types, categories, and the stock flag. An empty list restricts nothing. */
 export interface SellableFilter {

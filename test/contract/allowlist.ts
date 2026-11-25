@@ -14,6 +14,8 @@ import type { AllowlistEntry } from './lib/allowlist-check';
  *   reason: 'The backend adds needs_attention until the console learns the status.' }
  */
 export const ALLOWLIST: readonly AllowlistEntry[] = [
+  // Decision 069: the console adds `out_of_stock` with its side of the feature; remove these two entries when the console contract is
+  // extracted again (the stale-entry check then fails until they go).
   {
     route: 'POST /admin/service-listings/:id/image',
     part: 'request',

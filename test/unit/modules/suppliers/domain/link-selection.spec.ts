@@ -1,7 +1,14 @@
-// Unit tests of the choice of a supplier link: the cost of a link and the automatic pick that never fails over to a costlier one.
+// Unit tests of the choice of a supplier link: the cost of a link, the automatic pick that never fails over to a costlier one, and the
+// reason a waiting order stops for when none fits (decision 069 for a service delivered from code stock).
 import { describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
-import { type RoutingLink, linkUnitCost, pickLink } from '@src/modules/suppliers/domain/link-selection';
+import {
+  NO_STOCK_NO_SUPPLIER_MESSAGE,
+  type RoutingLink,
+  linkUnitCost,
+  noLinkReason,
+  pickLink,
+} from '@src/modules/suppliers/domain/link-selection';
 
 const link = (overrides: Partial<RoutingLink> = {}): RoutingLink => ({
   linkId: 1,
@@ -56,5 +63,27 @@ describe('pickLink', () => {
       ok: false,
       reason: 'supplier_unavailable',
     });
+  });
+});
+
+describe('noLinkReason', () => {
+  const price = Money.of('12.0000');
+
+  it('tells staff to deliver an order of a stock service by hand when no supplier can take it', () => {
+    for (const links of [[], [link({ supplierStatus: 'paused' })], [link({ available: false })]]) {
+      const choice = pickLink(links, price);
+      if (choice.ok) throw new Error('expected no link');
+      expect(noLinkReason(choice, true)).toBe(NO_STOCK_NO_SUPPLIER_MESSAGE);
+    }
+    expect(NO_STOCK_NO_SUPPLIER_MESSAGE).toBe('No codes in stock and no supplier: deliver it by hand.');
+  });
+
+  it('keeps the reason of a costlier supplier, and every reason of any other service', () => {
+    const costly = pickLink([link({ credit: '15.0000' })], price);
+    const none = pickLink([], price);
+    if (costly.ok || none.ok) throw new Error('expected no link');
+    expect(noLinkReason(costly, true)).toBe(costly.message);
+    expect(noLinkReason(none, false)).toBe('No active supplier is linked to this service.');
+    expect(noLinkReason(costly, false)).toBe(costly.message);
   });
 });

@@ -63,7 +63,9 @@ export const importInventoryCodes = defineRoute({
     'the batch, or matches a code that is not void of any service, is counted in `duplicates`. The rest is stored encrypted ' +
     '(AES-GCM) with a keyed hash and the last four characters; a clear code is never logged or returned. `batchRef` ' +
     '(1 to 40 of `A-Za-z0-9._-`) names the batch; without it one is generated (`B-0031`). An empty list or more than 10,000 ' +
-    'entries is `422` on `codes`; an unknown or archived service is `404`.',
+    'entries is `422` on `codes`; an unknown or archived service is `404`. Only a service delivered from code stock ' +
+    '(`stockDelivery` on the service, decision 069) takes codes: any other service is `422` on `codes` with the code ' +
+    '`not_stock_service` ("Turn on Delivered from code stock for this service first.") and nothing is stored.',
   tags: ['inventory'],
   surface: 'admin',
   access: 'staff-permission',

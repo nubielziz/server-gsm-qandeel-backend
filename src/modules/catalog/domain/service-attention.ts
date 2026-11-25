@@ -5,7 +5,8 @@
  * Why a live service needs staff attention, in the order a row lists them.
  *
  * Why: decision 060: the "Needs attention" view of the catalog, its count and the badges of a row read one list, so they never
- * disagree. `no_supplier`: an automatic service with no active supplier link. `below_floor`: the price is under the effective
+ * disagree. `no_supplier`: an automatic service with no active supplier link (and, decision 069, no available code when it is delivered
+ * from code stock). `below_floor`: the price is under the effective
  * cost plus the minimum profit. `price_proposal`: a proposed change of the shop price waits for staff (decision 040).
  * `publish_failed`: the last publish attempt of a service that has no shop page was refused.
  */

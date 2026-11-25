@@ -12,6 +12,7 @@ import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, signInStaff } from '../../support/auth';
 import { GatewayTestModule } from '../../support/billing';
+import { markStockService } from '../../support/catalog';
 import {
   type B2cWorld,
   B2cGateway,
@@ -182,6 +183,7 @@ describe('order.received', () => {
   });
 
   it('an order delivered from stock at once is also told as completed', async () => {
+    await markStockService(db, world.icloud.serviceId);
     const owner = await signInStaff(t, ['inventory:write']);
     const imported = await t.app.inject({
       method: 'POST',

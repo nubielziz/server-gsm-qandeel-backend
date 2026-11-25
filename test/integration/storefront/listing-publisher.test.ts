@@ -22,7 +22,13 @@ import { mainInputField } from '@src/modules/suppliers/domain/import-plan';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
-import { insertCategory, insertService, insertSupplierLink } from '../../support/catalog';
+import {
+  insertCategory,
+  insertInventoryCodes,
+  insertService,
+  insertSupplierLink,
+  markStockService,
+} from '../../support/catalog';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertUsd } from '../../support/fixtures';
@@ -1037,8 +1043,9 @@ describe('ListingPublisher: the service row lock', () => {
         inside: async (tx) => {
           const publisherPid = await backendPid(tx);
           sync = syncCost(one.id, one.supplierServiceId, '100.0000');
-          // The effective cost recompute; the activity view may cut a long statement before its update.
-          expect(await blockedBy(publisherPid)).toMatch(/update "services"|with figures as/);
+          // The effective cost recompute: it locks the service rows first (decision 069), so that lock is what waits; an older form of
+          // the recompute waited on its update, and the activity view may cut a long statement before it.
+          expect(await blockedBy(publisherPid)).toMatch(/for no key update|update "services"|with figures as/);
         },
       }),
     );
@@ -1100,6 +1107,41 @@ describe('ListingPublisher: the supplier links (supplyStates)', () => {
     await insertSupplierLink(await db(), one.id, { credit: '10.0000', creditRate: '1', priority: 2, isActive: false });
     expect((await supplyStates(await db(), [one.id])).get(one.id)).toBe('supplier_unavailable');
     expect(await publishNothing(await preparedInput(t, one.id))).toEqual({
+      result: 'refused',
+      reason: 'supplier_unavailable',
+      detail: null,
+    });
+  });
+
+  it('supplies a service delivered from code stock by an available code, and refuses it out_of_stock with neither (decision 069)', async () => {
+    const w = await world();
+    await createRule();
+    const gift = await service(w, { values: { stockDelivery: true } });
+    await (await db()).update(s.suppliers).set({ status: 'paused' }).where(eq(s.suppliers.id, gift.supplierId));
+    expect((await supplyStates(await db(), [gift.id])).get(gift.id)).toBe('out_of_stock');
+    expect(await publishNothing(await preparedInput(t, gift.id))).toEqual({
+      result: 'refused',
+      reason: 'out_of_stock',
+      detail: null,
+    });
+    // One available code is supply enough, with the supplier still paused, and with no link at all.
+    await insertInventoryCodes(await db(), gift.id, 1);
+    const bare = await insertService(await db(), w.categoryId, { stockDelivery: true });
+    await insertInventoryCodes(await db(), bare, 1);
+    const states = await supplyStates(await db(), [gift.id, bare]);
+    expect([...states.values()]).toEqual(['ok', 'ok']);
+    published(await publishOne(t, await preparedInput(t, gift.id)));
+  });
+
+  it('never counts the codes of a service that is not delivered from code stock', async () => {
+    const w = await world();
+    await createRule();
+    const plain = await service(w);
+    await (await db()).update(s.suppliers).set({ status: 'paused' }).where(eq(s.suppliers.id, plain.supplierId));
+    await insertInventoryCodes(await db(), plain.id, 2);
+    await markStockService(await db(), plain.id, false);
+    expect((await supplyStates(await db(), [plain.id])).get(plain.id)).toBe('supplier_unavailable');
+    expect(await publishNothing(await preparedInput(t, plain.id))).toEqual({
       result: 'refused',
       reason: 'supplier_unavailable',
       detail: null,

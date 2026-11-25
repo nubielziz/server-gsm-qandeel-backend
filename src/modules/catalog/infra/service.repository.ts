@@ -22,6 +22,7 @@ import {
 } from '../db/schema';
 import type { AttentionReason } from '../domain/service-attention';
 import { hasActiveSupplierLinkSql, isListedSql, primarySupplierIdSql } from './foreign-reads.repository';
+import { availableCodeCountSql } from './inventory.repository';
 import { needsAttentionSql, notOnShopSql, retailPriceSql } from './service-attention.sql';
 import { belowFloorSql, floorPriceSql, marginPctSql, minProfitSql } from './service-figures.sql';
 import { categoryPositionSql, expandSortField } from './service-order.sql';
@@ -35,6 +36,8 @@ export interface ServiceRow {
   readonly floorPrice: string;
   readonly marginPct: string;
   readonly belowFloor: boolean;
+  /** How many of its codes are `available` now (decision 069; 0 for a service without codes). */
+  readonly stockAvailable: number;
 }
 
 /** The sorts of `GET /admin/services` (the price grid reads `name`, `sort` and `id`). */
@@ -62,6 +65,8 @@ const columnsAt = (at: Date, reasons: readonly AttentionReason[]): ListColumns =
   supplierId: primarySupplierIdSql,
   isListed: isListedSql,
   notOnShop: notOnShopSql,
+  // Decision 069: the console's Inventory menu lists the services delivered from code stock.
+  stockDelivery: services.stockDelivery,
   retailPrice: retailPriceSql,
   // `sort` stands for "category position, then the service's own position, then name": the order merchants read (decision 063).
   categoryPosition: categoryPositionSql,
@@ -87,6 +92,7 @@ function selectRows(db: DbExecutor, at: Date) {
       floorPrice: floorPriceSql(at),
       marginPct: marginPctSql,
       belowFloor: belowFloorSql(at),
+      stockAvailable: availableCodeCountSql,
     })
     .from(services)
     .innerJoin(serviceCategories, eq(serviceCategories.id, services.categoryId));

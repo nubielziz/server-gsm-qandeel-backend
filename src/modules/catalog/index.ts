@@ -50,7 +50,7 @@ export {
   supplierExists,
   supplyStates,
 } from './application/publish-sources';
-export type { SupplyState } from './application/publish-sources';
+export type { SupplyState } from './domain/code-stock';
 export { RetailPricing, priceWithRules } from './application/retail-pricing';
 export type { RetailFacts, RetailFollowState, RetailTarget } from './application/retail-pricing';
 export type { RetailRule } from './application/retail-rules';
@@ -113,7 +113,7 @@ export type {
   SellableService,
   ServiceName,
 } from './application/storefront-services';
-export { coversSmallestOrder, smallestOrder } from './domain/storefront-availability';
+export { coversSmallestOrder, showsInStock, smallestOrder } from './domain/storefront-availability';
 export { MAX_QTY_OPTIONS, MAX_QUANTITY, quantityRuleProblems, resolveQuantityRule } from './domain/quantity-rule';
 export type { QuantityRule } from './domain/quantity-rule';
 export { InventoryStock } from './application/inventory-stock';

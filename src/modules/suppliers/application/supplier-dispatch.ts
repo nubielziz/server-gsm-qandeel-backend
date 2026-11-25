@@ -10,8 +10,8 @@ import { ErrorReporter } from '../../../infra/observability';
 import { ORDER_OUTBOX_EVENTS, OrderSupplierMoves, PAYMENT_STOP_REASONS, isOpen } from '../../orders';
 import type { LateAcceptanceCause, Order, SupplierMoveAction } from '../../orders';
 import type { Supplier } from '../db/schema';
-import { linkUnitCost, pickLink } from '../domain/link-selection';
-import { serviceFieldMaps } from '../infra/foreign-reads.repository';
+import { linkUnitCost, noLinkReason, pickLink } from '../domain/link-selection';
+import { isStockDeliveryService, serviceFieldMaps } from '../infra/foreign-reads.repository';
 import { dispatchTarget, routingLinks } from '../infra/supplier-catalogue.repository';
 import { findSupplier } from '../infra/supplier.repository';
 import { SupplierClient, SupplierThrottle } from './supplier-client';
@@ -72,7 +72,8 @@ export class SupplierBusyError extends Error {
  * logged); when the answer's own transaction fails for another reason and the supplier accepted, the acceptance is kept the same way (the
  * reference, a `review` line saying the answer could not be recorded; the order keeps its claim and the sweep moves it later) and the
  * original error then ends the job, so no retry sends again. No eligible link, or a supplier too busy on the last attempt, stops a waiting order in
- * `needs_attention`; a cache Redis error in the call limits counts as busy (the queue retries, the last attempt stops the order). A
+ * `needs_attention` (an order of a service delivered from code stock with no usable supplier says "No codes in stock and no supplier:
+ * deliver it by hand.", decision 069); a cache Redis error in the call limits counts as busy (the queue retries, the last attempt stops the order). A
  * run that finds a claim of an earlier release (`pending` with `sent_at` set) does not send again: it moves the order to
  * `needs_attention`. A storefront order whose payment is disputed, charged back or refunded in full is not sent either: it is stopped in
  * `needs_attention` with the reason before any claim. The supplier's main box travels as `IMEI`: the IMEI of an IMEI order, else the value
@@ -314,7 +315,11 @@ export class SupplierDispatch {
       };
     }
     const choice = pickLink(await routingLinks(db, order.serviceId), Money.of(order.unitPrice));
-    if (!choice.ok) return { ok: false, reason: choice.message };
+    if (!choice.ok) {
+      // Decision 069: an order of a stock service with no usable supplier is delivered by hand (the flag is read only then).
+      const stockDelivery = choice.reason !== 'costs_more' && (await isStockDeliveryService(db, order.serviceId));
+      return { ok: false, reason: noLinkReason(choice, stockDelivery) };
+    }
     const supplier = await findSupplier(db, choice.link.supplierId);
     const chosen = await dispatchTarget(db, order.serviceId, choice.link.supplierServiceId);
     if (!supplier || !chosen)

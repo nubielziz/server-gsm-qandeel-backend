@@ -1,6 +1,7 @@
-// The catalog's reads for the bulk publish (feature 31, plan 31 sections 3.2, 5.2 and 6.1): whether a service can be fulfilled by a
-// supplier now (`supplyStates`), the service ids of a scope in keyset pages (every live service, a category, a supplier, a Quick add
-// run), the existence of a category, a supplier and a Quick add run, and the labels of the rules a draft row names.
+// The catalog's reads for the bulk publish (feature 31, plan 31 sections 3.2, 5.2 and 6.1): whether a service can be fulfilled now by a
+// supplier or, decision 069, by its code stock (`supplyStates`), the service ids of a scope in keyset pages (every live service, a
+// category, a supplier, a Quick add run), the existence of a category, a supplier and a Quick add run, and the labels of the rules a draft
+// row names.
 //
 // DEVIATION to resolve when suppliers exports a read: decision 016 wants this through the suppliers' public service. The
 // storefront cannot import suppliers (suppliers imports orders, orders imports storefront: a cycle, decision 032), and the catalog
@@ -9,24 +10,20 @@
 // with plain selects. Nothing outside this file knows.
 import { and, asc, eq, exists, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
+import { type SupplyState, supplyStateOf } from '../domain/code-stock';
+import { hasAvailableCodeSql } from '../infra/inventory.repository';
 import { ruleRowsOf } from '../infra/retail-price-rule.repository';
 import { retailRuleOf } from './retail-rules';
 
 /**
- * Whether a supplier can take an order of a service now: `ok`, `no_link` (no active link), or `supplier_unavailable` (every
- * active link's supplier is paused or disabled, or no longer lists the service).
- *
- * Why: plan 31 section 3.2 (`supplier_unavailable`): the rule of `pickLink` without the price test.
- */
-export type SupplyState = 'ok' | 'no_link' | 'supplier_unavailable';
-
-/**
- * Tells, for several services, whether a supplier can take an order of each now.
+ * Tells, for several services, whether each can be fulfilled now: by a supplier, or, for a service delivered from code stock, by an
+ * available code.
  *
  * Why: plan 31 section 3.2: the shop's sellable rule does not look at the supplier, so a service with no usable supplier link could
  * be listed and sold, and the paid order would wait in `needs_attention`. The publisher refuses such a row (`supplier_unavailable`)
  * when the service is fulfilled automatically. The rule is `pickLink`'s (suppliers/domain/link-selection.ts) without the price test:
- * an active link whose supplier is `active` and whose supplier service is still available.
+ * an active link whose supplier is `active` and whose supplier service is still available. Decision 069: a service delivered from
+ * code stock with an available code is supplied without one, and one with neither reads `out_of_stock` (`supplyStateOf`).
  *
  * Side effects: none (reads only, no lock).
  *
@@ -38,6 +35,7 @@ export async function supplyStates(db: DbExecutor, serviceIds: readonly number[]
   const ids = [...new Set(serviceIds)];
   const out = new Map<number, SupplyState>(ids.map((id) => [id, 'no_link']));
   if (ids.length === 0) return out;
+  const links = new Map<number, { active: boolean; usable: boolean }>();
   const rows = await db
     .select({
       serviceId: s.serviceSupplierLinks.serviceId,
@@ -49,8 +47,34 @@ export async function supplyStates(db: DbExecutor, serviceIds: readonly number[]
     .innerJoin(s.suppliers, eq(s.suppliers.id, s.supplierServices.supplierId))
     .where(and(inArray(s.serviceSupplierLinks.serviceId, ids), eq(s.serviceSupplierLinks.isActive, true)));
   for (const row of rows) {
-    if (row.supplierStatus === 'active' && row.available) out.set(row.serviceId, 'ok');
-    else if (out.get(row.serviceId) === 'no_link') out.set(row.serviceId, 'supplier_unavailable');
+    const seen = links.get(row.serviceId) ?? { active: false, usable: false };
+    links.set(row.serviceId, {
+      active: true,
+      usable: seen.usable || (row.supplierStatus === 'active' && row.available),
+    });
+  }
+  // One select over the services: the flag, and whether one code is available (the partial index stops at the first).
+  const stock = await db
+    .select({
+      id: s.services.id,
+      stockDelivery: s.services.stockDelivery,
+      hasCode: hasAvailableCodeSql,
+    })
+    .from(s.services)
+    .where(inArray(s.services.id, ids));
+  const stocked = new Map(stock.map((row) => [row.id, row]));
+  for (const id of ids) {
+    const link = links.get(id);
+    const service = stocked.get(id);
+    out.set(
+      id,
+      supplyStateOf({
+        activeLink: link?.active ?? false,
+        usableLink: link?.usable ?? false,
+        stockDelivery: service?.stockDelivery ?? false,
+        availableCodes: service?.hasCode === true ? 1 : 0,
+      }),
+    );
   }
   return out;
 }

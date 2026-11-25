@@ -61,7 +61,8 @@ const CURRENCY = 'USD';
  * (stored as a keyed hash and an encrypted copy, decision 054) and no hold, the payment is posted, and an automatic order is queued for dispatch ("B2C never dispatches before payment", CLAUDE.md).
  * The door decides the money path, never the buyer's rank: an account that crossed to a merchant rank between the payment and the capture still gets a shop order. The
  * capture holds the buyer's account row `FOR KEY SHARE` (decision 064) before it calls this.
- * Codes in stock are delivered at once like a merchant's order (RULES orders 10). The customer already paid the locked price, so
+ * Codes in stock are delivered at once like a merchant's order (RULES orders 10), only for a service delivered from code stock (decision
+ * 069: `InventoryStock.claim` reads the flag). The customer already paid the locked price, so
  * nothing here refuses: a service switched off since is still delivered or worked by hand. An order the risk rules hold (feature 18,
  * `holdReason` set) starts `held` through `placementDispatchState({ held })`: it claims no stock, queues no dispatch and carries the
  * hold sentence on its timeline, so the review queue shows why. An IMEI typed while the service was an IMEI service and paid after the

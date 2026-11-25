@@ -12,12 +12,14 @@ import { type PermissionHolder, requirePermission } from '../../identity';
 import { AuditService } from '../../platform';
 import type {
   FulfillmentMode,
+  NewService,
   Service,
   ServiceFieldType,
   ServiceOptionList,
   ServiceStatus,
   ServiceType,
 } from '../db/schema';
+import { CODES_IN_STOCK, codesInStockMessage } from '../domain/code-stock';
 import { type QuantityChange, type QuantityRule, resolveQuantityRule } from '../domain/quantity-rule';
 import type { AttentionReason, ShopBlock } from '../domain/service-attention';
 import { deliveryTimeText, dollars } from '../domain/service-figures';
@@ -31,6 +33,7 @@ import {
   listingsOf,
   supplierChainsOf,
 } from '../infra/foreign-reads.repository';
+import { countAvailableCodes } from '../infra/inventory.repository';
 import { type AttentionFlags, attentionFlagsOf } from '../infra/service-attention.sql';
 import {
   type ServiceListSort,
@@ -50,7 +53,7 @@ import {
 } from '../infra/service.repository';
 import { CatalogPriceVersion } from './catalog-price-version';
 import { CatalogSignals } from './catalog-signals';
-import { recomputeEffectiveCost } from './effective-cost';
+import { recomputeEffectiveCost, writeOwnCost } from './effective-cost';
 import { PriceResolver } from './price-resolver';
 import { type RetailPriceSource, RetailPrices } from './retail-prices';
 import { type ServiceReadAccess, assertListFiltersAllowed, serviceReadAccess } from './service-read-access';
@@ -66,12 +69,19 @@ export interface ServiceView {
   readonly categoryId: number;
   readonly category: { id: number; name: string } | null;
   readonly basePrice: string;
+  /** The effective cost: the larger of `ownCost` and the cost of the first usable supplier link (`recomputeEffectiveCost`). */
   readonly cost: string;
+  /** The service's own cost that staff set (`services.cost`, decision 069). */
+  readonly ownCost: string;
   readonly costChangedFrom: string | null;
   readonly minProfit: string;
   readonly floorPrice: string;
   readonly marginPct: string;
   readonly belowFloor: boolean;
+  /** Decision 069: only such a service holds codes, and only its orders take a code from the stock. */
+  readonly stockDelivery: boolean;
+  /** How many of its codes are `available` now (0 for a service without codes). */
+  readonly stockAvailable: number;
   readonly slaMinutes: number;
   readonly supplier: SupplierRef | null;
   readonly fallbackSupplier: SupplierRef | null;
@@ -155,6 +165,10 @@ export interface CreateServiceInput {
   readonly minQty?: number | undefined;
   readonly maxQty?: number | undefined;
   readonly qtyOptions?: readonly number[] | undefined;
+  /** "Delivered from code stock" (decision 069); off when left out. */
+  readonly stockDelivery?: boolean | undefined;
+  /** The service's own cost, 0 or more (decision 069); 0 when left out. */
+  readonly ownCost?: string | undefined;
 }
 
 /** The fields `PATCH /admin/services/:id` may change; `minProfit: null` goes back to the default policy. */
@@ -175,6 +189,10 @@ export interface UpdateServiceInput {
   readonly minQty?: number | undefined;
   readonly maxQty?: number | undefined;
   readonly qtyOptions?: readonly number[] | undefined;
+  /** "Delivered from code stock" (decision 069): `false` is refused while codes are available. */
+  readonly stockDelivery?: boolean | undefined;
+  /** The service's own cost, 0 or more (decision 069): it moves the effective cost like a supplier cost change. */
+  readonly ownCost?: string | undefined;
 }
 
 /**
@@ -257,6 +275,8 @@ const snapshot = (service: Service) => ({
   minQty: service.minQty,
   maxQty: service.maxQty,
   qtyOptions: service.qtyOptions,
+  ownCost: service.cost,
+  stockDelivery: service.stockDelivery,
 });
 
 /** The Catalog page's facts of some services (decision 060), read with a fixed number of queries. */
@@ -288,11 +308,14 @@ function toView(
     category: { id: service.categoryId, name: row.categoryName },
     basePrice: service.basePrice,
     cost: service.effectiveCost,
+    ownCost: service.cost,
     costChangedFrom: service.costWas,
     minProfit: row.minProfit,
     floorPrice: row.floorPrice,
     marginPct: row.marginPct,
     belowFloor: row.belowFloor,
+    stockDelivery: service.stockDelivery,
+    stockAvailable: row.stockAvailable,
     slaMinutes: service.slaMinutes,
     supplier: chain?.supplier ?? null,
     fallbackSupplier: chain?.fallbackSupplier ?? null,
@@ -334,8 +357,11 @@ function toView(
  * page facts, each narrowed by `serviceReadAccess` (the same rule for the list, show, create and change answers); a list filter the
  * caller may not use is refused before any query.
  *
+ * Decision 069: a row also says whether the service is delivered from code stock (`stockDelivery`), how many codes are available
+ * (`stockAvailable`) and its own cost (`ownCost`, next to the effective `cost`); create and change set the first and the last.
+ *
  * Side effects: writes `services` (and, on delete, the service's `pricing_rules` and children) and `audit_logs` (entity
- * `service`); recomputes `services.effective_cost` on create and change.
+ * `service`); recomputes `services.effective_cost` on create and change (and writes `services.cost` for `ownCost`).
  *
  * @see docs/contract/endpoints/catalog.md (the `/admin/services` sections)
  */
@@ -408,10 +434,12 @@ export class ServiceAdminService {
    * Creates a service.
    *
    * @param caller the signed-in staff member: the facts of decision 060 in the answer follow `serviceReadAccess`
-   * @param input name, code, category, type, SLA, base price and, optionally, the quantity rule
+   * @param input name, code, category, type, SLA, base price and, optionally, the quantity rule, "Delivered from code stock" and the
+   *   own cost (decision 069)
    * @returns the new service
    * @throws {AppError} `VALIDATION_FAILED` (422 on `categoryId` for an unknown category or one of another type; on `minQty`,
-   *   `maxQty` or `qtyOptions` for a quantity rule that breaks `resolveQuantityRule`), `CODE_TAKEN` (409 on `code`)
+   *   `maxQty` or `qtyOptions` for a quantity rule that breaks `resolveQuantityRule`; on `basePrice` with the code `below_floor` when
+   *   `ownCost` is sent and the base price is under the floor it sets, decision 069), `CODE_TAKEN` (409 on `code`)
    */
   async create(caller: PermissionHolder, input: CreateServiceInput): Promise<ServiceView> {
     const access = serviceReadAccess(caller);
@@ -439,8 +467,11 @@ export class ServiceAdminService {
           priceMode: 'fixed',
           duplicateRule: 'block_open',
           basePrice: input.basePrice,
-          cost: '0.0000',
-          effectiveCost: '0.0000',
+          // Decision 069: the own cost staff typed (0 until a supplier is linked or imported). The effective cost starts equal to it,
+          // so a new service never shows "cost changed" (a new service has no link yet).
+          cost: ownCostOf(input.ownCost),
+          effectiveCost: ownCostOf(input.ownCost),
+          stockDelivery: input.stockDelivery ?? false,
           code: input.code,
           slaMinutes: input.slaMinutes,
           // The merchant's cancel and verification stay off until staff switch them on (the columns default to false, false, 0).
@@ -455,6 +486,9 @@ export class ServiceAdminService {
         throw this.translateWriteError(error, input.code);
       }
       await recomputeEffectiveCost(tx, [service.id]);
+      // Decision 069: an own cost sent sets the floor at once, so the base price is judged against it as a change judges it (the same
+      // refusal); without one the new service costs 0 and the base price stays as typed.
+      if (input.ownCost !== undefined) await this.assertAboveFloor(tx, service, { basePrice: input.basePrice });
       this.priceVersion.bumpAfterCommit(work);
       await this.signals.servicesChanged(tx, [service.id], 'service');
       await this.audit.record(tx, {
@@ -471,17 +505,26 @@ export class ServiceAdminService {
   /**
    * Changes a service.
    *
-   * @param caller the signed-in staff member (`basePrice` and `minProfit` also need `pricing:update`, decision 046)
+   * Decision 069: `ownCost` writes `services.cost` and works out the effective cost again (`writeOwnCost`), with every consequence of
+   * a supplier cost change: `costChangedFrom` when it rose, the floor of every price, the catalog price version moved after the commit
+   * (cached price lists, the price change scan and the follow pass of a following shop price, decision 040), the search signal and the
+   * audit row. It is written before the floor check, so a `basePrice` sent with it is judged against the new floor. `stockDelivery:
+   * false` is refused while the service holds available codes (they are counted under the service row lock, which an import takes too).
+   *
+   * @param caller the signed-in staff member (`basePrice`, `minProfit` and `ownCost` also need `pricing:update`, decisions 046 and 069)
    * @param id the service id
    * @param changes the keys to change
    * @returns the updated service with its figures worked out again
-   * @throws {AppError} `FORBIDDEN` (403: `basePrice` or `minProfit` is sent without `pricing:update`); `NOT_FOUND` (404: unknown or archived); `VALIDATION_FAILED` (422 on `basePrice` under the floor, on
+   * @throws {AppError} `FORBIDDEN` (403: `basePrice`, `minProfit` or `ownCost` is sent without `pricing:update`); `NOT_FOUND` (404: unknown or archived); `VALIDATION_FAILED` (422 on `basePrice` under the floor, on
    *   `categoryId` or `type` when they disagree, on `minQty`, `maxQty` or `qtyOptions` for a quantity rule that breaks
-   *   `resolveQuantityRule`); `CODE_TAKEN` (409)
+   *   `resolveQuantityRule`, on `stockDelivery` with the code `codes_in_stock`); `CODE_TAKEN` (409)
    */
   async update(caller: PermissionHolder, id: number, changes: UpdateServiceInput): Promise<ServiceView> {
-    // The base price and the minimum profit set the price floor: a pricing decision (decision 046). `minProfit: null` counts as sent.
-    if (changes.basePrice !== undefined || changes.minProfit !== undefined) requirePermission(caller, 'pricing:update');
+    // The base price, the minimum profit and the own cost set the price floor: a pricing decision (decisions 046 and 069).
+    // `minProfit: null` counts as sent.
+    if (changes.basePrice !== undefined || changes.minProfit !== undefined || changes.ownCost !== undefined) {
+      requirePermission(caller, 'pricing:update');
+    }
     const access = serviceReadAccess(caller);
     return this.db.runInTransaction(async (work) => {
       const { tx } = work;
@@ -490,6 +533,12 @@ export class ServiceAdminService {
       // Work from the cost the suppliers set now, so the floor check and the figures never use a stale effective cost.
       await recomputeEffectiveCost(tx, [id]);
       const current = (await findServiceRow(tx, id, this.clock.now()))!.service;
+
+      // Decision 069: the codes in stock are voided before the service stops delivering from its stock (the row lock holds imports off).
+      if (changes.stockDelivery === false) {
+        const available = await countAvailableCodes(tx, id);
+        if (available > 0) throw invalid('stockDelivery', codesInStockMessage(available), CODES_IN_STOCK);
+      }
 
       if (changes.categoryId !== undefined || changes.type !== undefined) {
         const categoryId = changes.categoryId ?? current.categoryId;
@@ -508,6 +557,8 @@ export class ServiceAdminService {
         const owner = await findServiceByCode(tx, changes.code, id);
         if (owner) throw codeTaken(changes.code, owner.name);
       }
+      // The own cost first: the floor a `basePrice` sent with it is judged against starts from the new effective cost.
+      if (changes.ownCost !== undefined) await writeOwnCost(tx, id, ownCostOf(changes.ownCost));
       if (changes.basePrice !== undefined) await this.assertAboveFloor(tx, current, changes);
       // Only a request that sends a quantity key touches (and re-checks) the rule; it then writes all three columns.
       const quantity =
@@ -517,7 +568,7 @@ export class ServiceAdminService {
 
       let after: Service | undefined;
       try {
-        after = await updateServiceRow(tx, id, {
+        const columns: Partial<Omit<NewService, 'id'>> = {
           ...(changes.name === undefined ? {} : { name: changes.name }),
           ...(changes.code === undefined ? {} : { code: changes.code }),
           ...(changes.categoryId === undefined ? {} : { categoryId: changes.categoryId }),
@@ -533,8 +584,12 @@ export class ServiceAdminService {
           ...(changes.allowCancel === undefined ? {} : { allowCancel: changes.allowCancel }),
           ...(changes.allowVerify === undefined ? {} : { allowVerify: changes.allowVerify }),
           ...(changes.verifyWindowH === undefined ? {} : { verifyWindowH: changes.verifyWindowH }),
+          ...(changes.stockDelivery === undefined ? {} : { stockDelivery: changes.stockDelivery }),
           ...(quantity === undefined ? {} : quantity),
-        });
+        };
+        // A request that sends only `ownCost` has no column left to write here (`writeOwnCost` wrote it): the row is read back.
+        after =
+          Object.keys(columns).length === 0 ? await lockLiveService(tx, id) : await updateServiceRow(tx, id, columns);
       } catch (error) {
         throw this.translateWriteError(error, changes.code);
       }
@@ -665,6 +720,11 @@ export class ServiceAdminService {
     if (attempt === undefined || attempt.result !== 'refused') return null;
     return { runId: attempt.runId, reason: attempt.reason, detail: attempt.detail, at: attempt.at.toISOString() };
   }
+}
+
+/** An own cost as stored: 4 decimals, 0 when none was sent (decision 069). */
+function ownCostOf(value: string | undefined): string {
+  return Money.of(value ?? '0').toWire();
 }
 
 function notFound(): AppError {

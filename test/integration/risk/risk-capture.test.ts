@@ -11,7 +11,7 @@ import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { B2cGateway, type B2cWorld, type PaidOrder, b2cWorld, paidOrder } from '../../support/b2c';
 import { GatewayTestModule } from '../../support/billing';
-import { insertSupplierLink } from '../../support/catalog';
+import { insertSupplierLink, markStockService } from '../../support/catalog';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { ledgerTotals } from '../../support/money';
@@ -146,6 +146,7 @@ describe('a payment the rules hold', () => {
 
   it('claims no stock for a held order', async () => {
     await holdFirstOrders();
+    await markStockService(db, world.icloud.serviceId);
     const stocker = await adminWith(t, ['inventory:write']);
     const imported = await stocker.post(`/admin/services/${world.icloud.serviceId}/inventory/import`, {
       codes: ['GSM-STOCK-0001'],

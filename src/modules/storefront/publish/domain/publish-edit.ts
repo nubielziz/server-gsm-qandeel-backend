@@ -26,6 +26,7 @@ export const BLOCK_SENTENCES: Readonly<Record<PublishBlockReason, string>> = {
   b2b_only: 'The category is not open to the shop. Open it first.',
   not_orderable: 'A file service cannot be ordered online.',
   supplier_unavailable: 'No active supplier can take this service. Link or resume a supplier first.',
+  out_of_stock: 'No codes in stock and no supplier. Import codes or link a supplier first.',
   title_missing: 'The title is empty. Type a title.',
   title_too_long: 'The title is over 200 characters. Shorten it.',
   price_missing: 'No pricing rule covers this service, or its cost is 0. Make a rule or type a price.',

@@ -663,7 +663,7 @@
    "key": "DELETE /admin/services/:id",
    "fn": "deleteService",
    "file": "src/features/services/api/services.ts",
-   "line": 70,
+   "line": 73,
    "params": [
     {
      "name": "id",
@@ -12357,6 +12357,7 @@
           "b2b_only",
           "not_orderable",
           "supplier_unavailable",
+          "out_of_stock",
           "title_missing",
           "title_too_long",
           "price_missing",
@@ -15670,6 +15671,16 @@
          "nullable": true,
          "alias": "Money"
         },
+        "ownCost": {
+         "type": "string",
+         "alias": "Money"
+        },
+        "stockDelivery": {
+         "type": "boolean"
+        },
+        "stockAvailable": {
+         "type": "number"
+        },
         "minProfit": {
          "type": "string",
          "alias": "Money"
@@ -15900,6 +15911,16 @@
       "type": "string",
       "nullable": true,
       "alias": "Money"
+     },
+     "ownCost": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "stockDelivery": {
+      "type": "boolean"
+     },
+     "stockAvailable": {
+      "type": "number"
      },
      "minProfit": {
       "type": "string",
@@ -25693,6 +25714,7 @@
        "b2b_only",
        "not_orderable",
        "supplier_unavailable",
+       "out_of_stock",
        "title_missing",
        "title_too_long",
        "price_missing",
@@ -26469,7 +26491,7 @@
    "key": "PATCH /admin/services/:id",
    "fn": "updateService",
    "file": "src/features/services/api/services.ts",
-   "line": 60,
+   "line": 63,
    "params": [
     {
      "name": "id",
@@ -26541,6 +26563,15 @@
        },
        "verifyWindowH": {
         "type": "number",
+        "optional": true
+       },
+       "stockDelivery": {
+        "type": "boolean",
+        "optional": true
+       },
+       "ownCost": {
+        "type": "string",
+        "alias": "Money",
         "optional": true
        },
        "minProfit": {
@@ -26667,6 +26698,16 @@
       "type": "string",
       "nullable": true,
       "alias": "Money"
+     },
+     "ownCost": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "stockDelivery": {
+      "type": "boolean"
+     },
+     "stockAvailable": {
+      "type": "number"
      },
      "minProfit": {
       "type": "string",
@@ -38505,7 +38546,7 @@
    "key": "POST /admin/services",
    "fn": "createService",
    "file": "src/features/services/api/services.ts",
-   "line": 47,
+   "line": 48,
    "params": [
     {
      "name": "body",
@@ -38562,6 +38603,15 @@
        },
        "verifyWindowH": {
         "type": "number",
+        "optional": true
+       },
+       "stockDelivery": {
+        "type": "boolean",
+        "optional": true
+       },
+       "ownCost": {
+        "type": "string",
+        "alias": "Money",
         "optional": true
        }
       }
@@ -38669,6 +38719,16 @@
       "type": "string",
       "nullable": true,
       "alias": "Money"
+     },
+     "ownCost": {
+      "type": "string",
+      "alias": "Money"
+     },
+     "stockDelivery": {
+      "type": "boolean"
+     },
+     "stockAvailable": {
+      "type": "number"
      },
      "minProfit": {
       "type": "string",
