@@ -21,7 +21,7 @@ import {
   credentialsFor,
   dhruClient,
 } from '../support/machine-orders';
-import { IMEIS, type OrdersWorld, ordersWorld } from '../support/orders';
+import { IMEIS, type OrdersWorld, addImeiField, ordersWorld } from '../support/orders';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures');
 
@@ -150,6 +150,8 @@ beforeEach(async () => {
   await t.app.get(MaintenanceService).invalidate();
   const { db } = await testDb();
   world = await ordersWorld(db);
+  // The IMEI service has the field every new or imported IMEI service gets (decisions 071 and 073): the fixtures' IMEI rules are that field's.
+  await addImeiField(db, world.auto.serviceId);
   const category = await insertCategory(db, { name: 'Files', type: 'file' });
   fileServiceId = await insertService(db, category, {
     type: 'file',

@@ -4,9 +4,9 @@
 -- Every statement can run twice and on an empty database. Only service_fields is written: its check constraint, and the type of the fields
 -- below; every other column, service, table and orders.inputs is not touched.
 --
--- 1. The check of field_type takes the new value (drizzle-kit generated these two statements from the schema; IF EXISTS added so the pair
---    can run twice).
-ALTER TABLE "service_fields" DROP CONSTRAINT IF EXISTS "service_fields_field_type_check";--> statement-breakpoint
+-- 1. The check of field_type takes the new value (the two statements drizzle-kit generated from the schema, as they came: the tooling test of
+--    the expand migration compares them word for word). The pair can run twice: the first run leaves the check in place for the second to drop.
+ALTER TABLE "service_fields" DROP CONSTRAINT "service_fields_field_type_check";--> statement-breakpoint
 ALTER TABLE "service_fields" ADD CONSTRAINT "service_fields_field_type_check" CHECK ("service_fields"."field_type" in ('text', 'number', 'select', 'textarea', 'imei'));--> statement-breakpoint
 -- 2. Every field that is the main input of an IMEI service (whatever its status, archived ones included), is of type text and whose Name is
 --    IMEI in any letter case becomes of type imei: the 277 fields 0071 inserted, a supplier field named IMEI that the import or the fields

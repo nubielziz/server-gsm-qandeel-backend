@@ -24,7 +24,7 @@ import {
   makeMerchant,
   seedPortalBasics,
 } from '../../support/merchant-portal';
-import { type OrdersWorld, ordersWorld } from '../../support/orders';
+import { type OrdersWorld, addImeiField, ordersWorld } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { APPLE_IMEI, TURNSTILE_HEADERS, storefrontWorld } from '../../support/storefront';
 import { supportStaff } from '../../support/support';
@@ -200,6 +200,8 @@ describe('a NUL character inside the Dhru parameters', () => {
   beforeEach(async () => {
     const { db } = await testDb();
     world = await ordersWorld(db);
+    // The IMEI service has its default IMEI field (decisions 071 and 073), so a text that is not an IMEI is refused by that field's rule.
+    await addImeiField(db, world.auto.serviceId);
     creds = await credentialsFor(t, db, world.merchant.id);
     dhru = dhruClient(t, creds);
   });
