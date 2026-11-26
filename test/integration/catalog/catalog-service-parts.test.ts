@@ -1,4 +1,5 @@
-// Integration tests of the replace-all lists of a service (feature 4a): PUT /admin/services/:id/fields and /options.
+// Integration tests of the replace-all custom fields of a service (feature 4a): PUT /admin/services/:id/fields; and the 404 of the retired
+// PUT /admin/services/:id/options (decision 072), whose stored lists stay readable.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { FIELD_PATTERN_MESSAGES } from '@src/common/field-pattern';
@@ -61,14 +62,6 @@ const storedFields = async () =>
     .where(eq(s.serviceFields.serviceId, serviceId))
     .orderBy(s.serviceFields.sort);
 const errorFields = (res: { body: { errors: Array<{ field: string }> } }) => res.body.errors.map((e) => e.field);
-
-const option = (list: string, value: string, extra: Record<string, unknown> = {}) => ({
-  list,
-  value,
-  label: value,
-  supplierValue: '',
-  ...extra,
-});
 
 describe('PUT /admin/services/:id/fields', () => {
   it('replaces the list in order, deletes what is left out, answers the saved list and audits it', async () => {
@@ -328,67 +321,36 @@ describe('PUT /admin/services/:id/fields', () => {
   });
 });
 
-describe('PUT /admin/services/:id/options', () => {
-  it('replaces all three lists in order and answers the saved list', async () => {
-    const res = await admin.put(`/admin/services/${serviceId}/options`, {
-      options: [
-        option('model', 'iphone15', { label: 'iPhone 15' }),
-        option('network', 'att', { label: 'AT&T USA', supplierValue: 'ATT' }),
-        option('model', 'iphone14', { label: 'iPhone 14' }),
-        option('mep', '1', { label: 'MEP 1' }),
-      ],
-    });
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([
+describe('PUT /admin/services/:id/options (retired, decision 072)', () => {
+  const body = { options: [{ list: 'model', value: 'iphone15', label: 'iPhone 15', supplierValue: '' }] };
+
+  it('answers 404 to staff with every permission, writes nothing and emits no search event', async () => {
+    const { db } = await testDb();
+    const events = (await db.select().from(s.outboxEvents)).length;
+    const audits = (await auditRows()).length;
+    expect((await admin.put(`/admin/services/${serviceId}/options`, body)).status).toBe(404);
+    expect((await admin.put(`/admin/services/${serviceId}/options`, { options: [] })).status).toBe(404);
+    expect((await admin.put('/admin/services/999999/options', body)).status).toBe(404);
+    expect(await db.select().from(s.serviceOptions)).toEqual([]);
+    expect((await auditRows()).length).toBe(audits);
+    expect((await db.select().from(s.outboxEvents)).length).toBe(events);
+  });
+
+  it('answers 404, not 401, to a caller with no session: nothing serves the path', async () => {
+    expect((await admin.anonymous('PUT', `/admin/services/${serviceId}/options`, body)).status).toBe(404);
+  });
+
+  it('still shows the lists already stored in the options of the service', async () => {
+    const { db } = await testDb();
+    await db.insert(s.serviceOptions).values([
+      { serviceId, list: 'model', value: 'iphone15', label: 'iPhone 15' },
+      { serviceId, list: 'network', value: 'att', label: 'AT&T USA', supplierValue: 'ATT' },
+    ]);
+    const shown = await admin.get(`/admin/services/${serviceId}`);
+    expect(shown.status).toBe(200);
+    expect(shown.body.options).toEqual([
       { list: 'model', value: 'iphone15', label: 'iPhone 15', supplierValue: '' },
       { list: 'network', value: 'att', label: 'AT&T USA', supplierValue: 'ATT' },
-      { list: 'model', value: 'iphone14', label: 'iPhone 14', supplierValue: '' },
-      { list: 'mep', value: '1', label: 'MEP 1', supplierValue: '' },
     ]);
-    expect((await admin.get(`/admin/services/${serviceId}`)).body.options).toEqual(res.body);
-
-    const smaller = await admin.put(`/admin/services/${serviceId}/options`, { options: [option('network', 'tmo')] });
-    expect(smaller.body).toEqual([{ list: 'network', value: 'tmo', label: 'tmo', supplierValue: '' }]);
-    const audits = await auditRows();
-    expect(audits[1]).toMatchObject({ action: 'replaced option lists of service', entityId: serviceId });
-    expect(audits[1]!.before).toEqual({ model: 2, network: 1, mep: 1 });
-    expect(audits[1]!.after).toEqual({ model: 0, network: 1, mep: 0 });
-  });
-
-  it('keeps a list of hundreds of entries in order', async () => {
-    const options = Array.from({ length: 1200 }, (_, i) => option('model', `model-${String(i).padStart(4, '0')}`));
-    const res = await admin.put(`/admin/services/${serviceId}/options`, { options });
-    expect(res.status).toBe(200);
-    expect(res.body.length).toBe(1200);
-    const read = (await admin.get(`/admin/services/${serviceId}`)).body.options as Array<{ value: string }>;
-    expect(read.map((o) => o.value)).toEqual(options.map((o) => o.value));
-  });
-
-  it('names the later occurrence of a value repeated within a list, and allows it in another list', async () => {
-    const dup = await admin.put(`/admin/services/${serviceId}/options`, {
-      options: [option('model', 'x'), option('network', 'x'), option('model', ' x ')],
-    });
-    expect(dup.status).toBe(422);
-    expect(dup.body.errors).toEqual([
-      expect.objectContaining({ field: 'options.2.value', message: 'Duplicate in the model list' }),
-    ]);
-    expect(await (await testDb()).db.select().from(s.serviceOptions)).toEqual([]);
-  });
-
-  it('refuses an unknown list and an empty value on the dotted path', async () => {
-    const res = await admin.put(`/admin/services/${serviceId}/options`, {
-      options: [option('colour', 'red'), option('model', '   ')],
-    });
-    expect(res.status).toBe(422);
-    expect(res.body.errors.map((e: { field: string }) => e.field).sort()).toEqual([
-      'options.0.list',
-      'options.1.value',
-    ]);
-  });
-
-  it('answers 404 for an unknown service and needs catalog:update', async () => {
-    expect((await admin.put('/admin/services/999999/options', { options: [] })).status).toBe(404);
-    const other = await adminWith(t, ['catalog:read']);
-    expect((await other.put(`/admin/services/${serviceId}/options`, { options: [] })).status).toBe(403);
   });
 });

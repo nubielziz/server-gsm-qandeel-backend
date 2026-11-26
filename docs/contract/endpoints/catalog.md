@@ -29,7 +29,7 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 | `PATCH /admin/services/:id` | admin | staff-permission `catalog:*` | 4 | `updateService` |
 | `DELETE /admin/services/:id` | admin | staff-permission `catalog:*` | 4 | `deleteService` |
 | `PUT /admin/services/:id/fields` | admin | staff-permission `catalog:update` | 4 | `replaceServiceFields` |
-| `PUT /admin/services/:id/options` | admin | staff-permission `catalog:update` | 4 | `replaceServiceOptions` |
+| `PUT /admin/services/:id/options` | admin | staff-permission `catalog:update` | 4 |  |
 | `PUT /admin/services/:id/group-prices` | admin | staff-permission `pricing:update` | 4 | `replaceServiceGroupPrices` |
 | `GET /admin/client-prices` | admin | staff-permission `pricing:*` | 4 | `listAccountPrices` |
 | `POST /admin/client-prices` | admin | staff-permission `pricing:*` | 4 | `createAccountPrice` |
@@ -192,7 +192,7 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 ## GET /admin/services/:id
 
 - **Map**: Services: type, execution, pricing mode and rules. (الخدمات: النوع والتنفيذ ووضع التسعير والقواعد) · staff-permission `catalog:*` · stage 4 · tables services
-- **Frontend**: `getService` (src/features/services/api/services.ts:36) · params `id: number` · returns `ServiceDetail` · success 200 · assumed contract
+- **Frontend**: `getService` (src/features/services/api/services.ts:37) · params `id: number` · returns `ServiceDetail` · success 200 · assumed contract
 - **Response**: List row plus `fields` (service_fields by sort: key (the hidden identifier the server made from the name when the field was created; it never changes and the order forms send answers under it), name (the field's Name, stored in service_fields.supplier_key: never empty, unique in the service ignoring letter case, exactly what a supplier receives in CUSTOMFIELD; supplierKey is no longer on the wire), label (the text buyers read), fieldType text|number|select|textarea, required, options text[], regex ('' when none), isMainInput (the field's value travels as the IMEI parameter, never in CUSTOMFIELD; at most one per service; decision 065)), `options` (service_options: list model|network|mep, value, label, supplierValue) and `groupPrices` ({groupId, price}). The replace-all dialogs start from this read, so it must return the complete lists.
 - **Errors**: 404 NOT_FOUND (service id unknown)
 - **Mock**: src/features/services/mocks/serviceRoutes.ts (Validation, floor refusal, CODE_TAKEN, SERVICE_IN_USE; DTO in mocks/dto.ts; seed mocks/seed.ts from the demo's S.services and GROUPS (Standard 1, Wholesale 2 -4%, VIP 3 -8%).)
@@ -200,7 +200,7 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 ## POST /admin/services
 
 - **Map**: Services: type, execution, pricing mode and rules. (الخدمات: النوع والتنفيذ ووضع التسعير والقواعد) · staff-permission `catalog:*` · stage 4 · tables services
-- **Frontend**: `createService` (src/features/services/api/services.ts:48) · params `body: CreateServiceBody` · returns `Service` · success 201 · assumed contract
+- **Frontend**: `createService` (src/features/services/api/services.ts:49) · params `body: CreateServiceBody` · returns `Service` · success 201 · assumed contract
 - **Request**: Full body `{ name (up to 120), code (up to 40, unique), categoryId, type, slaMinutes (integer >= 1), basePrice (4-dp, > 0) }`. Defaults (the same for supplier import, B24): status active, executionMode auto, price_mode 'fixed' (the only mode: the resolver always starts from base_price, user rule 8), duplicate_rule 'block_open' (block_open refuses 409 DUPLICATE_ORDER when the same client has an open order for the same service and IMEI, and matches nothing for a service without an IMEI; the other value is allow; feature 5 enforces it at placement), minProfit null (default policy), cost 0 and effective_cost 0 until a supplier is linked or imported. price_mode and duplicate_rule are not on the console wire. basePrice must be > 0 on create and on PATCH (services.base_price is NOT NULL; a supplier import sets it to the suggested price).
 - **Response**: The new service (list-row shape with the worked-out figures).
 - **Errors**: 422 VALIDATION_FAILED (name, code or basePrice missing, unknown categoryId, bad type or slaMinutes (serviceRoutes.ts:89-121), a type that differs from the category's type (errors[{field:'categoryId', message:'<category> holds <type> services.'}])); 409 CODE_TAKEN (code already used (case-insensitive), errors[{field: code}]); 403 FORBIDDEN (no catalog:create)
@@ -209,7 +209,7 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 ## PATCH /admin/services/:id
 
 - **Map**: Services: type, execution, pricing mode and rules. (الخدمات: النوع والتنفيذ ووضع التسعير والقواعد) · staff-permission `catalog:*` · stage 4 · tables services
-- **Frontend**: `updateService` (src/features/services/api/services.ts:63) · params `id: number`, `body: UpdateServiceBody` · returns `Service` · success 200 · assumed contract
+- **Frontend**: `updateService` (src/features/services/api/services.ts:64) · params `id: number`, `body: UpdateServiceBody` · returns `Service` · success 200 · assumed contract
 - **Request**: Partial: the switches send `{ status }` or `{ executionMode }` alone; Edit price sends `{ basePrice?, minProfit? }` (4-dp strings); Edit service sends any of name, code, categoryId, type, slaMinutes. Saving basePrice (here or by bulk price apply) clears costChangedFrom (cost_was = null); a minProfit-only PATCH does not. minProfit may be null to reset to the default policy (API completeness; the console never sends it).
 - **Response**: The updated service with floorPrice, marginPct and belowFloor worked out again (the toast shows the floor and margin).
 - **Errors**: 422 VALIDATION_FAILED (errors[{field: basePrice}] when the price is under the floor (effective cost B117 + the minProfit being saved) or not above 0, message naming cost and minimum profit (serviceRoutes.ts:145-155); basePrice not above 0; other field checks (name, code, type, slaMinutes >= 1, minProfit >= 0, status, executionMode, categoryId; the resulting categoryId and type must agree: errors[{field: 'categoryId' if it was sent, else 'type', message:'<category> holds <type> services.'}])); 409 CODE_TAKEN (code used by another service (case-insensitive), with errors[{field: code}]); 404 NOT_FOUND (service id unknown); 403 FORBIDDEN (no catalog:update)
@@ -218,7 +218,7 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 ## DELETE /admin/services/:id
 
 - **Map**: Services: type, execution, pricing mode and rules. (الخدمات: النوع والتنفيذ ووضع التسعير والقواعد) · staff-permission `catalog:*` · stage 4 · tables services
-- **Frontend**: `deleteService` (src/features/services/api/services.ts:73) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: `deleteService` (src/features/services/api/services.ts:74) · params `id: number` · returns `void` · success 204 · assumed contract
 - **Response**: 204 in both cases. One transaction: when the service has any orders, service_supplier_links or service_listings, or any other RESTRICT reference (inventory_codes, checkout_sessions, help_articles, imei_checks), it is ARCHIVED: archived_at = now(), status = 'disabled' and its scope='service' pricing_rules set is_active = false (fields, options, group prices, client prices, links and codes are kept for history; open orders continue and can still dispatch); otherwise it is HARD DELETED: its scope='service' pricing_rules with target_id = id are deleted, then the service (fields, options, group prices, client prices and supplier links cascade). Audit action archived service or deleted service (the demo's verb phrases, ANSWERS audit Q3). An archived service is gone for every reader: GET /admin/services and :id (404), PATCH and PUT parts (404), GET /admin/client-prices, merchant catalogs (Dhru *servicelist, /v1/services, /client/services, price export), storefront listings (public and admin), bulk price and resolve (404); placement treats it as an unknown service; pricing rule rows still resolve its target {id, name}. Its code is freed for reuse (partial unique index on archived_at IS NULL). There is no restore route.
 - **Errors**: 404 NOT_FOUND (service id unknown); 403 FORBIDDEN (no catalog:delete)
 - **Mock**: src/features/services/mocks/serviceRoutes.ts (Validation, floor refusal, CODE_TAKEN, SERVICE_IN_USE; DTO in mocks/dto.ts; seed mocks/seed.ts from the demo's S.services and GROUPS (Standard 1, Wholesale 2 -4%, VIP 3 -8%).)
@@ -226,7 +226,7 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 ## PUT /admin/services/:id/fields
 
 - **Map**: Custom fields of the service. (الحقول المخصصة للخدمة) · staff-permission `catalog:update` · stage 4 · tables service_fields
-- **Frontend**: `replaceServiceFields` (src/features/services/api/serviceParts.ts:20) · params `id: number`, `body: ReplaceFieldsBody` · returns `ServiceField[]` · success 200 · assumed contract
+- **Frontend**: `replaceServiceFields` (src/features/services/api/serviceParts.ts:13) · params `id: number`, `body: ReplaceFieldsBody` · returns `ServiceField[]` · success 200 · assumed contract
 - **Request**: Body `{ fields: [...] }`: the whole list in order (index = sort); a field left out is deleted. Replace in one transaction. A row: name (required, at most 120 characters), fieldType, required, options, regex; key only for a saved field (that is how it is recognised; it keeps its key for ever), none for a new field (the server makes the key from the name: lower snake case, _2, _3 on a clash, field when nothing is left); label optional (left out keeps the saved label, '' stores the name, a new field without one gets the name); isMainInput optional (left out keeps the saved value, false for a new field). On an IMEI service a list that leaves no field as the main input makes the first field named IMEI (any letter case) the main input. The audit row names each field by key, name, label, required and isMainInput, before and after (decision 065).
 - **Response**: The saved list in order (the row shape of GET /admin/services/:id fields).
 - **Errors**: 422 VALIDATION_FAILED (dotted paths fields.N.key (a key no saved field has: 'This field no longer exists. Reload the page.', or a key used twice), fields.N.name (empty, or a name an earlier row has ignoring letter case: 'The name X is used by an earlier field.'), fields.N.isMainInput (a second main input: 'Only one field can be the main input.'), fields.N.label (over 120 characters), fields.N.fieldType (not text|number|select|textarea), fields.N.regex (outside the supported form of decision 051) (servicePartRoutes.ts:19-52)); 404 NOT_FOUND (service id unknown); 403 FORBIDDEN (no catalog:update)
@@ -235,16 +235,13 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 ## PUT /admin/services/:id/options
 
 - **Map**: Model, network and MEP option lists. (قوائم الموديل والشبكة و MEP) · staff-permission `catalog:update` · stage 4 · tables service_options
-- **Frontend**: `replaceServiceOptions` (src/features/services/api/serviceParts.ts:33) · params `id: number`, `body: ReplaceOptionsBody` · returns `ServiceOption[]` · success 200 · assumed contract
-- **Request**: Body `{ options: [...] }`: all three lists together (model, network, mep); entries left out are deleted. A model list can hold hundreds of entries (M101): allow a large body.
-- **Response**: The saved list.
-- **Errors**: 422 VALIDATION_FAILED (options.N.list unknown, options.N.value empty (servicePartRoutes.ts:54-77), or a value repeated within the same list after trimming (errors[{field:'options.N.value', message:'Duplicate in the <list> list'}], N = the later occurrence; a unique violation on service_options_value_uq maps to the same 422, never 500)); 403 FORBIDDEN (no catalog:update); 404 NOT_FOUND (unknown or archived service)
-- **Mock**: src/features/services/mocks/servicePartRoutes.ts (Replace-all checks with dotted error paths.)
+- **Retired** (decision 072): The model, network and MEP lists of a service are no longer edited: the console has no Options section, and the lists already saved are only shown, never changed. No backend route serves it and no console function calls it.
+- **Frontend**: none.
 
 ## PUT /admin/services/:id/group-prices
 
 - **Map**: Service price for each merchant group. (سعر الخدمة لكل فئة) · staff-permission `pricing:update` · stage 4 · tables service_group_prices
-- **Frontend**: `replaceServiceGroupPrices` (src/features/services/api/serviceParts.ts:48) · params `id: number`, `body: ReplaceGroupPricesBody` · returns `ServiceGroupPrice[]` · success 200 · assumed contract
+- **Frontend**: `replaceServiceGroupPrices` (src/features/services/api/serviceParts.ts:28) · params `id: number`, `body: ReplaceGroupPricesBody` · returns `ServiceGroupPrice[]` · success 200 · assumed contract
 - **Request**: Body `{ prices: [{ groupId, price }] }`: the whole set; a group left out loses its fixed price (pays base price less its discount). The dialog lists every group including the b2c_retail group and keeps groups it does not show, so the Retail price survives (M101, M102). Floors (accepted): each b2b row must be >= the service floor for that group (effective cost + minProfit with the row's group, RULES services 3), else 422 errors[{field:'prices.N.price', message:'Below the floor of $X (cost $Y plus $Z minimum profit).'}]; the b2c_retail row must be >= the storefront retail floor max(round(base_price x 1.10, 2), floor), the same function PATCH /admin/service-listings uses, else 422 prices.N.price 'Below the storefront floor of $X.'; rows kept unchanged are checked too (the whole set is validated). Bulk price apply keeps its accepted exception.
 - **Response**: The saved list.
 - **Errors**: 422 VALIDATION_FAILED (prices.N.groupId unknown, prices.N.price <= 0 (servicePartRoutes.ts:79-104), a repeated groupId (errors[{field:'prices.N.groupId', message:'Listed twice'}], later occurrence; a unique violation on service_group_prices_uq maps to the same 422), or a price under the floor (see Request)); 403 FORBIDDEN (no pricing:update); 404 NOT_FOUND (unknown or archived service)

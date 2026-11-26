@@ -112,13 +112,6 @@ describe('the change signals (each writer, in its own transaction)', () => {
         })
       ).status,
     ).toBe(200);
-    expect(
-      (
-        await admin.put(`/admin/services/${att.serviceId}/options`, {
-          options: [{ list: 'network', value: 'att', label: 'AT&T', supplierValue: '' }],
-        })
-      ).status,
-    ).toBe(200);
     // Decision 069: only a service delivered from code stock takes codes (set in the table: no event of its own).
     await markStockService(await db(), att.serviceId);
     const imported = await admin.post(`/admin/services/${att.serviceId}/inventory/import`, { codes: ['CODE-0001'] });
@@ -135,7 +128,6 @@ describe('the change signals (each writer, in its own transaction)', () => {
     expect(events.map((event) => [event.type, event.payload])).toEqual([
       ['catalog.services_changed', { serviceIds: [icloud.serviceId], reason: 'service' }],
       ['catalog.services_changed', { serviceIds: [icloud.serviceId], reason: 'price' }],
-      ['catalog.services_changed', { serviceIds: [att.serviceId], reason: 'options' }],
       ['catalog.services_changed', { serviceIds: [att.serviceId], reason: 'stock' }],
       ['catalog.services_changed', { serviceIds: [att.serviceId], reason: 'stock' }],
       ['catalog.category_changed', { categoryId: icloud.categoryId }],

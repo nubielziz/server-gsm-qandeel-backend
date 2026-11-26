@@ -606,20 +606,6 @@
           ],
           "assumed": true,
           "mapConflict": ""
-        },
-        {
-          "key": "PUT /admin/services/:id/options",
-          "successStatus": 200,
-          "query": "",
-          "request": "Body `{ options: [...] }`: all three lists together (model, network, mep); entries left out are deleted. A model list can hold hundreds of entries (M101): allow a large body.",
-          "response": "The saved list.",
-          "errors": [
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "options.N.list unknown, options.N.value empty (servicePartRoutes.ts:54-77), or a value repeated within the same list after trimming (errors[{field:'options.N.value', message:'Duplicate in the <list> list'}], N = the later occurrence; a unique violation on service_options_value_uq maps to the same 422, never 500)", "ui": "dialog shows the messages" },
-            { "status": 403, "code": "FORBIDDEN", "when": "no catalog:update", "ui": "Options... disabled" },
-            { "status": 404, "code": "NOT_FOUND", "when": "unknown or archived service" }
-          ],
-          "assumed": true,
-          "mapConflict": ""
         }
       ],
       "businessRules": [
@@ -630,7 +616,7 @@
         "Categories: allowed_group_ids empty = visible to every group (M94); no parent category; category type is one of the four service types; a service's type equals its category's type (composite FK services (category_id, type) to service_categories (id, type)) and a category with live services cannot change type (422 on type); a category name is unique within its type, case-insensitive.",
         "Delete guards: category with services 409 CATEGORY_IN_USE; a service with orders, links, listings or other references is archived (archived_at set, status disabled, its rules inactive), otherwise deleted, both 204 (SERVICE_IN_USE is retired); a category is deleted only when no service row, live or archived, references it (its category-scope rules are deleted with it), otherwise 409 CATEGORY_IN_USE; deleting a group removes its group prices and rules (client-groups delete); rules delete freely.",
         "Service code is unique case-insensitive: 409 CODE_TAKEN with errors[{field: code}] on create and edit.",
-        "Replace-all PUTs (fields, options, group-prices) delete and insert in one transaction and answer the saved list in order.",
+        "Replace-all PUTs (fields, group-prices) delete and insert in one transaction and answer the saved list in order. The options PUT is retired (decision 072): the option lists are read only.",
         "Inventory: codes encrypted (code_enc), deduplicated globally on a keyed hash, never returned in clear or logged; the list shows the last four characters; void affects only available codes (reserved belong to open orders, sold were delivered).",
         "A disabled service is hidden from merchants (imeiservicelist) while its open orders continue; executionMode manual sends new orders to the manual queue (types/service.ts ServiceStatus/ExecutionMode JSDoc, map manual scenario).",
         "Money maths in decimal: prices rounded half-up to 2 decimals at the named points (mock round), emitted as 4-dp strings (decision 011); marginPct and percent are decimal strings.",
@@ -674,7 +660,7 @@
         { "routes": ["GET /admin/pricing-rules", "GET /admin/pricing-rules/:id", "POST /admin/pricing-rules", "PATCH /admin/pricing-rules/:id", "DELETE /admin/pricing-rules/:id"], "file": "src/features/services/mocks/ruleRoutes.ts", "note": "Rule validation; the demo's category promo seeded as one discount rule." },
         { "routes": ["POST /admin/services/bulk-price/preview", "POST /admin/services/bulk-price/apply", "GET /admin/pricing/resolve"], "file": "src/features/services/mocks/pricingRoutes.ts", "note": "Price maths and resolver steps in mocks/pricing.ts." },
         { "routes": ["GET /admin/inventory-codes", "POST /admin/services/:id/inventory/import", "POST /admin/inventory-codes/void"], "file": "src/features/services/mocks/inventoryRoutes.ts", "note": "Codes seeded for the Z3X credits and UnlockTool licence services." },
-        { "routes": ["PUT /admin/services/:id/fields", "PUT /admin/services/:id/options", "PUT /admin/services/:id/group-prices"], "file": "src/features/services/mocks/servicePartRoutes.ts", "note": "Replace-all checks with dotted error paths." }
+        { "routes": ["PUT /admin/services/:id/fields", "PUT /admin/services/:id/group-prices"], "file": "src/features/services/mocks/servicePartRoutes.ts", "note": "Replace-all checks with dotted error paths." }
       ]
     },
     {

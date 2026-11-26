@@ -753,7 +753,6 @@ describe('DELETE /admin/services/:id', () => {
       expect((await admin.get(`/admin/services/${id}`)).status).toBe(404);
       expect((await admin.patch(`/admin/services/${id}`, { name: 'X' })).status).toBe(404);
       expect((await admin.put(`/admin/services/${id}/fields`, { fields: [] })).status).toBe(404);
-      expect((await admin.put(`/admin/services/${id}/options`, { options: [] })).status).toBe(404);
       expect((await admin.delete(`/admin/services/${id}`)).status).toBe(404);
       // The code is free again for a new live service.
       const again = await admin.post('/admin/services', {

@@ -1,36 +1,21 @@
-// ServicePartsService: the replace-all use cases of the custom fields and the option lists of a service
-// (PUT /admin/services/:id/fields and /options, map domain B, stage 4).
+// ServicePartsService: the replace-all use case of the custom fields of a service (PUT /admin/services/:id/fields, map domain B,
+// stage 4). The option lists have no writer any more: decision 072 retired PUT /admin/services/:id/options.
 import { Injectable } from '@nestjs/common';
 import { AppError, type FieldError } from '../../../common/errors';
 import { fieldPatternProblem } from '../../../common/field-pattern';
 import { DbService, isUniqueViolation } from '../../../infra/db';
 import { AuditService } from '../../platform';
-import { CatalogSignals } from './catalog-signals';
-import type { ServiceField, ServiceOptionList } from '../db/schema';
-import { type FieldDraft, duplicateOptionValues, fieldListProblems, plannedFieldRows } from '../domain/service-parts';
+import type { ServiceField } from '../db/schema';
+import { type FieldDraft, fieldListProblems, plannedFieldRows } from '../domain/service-parts';
 import { laterRepeatedNameIndexes } from '../infra/field-name.repository';
-import {
-  listFieldRows,
-  listOptionRows,
-  lockLiveService,
-  replaceFieldRows,
-  replaceOptionRows,
-} from '../infra/service.repository';
-import { type FieldView, type OptionView, toFieldView, toOptionView } from './service-admin.service';
+import { listFieldRows, lockLiveService, replaceFieldRows } from '../infra/service.repository';
+import { type FieldView, toFieldView } from './service-admin.service';
 
 /**
  * One custom field as the console sends it (already trimmed by the contract): the `key` of a saved field or none for a new one, the
  * Name, an optional label and an optional main-input flag.
  */
 export type FieldInput = FieldDraft;
-
-/** One option entry as the console sends it (already trimmed by the contract). */
-export interface OptionInput {
-  readonly list: ServiceOptionList;
-  readonly value: string;
-  readonly label: string;
-  readonly supplierValue: string;
-}
 
 function problems(list: ReadonlyArray<{ field: string; message: string }>): AppError {
   const errors: FieldError[] = list.map((item) => ({ field: item.field, code: 'invalid', message: item.message }));
@@ -51,31 +36,24 @@ const auditedField = (field: ServiceField) => ({
   isMainInput: field.isMainInput,
 });
 
-const countsByList = (options: ReadonlyArray<{ list: string }>) => ({
-  model: options.filter((option) => option.list === 'model').length,
-  network: options.filter((option) => option.list === 'network').length,
-  mep: options.filter((option) => option.list === 'mep').length,
-});
-
 /**
- * Replaces the lists that hang on a service.
+ * Replaces the custom fields that hang on a service.
  *
- * Why: the console edits custom fields and option lists as whole lists (RULES services 8): the old rows are deleted and the
- * new list inserted in order in one transaction, under a lock on the service row so two saves cannot interleave, and the saved
- * list is answered back. An unknown or archived service is `404`. Duplicate keys, Names or values answer `422` on the later row's
- * path (RESOLUTIONS catalog-11, decision 065); no unique violation can happen, because the lock serialises the writers, except a Name
- * that the code and the database lower-case differently (answered `422` on `fields.N.name` as well).
+ * Why: the console edits custom fields as a whole list (RULES services 8): the old rows are deleted and the new list inserted in
+ * order in one transaction, under a lock on the service row so two saves cannot interleave, and the saved list is answered back. An
+ * unknown or archived service is `404`. Duplicate keys or Names answer `422` on the later row's path (decision 065); no unique
+ * violation can happen, because the lock serialises the writers, except a Name that the code and the database lower-case differently
+ * (answered `422` on `fields.N.name` as well). The option lists (models, networks, MEP) are no longer written (decision 072).
  *
- * Side effects: deletes and inserts `service_fields` or `service_options`, writes `audit_logs` (entity `service`).
+ * Side effects: deletes and inserts `service_fields`, writes `audit_logs` (entity `service`).
  *
- * @see docs/contract/endpoints/catalog.md (PUT /admin/services/:id/fields and /options)
+ * @see docs/contract/endpoints/catalog.md (PUT /admin/services/:id/fields)
  */
 @Injectable()
 export class ServicePartsService {
   constructor(
     private readonly db: DbService,
     private readonly audit: AuditService,
-    private readonly signals: CatalogSignals,
   ) {}
 
   /**
@@ -141,37 +119,5 @@ export class ServicePartsService {
         }
         throw error;
       });
-  }
-
-  /**
-   * Replaces the model, network and MEP lists of a service.
-   *
-   * @param serviceId the service id
-   * @param options all three lists together, in order
-   * @returns the saved entries in order
-   * @throws {AppError} `NOT_FOUND` (404: unknown or archived); `VALIDATION_FAILED` (422 on `options.N.value` for a value
-   *   repeated within its list)
-   */
-  async replaceOptions(serviceId: number, options: readonly OptionInput[]): Promise<OptionView[]> {
-    return this.db.runInTransaction(async ({ tx }) => {
-      const service = await lockLiveService(tx, serviceId);
-      if (!service) throw notFound();
-      const found = duplicateOptionValues(options);
-      if (found.length > 0) throw problems(found);
-
-      const before = await listOptionRows(tx, serviceId);
-      const saved = await replaceOptionRows(tx, serviceId, options);
-      // The model and network labels are indexed by the shop's search (feature 29).
-      await this.signals.servicesChanged(tx, [serviceId], 'options');
-      await this.audit.record(tx, {
-        action: 'replaced option lists of service',
-        entityType: 'service',
-        entityId: serviceId,
-        entityLabel: service.name,
-        before: countsByList(before),
-        after: countsByList(saved),
-      });
-      return saved.map(toOptionView);
-    });
   }
 }

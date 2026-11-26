@@ -1,11 +1,12 @@
 // Route contracts of the services (map domain B, routes /admin/services, stage 4): list, show, create, change, delete and
-// the replace-all custom fields and option lists. Shapes match the console's Service and ServiceDetail
+// the replace-all custom fields. Shapes match the console's Service and ServiceDetail
 // (docs/contract/endpoints/catalog.md, RESOLUTIONS catalog-1, -2, -3, -9, -11, -13 and -14). Decision 060 adds the Catalog page's
 // facts of a row (attention reasons, shop price, shop page), its filters and the shop price sort: `attention`, `retailPrice` and
 // `retailPriceSource` reach every reader and are required; the keys that depend on a permission stay optional for good. The merchant
 // switches of feature 7a (`allowCancel`, `allowVerify`, `verifyWindowH`) are required since the console reads them (decision 063).
 // Decision 069 adds `stockDelivery`, `stockAvailable` and `ownCost` to the row (required: the console carries them), `stockDelivery` and
-// `ownCost` (0 to 1,000,000,000) to the create and change bodies, and the list filter `stockDelivery`.
+// `ownCost` (0 to 1,000,000,000) to the create and change bodies, and the list filter `stockDelivery`. Decision 072 retires
+// `PUT /admin/services/:id/options`: the option lists of a service are read only (`options` of the detail row).
 import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
@@ -583,35 +584,4 @@ export const replaceServiceFields = defineRoute({
     },
     response: [FIELD_EXAMPLE],
   },
-});
-
-/** `PUT /admin/services/:id/options`: replace the model, network and MEP lists. */
-export const replaceServiceOptions = defineRoute({
-  key: 'PUT /admin/services/:id/options',
-  summary: 'Replace the option lists of a service',
-  description:
-    'All three lists together (`model`, `network`, `mep`); an entry left out is deleted. One transaction; a list can hold ' +
-    'hundreds of entries. An unknown list or an empty value is `422` on `options.N.list` or `options.N.value`; a value ' +
-    'repeated within one list (after trimming) is `422` on `options.N.value` with N the later one. An unknown or archived ' +
-    'service is `404`.',
-  tags: ['services'],
-  surface: 'admin',
-  access: 'staff-permission',
-  permission: 'catalog:update',
-  params: z.object({ id: zIdParam }),
-  body: z.object({
-    options: z
-      .array(
-        z.object({
-          list: z.enum(SERVICE_OPTION_LISTS, 'Unknown list.'),
-          value: z.string().trim().min(1, 'Enter a value.').max(200, 'Use at most 200 characters.'),
-          label: z.string().trim().max(200, 'Use at most 200 characters.'),
-          supplierValue: z.string().trim().max(200, 'Use at most 200 characters.'),
-        }),
-      )
-      .max(5_000, 'Use at most 5000 options.'),
-  }),
-  success: { status: 200, schema: z.array(OptionRow) },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED'],
-  examples: { request: { options: [OPTION_EXAMPLE] }, response: [OPTION_EXAMPLE] },
 });

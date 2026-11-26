@@ -1,12 +1,12 @@
-// Cross-row checks and the planning of the replace-all lists of a service (custom fields and option lists). Pure functions: they find the
-// later occurrence of a repeated key, Name or value, the way the console highlights it (`fields.N.name`, `options.N.value`), and they
+// Cross-row checks and the planning of the replace-all list of the custom fields of a service. Pure functions: they find the
+// later occurrence of a repeated key or Name, the way the console highlights it (`fields.N.name`), and they
 // decide the key, Name, label and main-input flag of every field row before it is written.
 import { fieldKeyBase, fieldNameKey, freeFieldKey, imeiNamedFieldIndex } from '../../../common/field-names';
 import type { ServiceFieldType } from '../db/schema';
 
 /** A problem in a list, at the index of the row that caused it. */
 export interface ListProblem {
-  /** The dotted path the console highlights, for example `options.7.value`. */
+  /** The dotted path the console highlights, for example `fields.7.name`. */
   readonly field: string;
   readonly message: string;
 }
@@ -148,26 +148,4 @@ export function plannedFieldRows(
   });
   const named = imeiService ? imeiNamedFieldIndex(planned) : -1;
   return named < 0 ? planned : planned.map((row, index) => (index === named ? { ...row, isMainInput: true } : row));
-}
-
-/**
- * Finds the option values that repeat an earlier one in the same list.
- *
- * Why: RESOLUTIONS catalog-11: a value repeated within one list (exact match after trimming) is `422` on `options.N.value`
- * with N the later occurrence; the same value may appear in two different lists.
- *
- * @param options the options in list order, with trimmed values
- * @returns one problem per repeated value, on the later row
- */
-export function duplicateOptionValues(options: ReadonlyArray<{ list: string; value: string }>): ListProblem[] {
-  const seen = new Set<string>();
-  const problems: ListProblem[] = [];
-  options.forEach((option, index) => {
-    const key = `${option.list}\u0000${option.value}`;
-    if (seen.has(key)) {
-      problems.push({ field: `options.${index}.value`, message: `Duplicate in the ${option.list} list` });
-    }
-    seen.add(key);
-  });
-  return problems;
 }

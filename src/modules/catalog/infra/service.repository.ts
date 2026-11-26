@@ -7,7 +7,6 @@ import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../..
 import {
   type NewService,
   type NewServiceField,
-  type NewServiceOption,
   type Service,
   type ServiceField,
   type ServiceGroupPrice,
@@ -522,28 +521,6 @@ export async function makeFirstFieldRow(
     .where(and(eq(serviceFields.id, fieldId), eq(serviceFields.serviceId, serviceId)))
     .returning();
   return saved!;
-}
-
-/**
- * Replaces all option lists of a service: deletes the old entries and inserts the new list in order.
- *
- * @param db the transaction (the service row is locked)
- * @param serviceId the service
- * @param rows the new entries
- * @returns the saved options in order
- */
-export async function replaceOptionRows(
-  db: DbExecutor,
-  serviceId: number,
-  rows: ReadonlyArray<Omit<NewServiceOption, 'serviceId' | 'id'>>,
-): Promise<ServiceOption[]> {
-  await db.delete(serviceOptions).where(eq(serviceOptions.serviceId, serviceId));
-  const saved: ServiceOption[] = [];
-  for (let start = 0; start < rows.length; start += INSERT_CHUNK) {
-    const chunk = rows.slice(start, start + INSERT_CHUNK).map((row) => ({ ...row, serviceId }));
-    saved.push(...(await db.insert(serviceOptions).values(chunk).returning()));
-  }
-  return saved.sort((a, b) => a.id - b.id);
 }
 
 /**

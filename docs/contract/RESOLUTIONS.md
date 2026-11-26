@@ -373,7 +373,7 @@ change or a user answer.
 
 ### catalog-11 · `PUT /admin/services/:id/options, PUT /admin/services/:id/group-prices` · features 4a, 4b
 
-**Decision.** Both PUTs: 404 NOT_FOUND for an unknown or archived service. Options: value trimmed; a value repeated within the same list (exact match after trim) answers 422 errors[{field:'options.N.value', message:'Duplicate in the <list> list'}] with N = the later occurrence. Group prices: a groupId repeated answers 422 errors[{field:'prices.N.groupId', message:'Listed twice'}] (later occurrence). Unique violations on service_options_value_uq / service_group_prices_uq are mapped to the same 422, never 500.
+**Decision.** Both PUTs: 404 NOT_FOUND for an unknown or archived service. Options: value trimmed; a value repeated within the same list (exact match after trim) answers 422 errors[{field:'options.N.value', message:'Duplicate in the <list> list'}] with N = the later occurrence. Group prices: a groupId repeated answers 422 errors[{field:'prices.N.groupId', message:'Listed twice'}] (later occurrence). Unique violations on service_options_value_uq / service_group_prices_uq are mapped to the same 422, never 500. Decision 072 (2026-11-26) retired `PUT /admin/services/:id/options`: nothing serves it now, and only the group-prices half of this resolution applies.
 
 **Basis.** Unique constraints in catalog schema; console shows dotted-path 422 errors.
 

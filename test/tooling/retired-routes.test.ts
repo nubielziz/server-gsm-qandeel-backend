@@ -223,6 +223,11 @@ describe('the real list', () => {
     );
   });
 
+  it('holds the write route of the option lists of a service, retired by decision 072', () => {
+    expect(RETIRED['PUT /admin/services/:id/options']).toMatchObject({ decision: '072' });
+    expect(RETIRED['PUT /admin/services/:id/options']?.reason).toContain('Options section');
+  });
+
   it('names only rows of the committed manifest that are rows of the map, not owed, each with a decision and a reason', () => {
     expect(retiredProblems(RETIRED, manifest, NOTHING, new Set(PENDING))).toEqual([]);
   });

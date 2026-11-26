@@ -4,6 +4,16 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**The option lists route is retired (2026-11-26, decision 072): merged and pushed on the owner's word.** The console's Options section of a service
+(Models, Networks, MEP) is deleted (its decision 030), so `PUT /admin/services/:id/options` is retired (`test/contract/retired.ts`, 404). The table
+`service_options`, every read of options (`GET /admin/services/:id`, `GET /client/services/:id`, the search labels) and the seed rows stay; no
+migration (production holds no option rows). The outbox reason `options` left with its only writer. Custom field patterns are untouched: the console
+only hides the column and sends the saved pattern back. Also **decision 071 is LIVE since 2026-11-26 13:31 UTC** (backend `9ae9a452`; migration 0071 ran:
+278 IMEI services, none without a main input). Built by a Sonnet implementer, reviewed by an Opus reviewer (one finding, fixed by the lead: the console
+mock keeps `options: []` so the harvested fixture matches the schema). **Checks:** typecheck, lint, format, English, routes, contract, OpenAPI,
+coverage; the contract tests (463 pass), the retired-routes test and the touched catalog files. The whole suite was not run locally.
+**Release order:** console, then backend.
+
 **A plain IMEI service gets an IMEI field (2026-11-26, decision 071): merged, not pushed (waiting for the owner's word).** A Dhru supplier names
 its main box only when it is not an IMEI, so after decision 070 production's 277 IMEI services without a main-input field could not be ordered in
 the shop. `importShape` now gives a service that stays `imei` a first field (Name and label `IMEI`, required text, `isMainInput`); the sync's

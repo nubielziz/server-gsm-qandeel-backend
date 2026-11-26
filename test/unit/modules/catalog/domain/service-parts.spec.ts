@@ -1,12 +1,7 @@
-// Unit tests of the replace-all list checks: the problems and the plan of a custom field list, and repeated option values (the
-// pattern check lives in field-pattern.spec.ts).
+// Unit tests of the replace-all list checks: the problems and the plan of a custom field list (the pattern check lives in
+// field-pattern.spec.ts).
 import { describe, expect, it } from 'bun:test';
-import {
-  type FieldDraft,
-  duplicateOptionValues,
-  fieldListProblems,
-  plannedFieldRows,
-} from '@src/modules/catalog/domain/service-parts';
+import { type FieldDraft, fieldListProblems, plannedFieldRows } from '@src/modules/catalog/domain/service-parts';
 
 describe('fieldListProblems', () => {
   const saved = new Set(['imei', 'account']);
@@ -184,16 +179,5 @@ describe('plannedFieldRows', () => {
     expect(flags([draft('Serial', { isMainInput: true }), draft('IMEI')], true)).toEqual([true, false]);
     expect(flags([draft('IMEI'), draft('Model')], false)).toEqual([false, false]);
     expect(flags([draft('IMEI number'), draft('Model')], true)).toEqual([false, false]);
-  });
-});
-
-describe('duplicateOptionValues', () => {
-  it('names the later occurrence within one list and allows the same value in another list', () => {
-    const problems = duplicateOptionValues([
-      { list: 'model', value: 'iphone15' },
-      { list: 'network', value: 'iphone15' },
-      { list: 'model', value: 'iphone15' },
-    ]);
-    expect(problems).toEqual([{ field: 'options.2.value', message: 'Duplicate in the model list' }]);
   });
 });

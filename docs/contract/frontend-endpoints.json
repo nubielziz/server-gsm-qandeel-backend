@@ -1,7 +1,7 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
  "frontend": "../frontend-admin",
- "count": 294,
+ "count": 293,
  "endpoints": [
   {
    "key": "DELETE /admin/alert-rules/:id",
@@ -663,7 +663,7 @@
    "key": "DELETE /admin/services/:id",
    "fn": "deleteService",
    "file": "src/features/services/api/services.ts",
-   "line": 73,
+   "line": 74,
    "params": [
     {
      "name": "id",
@@ -1268,9 +1268,6 @@
          "type": "number",
          "alias": "Id"
         },
-        "value": {
-         "type": "number"
-        },
         "resolvedAt": {
          "type": "string",
          "nullable": true,
@@ -1286,6 +1283,9 @@
         "ruleId": {
          "type": "number",
          "alias": "Id"
+        },
+        "value": {
+         "type": "number"
         },
         "startedAt": {
          "type": "string",
@@ -1430,9 +1430,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "value": {
-      "type": "number"
-     },
      "resolvedAt": {
       "type": "string",
       "nullable": true,
@@ -1448,6 +1445,9 @@
      "ruleId": {
       "type": "number",
       "alias": "Id"
+     },
+     "value": {
+      "type": "number"
      },
      "startedAt": {
       "type": "string",
@@ -7221,13 +7221,13 @@
          "type": "string",
          "alias": "IsoDateTime"
         },
-        "label": {
-         "type": "string"
-        },
         "reason": {
          "type": "string"
         },
         "cidr": {
+         "type": "string"
+        },
+        "label": {
          "type": "string"
         },
         "expiresAt": {
@@ -7331,13 +7331,13 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "label": {
-      "type": "string"
-     },
      "reason": {
       "type": "string"
      },
      "cidr": {
+      "type": "string"
+     },
+     "label": {
       "type": "string"
      },
      "expiresAt": {
@@ -15798,7 +15798,7 @@
    "key": "GET /admin/services/:id",
    "fn": "getService",
    "file": "src/features/services/api/services.ts",
-   "line": 36,
+   "line": 37,
    "params": [
     {
      "name": "id",
@@ -16065,24 +16065,7 @@
      },
      "options": {
       "array": {
-       "object": {
-        "value": {
-         "type": "string"
-        },
-        "label": {
-         "type": "string"
-        },
-        "supplierValue": {
-         "type": "string"
-        },
-        "list": {
-         "enum": [
-          "model",
-          "network",
-          "mep"
-         ]
-        }
-       }
+       "type": "unknown"
       }
      },
      "groupPrices": {
@@ -26491,7 +26474,7 @@
    "key": "PATCH /admin/services/:id",
    "fn": "updateService",
    "file": "src/features/services/api/services.ts",
-   "line": 63,
+   "line": 64,
    "params": [
     {
      "name": "id",
@@ -28077,9 +28060,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "value": {
-      "type": "number"
-     },
      "resolvedAt": {
       "type": "string",
       "nullable": true,
@@ -28095,6 +28075,9 @@
      "ruleId": {
       "type": "number",
       "alias": "Id"
+     },
+     "value": {
+      "type": "number"
      },
      "startedAt": {
       "type": "string",
@@ -31378,13 +31361,13 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "label": {
-      "type": "string"
-     },
      "reason": {
       "type": "string"
      },
      "cidr": {
+      "type": "string"
+     },
+     "label": {
       "type": "string"
      },
      "expiresAt": {
@@ -31501,13 +31484,13 @@
         "type": "string",
         "alias": "IsoDateTime"
        },
-       "label": {
-        "type": "string"
-       },
        "reason": {
         "type": "string"
        },
        "cidr": {
+        "type": "string"
+       },
+       "label": {
         "type": "string"
        },
        "expiresAt": {
@@ -38546,7 +38529,7 @@
    "key": "POST /admin/services",
    "fn": "createService",
    "file": "src/features/services/api/services.ts",
-   "line": 48,
+   "line": 49,
    "params": [
     {
      "name": "body",
@@ -41430,7 +41413,7 @@
    "key": "PUT /admin/services/:id/fields",
    "fn": "replaceServiceFields",
    "file": "src/features/services/api/serviceParts.ts",
-   "line": 20,
+   "line": 13,
    "params": [
     {
      "name": "id",
@@ -41554,7 +41537,7 @@
    "key": "PUT /admin/services/:id/group-prices",
    "fn": "replaceServiceGroupPrices",
    "file": "src/features/services/api/serviceParts.ts",
-   "line": 48,
+   "line": 28,
    "params": [
     {
      "name": "id",
@@ -41625,97 +41608,6 @@
       "price": {
        "type": "string",
        "alias": "Money"
-      }
-     }
-    }
-   }
-  },
-  {
-   "key": "PUT /admin/services/:id/options",
-   "fn": "replaceServiceOptions",
-   "file": "src/features/services/api/serviceParts.ts",
-   "line": 33,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "ReplaceOptionsBody",
-     "shape": {
-      "object": {
-       "options": {
-        "array": {
-         "object": {
-          "value": {
-           "type": "string"
-          },
-          "label": {
-           "type": "string"
-          },
-          "supplierValue": {
-           "type": "string"
-          },
-          "list": {
-           "enum": [
-            "model",
-            "network",
-            "mep"
-           ]
-          }
-         }
-        }
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "ServiceOption[]",
-   "returns": {
-    "array": {
-     "object": {
-      "value": {
-       "type": "string"
-      },
-      "label": {
-       "type": "string"
-      },
-      "supplierValue": {
-       "type": "string"
-      },
-      "list": {
-       "enum": [
-        "model",
-        "network",
-        "mep"
-       ]
       }
      }
     }

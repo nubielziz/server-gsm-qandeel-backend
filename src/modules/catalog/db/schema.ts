@@ -97,7 +97,8 @@ export type ServiceFieldType = (typeof SERVICE_FIELD_TYPES)[number];
 /**
  * Which list a service option belongs to.
  *
- * Why: the console's service option wire enum (PUT /admin/services/:id/options).
+ * Why: the console's service option wire enum (the `options` of `GET /admin/services/:id`; the write route `PUT
+ * /admin/services/:id/options` is retired, decision 072).
  */
 export const SERVICE_OPTION_LISTS = ['model', 'network', 'mep'] as const;
 
@@ -458,7 +459,9 @@ export type NewServiceField = typeof serviceFields.$inferInsert;
 /**
  * Lists of models, providers and MEP values for a service.
  *
- * Why: Model, network and MEP lists a service offers (routes /admin/services/:id/options).
+ * Why: Model, network and MEP lists a service offers. Read only since decision 072 retired `PUT /admin/services/:id/options` (the rows
+ * are read by `GET /admin/services/:id`, `GET /client/services/:id`, the shop's reference lists and the search labels; the table stays
+ * because the map is read-only, and production holds no rows).
  */
 export const serviceOptions = pgTable(
   'service_options',

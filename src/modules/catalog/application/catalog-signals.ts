@@ -12,10 +12,11 @@ export const CATALOG_CATEGORY_CHANGED_EVENT = 'catalog.category_changed';
 /**
  * Why services changed: a metric label of the consumer only.
  *
- * Why: plan section 4.5: `service` (create, edit, archive, delete), `price` (the group prices, the retail row included), `options`
- * (the model and network lists), `stock` (inventory codes in or out).
+ * Why: plan section 4.5: `service` (create, edit, archive, delete), `price` (the group prices, the retail row included) and `stock`
+ * (inventory codes in or out). A fourth label, `options` (a save of the model and network lists), is gone since decision 072 retired the
+ * route that wrote it; the consumer reads no reason, so an event written before still runs.
  */
-export const SERVICE_CHANGE_REASONS = ['service', 'price', 'options', 'stock'] as const;
+export const SERVICE_CHANGE_REASONS = ['service', 'price', 'stock'] as const;
 
 /** One value of {@link SERVICE_CHANGE_REASONS}. */
 export type ServiceChangeReason = (typeof SERVICE_CHANGE_REASONS)[number];

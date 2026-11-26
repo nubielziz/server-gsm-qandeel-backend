@@ -4,12 +4,12 @@ Map domain B. What is for sale and at what price: client groups, categories, ser
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 065 one Name per field and the main input flag, 066 the `ids` read of the merchant catalog, 068 the TAC catalog loses its routes, 070 order forms draw only the custom fields, 071 the IMEI field of a plain IMEI service. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 065 one Name per field and the main input flag, 066 the `ids` read of the merchant catalog, 068 the TAC catalog loses its routes, 070 order forms draw only the custom fields, 071 the IMEI field of a plain IMEI service, 072 the option lists lose their write route. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
-Built: feature 4a (catalog-structure, 20 routes): merchant groups, service categories, services with their custom fields and
-option lists, and the code inventory; feature 4b (catalog-pricing, 16 routes): group prices, client prices, pricing rules, the
+Built: feature 4a (catalog-structure, 19 of its 20 routes; `PUT /admin/services/:id/options` is retired, decision 072): merchant groups, service
+categories, services with their custom fields (their option lists are read only), and the code inventory; feature 4b (catalog-pricing, 16 routes): group prices, client prices, pricing rules, the
 bulk price change, the price resolver and the merchant catalog (below); feature 14b (the TAC catalog: its 4 routes are retired, decision 068). Supplier links and import are
 feature 6.
 
@@ -58,8 +58,8 @@ feature 6.
   and the flags (their own select per page, not the page query, which the bulk price change shares); the parts over supplier and
   storefront tables are built in `foreign-reads.repository.ts`. `shopBlocked` repeats the first checks of the storefront's publish
   rule, and a test compares the two over every combination.
-- **Fields and options** (`service-parts.service.ts`): replace-all in one transaction under a lock on the service row, `422` on
-  the later duplicate's dotted path. A field has a hidden key (`service_fields.key`: made by the server from the Name when the field is
+- **Fields** (`service-parts.service.ts`; the option lists have no writer since decision 072, see "Service options" below): replace-all in one
+  transaction under a lock on the service row, `422` on the later duplicate's dotted path. A field has a hidden key (`service_fields.key`: made by the server from the Name when the field is
   created, `freeFieldKey(fieldKeyBase(name))` in `src/common/field-names.ts`, never changed; the order forms answer under it) and a Name
   (`service_fields.supplier_key`, on the wire `name`: unique in the service ignoring letter case, what a supplier receives in
   `CUSTOMFIELD`; decision 065). A row of the PUT carries the `key` of a saved field or none for a new one; an unknown or repeated key is
@@ -92,6 +92,16 @@ feature 6.
   `greatest(cost, credit x credit_rate)` of the first link an order can use (switched on, supplier `active`, service still listed),
   else the highest of the switched-on links, else 0. It first locks the service rows `FOR NO KEY UPDATE` in id order and then reads
   and writes from the locked rows (decision 069), so an own cost change racing a supplier sync is never worked out from a stale cost.
+
+### Service options (read only since decision 072)
+
+`PUT /admin/services/:id/options` (feature 4a) was retired with the console's Options section of a service (Models, Networks, MEP lists): nobody
+saves these lists any more. The route is a row of the map, so it stays in the route manifest and is listed in `test/contract/retired.ts`; no
+contract, controller method, use case, repository function, domain check or test serves it, and a call answers `404`. *Kept:* the table
+`service_options` and its schema (the map is read only; production holds no rows; the demo seed still writes rows), the `options` array of
+`GET /admin/services/:id` and `GET /client/services/:id` (`listOptionRows`), the model and network labels of the search index
+(`findOptionLabels`) and every other read of the table, and the permission `catalog:update` (the other service writes use it). The outbox reason `options` of
+`catalog.services_changed` is no longer written. No migration, no queue or cache key change.
 
 ### TAC catalog (read only since decision 068)
 
@@ -371,7 +381,7 @@ Only this module reads and writes these 10 tables, `listed_prices`, `retail_pric
 | `service_categories` | Service categories; equal to GROUPNAME in Dhru. |
 | `services` | Services; id equals SERVICEID. |
 | `service_fields` | Custom fields of a service; equal to Requires.Custom. |
-| `service_options` | Lists of models, providers and MEP values for a service. |
+| `service_options` | Lists of models, providers and MEP values for a service (read only since decision 072). |
 | `service_group_prices` | The price of a service per merchant group, including the storefront Retail price. |
 | `service_client_prices` | A negotiated price of a service for one specific merchant. |
 | `pricing_rules` | Margin and discount rules for automatic pricing. |
@@ -384,7 +394,7 @@ Only this module reads and writes these 10 tables, `listed_prices`, `retail_pric
 
 ## Routes
 
-41 endpoints (admin 37, client 3, dhru 1); the two `GET /v1/services` rows of the map are retired (see `test/contract/retired.ts`). Source: `docs/slices/catalog.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built: the 20 routes of feature 4a are in `contracts/{client-groups,categories,services,inventory}.contracts.ts`, the 16 of feature 4b in `contracts/{pricing,client-prices,pricing-rules,merchant-catalog}.contracts.ts`, the rest are pending (`test/contract/pending.ts`).
+41 endpoints (admin 37, client 3, dhru 1); the two `GET /v1/services` rows and `PUT /admin/services/:id/options` of the map are retired (see `test/contract/retired.ts`). Source: `docs/slices/catalog.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built: the 19 built routes of feature 4a are in `contracts/{client-groups,categories,services,inventory}.contracts.ts`, the 16 of feature 4b in `contracts/{pricing,client-prices,pricing-rules,merchant-catalog}.contracts.ts`, the rest are pending (`test/contract/pending.ts`).
 
 Decision 063 adds two admin routes beyond the map (`scripts/map-additions/47.mjs`, `contracts/service-grid.contracts.ts`):
 `GET /admin/services/price-grid` (`catalog:read` and `pricing:read`) and `POST /admin/services/order` (`catalog:update`).
@@ -431,7 +441,6 @@ Feature 31 adds seven admin routes beyond the map (`scripts/map-additions/31.mjs
 | `POST /admin/services/bulk-price/preview` | staff-permission · `pricing:update` | Preview a bulk price change. | 4 |
 | `PUT /admin/services/:id/fields` | staff-permission · `catalog:update` | Custom fields of the service. | 4 |
 | `PUT /admin/services/:id/group-prices` | staff-permission · `pricing:update` | Service price for each merchant group. | 4 |
-| `PUT /admin/services/:id/options` | staff-permission · `catalog:update` | Model, network and MEP option lists. | 4 |
 
 ### Merchant portal (3)
 
@@ -470,9 +479,9 @@ Outbox events produced: `service.price_changed` (queue `notifications`, aggregat
 `PriceChangeScan` (feature 7b, user rule 9 (5)): see "Jobs and schedules". Consumed by the merchant's daily digest (feature 12a). The route is registered by the platform module (`NotificationRoutes`).
 
 Feature 29 (storefront search, decision 038): `CatalogSignals` (`application/catalog-signals.ts`) writes `catalog.services_changed`
-(`{ serviceIds, reason }`, 1-50 ids per event, aggregate `services`; reason `service`, `price`, `options` or `stock`) and
+(`{ serviceIds, reason }`, 1-50 ids per event, aggregate `services`; reason `service`, `price` or `stock`) and
 `catalog.category_changed` (`{ categoryId }`, aggregate `service_categories`) in the writer's own transaction: service create, edit,
-archive and delete, every group price set, the option lists, an inventory import and void, the stock claim of an order placement,
+archive and delete, every group price set, an inventory import and void, the stock claim of an order placement,
 a category edit and delete, (one per category) a merchant group delete that removed the group from categories, and the supplier
 sync's adoption of a main box (feature 33: a type and category change, like a staff edit). Supplier imports (Quick add) write none:
 imported services have no listing. The routes (queue `search-index`, job `search_sync`) are
@@ -544,7 +553,7 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 - `catalog-8` · GET /admin/tac-catalog, GET/POST/PATCH /admin/tac-catalog/:id
 - `catalog-9` · GET /admin/services, GET /admin/services/:id, POST/PATCH /admin/services
 - `catalog-10` · POST /admin/service-categories, PATCH /admin/service-categories/:id
-- `catalog-11` · PUT /admin/services/:id/options, PUT /admin/services/:id/group-prices
+- `catalog-11` · PUT /admin/services/:id/options (retired, decision 072), PUT /admin/services/:id/group-prices
 - `catalog-12` · PUT /admin/services/:id/group-prices
 - `catalog-13` · PATCH /admin/services/:id
 - `catalog-14` · PATCH /admin/services/:id

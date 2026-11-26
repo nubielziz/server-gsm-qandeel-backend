@@ -1,5 +1,5 @@
-// HTTP controller of the service routes (map domain B, /admin/services, stage 4), including the replace-all custom fields and
-// option lists. Thin: the rules live in ServiceAdminService and ServicePartsService.
+// HTTP controller of the service routes (map domain B, /admin/services, stage 4), including the replace-all custom fields.
+// Thin: the rules live in ServiceAdminService and ServicePartsService.
 import { Body, Controller, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
 import { CurrentStaff, type StaffPrincipal } from '../../identity';
@@ -10,7 +10,6 @@ import {
   deleteService,
   listServices,
   replaceServiceFields,
-  replaceServiceOptions,
   showService,
   updateService,
 } from '../contracts/services.contracts';
@@ -18,8 +17,8 @@ import {
 /**
  * The service routes.
  *
- * Why: services are the sellable catalog; the console lists, edits and prices them and replaces their custom fields and option
- * lists as whole lists.
+ * Why: services are the sellable catalog; the console lists, edits and prices them and replaces their custom fields as a whole list.
+ * The option lists (models, networks, MEP) are read only since decision 072: `PUT /admin/services/:id/options` is retired.
  *
  * @route GET /admin/services
  * @route GET /admin/services/:id
@@ -27,7 +26,6 @@ import {
  * @route PATCH /admin/services/:id
  * @route DELETE /admin/services/:id
  * @route PUT /admin/services/:id/fields
- * @route PUT /admin/services/:id/options
  */
 @Controller()
 export class ServicesController {
@@ -128,21 +126,5 @@ export class ServicesController {
     @Body() body: BodyOf<typeof replaceServiceFields>,
   ): Promise<ResultOf<typeof replaceServiceFields>> {
     return this.parts.replaceFields(params.id, body.fields);
-  }
-
-  /**
-   * Replaces the option lists of a service.
-   *
-   * @param params the service id
-   * @param body the whole list of options
-   * @returns the saved options
-   * @route PUT /admin/services/:id/options
-   */
-  @Route(replaceServiceOptions)
-  replaceOptions(
-    @Param() params: ParamsOf<typeof replaceServiceOptions>,
-    @Body() body: BodyOf<typeof replaceServiceOptions>,
-  ): Promise<ResultOf<typeof replaceServiceOptions>> {
-    return this.parts.replaceOptions(params.id, body.options);
   }
 }

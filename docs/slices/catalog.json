@@ -12,7 +12,7 @@
       "client": 3,
       "admin": 46
     },
-    "frontendCalled": 42
+    "frontendCalled": 41
   },
   "stages": [
     4,
@@ -871,7 +871,7 @@
       "description": "Services: type, execution, pricing mode and rules.",
       "frontend": {
         "file": "src/features/services/api/services.ts",
-        "line": 34,
+        "line": 35,
         "fn": "getService"
       }
     },
@@ -904,7 +904,7 @@
       "description": "Services: type, execution, pricing mode and rules.",
       "frontend": {
         "file": "src/features/services/api/services.ts",
-        "line": 46,
+        "line": 47,
         "fn": "createService"
       }
     },
@@ -937,7 +937,7 @@
       "description": "Services: type, execution, pricing mode and rules.",
       "frontend": {
         "file": "src/features/services/api/services.ts",
-        "line": 61,
+        "line": 62,
         "fn": "updateService"
       }
     },
@@ -970,7 +970,7 @@
       "description": "Services: type, execution, pricing mode and rules.",
       "frontend": {
         "file": "src/features/services/api/services.ts",
-        "line": 71,
+        "line": 72,
         "fn": "deleteService"
       }
     },
@@ -1003,7 +1003,7 @@
       "description": "Custom fields of the service.",
       "frontend": {
         "file": "src/features/services/api/serviceParts.ts",
-        "line": 18,
+        "line": 11,
         "fn": "replaceServiceFields"
       }
     },
@@ -1034,11 +1034,7 @@
       },
       "module": "catalog",
       "description": "Model, network and MEP option lists.",
-      "frontend": {
-        "file": "src/features/services/api/serviceParts.ts",
-        "line": 31,
-        "fn": "replaceServiceOptions"
-      }
+      "frontend": null
     },
     {
       "key": "PUT /admin/services/:id/group-prices",
@@ -1069,7 +1065,7 @@
       "description": "Service price for each merchant group.",
       "frontend": {
         "file": "src/features/services/api/serviceParts.ts",
-        "line": 46,
+        "line": 26,
         "fn": "replaceServiceGroupPrices"
       }
     },
