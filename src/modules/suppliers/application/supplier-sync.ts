@@ -3,12 +3,11 @@
 // waits for the job) both run `run`; a sync is one transaction and safe to repeat (resolution orders-suppliers-6, user rule 9).
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
-import { fieldNameKey } from '../../../common/field-names';
 import { DbService, type DbExecutor, type TransactionContext, pgErrorInfo } from '../../../infra/db';
 import { CatalogPriceVersion, ServiceImporter, recomputeEffectiveCost } from '../../catalog';
 import { AuditService } from '../../platform';
 import type { Supplier } from '../db/schema';
-import { fieldsToRequire, mainInputField } from '../domain/import-plan';
+import { adoptedBox, fieldsToRequire } from '../domain/import-plan';
 import { supplierMainInput } from '../domain/supplier-main-input';
 import { syncCounts } from '../domain/sync-plan';
 import {
@@ -43,15 +42,18 @@ export interface SyncResult {
 }
 
 /**
- * Whether the sync may adopt a candidate's main box: it is an `imei` service, its supplier service has a main box, and none of its
- * fields is already the main input (decisions 042 and 065: the flag `isMainInput` marks the box; the link's field map does not).
+ * Whether the sync may adopt a candidate's main box: it is an `imei` service and its supplier service has a main box.
+ *
+ * Why: decisions 042 and 071. Until decision 071 a service whose field was already the main input was left alone; since then every IMEI
+ * service has a main-input field (its IMEI: the import and migration `0071_imei_main_input_field` give one to each), so that field becomes
+ * the box (`adoptedBox`) instead of the service never being adopted. The adoption makes the service a `server` service, so a second sync
+ * finds nothing to adopt.
  *
  * @param row the candidate as `alignmentCandidates` reads it
  * @returns true when the service should become a server service with the supplier's box first
  */
 export function adoptable(row: AlignmentCandidate): boolean {
-  if (row.type !== 'imei' || supplierMainInput(row.raw) === null) return false;
-  return !row.fields.some((field) => field.isMainInput);
+  return row.type === 'imei' && supplierMainInput(row.raw) !== null;
 }
 
 /** The audit phrase of an adopted service (`<actor> <action> <entityLabel>`, the system as the actor). */
@@ -352,11 +354,9 @@ export class SupplierSync {
       let touched = false;
       const main = adoptable(row) ? supplierMainInput(row.raw) : null;
       if (main !== null) {
-        const field = mainInputField(main, {
-          keys: new Set(row.fields.map((existing) => existing.key)),
-          names: new Set(row.fields.map((existing) => fieldNameKey(existing.supplierKey))),
-        });
-        const done = await this.importer.adoptMainInput(tx, { serviceId: row.serviceId, field });
+        // Decision 071: the service's main-input field (its IMEI) becomes the box; a service without one gets the box inserted first.
+        const { field, replaces } = adoptedBox(main, row.fields);
+        const done = await this.importer.adoptMainInput(tx, { serviceId: row.serviceId, field, replaces });
         if (done !== null) {
           touched = true;
           adoptedAny = true;
@@ -365,7 +365,11 @@ export class SupplierSync {
             entityType: 'service',
             entityId: done.serviceId,
             entityLabel: done.name,
-            before: { type: done.before.type, categoryId: done.before.categoryId },
+            before: {
+              type: done.before.type,
+              categoryId: done.before.categoryId,
+              ...(done.replaced === null ? {} : { field: done.replaced }),
+            },
             after: {
               type: done.after.type,
               categoryId: done.after.categoryId,
@@ -374,7 +378,7 @@ export class SupplierSync {
           });
         }
       }
-      // After an adoption too: the main box field is new and required; the service's other fields keep their keys.
+      // After an adoption too: the main box field is required (and never listed); the service's other fields keep their keys.
       const raised = await this.importer.requireFields(tx, { serviceId: row.serviceId, keys: toRequire(row) });
       if (raised.length > 0) {
         touched = true;

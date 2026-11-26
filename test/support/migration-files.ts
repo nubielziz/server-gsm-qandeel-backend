@@ -22,6 +22,9 @@ export const FIELD_NAMES_SUFFIX = '_field_names.sql';
 /** The end of the file name of the migration that adds "Delivered from code stock" and `out_of_stock` (decision 069). */
 export const CODE_STOCK_SUFFIX = '_code_stock.sql';
 
+/** The end of the file name of the migration that gives every plain IMEI service its IMEI field (decision 071). */
+export const IMEI_MAIN_INPUT_SUFFIX = '_imei_main_input_field.sql';
+
 /**
  * The file name of the migration that ends with a suffix.
  *

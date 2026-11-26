@@ -4,6 +4,16 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**A plain IMEI service gets an IMEI field (2026-11-26, decision 071): merged, not pushed (waiting for the owner's word).** A Dhru supplier names
+its main box only when it is not an IMEI, so after decision 070 production's 277 IMEI services without a main-input field could not be ordered in
+the shop. `importShape` now gives a service that stays `imei` a first field (Name and label `IMEI`, required text, `isMainInput`); the sync's
+adoption (decision 042) still works when a field is flagged: that field becomes the supplier's box in full (text, no options, same key). Migration
+`0071_imei_main_input_field` (data only, additive, idempotent): flags a field named IMEI, else inserts the field first; rehearsed on a scratch
+copy of production on 2026-11-26 (277 inserted, 0 services left without a main input, none with two, the fields of other types unchanged, a second
+run changes nothing; the copy and its dump are removed). Built by an Opus implementer, reviewed by an Opus reviewer (one fix round), final review
+by the lead (Fable 5.2). **Checks:** typecheck, lint, format, English, routes, contract, OpenAPI, coverage, `db:check` (72 migrations); the touched
+test files (253 pass); search and object-store tests cannot run locally. The whole suite was not run locally. **Release:** backend only.
+
 **Order forms draw only the custom fields (2026-11-26, decision 070): merged and pushed on the owner's word.** The owner had the shop's built-in
 IMEI box and bulk IMEI list removed. `GET /store/v1/services/:slug` and `GET /client/services/:id` list every field with `isMainInput` (an IMEI
 service's main-input field is no longer left out); the checkout and `POST /client/orders` take the IMEI from `imei` when sent, else from the value

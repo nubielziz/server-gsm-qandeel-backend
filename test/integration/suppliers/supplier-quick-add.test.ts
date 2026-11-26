@@ -473,9 +473,22 @@ describe('the run of a quick add by groups', () => {
     expect(second!.service.categoryId).toBe(first!.service.categoryId);
     expect(byId.get(third!.service.categoryId)).toMatchObject({ name: 'Imported', type: 'server' });
 
-    const fields = await db.select().from(s.serviceFields).where(eq(s.serviceFields.serviceId, first!.service.id));
+    const fields = await db
+      .select()
+      .from(s.serviceFields)
+      .where(eq(s.serviceFields.serviceId, first!.service.id))
+      .orderBy(asc(s.serviceFields.sort));
+    // Decision 071: an IMEI service gets the IMEI field first; the supplier's fields follow.
     expect(fields).toMatchObject([
-      { key: 'account_user', label: 'Account name', supplierKey: 'Account User', isMainInput: false, required: true },
+      { key: 'imei', label: 'IMEI', supplierKey: 'IMEI', isMainInput: true, required: true, sort: 0 },
+      {
+        key: 'account_user',
+        label: 'Account name',
+        supplierKey: 'Account User',
+        isMainInput: false,
+        required: true,
+        sort: 1,
+      },
     ]);
 
     // Not touched: the imported one keeps its cost, and the unavailable, unsupported and other-group ones get nothing.

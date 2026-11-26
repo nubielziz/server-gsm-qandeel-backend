@@ -1,8 +1,9 @@
 // Feature 33 (decision 042), real Dhru Fusion suppliers: the parameters in the supplier's own form (the classic XML string, or base64 of
 // JSON), the wrong form refused with the order stopped for review and never sent twice, the supplier's own main box (`CUSTOM`) imported
 // as the first field of a server service and sent as `IMEI`, and the sync's adoption of the IMEI services made before. Since decision 065
-// the main box is the field flagged `isMainInput` and every other field travels under its Name. Real Postgres and Redis, the fake Dhru
-// supplier; every service entry here is a made-up sample.
+// the main box is the field flagged `isMainInput` and every other field travels under its Name. Since decision 071 a plain IMEI service
+// is imported with the main-input field `IMEI` first (the supplier never lists the IMEI), and the adoption turns a main-input field the
+// service already has into the box. Real Postgres and Redis, the fake Dhru supplier; every service entry here is a made-up sample.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { and, asc, eq } from 'drizzle-orm';
 import { EncryptionService } from '@src/infra/crypto';
@@ -363,7 +364,10 @@ describe("the supplier's main box (CUSTOM)", () => {
     const supplierId = await insertFakeSupplier(world.db, t.app.get(EncryptionService), fake);
     const serviceId = (await importRemote(supplierId, ['9103'])).get('9103')!;
     expect((await serviceOf(serviceId)).type).toBe('imei');
-    expect(await fieldsOf(serviceId)).toHaveLength(0);
+    // Decision 071: its only field is the IMEI field the order forms take the IMEI in.
+    expect(
+      (await fieldsOf(serviceId)).map((field) => [field.key, field.supplierKey, field.isMainInput, field.required]),
+    ).toEqual([['imei', 'IMEI', true, true]]);
     const bad = await (
       await portalFor(t, world.merchant.id)
     ).post('/client/orders', { serviceId, imei: '352905112490860' });
@@ -374,6 +378,109 @@ describe("the supplier's main box (CUSTOM)", () => {
     expect(fake.callsOf('placeimeiorder')[0]!.rawParameters).toBe(
       xml(`<ID>9103</ID><IMEI>${IMEIS[4]}</IMEI><QNT>1</QNT>`),
     );
+  });
+});
+
+describe('a plain IMEI service gets the IMEI field (decision 071)', () => {
+  /** A plain IMEI sample: no main box of its own, one optional field. */
+  const PLAIN_SERVICE: FakeService = {
+    id: '9106',
+    group: 'Sample carrier checks',
+    type: 'IMEI',
+    name: 'Sample plain check',
+    credit: '1.5000',
+    time: '1 hour',
+    requiresCustom: [
+      { type: 'serviceimei', fieldname: 'Model', fieldtype: 'text', description: 'Model', required: '' },
+    ],
+  };
+
+  it('is imported with the IMEI field first; the portal lists it flagged; the IMEI typed into it travels as IMEI, never in CUSTOMFIELD', async () => {
+    fake.services = [PLAIN_SERVICE];
+    const supplierId = await insertFakeSupplier(world.db, t.app.get(EncryptionService), fake);
+    const serviceId = (await importRemote(supplierId, ['9106'])).get('9106')!;
+    expect((await serviceOf(serviceId)).type).toBe('imei');
+    expect(
+      (await fieldsOf(serviceId)).map((field) => [
+        field.key,
+        field.label,
+        field.supplierKey,
+        field.fieldType,
+        field.isMainInput,
+        field.required,
+        field.sort,
+        field.regex,
+      ]),
+    ).toEqual([
+      ['imei', 'IMEI', 'IMEI', 'text', true, true, 0, ''],
+      ['model', 'Model', 'Model', 'text', false, false, 1, ''],
+    ]);
+
+    const portal = await portalFor(t, world.merchant.id);
+    const form = json(await portal.get(`/client/services/${serviceId}`));
+    expect(
+      form.fields.map((field: { key: string; label: string; isMainInput: boolean; required: boolean }) => [
+        field.key,
+        field.label,
+        field.isMainInput,
+        field.required,
+      ]),
+    ).toEqual([
+      ['imei', 'IMEI', true, true],
+      ['model', 'Model', false, false],
+    ]);
+
+    // The IMEI typed into the field is checked as an IMEI (spaces and dashes removed) and stored as the order's IMEI.
+    const bad = await portal.post('/client/orders', { serviceId, inputs: { imei: '352905112490860' } });
+    expect(bad.statusCode).toBe(422);
+    expect(json(bad).errors).toEqual([expect.objectContaining({ field: 'inputs.imei', code: 'invalid_imei' })]);
+    const orderId = await placed({ serviceId, inputs: { imei: '3546 0711-1076240', model: 'Sample Z' } });
+    expect(await orderRow(world.db, orderId)).toMatchObject({
+      imei: IMEIS[1],
+      inputs: { imei: IMEIS[1], model: 'Sample Z' },
+    });
+    expect(await dispatch.run(orderId, { lastAttempt: false })).toMatchObject({ status: 'sent' });
+    const [place] = fake.callsOf('placeimeiorder');
+    expect(place!.parameters).toEqual({ ID: '9106', IMEI: IMEIS[1], QNT: 1, CUSTOMFIELD: { Model: 'Sample Z' } });
+    expect(place!.rawParameters).toBe(
+      xml(
+        `<ID>9106</ID><IMEI>${IMEIS[1]}</IMEI><QNT>1</QNT><CUSTOMFIELD>${base64Json({ Model: 'Sample Z' })}</CUSTOMFIELD>`,
+      ),
+    );
+  });
+
+  it('still takes an IMEI sent as imei, which wins over the field and is sent alone', async () => {
+    fake.services = [{ ...PLAIN_SERVICE, requiresCustom: [] }];
+    const supplierId = await insertFakeSupplier(world.db, t.app.get(EncryptionService), fake);
+    const serviceId = (await importRemote(supplierId, ['9106'])).get('9106')!;
+    expect((await fieldsOf(serviceId)).map((field) => [field.key, field.isMainInput])).toEqual([['imei', true]]);
+    const orderId = await placed({ serviceId, imei: IMEIS[3] });
+    expect(await dispatch.run(orderId, { lastAttempt: false })).toMatchObject({ status: 'sent' });
+    expect(fake.callsOf('placeimeiorder')[0]!.parameters).toEqual({ ID: '9106', IMEI: IMEIS[3], QNT: 1 });
+  });
+
+  it('is quick added with the IMEI field first too', async () => {
+    fake.services = [PLAIN_SERVICE];
+    const supplierId = await insertFakeSupplier(world.db, t.app.get(EncryptionService), fake);
+    expect((await sync.run(supplierId, { audit: false })).ok).toBe(true);
+    const started = await staff.post(`/admin/suppliers/${supplierId}/quick-add`, {
+      scope: 'groups',
+      groups: [{ type: 'IMEI', remoteGroup: 'Sample carrier checks' }],
+    });
+    expect(started.status).toBe(202);
+    expect(await t.app.get(QuickAddRunner, { strict: false }).run(started.body.id)).toBe('succeeded');
+    const [link] = await world.db
+      .select({ serviceId: s.serviceSupplierLinks.serviceId })
+      .from(s.serviceSupplierLinks)
+      .innerJoin(s.supplierServices, eq(s.supplierServices.id, s.serviceSupplierLinks.supplierServiceId))
+      .where(eq(s.supplierServices.supplierId, supplierId));
+    expect((await serviceOf(link!.serviceId)).type).toBe('imei');
+    expect(
+      (await fieldsOf(link!.serviceId)).map((field) => [field.key, field.supplierKey, field.isMainInput, field.sort]),
+    ).toEqual([
+      ['imei', 'IMEI', true, 0],
+      ['model', 'Model', false, 1],
+    ]);
   });
 });
 
@@ -449,7 +556,7 @@ describe("the sync adopts the supplier's main box on IMEI services made before",
     const second = await insertService(db, oldCategory, { name: 'Old serial check' });
     await linkService(db, second, supplierId, { remoteId: '9102', credit: '2.0000' });
 
-    // The four services the sync leaves alone.
+    // The three services the sync leaves alone.
     const twoLinks = await insertService(db, oldCategory, { name: 'Two active links' });
     await db.insert(s.serviceSupplierLinks).values({ serviceId: twoLinks, supplierServiceId: ecidRemote, priority: 1 });
     await linkService(db, twoLinks, otherSupplier, { remoteId: '7001', priority: 2 });
@@ -464,11 +571,6 @@ describe("the sync adopts the supplier's main box on IMEI services made before",
     await db
       .insert(s.serviceSupplierLinks)
       .values({ serviceId: otherType, supplierServiceId: ecidRemote, priority: 1 });
-    const staffKey = await insertService(db, oldCategory, { name: 'Staff marked the box' });
-    await db
-      .insert(s.serviceFields)
-      .values({ serviceId: staffKey, key: 'device', label: 'Device', supplierKey: 'Device', isMainInput: true });
-    await db.insert(s.serviceSupplierLinks).values({ serviceId: staffKey, supplierServiceId: ecidRemote, priority: 1 });
 
     const versionBefore = await catalogVersionOf(t);
     const before = await serviceOf(adoptable);
@@ -513,7 +615,7 @@ describe("the sync adopts the supplier's main box on IMEI services made before",
     expect(await serviceOf(second)).toMatchObject({ type: 'server', categoryId: after.categoryId });
     expect((await fieldsOf(second)).map((field) => field.key)).toEqual(['serial_number']);
 
-    for (const id of [twoLinks, archived, otherType, staffKey]) {
+    for (const id of [twoLinks, archived, otherType]) {
       const left = await serviceOf(id);
       expect(left.type, String(id)).toBe(id === otherType ? 'remote' : 'imei');
       expect(left.categoryId).toBe(id === otherType ? remoteCategory : oldCategory);
@@ -747,20 +849,155 @@ describe('the adoption: categories, links and the guards of the shared rule', ()
     expect((await serviceOf(two.serviceId)).type).toBe('imei');
   });
 
-  it('leaves alone a service that already has a main-input field, whatever its key and Name', async () => {
+  it('turns a main-input field the service already has into the box (decision 071): same id and key, the box first, one audit row', async () => {
     const { db } = world;
     for (const [category, key, supplierKey] of [
       ['Flagged Imei', 'imei', 'IMEI'],
       ['Flagged Other', 'device', 'Device'],
     ] as const) {
       const flagged = await oldService(category);
-      await db
-        .insert(s.serviceFields)
-        .values({ serviceId: flagged.serviceId, key, label: 'Device', supplierKey, isMainInput: true });
+      // As migration 0071 leaves an IMEI service: the main-input field first, the service's own fields after it.
+      await db.insert(s.serviceFields).values([
+        { serviceId: flagged.serviceId, key: 'model', label: 'Model', supplierKey: 'Model', sort: 1 },
+        {
+          serviceId: flagged.serviceId,
+          key,
+          label: supplierKey,
+          supplierKey,
+          required: false,
+          isMainInput: true,
+          sort: 0,
+        },
+        { serviceId: flagged.serviceId, key: 'note', label: 'Note', supplierKey: 'Note', sort: 2 },
+      ]);
+      const before = await fieldsOf(flagged.serviceId);
+      const boxId = before.find((field) => field.isMainInput)!.id;
+      expect(await sync.run(flagged.supplierId, { audit: false })).toMatchObject({ ok: true, result: { adopted: 1 } });
+      expect((await serviceOf(flagged.serviceId)).type, category).toBe('server');
+      const after = await fieldsOf(flagged.serviceId);
+      expect(
+        after.map((field) => [
+          field.id === boxId,
+          field.key,
+          field.label,
+          field.supplierKey,
+          field.isMainInput,
+          field.required,
+          field.sort,
+          field.regex,
+        ]),
+        category,
+      ).toEqual([
+        [true, key, 'ECID', 'ECID', true, true, 0, '^.{13,16}$'],
+        [false, 'model', 'Model', 'Model', false, false, 1, ''],
+        [false, 'note', 'Note', 'Note', false, false, 2, ''],
+      ]);
+      const [audit] = await db
+        .select()
+        .from(s.auditLogs)
+        .where(
+          and(
+            eq(s.auditLogs.entityId, flagged.serviceId),
+            eq(s.auditLogs.entityType, 'service'),
+            eq(s.auditLogs.action, "adopted the supplier's input"),
+          ),
+        );
+      expect(audit).toMatchObject({
+        actorType: 'system',
+        before: { type: 'imei', categoryId: flagged.categoryId, field: { key, name: supplierKey, label: supplierKey } },
+        after: { type: 'server', field: { key, name: 'ECID', label: 'ECID' } },
+      });
+      // A second sync adopts nothing and changes no field.
       expect(await sync.run(flagged.supplierId, { audit: false })).toMatchObject({ ok: true, result: { adopted: 0 } });
-      expect((await serviceOf(flagged.serviceId)).type, category).toBe('imei');
-      expect(await fieldsOf(flagged.serviceId)).toHaveLength(1);
+      expect(await fieldsOf(flagged.serviceId)).toEqual(after);
     }
+  });
+
+  it('keeps the answer of an order placed before the adoption under the reused key: shown under the box label, dispatched as its IMEI', async () => {
+    const { db } = world;
+    const flagged = await oldService('Flagged Order');
+    await db.update(s.services).set({ status: 'active' }).where(eq(s.services.id, flagged.serviceId));
+    await db.insert(s.serviceFields).values({
+      serviceId: flagged.serviceId,
+      key: 'imei',
+      label: 'IMEI',
+      supplierKey: 'IMEI',
+      required: true,
+      isMainInput: true,
+    });
+    // Placed while the service is still an IMEI service, with the IMEI typed into its IMEI field (decision 070).
+    const orderId = await placed({ serviceId: flagged.serviceId, inputs: { imei: IMEIS[2] } });
+    expect(await orderRow(world.db, orderId)).toMatchObject({
+      type: 'imei',
+      imei: IMEIS[2],
+      inputs: { imei: IMEIS[2] },
+    });
+
+    expect(await sync.run(flagged.supplierId, { audit: false })).toMatchObject({ ok: true, result: { adopted: 1 } });
+    // The answer stays under the kept key and now shows under the box's label; the order still holds its IMEI.
+    const read = await staff.get(`/admin/orders/${orderId}`);
+    expect(read.status).toBe(200);
+    expect(read.body.answers).toEqual([{ key: 'imei', label: 'ECID', value: IMEIS[2] }]);
+    expect(await orderRow(world.db, orderId)).toMatchObject({ type: 'imei', imei: IMEIS[2] });
+    expect(await dispatch.run(orderId, { lastAttempt: false })).toMatchObject({ status: 'sent' });
+    expect(fake.callsOf('placeimeiorder')[0]!.parameters).toEqual({ ID: '9101', IMEI: IMEIS[2], QNT: 1 });
+
+    // An order placed after the adoption types the box into the same key and sends it as IMEI.
+    const later = await placed({ serviceId: flagged.serviceId, inputs: { imei: 'ABCDEF0123456' } });
+    expect(await orderRow(world.db, later)).toMatchObject({ type: 'server', imei: 'ABCDEF0123456' });
+    expect(await dispatch.run(later, { lastAttempt: false })).toMatchObject({ status: 'sent' });
+    expect(fake.callsOf('placeimeiorder')[1]!.parameters).toEqual({ ID: '9101', IMEI: 'ABCDEF0123456', QNT: 1 });
+  });
+
+  it('makes a reused flagged number or list field the box in full: text with no options, so an ECID with letters is taken', async () => {
+    const { db } = world;
+    for (const [category, fieldType, options] of [
+      ['Flagged Number', 'number', []],
+      ['Flagged List', 'select', ['352905112490861', '354607111076240']],
+    ] as const) {
+      const flagged = await oldService(category);
+      await db.update(s.services).set({ status: 'active' }).where(eq(s.services.id, flagged.serviceId));
+      await db.insert(s.serviceFields).values({
+        serviceId: flagged.serviceId,
+        key: 'imei',
+        label: 'IMEI',
+        supplierKey: 'IMEI',
+        fieldType,
+        options: [...options],
+        required: true,
+        isMainInput: true,
+      });
+      expect(await sync.run(flagged.supplierId, { audit: false })).toMatchObject({ ok: true, result: { adopted: 1 } });
+      const [box] = await fieldsOf(flagged.serviceId);
+      expect(box, category).toMatchObject({
+        key: 'imei',
+        supplierKey: 'ECID',
+        label: 'ECID',
+        fieldType: 'text',
+        options: [],
+        required: true,
+        isMainInput: true,
+        regex: '^.{13,16}$',
+      });
+      const orderId = await placed({ serviceId: flagged.serviceId, inputs: { imei: 'ABCDEF0123456' } });
+      expect(await orderRow(world.db, orderId), category).toMatchObject({ type: 'server', imei: 'ABCDEF0123456' });
+    }
+  });
+
+  it("gives the reused box another Name when another field holds the box's Name, ignoring letter case", async () => {
+    const { db } = world;
+    const flagged = await oldService('Flagged Taken Name');
+    await db.insert(s.serviceFields).values([
+      { serviceId: flagged.serviceId, key: 'imei', label: 'IMEI', supplierKey: 'IMEI', isMainInput: true, sort: 0 },
+      { serviceId: flagged.serviceId, key: 'model', label: 'Model', supplierKey: 'ecid', sort: 1 },
+    ]);
+    expect(await sync.run(flagged.supplierId, { audit: false })).toMatchObject({ ok: true, result: { adopted: 1 } });
+    expect(
+      (await fieldsOf(flagged.serviceId)).map((field) => [field.key, field.supplierKey, field.isMainInput]),
+    ).toEqual([
+      ['imei', 'ECID 2', true],
+      ['model', 'ecid', false],
+    ]);
   });
 
   it('adopts a service whose field is only named IMEI, or that its link maps to IMEI: the flag decides, not a name', async () => {
@@ -811,10 +1048,10 @@ describe('the adoption: categories, links and the guards of the shared rule', ()
     await db.insert(s.serviceFields).values({ serviceId, key: 'model', label: 'Model', supplierKey: 'Model' });
     const importer = t.app.get(ServiceImporter, { strict: false });
     const box = mainInputField({ label: 'ECID', minLength: 1, maxLength: null }, { keys: new Set(), names: new Set() });
-    const adopt = (field: typeof box) =>
+    const adopt = (field: typeof box, replaces?: string) =>
       t.app
         .get(DbService, { strict: false })
-        .runInTransaction(({ tx }) => importer.adoptMainInput(tx, { serviceId, field }));
+        .runInTransaction(({ tx }) => importer.adoptMainInput(tx, { serviceId, field, replaces }));
     expect(await adopt({ ...box, supplierKey: ' MODEL ' })).toBeNull();
     expect(await adopt({ ...box, key: 'model' })).toBeNull();
     expect((await serviceOf(serviceId)).type).toBe('imei');
@@ -822,6 +1059,9 @@ describe('the adoption: categories, links and the guards of the shared rule', ()
 
     await db.update(s.serviceFields).set({ isMainInput: true }).where(eq(s.serviceFields.serviceId, serviceId));
     expect(await adopt(box)).toBeNull();
+    // Decision 071: a box that names another field than the flagged one, or that does not carry its key, is refused too.
+    expect(await adopt({ ...box, key: 'other' }, 'other')).toBeNull();
+    expect(await adopt(box, 'model')).toBeNull();
     expect((await serviceOf(serviceId)).type).toBe('imei');
 
     await db.update(s.serviceFields).set({ isMainInput: false }).where(eq(s.serviceFields.serviceId, serviceId));

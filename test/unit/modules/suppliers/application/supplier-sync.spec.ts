@@ -1,10 +1,15 @@
 // Unit tests of the call log writer that never fails its caller (decision 051): the full record, else a minimal row, else one error line
-// with the SQLSTATE alone. A stand-in database executor plays the insert.
+// with the SQLSTATE alone. A stand-in database executor plays the insert. And the adoption rule of the sync (decisions 042 and 071).
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
 import { Logger } from '@nestjs/common';
 import type { DbExecutor } from '@src/infra/db';
 import type { CallRecord } from '@src/modules/suppliers/application/supplier-driver';
-import { CALL_RECORD_NOT_STORED, writeCallLogSafely } from '@src/modules/suppliers/application/supplier-sync';
+import {
+  CALL_RECORD_NOT_STORED,
+  adoptable,
+  writeCallLogSafely,
+} from '@src/modules/suppliers/application/supplier-sync';
+import type { AlignmentCandidate } from '@src/modules/suppliers/infra/foreign-reads.repository';
 
 const record: CallRecord = {
   action: 'placeimeiorder',
@@ -101,5 +106,36 @@ describe('writeCallLogSafely', () => {
     expect(String(logged.mock.calls[0]![0])).toBe(
       'The call log row of supplier 3 for order 9 could not be written (SQLSTATE unknown).',
     );
+  });
+});
+
+describe('adoptable', () => {
+  const ecidBox = { CUSTOM: { allow: '1', customname: 'ECID', maxlength: '16' } };
+  const candidate = (over: Partial<AlignmentCandidate>): AlignmentCandidate => ({
+    serviceId: 1,
+    type: 'imei',
+    raw: ecidBox,
+    customFields: [],
+    fieldMap: {},
+    fields: [],
+    ...over,
+  });
+  const imeiField = { key: 'imei', supplierKey: 'IMEI', required: true, isMainInput: true };
+
+  it('adopts an imei service whose supplier service has a main box, with or without a main-input field (decision 071)', () => {
+    expect(adoptable(candidate({}))).toBe(true);
+    expect(
+      adoptable(candidate({ fields: [{ key: 'model', supplierKey: 'Model', required: false, isMainInput: false }] })),
+    ).toBe(true);
+    expect(adoptable(candidate({ fields: [imeiField] }))).toBe(true);
+  });
+
+  it('never adopts a service of another type, nor one whose supplier service has no main box or one named only IMEI', () => {
+    for (const type of ['server', 'remote', 'file']) expect(adoptable(candidate({ type })), type).toBe(false);
+    expect(adoptable(candidate({ raw: {} }))).toBe(false);
+    expect(adoptable(candidate({ raw: { CUSTOM: { allow: '1', customname: 'IMEI' } }, fields: [imeiField] }))).toBe(
+      false,
+    );
+    expect(adoptable(candidate({ raw: { CUSTOM: { allow: '0', customname: 'ECID' } } }))).toBe(false);
   });
 });

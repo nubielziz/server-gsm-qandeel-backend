@@ -360,7 +360,8 @@ export const syncSupplier = defineRoute({
     '(a changed credit sets `price_changed_at`; a service no longer listed becomes unavailable), recomputes the effective cost of every ' +
     "linked service and moves the catalog price version. It also adopts the supplier's main box (decision 042): an IMEI service whose " +
     'only active link points at a service of this supplier whose main box asks for something other than an IMEI (an ECID, a serial ' +
-    'number) becomes a server service with that box as its first field. On every service whose only active link points at this ' +
+    'number) becomes a server service with that box as its first field; a main-input field the service already has (its IMEI field, ' +
+    'decision 071) becomes the box, keeping its key. On every service whose only active link points at this ' +
     'supplier it also makes required the fields the supplier requires (a Dhru Fusion site writes `"required": "on"`) that were imported ' +
     'as optional; it never makes a field optional. `adopted` counts the services brought in line, each once. A service whose price cannot be ' +
     'read or is outside 0 to 1000000000 is left out (unavailable until the supplier lists it with a usable price); a balance outside ' +
@@ -618,7 +619,9 @@ export const importServices = defineRoute({
     "`supplierServiceIds` naming it and nothing is imported), the category found or created from the supplier's group (`Imported` " +
     "when empty), automatic fulfilment, code `IMP-<id>` (`-2`, `-3` on a collision), the SLA read from the supplier's time text (the " +
     "setting `catalog.importDefaultSlaMinutes`, default 1440, when it cannot be read), the suggested price, the supplier's custom " +
-    "fields and a link of priority 1. A changed item updates the linked service's cost and recomputes its effective cost (price " +
+    'fields (an IMEI service with no field named IMEI also gets the required text field `IMEI` first, flagged as its main input, so ' +
+    "the order forms take its IMEI: decision 071) and a link of priority 1. A changed item updates the linked service's cost and " +
+    'recomputes its effective cost (price ' +
     'untouched; an archived service counts as unchanged). Ids of another supplier are ignored. `createdServiceIds` names the ' +
     'services this call created, in creation order (decision 060). Two optional keys change only what a new item becomes (decision 063): ' +
     '`status` (`active`, the default, or `disabled`: the service is inserted disabled, in the same transaction, so it is never orderable) ' +

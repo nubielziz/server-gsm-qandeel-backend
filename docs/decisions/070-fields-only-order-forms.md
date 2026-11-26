@@ -46,7 +46,8 @@ callers). Both are normalised (spaces and dashes removed) and checked the same w
   before; an order whose IMEI was typed into the field has one.
 - **Demo data only.** The demo seed (`scripts/seed/catalog.ts`) gives every demo IMEI service the main-input field `imei` (Name `IMEI`,
   label `IMEI`, text, required, no pattern, first in the form), so the demo shop and portal can order them; the Z3X field stays as it was.
-  Production gets no migration, by the owner's ruling: staff add the main-input field to its IMEI services.
+  Production gets no migration, by the owner's ruling: staff add the main-input field to its IMEI services. (Replaced by decision 071: the
+  import gives every plain IMEI service the field and migration `0071_imei_main_input_field` gives it to the stored ones.)
 - Tests: `test/unit/modules/orders/domain/main-input.spec.ts`; the integration files `test/integration/orders/imei-main-input-placement.test.ts`
   (with the bulk list beside the field's key and an idempotency replay of a field-only order) and
   `test/integration/customers/checkout-imei-main-input.test.ts` (new), `test/integration/orders/imei-field-pattern-placement.test.ts`,

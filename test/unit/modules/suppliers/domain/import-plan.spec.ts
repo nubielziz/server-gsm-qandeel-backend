@@ -1,12 +1,16 @@
 // Unit tests of the import rules: classification of a picked item, the type check, the mapping of custom fields and what a supplier
-// service becomes in the catalog (decision 042: the supplier's own main box).
+// service becomes in the catalog (decision 042: the supplier's own main box; decision 071: the IMEI field of a plain IMEI service and the
+// box an adoption makes).
 import { describe, expect, it } from 'bun:test';
 import {
+  IMEI_FIELD_NAME,
   MAX_NAMED_MISFITS,
+  adoptedBox,
   categoryMismatchMessage,
   categoryMisfits,
   classifyImportItem,
   fieldsToRequire,
+  imeiInputField,
   importShape,
   importableType,
   importedFields,
@@ -280,15 +284,83 @@ describe('importShape', () => {
       ['IMEI', true],
       ['imei 2', false],
     ]);
-    // No field named IMEI: nothing is flagged.
+    // No field named IMEI: none of the supplier's fields is flagged; the service gets its own IMEI field first (decision 071).
     const none = importShape({ type: 'IMEI', customFields: [{ fieldname: 'IMEI No' }], raw: {} });
-    expect(none.fields.some((field) => field.isMainInput)).toBe(false);
+    expect(none.fields.map((field) => [field.key, field.supplierKey, field.isMainInput, field.sort])).toEqual([
+      ['imei', 'IMEI', true, 0],
+      ['imei_no', 'IMEI No', false, 1],
+    ]);
   });
 
-  it('keeps a box named only IMEI (any spelling) as an imei service', () => {
+  it('gives a service that stays imei with no field named IMEI the IMEI field first, the supplier fields after it (decision 071)', () => {
+    const shape = importShape({
+      type: 'IMEI',
+      customFields: [
+        { fieldname: 'Model', fieldtype: 'dropdown', fieldoptions: 'A, B', required: 'on' },
+        { fieldname: 'Note', fieldtype: 'text' },
+      ],
+      raw: {},
+    });
+    expect(shape.type).toBe('imei');
+    expect(shape.fields).toEqual([
+      {
+        key: 'imei',
+        label: 'IMEI',
+        fieldType: 'text',
+        options: [],
+        required: true,
+        supplierKey: 'IMEI',
+        isMainInput: true,
+        sort: 0,
+        regex: '',
+      },
+      {
+        key: 'model',
+        label: 'Model',
+        fieldType: 'select',
+        options: ['A', 'B'],
+        required: true,
+        supplierKey: 'Model',
+        isMainInput: false,
+        sort: 1,
+        regex: '',
+      },
+      {
+        key: 'note',
+        label: 'Note',
+        fieldType: 'text',
+        options: [],
+        required: false,
+        supplierKey: 'Note',
+        isMainInput: false,
+        sort: 2,
+        regex: '',
+      },
+    ]);
+    // Exactly one main input in the shape.
+    expect(shape.fields.filter((field) => field.isMainInput)).toHaveLength(1);
+  });
+
+  it("takes the next free key when a supplier's field already holds imei, and keeps the supplier's field as it was", () => {
+    const shape = importShape({
+      type: 'IMEI',
+      customFields: [{ fieldname: 'IMEI:' }, { fieldname: 'IMEI-2' }],
+      raw: {},
+    });
+    expect(shape.fields.map((field) => [field.key, field.supplierKey, field.isMainInput, field.sort])).toEqual([
+      ['imei_3', 'IMEI', true, 0],
+      ['imei', 'IMEI:', false, 1],
+      ['imei_2', 'IMEI-2', false, 2],
+    ]);
+  });
+
+  it('keeps a box named only IMEI (any spelling) as an imei service, with the IMEI field as its only field', () => {
     for (const customname of ['IMEI', 'imei no', 'IMEI Number', ' I.M.E.I ']) {
       const raw = { CUSTOM: { allow: '1', customname, maxlength: '15' } };
-      expect(importShape({ type: 'IMEI', customFields: [], raw }), customname).toEqual({ type: 'imei', fields: [] });
+      expect(importShape({ type: 'IMEI', customFields: [], raw }), customname).toEqual({
+        type: 'imei',
+        fields: [imeiInputField(new Set())],
+      });
     }
   });
 
@@ -312,6 +384,8 @@ describe('importShape', () => {
       const shape = importShape({ type, customFields: fields, raw });
       expect(shape.type).toBe(type.toLowerCase() as 'server');
       expect(shape.fields.map((field) => field.supplierKey)).toEqual(['Username']);
+      // No IMEI field on another type, not even without fields (decision 071 is about IMEI services only).
+      expect(importShape({ type, customFields: [], raw: {} }).fields).toEqual([]);
     }
     expect(importShape({ type: 'Credits', customFields: [], raw }).type).toBeUndefined();
   });
@@ -393,6 +467,68 @@ describe('mainInputField', () => {
     expect(
       mainInputField({ label: SERIAL_NAME, minLength: 1, maxLength: null }, { ...none, keys: new Set(['field']) }),
     ).toMatchObject({ key: 'field_2' });
+  });
+});
+
+describe('imeiInputField', () => {
+  it('is required text named and labelled IMEI, flagged, first, without a pattern; its key is imei, else the first free number', () => {
+    expect(imeiInputField(new Set())).toEqual({
+      key: 'imei',
+      label: IMEI_FIELD_NAME,
+      fieldType: 'text',
+      options: [],
+      required: true,
+      supplierKey: IMEI_FIELD_NAME,
+      isMainInput: true,
+      sort: 0,
+      regex: '',
+    });
+    expect(imeiInputField(new Set(['imei'])).key).toBe('imei_2');
+    expect(imeiInputField(new Set(['imei', 'imei_2'])).key).toBe('imei_3');
+  });
+});
+
+describe('adoptedBox', () => {
+  const ecid = { label: 'ECID', minLength: 13, maxLength: 16 };
+  const field = (key: string, supplierKey: string, isMainInput = false) => ({ key, supplierKey, isMainInput });
+
+  it('inserts the box as mainInputField makes it when the service has no main-input field', () => {
+    const fields = [field('model', 'Model'), field('ecid', 'Other')];
+    expect(adoptedBox(ecid, fields)).toEqual({
+      field: mainInputField(ecid, { keys: new Set(['model', 'ecid']), names: new Set(['model', 'other']) }),
+      replaces: null,
+    });
+    expect(adoptedBox(ecid, fields).field).toMatchObject({ key: 'ecid_2', supplierKey: 'ECID', isMainInput: true });
+  });
+
+  it("turns the main-input field into the box: its key stays, the box's Name, label, pattern and required come in", () => {
+    const box = adoptedBox(ecid, [field('imei', 'IMEI', true), field('model', 'Model')]);
+    expect(box).toEqual({
+      field: {
+        key: 'imei',
+        label: 'ECID',
+        fieldType: 'text',
+        options: [],
+        required: true,
+        supplierKey: 'ECID',
+        isMainInput: true,
+        sort: 0,
+        regex: '^.{13,16}$',
+      },
+      replaces: 'imei',
+    });
+  });
+
+  it("checks the box's Name against the other fields only: a clash takes the number, the replaced field's own Name does not count", () => {
+    expect(adoptedBox(ecid, [field('model', 'ecid'), field('device', 'Device', true)]).field).toMatchObject({
+      key: 'device',
+      supplierKey: 'ECID 2',
+    });
+    // The flagged field may already carry the box's Name: it is the field being renamed, so the Name stays free.
+    expect(adoptedBox(ecid, [field('serial', 'ECID', true)]).field).toMatchObject({
+      key: 'serial',
+      supplierKey: 'ECID',
+    });
   });
 });
 
@@ -480,6 +616,9 @@ describe('fieldsToRequire', () => {
   it('never lists the main-input field, even when its Name is a field the supplier requires', () => {
     const fields = [field('device', 'Account Email', { isMainInput: true }), field('region', 'Region')];
     expect(fieldsToRequire(fields, {}, supplier)).toEqual(['region']);
+    // Decision 071: the IMEI field of a plain IMEI service is the main input, also when the supplier requires a field named IMEI.
+    const imei = [field('imei', 'IMEI', { isMainInput: true }), field('region', 'Region')];
+    expect(fieldsToRequire(imei, {}, [...supplier, { fieldname: 'IMEI', required: 'on' }])).toEqual(['region']);
   });
 
   it('lists a field the supplier itself names IMEI when it is not the main input and the supplier requires it', () => {

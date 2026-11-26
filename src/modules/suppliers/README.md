@@ -4,7 +4,7 @@ Map domain C. The suppliers we buy from (the orders it moves belong to an accoun
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 023 outbound HTTP, 026 Dhru compatibility, 042 real Dhru Fusion suppliers (feature 33), 020 queues and outbox, 019 credential encryption, 021 rate limiting, 025 order state machine, 031 clock, 051 supplier keys, answers and field patterns, 065 one Name per field and the main input flag. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 023 outbound HTTP, 026 Dhru compatibility, 042 real Dhru Fusion suppliers (feature 33), 020 queues and outbox, 019 credential encryption, 021 rate limiting, 025 order state machine, 031 clock, 051 supplier keys, answers and field patterns, 065 one Name per field and the main input flag, 071 the IMEI field of a plain IMEI service. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -166,6 +166,12 @@ parameter; `Requires.Custom` lists the other fields. Our `imei` type keeps its m
   lower snake case and unique, the regex `^.{min,max}$` from the lengths when the supplier gives a maximum, else none), followed by the
   `Requires.Custom` fields; anything else is `importableType` and `importedFields`. The import, the preview (its `type` tag says `SERVER`
   then) and the quick add read the type from it.
+- **The IMEI field (decision 071).** A supplier never lists the IMEI of a plain IMEI service among its fields: it is the `IMEI` parameter of
+  every order. Since the order forms draw only the fields (decision 070), `importShape` gives a service that stays `imei` and has no field
+  named IMEI a first field (`imeiInputField`): Name and label `IMEI`, key `imei` (`imei_2`, ... on a clash), required text, no pattern,
+  `isMainInput` set; the supplier's fields follow from `sort` 1. Its value never travels in `CUSTOMFIELD` (the order's IMEI is the
+  `IMEI` parameter) and `fieldsToRequire` never lists it. Migration `0071_imei_main_input_field` gave the field to the IMEI services stored
+  before.
 - **Names (decision 065).** A field has one Name (`service_fields.supplier_key`, never empty, unique in its service ignoring letter case)
   and a hidden key. `importedFields` writes the Name as the supplier spells it, the key made from it (`fieldKeyBase`, `_2`, `_3` on a
   clash), the label from the supplier's description (else the Name) and `isMainInput` false; `importShape` flags the box, or, on a service
@@ -180,15 +186,19 @@ parameter; `Requires.Custom` lists the other fields. Our `imei` type keeps its m
 - A shop checkout opened while a service took an IMEI and paid after an adoption keeps the buyer's value: the store placement puts it
   under the main box field (`carriedImeiInputs`, orders module) when that field has no value of its own.
 - **Adoption on sync.** In the sync's transaction, after the services are stored: every live `imei` service whose only active link (in
-  all; inactive links do not count) points at a service of this supplier with a main box is adopted, by service id, unless a field is
-  already the main input (`isMainInput`; `adoptable`). `adoptMainInput` also leaves a service alone when its key or its Name (ignoring
-  letter case) is taken, so the unique indexes are never hit. The
+  all; inactive links do not count) points at a service of this supplier with a main box is adopted, by service id (`adoptable`). Decision
+  071: when the service has a main-input field (its IMEI field), that field becomes the box (`adoptedBox` names it in `replaces`): it keeps
+  its id and key and takes the box's Name, label, type (`text`), options (none), pattern and `required`; a service without one gets the box
+  inserted first. `adoptMainInput`
+  leaves a service alone when its flagged field is not the one `replaces` names, or another field holds the box's key or its Name (ignoring
+  letter case), so the unique indexes are never hit. The
   candidates are locked in id order (the effective cost recompute already locked every linked service in id order, decision 069) and read again. The catalog's `ServiceImporter.adoptMainInput` makes it a `server` service in the
   `server` category of the same name (an existing one is reused as it is, with its own switch and groups; only a category created for
   the move copies the old one's switch and groups) and puts the box first; price,
   cost, status, quantities, SLA, links and listing stay. Each adoption writes the search index's `catalog.services_changed` event and
-  one audit row (`adopted the supplier's input`, entity `service`, the system as the actor, `before { type, categoryId }`, `after
-  { type, categoryId, field { key, name, label } }`); the catalog price version moves after the commit.
+  one audit row (`adopted the supplier's input`, entity `service`, the system as the actor, `before { type, categoryId }` with `field { key,
+  name, label }` when a field became the box, `after { type, categoryId, field { key, name, label } }`); the catalog price version moves
+  after the commit.
 - **Required fields (feature 33, second review round).** A Dhru Fusion site describes a `Requires.Custom` field as `{ type, fieldname,
   fieldtype, description, fieldoptions, required, regexpr, adminonly }` and writes a set flag as `"on"` (an unset one as `""`).
   `isSupplierFlagOn` (`domain/import-plan.ts`) reads a flag: `true`, `1`, or text that is `on`, `1`, `yes`, `true`, `required` or `y`

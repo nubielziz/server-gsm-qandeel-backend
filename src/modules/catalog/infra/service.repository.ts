@@ -489,6 +489,42 @@ export async function insertFirstFieldRow(
 }
 
 /**
+ * Makes a field of a service its first field and gives it new values: the other fields keep their order behind it (`sort` 1, 2, ...).
+ *
+ * Why: decision 071: the supplier sync's adoption turns an IMEI service's main-input field (its IMEI) into the supplier's main box, in
+ * full (Name, label, type, options, pattern, `required`); the field keeps its id and its key, so the answers older orders stored under that
+ * key now show under the box's label.
+ *
+ * @param db the transaction (the service row is locked)
+ * @param serviceId the service
+ * @param fieldId the field to put first (a field of the service)
+ * @param row its new values
+ * @returns the saved field
+ */
+export async function makeFirstFieldRow(
+  db: DbExecutor,
+  serviceId: number,
+  fieldId: number,
+  row: Pick<NewServiceField, 'label' | 'fieldType' | 'options' | 'required' | 'regex' | 'supplierKey'>,
+): Promise<ServiceField> {
+  const others = (await listFieldRows(db, serviceId)).filter((field) => field.id !== fieldId);
+  for (const [index, field] of others.entries()) {
+    if (field.sort !== index + 1) {
+      await db
+        .update(serviceFields)
+        .set({ sort: index + 1 })
+        .where(eq(serviceFields.id, field.id));
+    }
+  }
+  const [saved] = await db
+    .update(serviceFields)
+    .set({ ...row, sort: 0 })
+    .where(and(eq(serviceFields.id, fieldId), eq(serviceFields.serviceId, serviceId)))
+    .returning();
+  return saved!;
+}
+
+/**
  * Replaces all option lists of a service: deletes the old entries and inserts the new list in order.
  *
  * @param db the transaction (the service row is locked)

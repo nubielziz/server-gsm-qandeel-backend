@@ -1,4 +1,4 @@
-// The rules of the supplier import (resolutions orders-suppliers-10, catalog-9, decision 042): what a picked supplier service becomes in our
+// The rules of the supplier import (resolutions orders-suppliers-10, catalog-9, decisions 042 and 071): what a picked supplier service becomes in our
 // catalog, how its custom fields map to ours and what the item costs. Pure (the suggested price needs the catalog's default minimum profit: the use case computes it).
 import { supplierFieldName } from '../../../common/dhru';
 import {
@@ -145,6 +145,76 @@ export function mainInputField(
   };
 }
 
+/** The Name and the label of the field a plain IMEI service gets for its IMEI (decision 071). */
+export const IMEI_FIELD_NAME = 'IMEI';
+
+/**
+ * The main-input field a plain IMEI service gets for its IMEI.
+ *
+ * Why: decision 071: since decision 070 the order forms draw only a service's custom fields, and an IMEI service's IMEI is typed into the
+ * field flagged `isMainInput`. A Dhru supplier names its main box only when it is not an IMEI (`CUSTOM`, decision 042): the IMEI is the
+ * `IMEI` parameter of every IMEI order, so the supplier never lists it among its fields, and a plain IMEI service was imported with no
+ * field the shop could take its IMEI in. The field is required text named and labelled `IMEI`, first in the form, with no pattern: the
+ * backend checks the IMEI itself (15 digits and the Luhn digit). Its value never travels in CUSTOMFIELD: the dispatch sends the order's IMEI
+ * as the `IMEI` parameter.
+ *
+ * @param usedKeys the keys of the service's other fields (the key is `imei`, else `imei_2`, `imei_3`, ...)
+ * @returns the field, with `sort` 0
+ */
+export function imeiInputField(usedKeys: ReadonlySet<string>): ImportedField {
+  return {
+    key: freeFieldKey(fieldKeyBase(IMEI_FIELD_NAME), usedKeys),
+    label: IMEI_FIELD_NAME,
+    fieldType: 'text',
+    options: [],
+    required: true,
+    supplierKey: IMEI_FIELD_NAME,
+    isMainInput: true,
+    sort: 0,
+    regex: '',
+  };
+}
+
+/** The box the supplier sync's adoption puts on an IMEI service ({@link adoptedBox}). */
+export interface AdoptedBox {
+  /** The box as {@link mainInputField} makes it; when it replaces a field, with that field's key. */
+  readonly field: ImportedField;
+  /**
+   * The key of the service's main-input field that becomes the box (it keeps its key and its id), or `null` when the service has none and
+   * the box is a new first field.
+   */
+  readonly replaces: string | null;
+}
+
+/**
+ * The box an adoption gives an IMEI service whose supplier service has a main box of its own.
+ *
+ * Why: decisions 042 and 071: an `imei` service whose supplier's main box is not an IMEI becomes a `server` service with that box first.
+ * Since decision 071 every IMEI service has a main-input field (its IMEI), and a service has at most one: that field becomes the box (its
+ * key and id stay, so the answers of older orders stored under the key show under the box's label) instead of a second flagged field being
+ * inserted. Everything else is what {@link mainInputField} makes (Name, label, text type, no options, pattern, `required`), the Name
+ * checked against the service's other fields only (` 2`, ` 3`, ... on a clash). A service without a main-input field gets the box as a
+ * new first field, as before.
+ *
+ * @param main the supplier's box as {@link supplierMainInput} reads it
+ * @param fields the service's fields (`supplierKey` is the Name)
+ * @returns the box and the key of the field it replaces
+ */
+export function adoptedBox(
+  main: SupplierMainInput,
+  fields: ReadonlyArray<{ readonly key: string; readonly supplierKey: string; readonly isMainInput: boolean }>,
+): AdoptedBox {
+  const flagged = fields.find((field) => field.isMainInput);
+  const others = fields.filter((field) => field !== flagged);
+  const field = mainInputField(main, {
+    keys: new Set(others.map((other) => other.key)),
+    names: new Set(others.map((other) => fieldNameKey(other.supplierKey))),
+  });
+  return flagged === undefined
+    ? { field, replaces: null }
+    : { field: { ...field, key: flagged.key }, replaces: flagged.key };
+}
+
 /** The texts a supplier writes for a flag that is set (trimmed, lower-case): a Dhru Fusion site writes `"on"` for a checkbox. */
 const FLAG_ON_TEXTS: ReadonlySet<string> = new Set(['on', '1', 'yes', 'true', 'required', 'y']);
 
@@ -283,7 +353,9 @@ export interface ImportShape {
  * `Requires.Custom`. Every reader of the catalog type of a supplier service (the import, the preview, the quick add) asks this.
  * A `server`, `remote` or `file` supplier service is never changed by `CUSTOM`. Decision 065: a service that stays `imei` takes the
  * first field whose Name is IMEI in any letter case as its main input ({@link imeiNamedFieldIndex}): it is the IMEI itself, so no form
- * draws a second IMEI box for it and its value is never sent in CUSTOMFIELD.
+ * draws a second IMEI box for it and its value is never sent in CUSTOMFIELD. Decision 071: a service that stays `imei` with no field named
+ * IMEI gets one ({@link imeiInputField}) as its first field, the supplier's fields after it, so the shop's form (only the fields, decision
+ * 070) has a box for the IMEI.
  *
  * @param row the supplier service: its type name, its `Requires.Custom` list and its stored entry
  * @returns the catalog type and the fields to create
@@ -297,9 +369,17 @@ export function importShape(row: {
   const others = importedFields(row.customFields);
   const main = type === 'imei' ? supplierMainInput(row.raw) : null;
   if (main === null) {
-    const named = type === 'imei' ? imeiNamedFieldIndex(others) : -1;
-    if (named < 0) return { type, fields: others };
-    return { type, fields: others.map((other, index) => (index === named ? { ...other, isMainInput: true } : other)) };
+    if (type !== 'imei') return { type, fields: others };
+    const named = imeiNamedFieldIndex(others);
+    if (named >= 0) {
+      return {
+        type,
+        fields: others.map((other, index) => (index === named ? { ...other, isMainInput: true } : other)),
+      };
+    }
+    // Decision 071: the supplier never lists the IMEI (it is the IMEI parameter), so the service gets the field the forms take it in.
+    const imei = imeiInputField(new Set(others.map((other) => other.key)));
+    return { type, fields: [imei, ...others.map((other, index) => ({ ...other, sort: index + 1 }))] };
   }
   const field = mainInputField(main, {
     keys: new Set(others.map((other) => other.key)),

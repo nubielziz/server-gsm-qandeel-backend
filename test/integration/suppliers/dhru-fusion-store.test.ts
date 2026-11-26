@@ -1,7 +1,9 @@
 // Feature 33 (decision 042) on the storefront: a supplier service whose main box asks for an ECID is imported as a server service with
 // that box first; a shop order for it, once paid, sends the ECID as the classic XML string's `IMEI` and nothing of it in CUSTOMFIELD.
 // A checkout opened while a service took an IMEI and paid after the sync adopted the supplier's box keeps the buyer's value (card webhook
-// and store balance). Real Postgres and Redis, a stand-in card gateway and the fake Dhru supplier; the service entries are made-up samples.
+// and store balance). Decision 071: a plain IMEI supplier service is imported with the IMEI field, which the shop's page lists flagged and
+// whose value a paid order sends as `IMEI`. Real Postgres and Redis, a stand-in card gateway and the fake Dhru supplier; the service
+// entries are made-up samples.
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { EncryptionService } from '@src/infra/crypto';
@@ -125,11 +127,77 @@ describe("a shop order for a service whose supplier's main box is an ECID", () =
   });
 });
 
+describe('a plain IMEI supplier service in the shop (decision 071)', () => {
+  it("is imported with the IMEI field, which the shop's page lists flagged; the IMEI typed into it is sent as <IMEI>", async () => {
+    supplier.reset();
+    supplier.services = [
+      {
+        id: '9501',
+        group: 'Sample shop checks',
+        type: 'IMEI',
+        name: 'Sample shop IMEI check',
+        credit: '2.0000',
+        time: '1 hour',
+        requiresCustom: [
+          { type: 'serviceimei', fieldname: 'Model', fieldtype: 'text', description: 'Model', required: '' },
+        ],
+      },
+    ];
+    supplier.accepts = 'dhru_xml';
+    const supplierId = await insertFakeSupplier(world.db, t.app.get(EncryptionService, { strict: false }), supplier);
+    expect((await t.app.get(SupplierSync, { strict: false }).run(supplierId, { audit: false })).ok).toBe(true);
+    const [remote] = await world.db
+      .select()
+      .from(s.supplierServices)
+      .where(eq(s.supplierServices.supplierId, supplierId));
+    const staff = await adminWith(t, ['suppliers:*', 'catalog:*']);
+    expect(
+      (await staff.post(`/admin/suppliers/${supplierId}/import`, { supplierServiceIds: [remote!.id] })).status,
+    ).toBe(200);
+    const [link] = await world.db
+      .select()
+      .from(s.serviceSupplierLinks)
+      .where(eq(s.serviceSupplierLinks.supplierServiceId, remote!.id));
+    const serviceId = link!.serviceId;
+    await insertRetailPrice(world.db, serviceId, world.groups.retail, '9.9900');
+    await insertListing(world.db, serviceId, { slug: 'sample-shop-imei-check', publicTitle: 'Sample shop IMEI check' });
+
+    const page = await t.app.inject({ method: 'GET', url: '/store/v1/services/sample-shop-imei-check' });
+    expect(page.statusCode).toBe(200);
+    expect(json(page).fields).toEqual([
+      { key: 'imei', label: 'IMEI', fieldType: 'text', options: [], required: true, isMainInput: true },
+      { key: 'model', label: 'Model', fieldType: 'text', options: [], required: false, isMainInput: false },
+    ]);
+
+    // The new shop sends only the fields (decision 070): the IMEI under the main-input field's key, no `imei`.
+    const paid = await paidOrder(t, clock, world, {
+      serviceId,
+      email: 'plain@mail.example',
+      imei: null,
+      inputs: { imei: APPLE_IMEI, model: 'Sample Z' },
+    });
+    expect(await orderRow(world.db, paid.orderId)).toMatchObject({
+      type: 'imei',
+      imei: APPLE_IMEI,
+      inputs: { imei: APPLE_IMEI, model: 'Sample Z' },
+    });
+    expect(
+      await t.app.get(SupplierDispatch, { strict: false }).run(paid.orderId, { lastAttempt: false }),
+    ).toMatchObject({ status: 'sent' });
+    const calls = supplier.callsOf('placeimeiorder');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.parameters).toEqual({ ID: '9501', IMEI: APPLE_IMEI, QNT: 1, CUSTOMFIELD: { Model: 'Sample Z' } });
+  });
+});
+
 describe("a checkout opened while the service took an IMEI and paid after the sync adopted the supplier's box", () => {
   let counter = 0;
 
-  /** An IMEI service made before decision 042, linked to a supplier service whose box is an ECID, listed in the shop. */
-  async function imeiServiceBeforeAdoption() {
+  /**
+   * An IMEI service made before decision 042, linked to a supplier service whose box is an ECID, listed in the shop; with `imeiField`,
+   * it has the IMEI field migration 0071 gives such a service (decision 071).
+   */
+  async function imeiServiceBeforeAdoption(options: { imeiField?: boolean } = {}) {
     counter += 1;
     const remoteId = `93${counter}0`;
     supplier.reset();
@@ -156,6 +224,16 @@ describe("a checkout opened while the service took an IMEI and paid after the sy
       },
     );
     await linkService(world.db, serviceId, supplierId, { remoteId, credit: '3.0000' });
+    if (options.imeiField) {
+      await world.db.insert(s.serviceFields).values({
+        serviceId,
+        key: 'imei',
+        label: 'IMEI',
+        supplierKey: 'IMEI',
+        required: true,
+        isMainInput: true,
+      });
+    }
     await insertRetailPrice(world.db, serviceId, world.groups.retail, '9.9900');
     await insertListing(world.db, serviceId, {
       slug: `sample-old-report-${counter}`,
@@ -171,11 +249,11 @@ describe("a checkout opened while the service took an IMEI and paid after the sy
     expect(service!.type).toBe('server');
   }
 
-  async function expectSentAsImei(orderId: number) {
+  async function expectSentAsImei(orderId: number, boxKey = 'serial_or_imei') {
     expect(await orderRow(world.db, orderId)).toMatchObject({
       type: 'server',
       imei: APPLE_IMEI,
-      inputs: { serial_or_imei: APPLE_IMEI },
+      inputs: { [boxKey]: APPLE_IMEI },
     });
     expect(await t.app.get(SupplierDispatch, { strict: false }).run(orderId, { lastAttempt: false })).toMatchObject({
       status: 'sent',
@@ -202,6 +280,33 @@ describe("a checkout opened while the service took an IMEI and paid after the sy
     expect((await hook(t, clock, 'payments', world.gateway.code, body)).statusCode).toBe(200);
     const [order] = await world.db.select().from(s.orders).where(eq(s.orders.serviceId, serviceId));
     await expectSentAsImei(order!.id);
+  });
+
+  it('with the IMEI typed into its IMEI field (decision 071): that field became the box, so the typed value is sent as <IMEI>', async () => {
+    const { supplierId, serviceId } = await imeiServiceBeforeAdoption({ imeiField: true });
+    const { token } = await openCheckout(t, world, {
+      serviceId,
+      email: 'field@mail.example',
+      imei: null,
+      inputs: { imei: APPLE_IMEI },
+    });
+    await adopt(supplierId, serviceId);
+    const box = await world.db.select().from(s.serviceFields).where(eq(s.serviceFields.serviceId, serviceId));
+    expect(box.map((field) => [field.key, field.supplierKey, field.isMainInput])).toEqual([
+      ['imei', 'Serial Or IMEI', true],
+    ]);
+
+    const started = await pay(t, token, undefined);
+    expect(started.statusCode).toBe(201);
+    const { payment } = json(started);
+    const body = storefrontEvent(`evt_adopted_field_${counter}`, payment.reference, {
+      amount: payment.amount,
+      currency: payment.currency,
+      intent: `pi_adopted_field_${counter}`,
+    });
+    expect((await hook(t, clock, 'payments', world.gateway.code, body)).statusCode).toBe(200);
+    const [order] = await world.db.select().from(s.orders).where(eq(s.orders.serviceId, serviceId));
+    await expectSentAsImei(order!.id, 'imei');
   });
 
   it('paid from the store balance: the same', async () => {

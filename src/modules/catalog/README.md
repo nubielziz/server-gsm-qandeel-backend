@@ -4,7 +4,7 @@ Map domain B. What is for sale and at what price: client groups, categories, ser
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 065 one Name per field and the main input flag, 066 the `ids` read of the merchant catalog, 068 the TAC catalog loses its routes, 070 order forms draw only the custom fields. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 065 one Name per field and the main input flag, 066 the `ids` read of the merchant catalog, 068 the TAC catalog loses its routes, 070 order forms draw only the custom fields, 071 the IMEI field of a plain IMEI service. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -196,12 +196,13 @@ No migration, no queue or cache key change.
   from its lengths, never the supplier's own pattern; the `Requires.Custom` fields `''`), which `create` stores. Decision 065: a field
   also carries its Name (`supplierKey`: the supplier's field name as the supplier spells it, the box's own name for the box, made unique
   in the service ignoring letter case by the suppliers module), the hidden key the suppliers module made from that Name, and
-  `isMainInput` (set on the box only); `create` stores them as given. `ServiceImporter.adoptMainInput(tx, { serviceId, field })` is the supplier
+  `isMainInput` (set on the box, or on the IMEI field of a plain IMEI service: decision 071); `create` stores them as given.
+  `ServiceImporter.adoptMainInput(tx, { serviceId, field, replaces })` is the supplier
   sync's adoption of an IMEI service made before the decision whose supplier's main box is not an IMEI: under the service's row lock it
-  re-checks the service (live, `imei`, no field flagged as the main input, the new key free and the new Name free ignoring letter case,
-  so the unique indexes are never hit; else it answers `null` and writes nothing), moves it
+  re-checks the service (live, `imei`, its main-input field the one `replaces` names, or none when `replaces` is omitted, the box's key and
+  Name held by no other field ignoring letter case, so the unique indexes are never hit; else it answers `null` and writes nothing), moves it
   to type `server` and the `server` category of the same name (an existing one, found ignoring case, is reused as it is with its own
-  switch and groups; only a category created for the move copies the old one's switch and groups; locked `FOR SHARE` as a staff edit locks it), puts the field first, flagged as the main input (the others' `sort` moves up by one, their keys stay) and,
+  switch and groups; only a category created for the move copies the old one's switch and groups; locked `FOR SHARE` as a staff edit locks it), puts the field first, flagged as the main input (the others keep their keys and their order behind it; decision 071: with `replaces` the main-input field the service has becomes the box in full, keeping only its id and key: Name, label, type `text`, no options, pattern and `required` are the box's, `makeFirstFieldRow`) and,
   like `PATCH /admin/services/:id`, writes `catalog.services_changed` (reason `service`). Price, cost, status, quantities, SLA, links
   and listing stay. The caller moves the catalog price version after the commit and writes the audit row (`adopted the supplier's
   input`). `ServiceImporter.requireFields(tx, { serviceId, keys })` (feature 33, second review round) is the sync's repair of the

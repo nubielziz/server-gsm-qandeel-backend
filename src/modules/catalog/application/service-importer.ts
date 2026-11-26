@@ -30,6 +30,7 @@ import {
   insertServiceRow,
   listFieldRows,
   lockLiveService,
+  makeFirstFieldRow,
   replaceFieldRows,
   updateServiceRow,
 } from '../infra/service.repository';
@@ -106,6 +107,8 @@ export interface AdoptedService {
   readonly name: string;
   readonly before: { readonly type: ServiceType; readonly categoryId: number };
   readonly after: { readonly type: ServiceType; readonly categoryId: number };
+  /** The main-input field that became the box, as it was before (decision 071), or `null` when the box was inserted as a new field. */
+  readonly replaced: { readonly key: string; readonly name: string; readonly label: string } | null;
   /** True when the `server` category of the same name did not exist and was created. */
   readonly categoryCreated: boolean;
 }
@@ -247,7 +250,10 @@ export class ServiceImporter {
    * Why: decision 042 (feature 33): a service imported before the decision from a supplier service whose main box is not an IMEI (an
    * ECID, a serial number) is an `imei` service that refuses every value its supplier takes. The supplier sync adopts it: the type
    * becomes `server`, the category the `server` category with the same name (created when missing, as `create` does), and the box the
-   * first field (the other fields keep their keys and move down by one). Nothing else of the service changes: price, cost, status,
+   * first field (the other fields keep their keys and their order behind it). Decision 071: every IMEI service has a main-input field (its
+   * IMEI) and a service has at most one, so when the service has one, that field becomes the box in full (`replaces`): it keeps its key
+   * and its id and takes the box's Name, label, type (text), options (none), pattern and `required`; without one the box is inserted as a
+   * new first field, as before. Nothing else of the service changes: price, cost, status,
    * quantity, SLA, links and listing stay. Like a staff edit of a service's category (`PATCH /admin/services/:id`), it writes the
    * search index's change event; the caller moves the catalog price version after the commit and writes the audit row.
    *
@@ -256,26 +262,34 @@ export class ServiceImporter {
    * after the price was last set, instead of writing it at once.
    *
    * Side effects: locks the service row; may insert `service_categories`; updates `services` (type, category), `service_fields` (sorts,
-   * one new row) and `retail_price_follows.applied_at`; inserts one `catalog.services_changed` outbox event (reason `service`).
+   * and one new row or the values of the replaced field) and `retail_price_follows.applied_at`; inserts one `catalog.services_changed`
+   * outbox event (reason `service`).
    *
    * @param tx the sync's transaction
-   * @param input the service and the field to put first
-   * @returns what changed, or `null` when the service is not adoptable any more (archived, not `imei`, already has a main-input field,
-   *   or already has a field with that key or that Name, ignoring letter case): nothing is written then
+   * @param input the service, the field to put first and `replaces`: the key of the main-input field that becomes the box (then
+   *   `field.key` is that key), omitted or `null` to insert the box as a new field
+   * @returns what changed, or `null` when the service is not adoptable any more (archived, not `imei`, its main-input field is not the
+   *   one `replaces` names, or another field has the box's key or its Name, ignoring letter case): nothing is written then
    */
   async adoptMainInput(
     tx: DbExecutor,
-    input: { readonly serviceId: number; readonly field: AdoptedField },
+    input: { readonly serviceId: number; readonly field: AdoptedField; readonly replaces?: string | null },
   ): Promise<AdoptedService | null> {
     const service = await lockLiveService(tx, input.serviceId);
     if (!service || service.type !== 'imei') return null;
     const fields = await listFieldRows(tx, service.id);
-    // Decision 065: the box is the field flagged as the main input; a key or a Name (ignoring case) that is taken cannot be written
-    // (the unique indexes would refuse it), so the service is left alone and the next sync reads it again.
-    if (fields.some((field) => field.isMainInput)) return null;
-    if (fields.some((field) => field.key === input.field.key)) return null;
+    // Decision 065: the box is the field flagged as the main input, at most one per service. Decision 071: the caller names the flagged
+    // field it turns into the box; a service whose flagged field is another one (staff changed it since the read) is left alone.
+    const flagged = fields.find((field) => field.isMainInput);
+    const replaces = input.replaces ?? null;
+    if (replaces === null ? flagged !== undefined : flagged?.key !== replaces || input.field.key !== replaces)
+      return null;
+    // A key or a Name (ignoring case) that another field holds cannot be written (the unique indexes would refuse it), so the service
+    // is left alone and the next sync reads it again.
+    const others = fields.filter((field) => field !== flagged);
+    if (others.some((field) => field.key === input.field.key)) return null;
     const wantedName = fieldNameKey(input.field.supplierKey);
-    if (fields.some((field) => fieldNameKey(field.supplierKey) === wantedName)) return null;
+    if (others.some((field) => fieldNameKey(field.supplierKey) === wantedName)) return null;
 
     const [current] = await tx
       .select({
@@ -297,16 +311,28 @@ export class ServiceImporter {
     await updateServiceRow(tx, service.id, { type: 'server', categoryId: category.id });
     // Lock order: the service row (above), then the follow row.
     await restampRetailFollow(tx, service.id, this.clock.now());
-    await insertFirstFieldRow(tx, service.id, {
-      key: input.field.key,
-      label: input.field.label,
-      fieldType: input.field.fieldType,
-      options: input.field.options,
-      required: input.field.required,
-      regex: input.field.regex,
-      supplierKey: input.field.supplierKey,
-      isMainInput: true,
-    });
+    if (flagged === undefined) {
+      await insertFirstFieldRow(tx, service.id, {
+        key: input.field.key,
+        label: input.field.label,
+        fieldType: input.field.fieldType,
+        options: input.field.options,
+        required: input.field.required,
+        regex: input.field.regex,
+        supplierKey: input.field.supplierKey,
+        isMainInput: true,
+      });
+    } else {
+      // The box in full (decision 071): a flagged field that was a number or a list would refuse the ECID or serial the supplier takes.
+      await makeFirstFieldRow(tx, service.id, flagged.id, {
+        label: input.field.label,
+        fieldType: input.field.fieldType,
+        options: input.field.options,
+        required: input.field.required,
+        regex: input.field.regex,
+        supplierKey: input.field.supplierKey,
+      });
+    }
     // The shop's search holds the category and the type's form (feature 29), as after a staff edit.
     await this.signals.servicesChanged(tx, [service.id], 'service');
     return {
@@ -314,6 +340,7 @@ export class ServiceImporter {
       name: service.name,
       before: { type: service.type, categoryId: service.categoryId },
       after: { type: 'server', categoryId: category.id },
+      replaced: flagged === undefined ? null : { key: flagged.key, name: flagged.supplierKey, label: flagged.label },
       categoryCreated: category.created,
     };
   }
