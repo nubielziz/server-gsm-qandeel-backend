@@ -1,7 +1,7 @@
 // The main input of an order (RESOLUTIONS orders-suppliers-2): the one value stored in `orders.imei` for every service type,
 // written by one helper that every placement path (portal, Dhru, store, admin) calls, the carry of a shop IMEI onto the
-// supplier's main box field after the service's type changed (decision 042), and where the IMEI of an IMEI order was typed
-// (decision 070). Pure; no database.
+// supplier's main box field after the service's type changed (decision 042), and the bridge that puts the `imei` an older caller sends
+// for an IMEI service onto its main-input field (decisions 070 and 073). Pure; no database.
 
 /** The part of a service field the helper needs. */
 export interface MainInputField {
@@ -18,7 +18,7 @@ export interface MainInputField {
 export interface MainInputSource {
   /** The service type: `imei`, `server`, `remote` or `file`. */
   readonly type: 'imei' | 'server' | 'remote' | 'file';
-  /** The IMEI the buyer gave (type `imei`). */
+  /** The `imei` the request sent (type `imei`: older shop pages, Dhru's `IMEI`, an item of a bulk `imeis`). */
   readonly imei?: string | undefined;
   /** The custom field values by field key. */
   readonly inputs: Readonly<Record<string, string>>;
@@ -36,11 +36,14 @@ function bySort(a: MainInputField, b: MainInputField): number {
  * Chooses the main input of an order.
  *
  * Why: orders-suppliers-2: the console shows one input per order and the bulk reply matches on it, so every path stores the same
- * thing: the IMEI for an IMEI service; the value of the first required custom field by `sort` for a server or remote service
- * (a username, a serial, an account); for a file service the first field's value when the service has fields, else the uploaded
- * file's original name. `null` when the service takes no input (the read model then sends `''`). Decision 065: on a server, remote or
- * file service the value of the field flagged as the main input comes first, when it has one: the dispatch sends that value as the
- * `IMEI` parameter, so `orders.imei` and the duplicate check of `block_open` name what the supplier receives.
+ * thing: the value of the first required custom field by `sort` for a server or remote service (a username, a serial, an account); for a
+ * file service the first field's value when the service has fields, else the uploaded file's original name. `null` when the service
+ * takes no input (the read model then sends `''`). Decision 065: the value of the field flagged as the main input comes first, when it has
+ * one: the dispatch sends that value as the `IMEI` parameter, so `orders.imei` and the duplicate check of `block_open` name what the
+ * supplier receives. Decision 073: an IMEI service that has a main-input field takes that field's value, else the `imei` the request
+ * sent, else nothing (never another field: the dispatch sends the main input as `IMEI` and the other fields in CUSTOMFIELD, so a required
+ * ECID beside an empty optional IMEI field must not travel twice); one without a main-input field takes the sent `imei` as typed, else the
+ * rule of a server service. The caller passes the values as stored (a field of type `imei` as digits).
  *
  * @param source the service type, the values the buyer gave, the service fields and the input file name
  * @returns the main input text (trimmed), or `null`
@@ -51,11 +54,16 @@ export function mainInputOf(source: MainInputSource): string | null {
     return text === undefined || text === '' ? null : text;
   };
   const ordered = [...source.fields].sort(bySort);
-  if (source.type === 'imei') return clean(source.imei);
   const flagged = ordered.find((field) => field.isMainInput);
   const main = flagged ? clean(source.inputs[flagged.key]) : null;
   if (main !== null) return main;
   switch (source.type) {
+    case 'imei': {
+      const sent = clean(source.imei);
+      if (sent !== null || flagged) return sent;
+      const first = ordered.find((field) => field.required);
+      return first ? clean(source.inputs[first.key]) : null;
+    }
     case 'server':
     case 'remote': {
       const first = ordered.find((field) => field.required);
@@ -103,43 +111,45 @@ export function carriedImeiInputs(source: {
   return { ...source.inputs, [box.key]: imei };
 }
 
-/** Where the IMEI of one item of an IMEI service order was typed (decision 070). */
-export interface TypedImei {
-  /** The IMEI as typed, trimmed (not yet normalised); `''` when the request has none. */
-  readonly text: string;
-  /** The request path every problem about the IMEI is reported on: the item's IMEI path, or `inputs.<key>` of the main-input field. */
-  readonly path: string;
-  /** The key of the main-input field the IMEI is read from (and asked for when it is missing); `undefined` when only the IMEI path counts. */
-  readonly fieldKey: string | undefined;
+/** One item of an IMEI service order with the request's `imei` put onto the main-input field ({@link bridgedImeiOf}). */
+export interface ImeiBridge {
+  /** The values to judge and store, by field key: the sent `imei` replaces the main-input field's value when it has text. */
+  readonly inputs: Readonly<Record<string, string>>;
+  /** Where the main-input field's problems are reported, by field key (for `inputProblems`); empty: on `inputs.<key>`. */
+  readonly paths: Readonly<Record<string, string>>;
+  /** The sent `imei`, trimmed, when it has text; `undefined` otherwise. */
+  readonly imei: string | undefined;
 }
 
 /**
- * Finds the IMEI of one item of an order for an IMEI service, and the request path its problems belong to.
+ * Puts the `imei` an older caller sends for an IMEI service onto the service's main-input field.
  *
- * Why: decision 070: the order forms of the shop and the portal draw only the service's custom fields, so the buyer types the IMEI into
- * the field flagged as the main input (decision 065). Older shop pages and every Dhru call still send it as `imei` (Dhru's `IMEI`), and
- * that value wins when it has text, with its problems on the item's IMEI path as before. Otherwise the IMEI is the value under the
- * main-input field's key, and every problem about it (missing, `invalid_imei`, the field's pattern) is reported on `inputs.<key>`,
- * where the form draws the box. With neither and no main-input field (or a caller that reads the IMEI only from its own parameter),
- * the IMEI is missing on the item's IMEI path, as before.
+ * Why: decision 073: the service type `imei` forces nothing any more. An IMEI service's order form is its custom fields, each judged by its
+ * own type, Required tick and pattern (decision 070: the forms draw only the fields). Older shop pages, every Dhru call (its `IMEI`
+ * parameter) and each item of a bulk `imeis` still send the main input as `imei`: when it has text it is the value of the field flagged
+ * as the main input (it wins over a value under that field's key) and is then judged by that field, with its problems on the item's IMEI
+ * path, where the caller shows them. A service without a main-input field takes the sent `imei` as typed (`mainInputOf` stores it; no
+ * IMEI check). Without a sent `imei` the field is judged on its own value, its problems on `inputs.<key>`, except where the caller cannot
+ * see the field (`onImeiPath`: our Dhru list leaves it out), where they stay on the IMEI path.
  *
- * @param source the `imei` the request sent, the values by field key, the item's IMEI path (`imei`, `imeis.N`, `IMEI`) and the key of
- *   the main-input field the IMEI may be typed into (`undefined`: the service has none, or the caller reads the IMEI only as `imei`)
- * @returns the typed text (trimmed, `''` for none), the path its problems are reported on and the field it came from, if any
- * @see docs/decisions/070-fields-only-order-forms.md
+ * @param source the `imei` the request sent, the values by field key, the item's IMEI path (`imei`, `imeis.N`, `IMEI`), the key of the
+ *   main-input field (`undefined` when the service has none) and whether its problems are always shown on the IMEI path
+ * @returns the values to judge, the paths of the main-input field's problems and the sent `imei`
+ * @see docs/decisions/073-imei-is-a-field-type.md
  */
-export function typedImeiOf(source: {
+export function bridgedImeiOf(source: {
   readonly imei: string | undefined;
   readonly inputs: Readonly<Record<string, string>>;
   readonly imeiPath: string;
   readonly fieldKey: string | undefined;
-}): TypedImei {
+  readonly onImeiPath?: boolean | undefined;
+}): ImeiBridge {
   const sent = source.imei?.trim() ?? '';
-  // `imei` wins when it has text (both sent: the order of before); a field-only form never sends it.
-  if (sent !== '' || source.fieldKey === undefined) return { text: sent, path: source.imeiPath, fieldKey: undefined };
+  const imei = sent === '' ? undefined : sent;
+  if (source.fieldKey === undefined) return { inputs: source.inputs, paths: {}, imei };
   return {
-    text: source.inputs[source.fieldKey]?.trim() ?? '',
-    path: `inputs.${source.fieldKey}`,
-    fieldKey: source.fieldKey,
+    inputs: imei === undefined ? source.inputs : { ...source.inputs, [source.fieldKey]: imei },
+    paths: imei !== undefined || source.onImeiPath === true ? { [source.fieldKey]: source.imeiPath } : {},
+    imei,
   };
 }

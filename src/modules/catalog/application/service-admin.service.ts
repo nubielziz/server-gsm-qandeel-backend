@@ -21,6 +21,7 @@ import type {
 } from '../db/schema';
 import { CODES_IN_STOCK, codesInStockMessage } from '../domain/code-stock';
 import { type QuantityChange, type QuantityRule, resolveQuantityRule } from '../domain/quantity-rule';
+import { IMEI_DEFAULT_FIELD, auditedField, plannedFieldRows } from '../domain/service-parts';
 import type { AttentionReason, ShopBlock } from '../domain/service-attention';
 import { deliveryTimeText, dollars } from '../domain/service-figures';
 import { lockCategoryRow } from '../infra/category.repository';
@@ -49,6 +50,7 @@ import {
   listOptionRows,
   listServiceRows,
   lockLiveService,
+  replaceFieldRows,
   updateServiceRow,
 } from '../infra/service.repository';
 import { CatalogPriceVersion } from './catalog-price-version';
@@ -360,8 +362,8 @@ function toView(
  * Decision 069: a row also says whether the service is delivered from code stock (`stockDelivery`), how many codes are available
  * (`stockAvailable`) and its own cost (`ownCost`, next to the effective `cost`); create and change set the first and the last.
  *
- * Side effects: writes `services` (and, on delete, the service's `pricing_rules` and children) and `audit_logs` (entity
- * `service`); recomputes `services.effective_cost` on create and change (and writes `services.cost` for `ownCost`).
+ * Side effects: writes `services` (and, on delete, the service's `pricing_rules` and children; on the create of an IMEI service its
+ * default `service_fields` row, decision 073) and `audit_logs` (entity `service`); recomputes `services.effective_cost` on create and change (and writes `services.cost` for `ownCost`).
  *
  * @see docs/contract/endpoints/catalog.md (the `/admin/services` sections)
  */
@@ -436,6 +438,9 @@ export class ServiceAdminService {
    * @param caller the signed-in staff member: the facts of decision 060 in the answer follow `serviceReadAccess`
    * @param input name, code, category, type, SLA, base price and, optionally, the quantity rule, "Delivered from code stock" and the
    *   own cost (decision 069)
+   * An IMEI service gets its default custom field in the same transaction (decision 073, {@link IMEI_DEFAULT_FIELD}): Name and label
+   * `IMEI`, type `imei`, required, the main input, first; with its own audit row `replaced custom fields of service`.
+   *
    * @returns the new service
    * @throws {AppError} `VALIDATION_FAILED` (422 on `categoryId` for an unknown category or one of another type; on `minQty`,
    *   `maxQty` or `qtyOptions` for a quantity rule that breaks `resolveQuantityRule`; on `basePrice` with the code `below_floor` when
@@ -498,6 +503,19 @@ export class ServiceAdminService {
         entityLabel: service.name,
         after: snapshot(service),
       });
+      // Decision 073: an IMEI service starts with its IMEI field (the default, not a rule: staff may change or remove it later), written
+      // and audited like a save of the fields route.
+      if (service.type === 'imei') {
+        const saved = await replaceFieldRows(tx, service.id, plannedFieldRows([IMEI_DEFAULT_FIELD], [], true));
+        await this.audit.record(tx, {
+          action: 'replaced custom fields of service',
+          entityType: 'service',
+          entityId: service.id,
+          entityLabel: service.name,
+          before: { fields: [] },
+          after: { fields: saved.map(auditedField) },
+        });
+      }
       return this.viewOf(tx, service.id, access);
     });
   }

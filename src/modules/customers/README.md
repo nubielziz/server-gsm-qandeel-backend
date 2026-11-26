@@ -7,7 +7,7 @@ frozen and unread, until the contract release. This module owns `checkout_sessio
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 010 ids and tokens, 018 authentication, sessions and CSRF, 019 encryption, 034 Turnstile, 053 abuse limits, 054 secrets at rest, 064 one account type and 070 order forms draw only the custom fields. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 010 ids and tokens, 018 authentication, sessions and CSRF, 019 encryption, 034 Turnstile, 053 abuse limits, 054 secrets at rest, 064 one account type, 070 order forms draw only the custom fields and 073 IMEI is a field type. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -20,9 +20,8 @@ Built (feature 14a, storefront-checkout): the checkout, 3 of the 13 storefront r
   utm? }`. In one transaction: the policy `guestCheckout` (off answers `401 UNAUTHORIZED` "Sign in to check out." to a guest; a
   signed-in account is not a guest, see **Who the buyer is** below); the service must be one the shop sells, lists
   (a switched-on `service_listings` row) and has priced (`StorefrontQuotes`, else `422` on `serviceId`; a `file` service cannot be ordered online yet); the quantity and the
-  order fields are checked with the orders module's placement rules (`quantityProblem`, `inputProblems`; the service's main-input field, the one flagged `isMainInput` whatever its key (decision 065), is judged on the IMEI, which also satisfies it when it is required, and what is stored under that key is the IMEI). Decision 070: the shop draws only the custom fields, so the IMEI is `imei` when the request sends it (older pages; it wins, its problems on `imei`), else the value typed into the main-input field (`typedImeiOf`; every problem about it, a missing one as `required`, on `inputs.<key>`); with no such field and no `imei` it is `INVALID_IMEI` on `imei` as before. An IMEI service needs a
-  valid IMEI (`INVALID_IMEI`, stored as `imei_enc`, context `checkout_sessions.imei_enc`, never returned: the answer shows the last
-  four digits). The buyer is an account row (see **Who the buyer is** below); the typed email is trimmed and lower-cased. A failed open rolls
+  order fields are checked with the orders module's placement rules (`quantityProblem`, `inputProblems`), each by its own type, Required tick and pattern (decision 073: the service type `imei` forces nothing; a field of type `imei` holds one IMEI, 15 digits with Luhn, else `INVALID_IMEI` with `invalid_imei` on `inputs.<key>`, and is stored as digits, `normalizedInputs`). Decision 070: the shop draws only the custom fields; on an IMEI service an `imei` sent with text (older pages) is the value of the main-input field (the one flagged `isMainInput`, decision 065; `bridgedImeiOf`: it wins over a value under that key, its problems on `imei`), or, without such a field, the main input as typed. An optional main input may be left empty and an IMEI service without fields takes none. The main input of an IMEI service (`mainInputOf`) is stored as `imei_enc` (context `checkout_sessions.imei_enc`, never returned: the answer shows its last
+  four characters). The blocklist is asked about the main input and the value of every field of type `imei`, each read as digits, whenever that is a valid IMEI, whatever the type of the field the main input was typed into (`blockableImeisOf`). The buyer is an account row (see **Who the buyer is** below); the typed email is trimmed and lower-cased. A failed open rolls
   everything back (no guest row is left behind). The session stores USD `net_amount`, `tax_rate`, `tax_amount`, `gross_amount`
   (RULES customers 6), the `currency` and the locked `fx_rate` (8 decimals, the markup included), `tax_country`, the encrypted
   IMEI, `inputs`, `utm`, `ip` (the trusted-proxy address) and the user agent; the token is 128 random bits (base64url, 22
@@ -154,7 +153,7 @@ the one account row: block, the privacy read and the export serve every rank; th
 
 - **Block** (`POST /admin/clients/:id/block`, `clients:block`, RESOLUTIONS b2c-5, B48): `{ blocked: true, reason }` (one of the console's four reasons) sets `blocked`, appends
   `Blocked: <reason>` to the internal notes and, through identity's `AccountAccessEffects.statusChanged`, ends every session and stops every live API key. Through the risk module's
-  `Blocklist` it adds manual entries with the reason, the caller and `account_id`: the email, each distinct card fingerprint of the account's payments, and each distinct IMEI still
+  `Blocklist` it adds manual entries with the reason, the caller and `account_id`: the email, each distinct card fingerprint of the account's payments, and each distinct IMEI (the main input, and decision 073 the values of fields of type `imei`) still
   stored on its **shop** orders and checkout sessions, **never the IMEIs of portal or Dhru orders** (a merchant orders for other people's devices); each insert is
   `ON CONFLICT DO NOTHING`, so an existing entry stays as it is and is not linked. `{ blocked: false }` sets `active` and deletes only the manual entries `WHERE account_id = :id`.
   `ALREADY_BLOCKED`, `NOT_BLOCKED`, `ANONYMIZED` are `409`.

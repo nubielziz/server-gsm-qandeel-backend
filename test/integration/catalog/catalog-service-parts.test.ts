@@ -91,17 +91,42 @@ describe('PUT /admin/services/:id/fields', () => {
       entityId: serviceId,
       entityLabel: 'AT&T Unlock',
     });
-    // Each field by key, Name, label, required and the main-input flag: what a supplier and a buyer see, and what travels as the IMEI.
+    // Each field by key, Name, label, type, pattern, required and the main-input flag: what a supplier and a buyer see, what is refused
+    // (decision 073: the type and the pattern) and what travels as the IMEI.
     expect(audits[1]!.before).toEqual({
       fields: [
-        { key: 'imei', name: 'IMEI', label: 'IMEI', required: true, isMainInput: true },
-        { key: 'carrier', name: 'Carrier', label: 'Carrier name', required: false, isMainInput: false },
+        {
+          key: 'imei',
+          name: 'IMEI',
+          label: 'IMEI',
+          fieldType: 'text',
+          regex: '^[0-9]{15}$',
+          required: true,
+          isMainInput: true,
+        },
+        {
+          key: 'carrier',
+          name: 'Carrier',
+          label: 'Carrier name',
+          fieldType: 'select',
+          regex: '',
+          required: false,
+          isMainInput: false,
+        },
       ],
     });
     expect(audits[1]!.after).toEqual({
       fields: [
-        { key: 'note', name: 'Note', label: 'Note', required: false, isMainInput: false },
-        { key: 'imei', name: 'IMEI', label: 'IMEI', required: false, isMainInput: true },
+        {
+          key: 'note',
+          name: 'Note',
+          label: 'Note',
+          fieldType: 'textarea',
+          regex: '',
+          required: false,
+          isMainInput: false,
+        },
+        { key: 'imei', name: 'IMEI', label: 'IMEI', fieldType: 'text', regex: '', required: false, isMainInput: true },
       ],
     });
   });

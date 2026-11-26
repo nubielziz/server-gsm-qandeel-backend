@@ -4,6 +4,19 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**IMEI is a field type; the service type forces nothing (2026-11-26, decision 073): merged, not pushed (waiting for the owner's word).** The owner's
+order: "do not make the server force an IMEI in services of type imei; make the IMEI input the default and give the user the freedom". A custom field
+has a fifth type `imei` (digits, 15, Luhn; `invalid_imei` on `inputs.<key>`), judged on any service. An IMEI service is placed like a server service:
+its fields decide; a sent `imei` (older pages, Dhru's `IMEI`, bulk items) is the value of its main-input field (`bridgedImeiOf`) and is judged by that
+field; `orders.imei` is that field's value, else the sent `imei` (a service without a main-input field also falls back on the server rule). The checkout's
+blocklist match and the account block read the main input and every `imei`-type field. The default field (the import, and now `POST /admin/services`
+of type imei) is of type `imei`; the field-save audit row shows type and pattern. Migration `0072_imei_field_type`: the check takes `imei` and the
+text main-input fields named IMEI of IMEI services become of that type; rehearsed on a scratch copy of production (277 changed, every other field
+unchanged, a second run changes nothing; copy and dump removed). The owner's own test service (an optional textarea main input) accepts anything after
+the release. Built by an Opus implementer, reviewed by an Opus reviewer (five findings, fixed), final review by the lead (Fable 5.2). **Checks:**
+typecheck, lint, format, English, routes, contract, OpenAPI, coverage, `db:check` (73 migrations); the contract tests (463) and the order, checkout,
+migration and field tests (351). The whole suite was not run locally. **Release order:** console (decision 031), backend, shop (decision 008).
+
 **The option lists route is retired (2026-11-26, decision 072): merged and pushed on the owner's word.** The console's Options section of a service
 (Models, Networks, MEP) is deleted (its decision 030), so `PUT /admin/services/:id/options` is retired (`test/contract/retired.ts`, 404). The table
 `service_options`, every read of options (`GET /admin/services/:id`, `GET /client/services/:id`, the search labels) and the seed rows stay; no

@@ -182,7 +182,12 @@ const FieldRow = z.object({
         '`CUSTOMFIELD`.',
     ),
   label: z.string().describe('The text buyers read.'),
-  fieldType: z.enum(SERVICE_FIELD_TYPES),
+  fieldType: z
+    .enum(SERVICE_FIELD_TYPES)
+    .describe(
+      '`imei` holds one IMEI: the value is read as digits (spaces and dashes removed) and must be 15 digits with a valid Luhn check ' +
+        'digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`), on any service type.',
+    ),
   required: z.boolean(),
   options: z.array(z.string()).describe('The choices of a `select` field.'),
   regex: z.string().describe('`""` when there is no pattern. A pattern is in the supported form of decision 051.'),
@@ -268,10 +273,10 @@ const FIELD_EXAMPLE = {
   key: 'imei',
   name: 'IMEI',
   label: 'IMEI',
-  fieldType: 'text',
+  fieldType: 'imei',
   required: true,
   options: [],
-  regex: '^[0-9]{15}$',
+  regex: '',
   isMainInput: true,
 } as const;
 const OPTION_EXAMPLE = { list: 'model', value: 'iphone15', label: 'iPhone 15', supplierValue: '' } as const;
@@ -403,7 +408,9 @@ export const createService = defineRoute({
     '`duplicate_pack`) is on `qtyOptions`. The optional `stockDelivery` (default `false`) makes it a service delivered from code ' +
     'stock, and the optional `ownCost` (0 to 1000000000, default `0`) is its own cost: the effective `cost` starts equal to it (decision ' +
     '069). With `ownCost` sent, a `basePrice` under the floor it sets is `422` on `basePrice` with the code `below_floor`, as on a ' +
-    'change. The values are in the audit row `created service`.',
+    'change. The values are in the audit row `created service`. An IMEI service is created with one custom field in the same ' +
+    'transaction (decision 073): Name and label `IMEI`, type `imei`, required, the main input, first in the form, with the audit row ' +
+    '`replaced custom fields of service`; staff may then change or remove it on the fields route.',
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',
@@ -534,7 +541,8 @@ export const replaceServiceFields = defineRoute({
     'The name is what a supplier receives in `CUSTOMFIELD`. `label` left out keeps the saved label of an existing field, an empty ' +
     'label stores the name, and a new field without a label gets the name. `isMainInput` left out keeps the saved value of an ' +
     'existing field and is `false` for a new one. On an IMEI service a list that leaves no field as the main input makes the first ' +
-    'field named IMEI (any letter case) the main input. An unknown field type, an empty name or a pattern outside the supported form ' +
+    'field named IMEI (any letter case) the main input; any other list is accepted for an IMEI service (renamed, another type, not ' +
+    'required, no main input, no fields at all: decision 073). A field of type `imei` holds one IMEI (15 digits, Luhn). An unknown field type, an empty name or a pattern outside the supported form ' +
     '(decision 051: literals, classes, the escapes `\\d \\w \\s` and their capitals, groups that neither repeat nor nest, counts up to ' +
     '500, `^` and `$` at the ends, and a bound on the work of a 500-character value) is `422` on `fields.N.<name>`; so are an ' +
     'unknown or repeated key (`fields.N.key`), a name that an earlier field already has, ignoring letter case ' +
@@ -574,10 +582,10 @@ export const replaceServiceFields = defineRoute({
         {
           name: 'IMEI',
           label: 'IMEI',
-          fieldType: 'text',
+          fieldType: 'imei',
           required: true,
           options: [],
-          regex: '^[0-9]{15}$',
+          regex: '',
           isMainInput: true,
         },
       ],

@@ -58,8 +58,8 @@ function codesFor(serviceId: number, prefix: string, count: number, firstId: num
  *
  * Why: the console's Services & pricing page and the later pricing, order and storefront features start from the same 27
  * services. Every service has `effective_cost` equal to its cost (no supplier is seeded yet: feature 6 links them and recomputes).
- * Every IMEI service gets the main-input field `imei` (decision 070: the order forms draw only the custom fields, so the demo shop and
- * portal can order it); the Z3X credits keep their one account field.
+ * Every IMEI service gets the main-input field `imei` of type `imei` (decision 070: the order forms draw only the custom fields, so the
+ * demo shop and portal can order it; decision 073: the field type checks the IMEI); the Z3X credits keep their one account field.
  *
  * @param db the transaction to write with
  * @param demo the loaded frontend demo state
@@ -139,15 +139,15 @@ export async function seedCatalog(db: DbExecutor, demo: DemoSeed, config?: AppCo
   // One custom field and one set of option lists, so the console's dialogs have something to show (the mock's).
   const z3x = idOfCode.get('SRV-Z3X-10');
   const att = idOfCode.get('IMEI-ATT-USA');
-  // Decision 070: the order forms draw only the custom fields, so every demo IMEI service gets the main-input field its IMEI is typed into
-  // (demo data only: production IMEI services get theirs from staff, no migration adds it).
+  // Decision 070: the order forms draw only the custom fields, so every demo IMEI service gets the main-input field its IMEI is typed into,
+  // of type `imei` like the default field of decision 073 (production got theirs from migrations 0071 and 0072).
   const imeiFields = demoServices
     .filter((service) => service.type === 'IMEI')
     .map((service) => ({
       serviceId: demoNumericId(service.id),
       key: 'imei',
       label: 'IMEI',
-      fieldType: 'text' as const,
+      fieldType: 'imei' as const,
       required: true,
       supplierKey: 'IMEI',
       isMainInput: true,

@@ -150243,7 +150243,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Starts `active`, `auto`, with a fixed price mode, the `block_open` duplicate rule, no minimum profit of its own and a cost of 0 until a supplier is linked or imported. The type must be the type of the category: `422` on `categoryId` otherwise. A code that another live service has (ignoring case) is `409 CODE_TAKEN` on `code`. `basePrice` must be above zero. The optional `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) switch on the merchant's cancel and verification of this service's orders; all three start off. The optional `minQty`, `maxQty` (whole, 1 to 100000) and `qtyOptions` (at most 50 whole pack sizes, no repeats) say what one order may buy; they start at 1, 1 and none. A service sells a range or packs: with `qtyOptions` the server stores `minQty` as the smallest and `maxQty` as the largest pack and refuses a different one sent (`422` `packs_set`); without packs a `maxQty` under `minQty` is `422` `below_min` on `maxQty` (`above_max` on `minQty` when only `minQty` was sent). Every pack problem (`invalid_pack`, `duplicate_pack`) is on `qtyOptions`. The optional `stockDelivery` (default `false`) makes it a service delivered from code stock, and the optional `ownCost` (0 to 1000000000, default `0`) is its own cost: the effective `cost` starts equal to it (decision 069). With `ownCost` sent, a `basePrice` under the floor it sets is `422` on `basePrice` with the code `below_floor`, as on a change. The values are in the audit row `created service`.",
+        "description": "Starts `active`, `auto`, with a fixed price mode, the `block_open` duplicate rule, no minimum profit of its own and a cost of 0 until a supplier is linked or imported. The type must be the type of the category: `422` on `categoryId` otherwise. A code that another live service has (ignoring case) is `409 CODE_TAKEN` on `code`. `basePrice` must be above zero. The optional `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) switch on the merchant's cancel and verification of this service's orders; all three start off. The optional `minQty`, `maxQty` (whole, 1 to 100000) and `qtyOptions` (at most 50 whole pack sizes, no repeats) say what one order may buy; they start at 1, 1 and none. A service sells a range or packs: with `qtyOptions` the server stores `minQty` as the smallest and `maxQty` as the largest pack and refuses a different one sent (`422` `packs_set`); without packs a `maxQty` under `minQty` is `422` `below_min` on `maxQty` (`above_max` on `minQty` when only `minQty` was sent). Every pack problem (`invalid_pack`, `duplicate_pack`) is on `qtyOptions`. The optional `stockDelivery` (default `false`) makes it a service delivered from code stock, and the optional `ownCost` (0 to 1000000000, default `0`) is its own cost: the effective `cost` starts equal to it (decision 069). With `ownCost` sent, a `basePrice` under the floor it sets is `422` on `basePrice` with the code `below_floor`, as on a change. The values are in the audit row `created service`. An IMEI service is created with one custom field in the same transaction (decision 073): Name and label `IMEI`, type `imei`, required, the main input, first in the form, with the audit row `replaced custom fields of service`; staff may then change or remove it on the fields route.",
         "operationId": "postAdminServices",
         "parameters": [],
         "requestBody": {
@@ -153750,8 +153750,10 @@
                               "text",
                               "number",
                               "select",
-                              "textarea"
-                            ]
+                              "textarea",
+                              "imei"
+                            ],
+                            "description": "`imei` holds one IMEI: the value is read as digits (spaces and dashes removed) and must be 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`), on any service type."
                           },
                           "required": {
                             "type": "boolean"
@@ -153985,10 +153987,10 @@
                       "key": "imei",
                       "name": "IMEI",
                       "label": "IMEI",
-                      "fieldType": "text",
+                      "fieldType": "imei",
                       "required": true,
                       "options": [],
-                      "regex": "^[0-9]{15}$",
+                      "regex": "",
                       "isMainInput": true
                     }
                   ],
@@ -155753,7 +155755,7 @@
     },
     "/admin/services/{id}/fields": {
       "put": {
-        "description": "The whole list in order (the index is the sort order); a field left out is deleted. One transaction. A row may carry the `key` of a field the service has (that is how a saved field is recognised and keeps its key for ever); a row without a key is a new field and the server makes its key from the name (lower snake case, `_2`, `_3` on a clash, `field` when nothing is left). The name is what a supplier receives in `CUSTOMFIELD`. `label` left out keeps the saved label of an existing field, an empty label stores the name, and a new field without a label gets the name. `isMainInput` left out keeps the saved value of an existing field and is `false` for a new one. On an IMEI service a list that leaves no field as the main input makes the first field named IMEI (any letter case) the main input. An unknown field type, an empty name or a pattern outside the supported form (decision 051: literals, classes, the escapes `\\d \\w \\s` and their capitals, groups that neither repeat nor nest, counts up to 500, `^` and `$` at the ends, and a bound on the work of a 500-character value) is `422` on `fields.N.<name>`; so are an unknown or repeated key (`fields.N.key`), a name that an earlier field already has, ignoring letter case (`fields.N.name`), and a second main input (`fields.N.isMainInput`). An unknown or archived service is `404`.",
+        "description": "The whole list in order (the index is the sort order); a field left out is deleted. One transaction. A row may carry the `key` of a field the service has (that is how a saved field is recognised and keeps its key for ever); a row without a key is a new field and the server makes its key from the name (lower snake case, `_2`, `_3` on a clash, `field` when nothing is left). The name is what a supplier receives in `CUSTOMFIELD`. `label` left out keeps the saved label of an existing field, an empty label stores the name, and a new field without a label gets the name. `isMainInput` left out keeps the saved value of an existing field and is `false` for a new one. On an IMEI service a list that leaves no field as the main input makes the first field named IMEI (any letter case) the main input; any other list is accepted for an IMEI service (renamed, another type, not required, no main input, no fields at all: decision 073). A field of type `imei` holds one IMEI (15 digits, Luhn). An unknown field type, an empty name or a pattern outside the supported form (decision 051: literals, classes, the escapes `\\d \\w \\s` and their capitals, groups that neither repeat nor nest, counts up to 500, `^` and `$` at the ends, and a bound on the work of a 500-character value) is `422` on `fields.N.<name>`; so are an unknown or repeated key (`fields.N.key`), a name that an earlier field already has, ignoring letter case (`fields.N.name`), and a second main input (`fields.N.isMainInput`). An unknown or archived service is `404`.",
         "operationId": "putAdminServicesByIdFields",
         "parameters": [
           {
@@ -155803,7 +155805,8 @@
                             "text",
                             "number",
                             "select",
-                            "textarea"
+                            "textarea",
+                            "imei"
                           ]
                         },
                         "required": {
@@ -155847,10 +155850,10 @@
                       {
                         "name": "IMEI",
                         "label": "IMEI",
-                        "fieldType": "text",
+                        "fieldType": "imei",
                         "required": true,
                         "options": [],
-                        "regex": "^[0-9]{15}$",
+                        "regex": "",
                         "isMainInput": true
                       }
                     ]
@@ -155888,8 +155891,10 @@
                           "text",
                           "number",
                           "select",
-                          "textarea"
-                        ]
+                          "textarea",
+                          "imei"
+                        ],
+                        "description": "`imei` holds one IMEI: the value is read as digits (spaces and dashes removed) and must be 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`), on any service type."
                       },
                       "required": {
                         "type": "boolean"
@@ -155928,10 +155933,10 @@
                     "key": "imei",
                     "name": "IMEI",
                     "label": "IMEI",
-                    "fieldType": "text",
+                    "fieldType": "imei",
                     "required": true,
                     "options": [],
-                    "regex": "^[0-9]{15}$",
+                    "regex": "",
                     "isMainInput": true
                   }
                 ]
@@ -196611,7 +196616,7 @@
                   {
                     "type": "object",
                     "title": "placeimeiorder",
-                    "description": "Place an IMEI, server or remote order. Orders a service at the merchant's own price and holds it from the wallet. `ID` is the `SERVICEID` of `imeiservicelist`; an IMEI service takes `IMEI`, a server or remote service its custom fields in `CUSTOMFIELD`. The answer is immediate: `REFERENCEID` is our order id (status 0). A price that rose more than the tolerance above the price last listed is refused with \"Price changed. Please refresh the service list and order again.\"; a balance that is too low with \"Not enough credits\". A File service is placed with `placefileorder`.",
+                    "description": "Place an IMEI, server or remote order. Orders a service at the merchant's own price and holds it from the wallet. `ID` is the `SERVICEID` of `imeiservicelist`; an IMEI service takes its main input as `IMEI` (decision 073: an IMEI only when its main-input field is of type `imei`) and its other fields in `CUSTOMFIELD`, a server or remote service its custom fields in `CUSTOMFIELD`. The answer is immediate: `REFERENCEID` is our order id (status 0). A price that rose more than the tolerance above the price last listed is refused with \"Price changed. Please refresh the service list and order again.\"; a balance that is too low with \"Not enough credits\". A File service is placed with `placefileorder`.",
                     "required": [
                       "username",
                       "apiaccesskey",
@@ -196657,7 +196662,7 @@
                               "description": "The values of the service custom fields by field name: base64 of a JSON object (an object is accepted too)."
                             },
                             "IMEI": {
-                              "description": "The IMEI of an IMEI service (15 digits, Luhn); leave it out for a server or remote service.",
+                              "description": "The main input of an IMEI service: the value of its main-input field, judged by that field's type (an IMEI, 15 digits and Luhn, for the type `imei`), required tick and pattern; a service without such a field takes it as sent. Leave it out for a server or remote service.",
                               "type": [
                                 "string",
                                 "number"
@@ -196757,7 +196762,7 @@
                                 "description": "The values of the service custom fields by field name: base64 of a JSON object (an object is accepted too)."
                               },
                               "IMEI": {
-                                "description": "The IMEI of an IMEI service (15 digits, Luhn); leave it out for a server or remote service.",
+                                "description": "The main input of an IMEI service: the value of its main-input field, judged by that field's type (an IMEI, 15 digits and Luhn, for the type `imei`), required tick and pattern; a service without such a field takes it as sent. Leave it out for a server or remote service.",
                                 "type": [
                                   "string",
                                   "number"
@@ -210336,7 +210341,7 @@
         "x-gsm-surface": "client"
       },
       "post": {
-        "description": "Orders a service at the merchant's own price (the one price resolver). The price is held from the wallet in the same transaction; an order that would cost more than the tolerance above the price the merchant last listed is refused (`PRICE_CHANGED`, with both prices), a smaller raise is charged and recorded; a second open order for the same service and input is refused under the service's `block_open` rule (`DUPLICATE_ORDER`). An IMEI service takes its IMEI (15 digits, Luhn) under the key of its main-input field in `inputs` (the order form draws only the custom fields; every problem about it, `INVALID_IMEI` included, is reported on `inputs.<key>`), or as `imei` (older pages; it wins when both are sent, its problems on `imei`), or `imeis` (a bulk of up to 100: one order each, all placed or none; still accepted, the shop no longer sends it). A service with no main-input field needs `imei`. A server or remote service takes `inputs`; a File service a `fileId` and/or `inputs`. The answer is immediate: the orders are `pending`, in the manual queue or waiting for the dispatch job. Send an `Idempotency-Key` (a new one per form submission) so that a double click or a retry never places or holds twice: the same key and body sends the first `201` again with the response header `idempotency-replayed: true` (nothing is placed); another body with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS` (`Retry-After`). A refused request stores nothing, so the key may be sent again. The answer is kept 7 days; a replay is the first answer as it was (the orders may have moved on). Without the header nothing changes. An account that is not active is refused with `403 ACCOUNT_SUSPENDED` and a frozen merchant wallet with `409 WALLET_FROZEN`; nothing is written (a retail rank never reaches this route: `403 RANK_NOT_ALLOWED`).",
+        "description": "Orders a service at the merchant's own price (the one price resolver). The price is held from the wallet in the same transaction; an order that would cost more than the tolerance above the price the merchant last listed is refused (`PRICE_CHANGED`, with both prices), a smaller raise is charged and recorded; a second open order for the same service and input is refused under the service's `block_open` rule (`DUPLICATE_ORDER`). Every service takes its custom fields in `inputs`, each judged by its own type, required tick and pattern (decision 073: the service type `imei` forces nothing); a field of type `imei` holds one IMEI (spaces and dashes removed, 15 digits, Luhn; else `422 INVALID_IMEI` with `invalid_imei` on `inputs.<key>`) and is stored as digits. On an IMEI service the main input may also come as `imei` (older pages; it is the value of the main-input field, wins over a value under its key and is reported on `imei`; a service without such a field takes it as sent) or `imeis` (a bulk of up to 100: one order each, all placed or none, each item reported on `imeis.N`; still accepted, the shop no longer sends it); `imei` on another service is `422 not_applicable`. A File service takes a `fileId` and/or `inputs`. The answer is immediate: the orders are `pending`, in the manual queue or waiting for the dispatch job. Send an `Idempotency-Key` (a new one per form submission) so that a double click or a retry never places or holds twice: the same key and body sends the first `201` again with the response header `idempotency-replayed: true` (nothing is placed); another body with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS` (`Retry-After`). A refused request stores nothing, so the key may be sent again. The answer is kept 7 days; a replay is the first answer as it was (the orders may have moved on). Without the header nothing changes. An account that is not active is refused with `403 ACCOUNT_SUSPENDED` and a frozen merchant wallet with `409 WALLET_FROZEN`; nothing is written (a retail rank never reaches this route: `403 RANK_NOT_ALLOWED`).",
         "operationId": "postClientOrders",
         "parameters": [
           {
@@ -210371,13 +210376,13 @@
                     ]
                   },
                   "imei": {
-                    "description": "The IMEI of an IMEI service. The shop now types it into the main-input field (`inputs`); when both are sent, this one wins.",
+                    "description": "The main input of an IMEI service, from older pages: the value of its main-input field (it wins over a value sent under that field's key; a service without such a field takes it as sent). The shop now types it into the field (`inputs`).",
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 64
                   },
                   "imeis": {
-                    "description": "A bulk order: one order of the same service per IMEI, placed all together or not at all. Still accepted; the shop no longer sends it.",
+                    "description": "A bulk order: one order of the same service per item, each the value of the main-input field like `imei`, placed all together or not at all. Still accepted; the shop no longer sends it.",
                     "minItems": 1,
                     "maxItems": 100,
                     "type": "array",
@@ -210394,7 +210399,7 @@
                     "maximum": 100000
                   },
                   "inputs": {
-                    "description": "The values of the service's custom fields by field key (`GET /client/services/:id`); on an IMEI service the IMEI goes under the key of the field with `isMainInput` when `imei` is not sent.",
+                    "description": "The values of the service's custom fields by field key (`GET /client/services/:id`), each judged by its field's type, required tick and pattern; a field of type `imei` is stored as digits.",
                     "type": "object",
                     "propertyNames": {
                       "type": "string",
@@ -217873,8 +217878,10 @@
                               "text",
                               "number",
                               "select",
-                              "textarea"
-                            ]
+                              "textarea",
+                              "imei"
+                            ],
+                            "description": "`imei` holds one IMEI: read as digits (spaces and dashes removed), 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`)."
                           },
                           "required": {
                             "type": "boolean"
@@ -217892,7 +217899,7 @@
                           },
                           "isMainInput": {
                             "type": "boolean",
-                            "description": "The service's main input (at most one field). On an IMEI service the merchant types the IMEI here: it is checked as an IMEI (15 digits, Luhn) and sent as the IMEI."
+                            "description": "The service's main input (at most one field): its value is what the supplier receives as the IMEI. It is judged like any other field, by its own type (an IMEI only for the type `imei`), `required` and pattern."
                           }
                         },
                         "required": [
@@ -217976,7 +217983,7 @@
                     {
                       "key": "imei",
                       "label": "IMEI",
-                      "fieldType": "text",
+                      "fieldType": "imei",
                       "required": true,
                       "options": [],
                       "regex": "",
@@ -226635,7 +226642,7 @@
     },
     "/store/v1/checkout-sessions": {
       "post": {
-        "description": "Starts a purchase, as a guest or as a signed-in retail account: the session locks the retail price, the tax rate of the buyer's `country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) the guest record of that email: it never attaches to the login account of the email, whatever its rank. A request that carries the cookie of a signed-in account (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the checkout as that account instead: `email` must be the email of the account in any case (else `422` on `email`: \"Use the email of your account, or sign out to check out as a guest.\"), the `guestCheckout` switch does not apply and the session belongs to the signed-in account. A signed-in merchant rank is refused (`403 RANK_NOT_ALLOWED`, \"Your account orders from its price list.\") and nothing is written. A request without a usable account session is a guest. An IMEI service needs a valid IMEI (15 digits, Luhn; else `422 INVALID_IMEI`): typed into its main-input field in `inputs` (the order form draws only the custom fields; every problem about it is reported on `inputs.<key>`, a missing one as `required`), or sent as `imei` (older shop pages; it wins when both are sent, its problems on `imei`). A service with no main-input field needs `imei`. A service with order fields needs their `inputs`. An account or guest record that may not act is refused (`403 ACCOUNT_SUSPENDED`), and so is a guest whose email belongs to a login account that is suspended, blocked or erased, with the same answer as a blocklist hit and no guest record made; when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is `422` on `country` (code `unsupported`, \"Choose a country.\"), the refusal of the customer profile; a shop with no tax window in force accepts any country without tax. While the `country` has a regional tax window in force, `region` must name a region that has one (any case), else `422` on `region` (code `unsupported`, \"Choose a region.\"); the national window alone does not apply then. An email that staff blocked for guest checkouts is refused to a guest like any blocked email (`403 ACCOUNT_SUSPENDED`) and accepted for its signed-in account (decision 050). The answer carries the session token: the whole credential of the next two routes. Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached. `currency` must be on offer in `GET /store/v1/config` (`422` on `currency` otherwise).",
+        "description": "Starts a purchase, as a guest or as a signed-in retail account: the session locks the retail price, the tax rate of the buyer's `country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) the guest record of that email: it never attaches to the login account of the email, whatever its rank. A request that carries the cookie of a signed-in account (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the checkout as that account instead: `email` must be the email of the account in any case (else `422` on `email`: \"Use the email of your account, or sign out to check out as a guest.\"), the `guestCheckout` switch does not apply and the session belongs to the signed-in account. A signed-in merchant rank is refused (`403 RANK_NOT_ALLOWED`, \"Your account orders from its price list.\") and nothing is written. A request without a usable account session is a guest. The order fields come in `inputs`, each judged by its own type, required tick and pattern (decision 073: the service type `imei` forces nothing); a field of type `imei` holds one IMEI (spaces and dashes removed, 15 digits, Luhn; else `422 INVALID_IMEI` with `invalid_imei` on `inputs.<key>`). On an IMEI service the main input may also come as `imei` (older shop pages; it is the value of the main-input field, wins over a value under its key and is reported on `imei`; a service without such a field takes it as sent). A blocklisted IMEI is refused whenever the main input reads as a valid IMEI. An account or guest record that may not act is refused (`403 ACCOUNT_SUSPENDED`), and so is a guest whose email belongs to a login account that is suspended, blocked or erased, with the same answer as a blocklist hit and no guest record made; when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is `422` on `country` (code `unsupported`, \"Choose a country.\"), the refusal of the customer profile; a shop with no tax window in force accepts any country without tax. While the `country` has a regional tax window in force, `region` must name a region that has one (any case), else `422` on `region` (code `unsupported`, \"Choose a region.\"); the national window alone does not apply then. An email that staff blocked for guest checkouts is refused to a guest like any blocked email (`403 ACCOUNT_SUSPENDED`) and accepted for its signed-in account (decision 050). The answer carries the session token: the whole credential of the next two routes. Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached. `currency` must be on offer in `GET /store/v1/config` (`422` on `currency` otherwise).",
         "operationId": "postStoreV1CheckoutSessions",
         "parameters": [
           {
@@ -226695,13 +226702,13 @@
                     "maximum": 100000
                   },
                   "imei": {
-                    "description": "The 15-digit IMEI of an IMEI service, from older shop pages: the shop now types it into the main-input field (`inputs`). When both are sent, this one wins.",
+                    "description": "The main input of an IMEI service, from older shop pages: the value of its main-input field (it wins over a value sent under that field's key; a service without such a field takes it as sent). The shop now types it into the field (`inputs`).",
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 64
                   },
                   "inputs": {
-                    "description": "The values of the service's order fields by field key (`GET /store/v1/services/:slug`); on an IMEI service the IMEI goes under the key of the field with `isMainInput` when `imei` is not sent.",
+                    "description": "The values of the service's order fields by field key (`GET /store/v1/services/:slug`), each judged by its field's type, required tick and pattern; a field of type `imei` is stored as digits.",
                     "type": "object",
                     "propertyNames": {
                       "type": "string",
@@ -226844,7 +226851,7 @@
                       "maximum": 9007199254740991
                     },
                     "imei": {
-                      "description": "The IMEI with all but its last four digits hidden; null for a service that takes none.",
+                      "description": "The main input of an IMEI service (usually its IMEI) with all but its last four characters hidden; null for another service or none.",
                       "type": [
                         "string",
                         "null"
@@ -227578,7 +227585,7 @@
                       "maximum": 9007199254740991
                     },
                     "imei": {
-                      "description": "The IMEI with all but its last four digits hidden; null for a service that takes none.",
+                      "description": "The main input of an IMEI service (usually its IMEI) with all but its last four characters hidden; null for another service or none.",
                       "type": [
                         "string",
                         "null"
@@ -249611,8 +249618,10 @@
                               "text",
                               "number",
                               "select",
-                              "textarea"
-                            ]
+                              "textarea",
+                              "imei"
+                            ],
+                            "description": "`imei` holds one IMEI: read as digits (spaces and dashes removed), 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`)."
                           },
                           "options": {
                             "type": "array",
@@ -249626,7 +249635,7 @@
                           },
                           "isMainInput": {
                             "type": "boolean",
-                            "description": "The service's main input (at most one field). On an IMEI service the buyer types the IMEI here: it is checked as an IMEI (15 digits, Luhn) and sent as the IMEI."
+                            "description": "The service's main input (at most one field): its value is what the supplier receives as the IMEI. It is judged like any other field, by its own type (an IMEI only for the type `imei`), `required` and pattern."
                           }
                         },
                         "required": [
@@ -249732,7 +249741,7 @@
                     {
                       "key": "imei",
                       "label": "IMEI",
-                      "fieldType": "text",
+                      "fieldType": "imei",
                       "options": [],
                       "required": true,
                       "isMainInput": true

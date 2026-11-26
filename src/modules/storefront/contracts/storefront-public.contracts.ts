@@ -90,14 +90,19 @@ export const ServiceCardSchema = z.object({
 const FieldSchema = z.object({
   key: z.string(),
   label: z.string(),
-  fieldType: z.enum(['text', 'number', 'select', 'textarea']),
+  fieldType: z
+    .enum(['text', 'number', 'select', 'textarea', 'imei'])
+    .describe(
+      '`imei` holds one IMEI: read as digits (spaces and dashes removed), 15 digits with a valid Luhn check digit (else ' +
+        '`422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`).',
+    ),
   options: z.array(z.string()).describe('The choices of a `select` field.'),
   required: z.boolean(),
   isMainInput: z
     .boolean()
     .describe(
-      "The service's main input (at most one field). On an IMEI service the buyer types the IMEI here: it is checked as an IMEI " +
-        '(15 digits, Luhn) and sent as the IMEI.',
+      "The service's main input (at most one field): its value is what the supplier receives as the IMEI. It is judged like any " +
+        'other field, by its own type (an IMEI only for the type `imei`), `required` and pattern.',
     ),
 });
 
@@ -326,7 +331,7 @@ export const showStoreService = defineRoute({
       seoTitle: 'iCloud Clean / Lost Check',
       seoDescription: 'Check iCloud status from the IMEI.',
       quantity: { min: 1, max: 1, options: [] },
-      fields: [{ key: 'imei', label: 'IMEI', fieldType: 'text', options: [], required: true, isMainInput: true }],
+      fields: [{ key: 'imei', label: 'IMEI', fieldType: 'imei', options: [], required: true, isMainInput: true }],
       faqs: [{ question: 'How fast is it?', answerMd: 'Most checks finish in two minutes.' }],
     },
   },

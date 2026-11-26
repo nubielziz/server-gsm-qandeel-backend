@@ -21,6 +21,7 @@ import {
 import {
   IMEIS,
   type OrdersWorld,
+  addImeiField,
   eventsOf,
   ledgerOf,
   orderRow,
@@ -51,6 +52,9 @@ beforeEach(async () => {
   await t.app.get(MaintenanceService).invalidate();
   const { db } = await testDb();
   world = await ordersWorld(db);
+  // Decision 073: an IMEI service checks an IMEI through its default field of type imei (what an import or a hand-made service gets).
+  await addImeiField(db, world.auto.serviceId);
+  await addImeiField(db, world.manual.serviceId);
   creds = await credentialsFor(t, db, world.merchant.id);
   dhru = dhruClient(t, creds);
 });
@@ -371,7 +375,7 @@ describe('placeimeiorder', () => {
   it('refuses in the envelope: an invalid IMEI, an unknown or a disabled service, a missing parameter', async () => {
     const { db } = await testDb();
     expect(messageOf(await place(world.auto.serviceId, '123456789012345'))).toContain('IMEI is not valid');
-    expect(messageOf(await place(world.auto.serviceId, ''))).toBe('Enter the IMEI.');
+    expect(messageOf(await place(world.auto.serviceId, ''))).toBe('IMEI is required.');
     expect(messageOf(await place(999_999))).toBe('No service with this id is available to you.');
     await db.update(s.services).set({ status: 'disabled' }).where(eq(s.services.id, world.auto.serviceId));
     expect(messageOf(await place(world.auto.serviceId))).toBe('This service is turned off. Choose another service.');

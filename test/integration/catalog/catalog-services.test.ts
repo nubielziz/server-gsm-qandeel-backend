@@ -356,6 +356,91 @@ describe('POST /admin/services', () => {
     });
   });
 
+  it('gives a new IMEI service its default IMEI field in the same transaction, audited like a field save (decision 073)', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db, { name: 'Apple' });
+    const res = await admin.post('/admin/services', body(category));
+    expect(res.status).toBe(201);
+    const shown = await admin.get(`/admin/services/${res.body.id}`);
+    const imeiField = {
+      key: 'imei',
+      name: 'IMEI',
+      label: 'IMEI',
+      fieldType: 'imei',
+      required: true,
+      options: [],
+      regex: '',
+      isMainInput: true,
+    };
+    expect(shown.body.fields).toEqual([imeiField]);
+    const [created, fields] = await auditRows();
+    expect(created).toMatchObject({ action: 'created service', entityId: res.body.id });
+    expect(fields).toMatchObject({
+      actorId: admin.staffId,
+      action: 'replaced custom fields of service',
+      entityType: 'service',
+      entityId: res.body.id,
+      entityLabel: 'New Check',
+      before: { fields: [] },
+      after: {
+        fields: [
+          { key: 'imei', name: 'IMEI', label: 'IMEI', fieldType: 'imei', regex: '', required: true, isMainInput: true },
+        ],
+      },
+    });
+
+    // A service of another type gets no field.
+    const serverCategory = await insertCategory(db, { name: 'Server', type: 'server' });
+    const server = await admin.post('/admin/services', {
+      ...body(serverCategory),
+      code: 'SRV-NEW-1',
+      type: 'server',
+    });
+    expect(server.status).toBe(201);
+    expect((await admin.get(`/admin/services/${server.body.id}`)).body.fields).toEqual([]);
+
+    // Then staff are free: rename it, make it text and optional, no main input; or no fields at all.
+    const changed = await admin.put(`/admin/services/${res.body.id}/fields`, {
+      fields: [
+        {
+          key: 'imei',
+          name: 'ECID',
+          label: 'ECID',
+          fieldType: 'text',
+          required: false,
+          options: [],
+          regex: '',
+          isMainInput: false,
+        },
+      ],
+    });
+    expect(changed.status).toBe(200);
+    // The audit row shows that the IMEI check went away with the type (decision 073).
+    const changeAudit = (await auditRows()).at(-1)!;
+    expect(changeAudit).toMatchObject({
+      action: 'replaced custom fields of service',
+      before: { fields: [{ key: 'imei', fieldType: 'imei', required: true, isMainInput: true }] },
+      after: {
+        fields: [{ key: 'imei', name: 'ECID', fieldType: 'text', regex: '', required: false, isMainInput: false }],
+      },
+    });
+    expect(changed.body).toEqual([
+      {
+        key: 'imei',
+        name: 'ECID',
+        label: 'ECID',
+        fieldType: 'text',
+        required: false,
+        options: [],
+        regex: '',
+        isMainInput: false,
+      },
+    ]);
+    const none = await admin.put(`/admin/services/${res.body.id}/fields`, { fields: [] });
+    expect(none.status).toBe(200);
+    expect(none.body).toEqual([]);
+  });
+
   it('accepts the merchant switches (cancel, verify and its window), stores them and audits them', async () => {
     const { db } = await testDb();
     const category = await insertCategory(db, { name: 'Apple' });
@@ -930,9 +1015,11 @@ describe('the quantity rule of a service (feature 25)', () => {
     const category = await insertCategory(db);
     const created = await admin.post('/admin/services', body(category, { qtyOptions: [10, 5] }));
     await admin.patch(`/admin/services/${created.body.id}`, { qtyOptions: [5, 10, 25] });
-    const [first, second] = await auditRows();
+    // An IMEI service: its default field is audited right after the create (decision 073).
+    const [first, fields, second] = await auditRows();
     expect(first).toMatchObject({ action: 'created service', actorId: admin.staffId });
     expect(first!.after).toMatchObject({ minQty: 5, maxQty: 10, qtyOptions: [5, 10] });
+    expect(fields).toMatchObject({ action: 'replaced custom fields of service', actorId: admin.staffId });
     expect(second).toMatchObject({ action: 'edited service', actorId: admin.staffId });
     expect(second!.before).toMatchObject({ minQty: 5, maxQty: 10, qtyOptions: [5, 10] });
     expect(second!.after).toMatchObject({ minQty: 5, maxQty: 25, qtyOptions: [5, 10, 25] });

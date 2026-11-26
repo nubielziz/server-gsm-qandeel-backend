@@ -64,15 +64,20 @@ const ServiceIdList = z
 export const CatalogField = z.object({
   key: z.string(),
   label: z.string(),
-  fieldType: z.enum(SERVICE_FIELD_TYPES),
+  fieldType: z
+    .enum(SERVICE_FIELD_TYPES)
+    .describe(
+      '`imei` holds one IMEI: read as digits (spaces and dashes removed), 15 digits with a valid Luhn check digit (else ' +
+        '`422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`).',
+    ),
   required: z.boolean(),
   options: z.array(z.string()).describe('The choices of a `select` field.'),
   regex: z.string().describe('`""` when there is no pattern.'),
   isMainInput: z
     .boolean()
     .describe(
-      "The service's main input (at most one field). On an IMEI service the merchant types the IMEI here: it is checked as an IMEI " +
-        '(15 digits, Luhn) and sent as the IMEI.',
+      "The service's main input (at most one field): its value is what the supplier receives as the IMEI. It is judged like any " +
+        'other field, by its own type (an IMEI only for the type `imei`), `required` and pattern.',
     ),
 });
 
@@ -168,7 +173,7 @@ export const showClientService = defineRoute({
         {
           key: 'imei',
           label: 'IMEI',
-          fieldType: 'text',
+          fieldType: 'imei',
           required: true,
           options: [],
           regex: '',

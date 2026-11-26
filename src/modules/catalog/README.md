@@ -4,7 +4,7 @@ Map domain B. What is for sale and at what price: client groups, categories, ser
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 065 one Name per field and the main input flag, 066 the `ids` read of the merchant catalog, 068 the TAC catalog loses its routes, 070 order forms draw only the custom fields, 071 the IMEI field of a plain IMEI service, 072 the option lists lose their write route. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 065 one Name per field and the main input flag, 066 the `ids` read of the merchant catalog, 068 the TAC catalog loses its routes, 070 order forms draw only the custom fields, 071 the IMEI field of a plain IMEI service, 072 the option lists lose their write route, 073 IMEI is a field type. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -65,8 +65,17 @@ feature 6.
   `CUSTOMFIELD`; decision 065). A row of the PUT carries the `key` of a saved field or none for a new one; an unknown or repeated key is
   `422` on `fields.N.key`, a repeated Name on `fields.N.name`, a second main input on `fields.N.isMainInput` (`fieldListProblems`); a
   label or flag that the row leaves out keeps the saved value, an empty label stores the Name (`plannedFieldRows`); on an IMEI service a list
-  that leaves no field flagged flags the first field named IMEI in any letter case (`imeiNamedFieldIndex`), the import's rule. The audit
-  row names each field before and after by key, Name, label, `required` and the flag. A Name that the
+  that leaves no field flagged flags the first field named IMEI in any letter case (`imeiNamedFieldIndex`), the import's rule; any other
+  list is accepted for an IMEI service (decision 073: renamed, another type, optional, no main input, no fields at all). The field types
+  are `text`, `number`, `select`, `textarea` and `imei` (`SERVICE_FIELD_TYPES`, check `service_fields_field_type_check`; decision 073: one
+  IMEI, read as digits, 15 with a valid Luhn digit, on any service; placement judges it, `INVALID_IMEI`). The audit
+  row names each field before and after by key, Name, label, type, pattern, `required` and the flag (`auditedField`; decision 073: turning
+  an `imei` field into `text` removes the IMEI check, so it shows).
+- **The default field of a new IMEI service** (decision 073): `POST /admin/services` of type `imei` writes, in the same transaction,
+  `IMEI_DEFAULT_FIELD` (`domain/service-parts.ts`): key `imei`, Name and label `IMEI`, type `imei`, required, the main input, `sort` 0,
+  no pattern, with its own audit row `replaced custom fields of service` (before: no fields) after `created service`. The supplier import
+  gives a plain IMEI service the same field (decision 071); migration `0072_imei_field_type` made the stored ones of that shape of type
+  `imei`. Staff change or remove it on the fields route like any other field. A Name that the
   database's `lower()` repeats but the code did not is answered `422` on `fields.N.name` as well (`laterRepeatedNameIndexes`). A field's `regex` follows the supported form of decision 051 (`src/common/field-pattern.ts`,
   `fieldPatternProblem`: literals, classes, the escapes `\d \w \s` and their capitals, groups that neither repeat nor nest, counts up to
   500, `^` and `$` at the ends, and a bound on the work of a 500-character value); a pattern outside it is refused at save with `422` on
@@ -164,8 +173,9 @@ No migration, no queue or cache key change.
   `DhruGateway` at start. Visibility, prices and the quantity rules are the portal's (B159). The Dhru `LIST` is grouped by category (`GROUPNAME`, `GROUPTYPE` IMEI, SERVER or REMOTE; two categories with one name
   keep unique group keys by adding the type), `SERVICES` by service id with the keys of decision 026 (`SERVICEID`, `SERVICETYPE`,
   `SERVICENAME`, `CREDIT`, `INFO`, `TIME`, `QNT`, `QNTOPTIONS`, `MINQNT`, `MAXQNT`, the twelve `Requires.*` flags and `Requires.Custom`
-  built from the service's fields: `fieldname` is the field's Name and `description` its label; an IMEI service's main-input field is not
-  repeated there, because the `IMEI` parameter carries it). The portal's `GET /client/services/:id` and the shop's service page list every
+  built from the service's fields: `fieldname` is the field's Name, `description` its label and `fieldtype` the Dhru type (`text`,
+  `textarea` or `dropdown`; a `number` and an `imei` field are `text`: Dhru has no IMEI field type, decision 073); an IMEI service's
+  main-input field is not repeated there, because the `IMEI` parameter carries it). The portal's `GET /client/services/:id` and the shop's service page list every
   field with `isMainInput` (decision 070: the order forms draw only the fields, and an IMEI service's IMEI is typed into the flagged one).
   File services are not in the Dhru list.
   Every list records the prices it showed (`ListedPrices.record`, user rule 9). Nothing is cached: a price list is never the truth for a

@@ -35,11 +35,13 @@ const REQUIRES_FLAGS = [
   'Reference',
 ] as const;
 
+/** Our field types as the Dhru standard names them; Dhru has no IMEI field type, so an `imei` field is a `text` field (decision 073). */
 const DHRU_FIELD_TYPES: Readonly<Record<ServiceFieldType, 'text' | 'textarea' | 'dropdown'>> = {
   text: 'text',
   number: 'text',
   select: 'dropdown',
   textarea: 'textarea',
+  imei: 'text',
 };
 
 /** The Dhru group a service type belongs to (file services are not part of `imeiservicelist`). */

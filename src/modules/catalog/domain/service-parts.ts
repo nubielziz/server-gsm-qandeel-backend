@@ -39,6 +39,54 @@ export interface PlannedField {
   readonly isMainInput: boolean;
 }
 
+/**
+ * The custom field an IMEI service gets when staff create it by hand (`POST /admin/services`).
+ *
+ * Why: decision 073: the owner's order "make the IMEI input the default and give the user the freedom": the service type `imei` forces
+ * nothing, so a new IMEI service starts with the field its IMEI is typed into: Name and label `IMEI`, type `imei` (15 digits, Luhn),
+ * required, the main input, first in the form, no pattern. The supplier import gives a plain IMEI service the same field (decision 071).
+ * Staff may rename it, change its type, make it optional or remove it on the fields route afterwards.
+ */
+export const IMEI_DEFAULT_FIELD: FieldDraft = {
+  name: 'IMEI',
+  label: 'IMEI',
+  fieldType: 'imei',
+  required: true,
+  options: [],
+  regex: '',
+  isMainInput: true,
+};
+
+/**
+ * What the audit row of a fields save says about one field.
+ *
+ * Why: decision 065: the main-input flag decides what travels as the IMEI parameter, and the Name, label and `required` what a supplier
+ * and a buyer see; decision 073: the type and the pattern decide what is refused (turning an `imei` field into `text` removes the IMEI
+ * check), so a change of either shows in the audit log. Shared by the fields route and the default field of a new IMEI service.
+ *
+ * @param field a saved field (`supplierKey` is the Name)
+ * @returns the audited facts: key, Name, label, type, pattern, `required` and the main-input flag
+ */
+export function auditedField(field: {
+  readonly key: string;
+  readonly supplierKey: string;
+  readonly label: string;
+  readonly fieldType: ServiceFieldType;
+  readonly regex: string;
+  readonly required: boolean;
+  readonly isMainInput: boolean;
+}) {
+  return {
+    key: field.key,
+    name: field.supplierKey,
+    label: field.label,
+    fieldType: field.fieldType,
+    regex: field.regex,
+    required: field.required,
+    isMainInput: field.isMainInput,
+  };
+}
+
 /** What the saved fields of a service say about a row that names one of their keys. */
 export interface SavedFieldFacts {
   readonly key: string;

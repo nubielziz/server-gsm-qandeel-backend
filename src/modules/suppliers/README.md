@@ -4,7 +4,7 @@ Map domain C. The suppliers we buy from (the orders it moves belong to an accoun
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 023 outbound HTTP, 026 Dhru compatibility, 042 real Dhru Fusion suppliers (feature 33), 020 queues and outbox, 019 credential encryption, 021 rate limiting, 025 order state machine, 031 clock, 051 supplier keys, answers and field patterns, 065 one Name per field and the main input flag, 071 the IMEI field of a plain IMEI service. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 023 outbound HTTP, 026 Dhru compatibility, 042 real Dhru Fusion suppliers (feature 33), 020 queues and outbox, 019 credential encryption, 021 rate limiting, 025 order state machine, 031 clock, 051 supplier keys, answers and field patterns, 065 one Name per field and the main input flag, 071 the IMEI field of a plain IMEI service, 073 IMEI is a field type. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -153,7 +153,8 @@ than the supplier's is not refused here: the supplier refuses the order and the 
 
 The classic service list describes the main box of an IMEI service as `CUSTOM: { allow, customname, customlen, maxlength, regex, ... }`:
 with `allow` on, the buyer types what `customname` says (an ECID, a serial number) instead of an IMEI, and the value travels as the `IMEI`
-parameter; `Requires.Custom` lists the other fields. Our `imei` type keeps its meaning (a real 15-digit IMEI with a Luhn digit).
+parameter; `Requires.Custom` lists the other fields. Such a service becomes a `server` service with the box first (below). Since decision
+073 the service type `imei` forces nothing (the IMEI check belongs to the field type `imei`), but the import keeps that rule.
 
 - `supplierMainInput(raw)` (`domain/supplier-main-input.ts`) reads the box from `supplier_services.raw`: `null` unless `CUSTOM` is an
   object, `allow` is `"1"`, `1` or `true`, and `customname` has text that does not only say IMEI (`imei`, `imeino`, `imeinumber` after
@@ -168,10 +169,11 @@ parameter; `Requires.Custom` lists the other fields. Our `imei` type keeps its m
   then) and the quick add read the type from it.
 - **The IMEI field (decision 071).** A supplier never lists the IMEI of a plain IMEI service among its fields: it is the `IMEI` parameter of
   every order. Since the order forms draw only the fields (decision 070), `importShape` gives a service that stays `imei` and has no field
-  named IMEI a first field (`imeiInputField`): Name and label `IMEI`, key `imei` (`imei_2`, ... on a clash), required text, no pattern,
-  `isMainInput` set; the supplier's fields follow from `sort` 1. Its value never travels in `CUSTOMFIELD` (the order's IMEI is the
-  `IMEI` parameter) and `fieldsToRequire` never lists it. Migration `0071_imei_main_input_field` gave the field to the IMEI services stored
-  before.
+  named IMEI a first field (`imeiInputField`): Name and label `IMEI`, key `imei` (`imei_2`, ... on a clash), required, of type `imei`
+  (decision 073: the field type checks the IMEI, 15 digits and Luhn), no pattern, `isMainInput` set; the supplier's fields follow from
+  `sort` 1. Its value never travels in `CUSTOMFIELD` (the order's main input is the `IMEI` parameter) and `fieldsToRequire` never lists
+  it. Migration `0071_imei_main_input_field` gave the field to the IMEI services stored before, and `0072_imei_field_type` made it of type
+  `imei`. A supplier field named IMEI that the import flags instead keeps the supplier's type.
 - **Names (decision 065).** A field has one Name (`service_fields.supplier_key`, never empty, unique in its service ignoring letter case)
   and a hidden key. `importedFields` writes the Name as the supplier spells it, the key made from it (`fieldKeyBase`, `_2`, `_3` on a
   clash), the label from the supplier's description (else the Name) and `isMainInput` false; `importShape` flags the box, or, on a service
@@ -179,7 +181,8 @@ parameter; `Requires.Custom` lists the other fields. Our `imei` type keeps its m
   letter case cannot both be a Name: the later one gets ` 2` (`Name 2`, `Name 3`, ...; `freeFieldName`). The box's Name is never sent, so
   on a clash with another field the box takes the number and the supplier's field keeps its name.
 - The supplier's main box is the field flagged `isMainInput` (decision 065; at most one per service). The dispatch sends its value as the
-  `IMEI` parameter when the order has no IMEI of its own, never inside `CUSTOMFIELD`; `orders.imei` already holds it (`mainInputOf` takes
+  `IMEI` parameter when the order has no main input of its own (an IMEI order's `orders.imei`, whatever the field's type: an ECID typed
+  into a text main input travels as `IMEI` too, decision 073), never inside `CUSTOMFIELD`; `orders.imei` already holds it (`mainInputOf` takes
   the flagged field first). Every other value travels in `CUSTOMFIELD` under `supplierFieldName` (`src/common/dhru/main-input-key.ts`): the link's
   `field_map[key]` when it has text, else the field's Name; a stored key that no field has any more keeps its own key as the name. A
   field that its supplier itself names `IMEI` but is not flagged is an ordinary field and travels in `CUSTOMFIELD`.

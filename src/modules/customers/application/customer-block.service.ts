@@ -6,6 +6,7 @@ import { AppError } from '../../../common/errors';
 import { EncryptionService } from '../../../infra/crypto';
 import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
 import { AccountAccessEffects } from '../../identity';
+import { StorefrontServices } from '../../catalog';
 import { AuditService } from '../../platform';
 import { Blocklist, type BlockRequest } from '../../risk';
 import { CHECKOUT_IMEI_AAD } from '../domain/checkout';
@@ -37,7 +38,8 @@ type Work = Pick<TransactionContext, 'tx' | 'afterCommit'>;
  * Why: scenario b2c-account and b2c-chargeback, decision 064 (any rank). A block is for fraud (a pause is a suspension): the
  * account becomes `blocked`, every session ends and every live API key stops (`AccountAccessEffects.statusChanged`), and the blocklist
  * gets, with source manual, the reason, the caller and `account_id` set: the account's email always, each distinct card fingerprint of its
- * payments and each distinct IMEI still stored on its **shop** orders and checkout sessions (a device is its IMEI, B77). A merchant orders
+ * payments and each distinct IMEI still stored on its **shop** orders and checkout sessions (a device is its IMEI, B77; the main input and,
+ * decision 073, the values of fields of type `imei`, read through the catalog's `StorefrontServices.fields`). A merchant orders
  * through the portal and Dhru for other people's devices, so the IMEIs of those orders are never added. Each insert is
  * `ON CONFLICT DO NOTHING`, so an entry that already exists (a risk refund, a chargeback, a manual add, another account's block) is kept
  * unchanged and not linked. The reason is appended to the internal notes (B48). A suspension the account had is kept under the block
@@ -56,6 +58,7 @@ export class CustomerBlockService {
     private readonly effects: AccountAccessEffects,
     private readonly encryption: EncryptionService,
     private readonly audit: AuditService,
+    private readonly services: StorefrontServices,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -143,13 +146,30 @@ export class CustomerBlockService {
     return requests;
   }
 
-  /** Every distinct 15-digit IMEI on the account's shop orders and checkout sessions that is still stored. */
+  /**
+   * Every distinct 15-digit IMEI on the account's shop orders and checkout sessions that is still stored: their main inputs and, decision
+   * 073, the values of their fields of type `imei` (the service's fields as the catalog lists them now).
+   */
   private async imeisOf(tx: DbExecutor, accountId: number): Promise<string[]> {
     const stored = await storedImeisOf(tx, accountId);
     const found = new Set<string>();
-    for (const input of stored.orderInputs) {
-      const digits = input.replace(/[\s-]/g, '');
+    const add = (value: unknown) => {
+      if (typeof value !== 'string') return;
+      const digits = value.replace(/[\s-]/g, '');
       if (/^\d{15}$/.test(digits)) found.add(digits);
+    };
+    for (const input of stored.orderInputs) add(input);
+    const imeiKeys = new Map<number, string[]>();
+    for (const { serviceId, inputs } of stored.fieldValues) {
+      let keys = imeiKeys.get(serviceId);
+      if (keys === undefined) {
+        // One query at a time: the transaction is one connection.
+        keys = (await this.services.fields(tx, serviceId))
+          .filter((field) => field.fieldType === 'imei')
+          .map((field) => field.key);
+        imeiKeys.set(serviceId, keys);
+      }
+      for (const key of keys) add(inputs[key]);
     }
     for (const text of stored.sessionCiphertexts) {
       try {

@@ -292,7 +292,31 @@ describe('importShape', () => {
     ]);
   });
 
-  it('gives a service that stays imei with no field named IMEI the IMEI field first, the supplier fields after it (decision 071)', () => {
+  it('makes the flagged supplier field named IMEI of type imei when the supplier says text, and keeps any other type (decision 073)', () => {
+    const typed = (fieldtype: string) =>
+      importShape({
+        type: 'IMEI',
+        customFields: [
+          { fieldname: 'imei', fieldtype, fieldoptions: 'A,B' },
+          { fieldname: 'Note', fieldtype: 'text' },
+        ],
+        raw: {},
+      }).fields.map((field) => [field.supplierKey, field.fieldType, field.isMainInput]);
+    for (const fieldtype of ['text', '', 'anything']) {
+      expect(typed(fieldtype), fieldtype).toEqual([
+        ['imei', 'imei', true],
+        ['Note', 'text', false],
+      ]);
+    }
+    expect(typed('dropdown')[0]).toEqual(['imei', 'select', true]);
+    expect(typed('textarea')[0]).toEqual(['imei', 'textarea', true]);
+    expect(typed('number')[0]).toEqual(['imei', 'number', true]);
+    // A server service keeps a supplier field named IMEI as an ordinary text field.
+    const server = importShape({ type: 'Server', customFields: [{ fieldname: 'IMEI', fieldtype: 'text' }], raw: {} });
+    expect(server.fields.map((field) => [field.fieldType, field.isMainInput])).toEqual([['text', false]]);
+  });
+
+  it('gives a service that stays imei with no field named IMEI the IMEI field first, of type imei, the supplier fields after it (decisions 071 and 073)', () => {
     const shape = importShape({
       type: 'IMEI',
       customFields: [
@@ -306,7 +330,7 @@ describe('importShape', () => {
       {
         key: 'imei',
         label: 'IMEI',
-        fieldType: 'text',
+        fieldType: 'imei',
         options: [],
         required: true,
         supplierKey: 'IMEI',
@@ -471,11 +495,11 @@ describe('mainInputField', () => {
 });
 
 describe('imeiInputField', () => {
-  it('is required text named and labelled IMEI, flagged, first, without a pattern; its key is imei, else the first free number', () => {
+  it('is a required field of type imei (decision 073) named and labelled IMEI, flagged, first, without a pattern; its key is imei, else the first free number', () => {
     expect(imeiInputField(new Set())).toEqual({
       key: 'imei',
       label: IMEI_FIELD_NAME,
-      fieldType: 'text',
+      fieldType: 'imei',
       options: [],
       required: true,
       supplierKey: IMEI_FIELD_NAME,

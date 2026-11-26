@@ -1,8 +1,8 @@
 // The pattern of a service's main-input field (the one flagged `isMainInput`, whatever its key, decision 065) judges the IMEI the buyer typed
 // (the value that is stored and sent to the supplier), on every order surface: the portal and Dhru. When the IMEI is sent as `imei` its
-// problems are reported on the item's IMEI path; a value the buyer also puts under that field's key never stands in for it. A missing IMEI
-// is asked for on the field, where the fields-only form draws it (decision 070; the IMEI typed there is tested in
-// `imei-main-input-placement.test.ts`). A field that is only keyed `imei` (not flagged) is an ordinary field. Real application, Postgres
+// problems are reported on the item's IMEI path; a value the buyer also puts under that field's key never stands in for it. A missing value
+// of the required field is asked for on the field, where the fields-only form draws it (decisions 070 and 073; the IMEI typed there is
+// tested in `imei-main-input-placement.test.ts`). A field that is only keyed `imei` (not flagged) is an ordinary field. Real application, Postgres
 // and Redis.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
@@ -85,11 +85,11 @@ describe('the pattern of the main-input field keyed imei on an IMEI service', ()
     const bulk = await portal.post('/client/orders', { serviceId: world.auto.serviceId, imeis: [ACCEPTED, REFUSED] });
     expect(bulk.statusCode).toBe(422);
     expect(json(bulk).errors).toEqual([expect.objectContaining({ field: 'imeis.1', code: 'invalid_format' })]);
-    // Decision 070: with no `imei`, the IMEI is asked for where the form draws it, the main-input field.
+    // Decisions 070 and 073: with no `imei`, the required main-input field is asked for where the form draws it.
     const missing = await portal.post('/client/orders', { serviceId: world.auto.serviceId });
     expect(missing.statusCode).toBe(422);
     expect(json(missing).errors).toEqual([
-      expect.objectContaining({ field: 'inputs.imei', code: 'required', message: 'Enter the IMEI.' }),
+      expect.objectContaining({ field: 'inputs.imei', code: 'required', message: 'IMEI is required.' }),
     ]);
     await expectNothingPlaced();
   });

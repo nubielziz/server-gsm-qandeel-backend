@@ -37,6 +37,14 @@ export interface StoredImeis {
   readonly orderInputs: string[];
   /** `checkout_sessions.imei_enc` of the account's sessions (ciphertext, decision 019). */
   readonly sessionCiphertexts: string[];
+  /**
+   * The custom field values of the account's shop orders and checkout sessions, with their service: the caller keeps those of the fields
+   * of type `imei` (decision 073).
+   */
+  readonly fieldValues: ReadonlyArray<{
+    readonly serviceId: number;
+    readonly inputs: Readonly<Record<string, unknown>>;
+  }>;
 }
 
 /**
@@ -47,21 +55,26 @@ export interface StoredImeis {
  *
  * @param db the database or a transaction
  * @param accountId the account
- * @returns the main inputs of the shop orders and the encrypted IMEIs of the sessions
+ * @returns the main inputs of the shop orders, the encrypted IMEIs of the sessions, and the field values of both with their service
  */
 export async function storedImeisOf(db: DbExecutor, accountId: number): Promise<StoredImeis> {
   // One after the other: a transaction is one connection, which runs one query at a time.
   const orders = await db
-    .select({ imei: s.orders.imei })
+    .select({ imei: s.orders.imei, serviceId: s.orders.serviceId, inputs: s.orders.inputs })
     .from(s.orders)
-    .where(and(eq(s.orders.accountId, accountId), eq(s.orders.source, 'store'), isNotNull(s.orders.imei)));
+    .where(and(eq(s.orders.accountId, accountId), eq(s.orders.source, 'store')));
   const sessions = await db
-    .select({ imeiEnc: s.checkoutSessions.imeiEnc })
+    .select({
+      imeiEnc: s.checkoutSessions.imeiEnc,
+      serviceId: s.checkoutSessions.serviceId,
+      inputs: s.checkoutSessions.inputs,
+    })
     .from(s.checkoutSessions)
-    .where(and(eq(s.checkoutSessions.accountId, accountId), isNotNull(s.checkoutSessions.imeiEnc)));
+    .where(eq(s.checkoutSessions.accountId, accountId));
   return {
     orderInputs: orders.flatMap((row) => (row.imei ? [row.imei] : [])),
     sessionCiphertexts: sessions.flatMap((row) => (row.imeiEnc ? [row.imeiEnc] : [])),
+    fieldValues: [...orders, ...sessions].map((row) => ({ serviceId: row.serviceId, inputs: row.inputs ?? {} })),
   };
 }
 

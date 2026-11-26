@@ -505,6 +505,13 @@
       "when": 1795696419363,
       "tag": "0071_imei_main_input_field",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1795709550378,
+      "tag": "0072_imei_field_type",
+      "breakpoints": true
     }
   ]
 }

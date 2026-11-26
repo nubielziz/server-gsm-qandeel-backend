@@ -4,7 +4,7 @@ Map domain D. One order engine for both doors, the merchant doors (balance hold 
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 024 ledger, 025 order state machine, 026 Dhru compatibility, 051 field patterns and the bulk reply's lines (feature 41), 064 one account type, 065 one Name per field and the main input flag, 070 order forms draw only the custom fields. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 024 ledger, 025 order state machine, 026 Dhru compatibility, 051 field patterns and the bulk reply's lines (feature 41), 064 one account type, 065 one Name per field and the main input flag, 070 order forms draw only the custom fields, 073 IMEI is a field type. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -58,8 +58,8 @@ the one `POST /api/index.php` transport route.
   no `order.failed` mail is written.
 - **Placement** (`application/order-placement.ts`, `OrderPlacement.place`): the one shared path (portal now; Dhru and the
   storefront call it later). Steps in the caller's transaction: the merchant and the service it may see (`MerchantCatalog.find`:
-  archived, disabled or hidden is not orderable: `NOT_FOUND`, or `SERVICE_DISABLED` for a disabled one), validation (IMEI 15 digits
-  with Luhn: `INVALID_IMEI`; custom field values against the service's fields, where a
+  archived, disabled or hidden is not orderable: `NOT_FOUND`, or `SERVICE_DISABLED` for a disabled one), validation (custom field values
+  against the service's fields, each by its type: a field of type `imei` is 15 digits with Luhn, else `INVALID_IMEI`, decision 073; where a
   pattern outside the supported form of decision 051 is not run (the field then has no pattern, `compileFieldPattern`); quantity against `min_qty`, `max_qty` and
   `qty_options`: `422` with the field path), the price from `PriceResolver` for this merchant, the price guard (`checkPriceChange`
   against `ListedPrices`, tolerance setting `pricing.price_change_tolerance_percent`: `409 PRICE_CHANGED` with `listedPrice` and
@@ -81,20 +81,26 @@ the one `POST /api/index.php` transport route.
   to the outbox; no dispatch row. A short stock takes nothing and the order goes the usual way. A delivered code stays sold
   after a reopen or a refund. Not built yet: reserving codes for a held storefront order (sold on completion, back to stock on
   a rejection before delivery), with 14a and 18.
-- **Main input** (`domain/main-input.ts`, orders-suppliers-2): `orders.imei` holds the IMEI (type `imei`); otherwise the value of the
-  field flagged as the main input when it has one (decision 065: what the dispatch sends as `IMEI`, so the duplicate check of `block_open`
-  names it too), else the first required custom field by sort (server, remote) or the first field's value or the file name (file). The
-  wire sends `''` for none.
-- **The main-input field and the field Name** (decisions 065 and 070). A service's field flagged `is_main_input` (at most one) is the IMEI
-  itself on an IMEI service. The order forms draw only the custom fields, so placement (the portal and the shop's checkout) reads the IMEI
-  from `imei` when the request sends it, else from the value under that field's key (`typedImeiOf`, `domain/main-input.ts`); the request
-  schemas refuse an empty `imei` with `422` on `imei` before placement, so a sent `imei` never falls back to the field (the trim in
-  `typedImeiOf` matters only for Dhru and internal callers). Dhru reads only its `IMEI` parameter. Either way the IMEI is normalised and Luhn-checked (`INVALID_IMEI`), and the field's pattern and
-  `required` are judged on it, never on another value sent under its key. Its problems are reported where it was typed: `inputs.<key>`
-  when it came from the field (a missing one too, as `required`, also when the field is optional), else the item's IMEI path (`imei`,
-  `imeis.N`, Dhru's `IMEI`; `inputProblems` takes the path); with no such field and no `imei` it is missing on the IMEI path. When both
-  are sent, `imei` wins. The normalised IMEI is what `orders.imei` holds and what is stored under that key when the request sent the key,
-  so an IMEI typed into the field makes the same order (duplicate check, dispatch as `IMEI`) as one sent as `imei`; a field that is only
+- **Main input** (`domain/main-input.ts`, orders-suppliers-2, `mainInputOf`): `orders.imei` holds the value of the field flagged as the
+  main input when it has one (decision 065: what the dispatch sends as `IMEI`, so the duplicate check of `block_open` names it too); on an
+  IMEI service else the `imei` the request sent, and nothing more when the service has a main-input field (decision 073: an empty optional
+  IMEI field never lets another field travel as `IMEI` and in CUSTOMFIELD at once, so the dispatch sends no `IMEI`); else the first
+  required custom field by sort (an IMEI service without a main-input field, server, remote) or the first field's value or the file name
+  (file). The wire sends `''` for none.
+- **Field types and the IMEI** (decisions 065, 070 and 073). A field of type `imei` holds one IMEI on any service, main input or not: its
+  value is read as digits (spaces and dashes removed, `fieldValueOf`), must be 15 digits with a valid Luhn check digit (`invalid_imei` on
+  its path; the answer's code is `INVALID_IMEI`, 422) and is stored as those digits (`normalizedInputs`); `required` and the pattern work as
+  on any field (the pattern judges the digits). The service type `imei` forces nothing: an IMEI service's order form is its custom fields,
+  each judged by its own type, Required tick and pattern (`inputProblems`), so an optional main input may be left empty, a text main input
+  takes letters (an ECID) and an IMEI service without fields takes no input at all. A service's field flagged `is_main_input` (at most
+  one) is the main input. Older callers of an IMEI service send the main input as `imei` (older shop pages, Dhru's `IMEI` parameter, each
+  item of a bulk `imeis`): when it has text it is the main-input field's value (`bridgedImeiOf`), wins over a value under that field's
+  key and is judged by that field, its problems on the item's IMEI path (`imei`, `imeis.N`, `IMEI`); without such a field it is taken as
+  typed (trimmed) and stored as the order's main input with no IMEI check. Without `imei` the field is judged on the value under its key,
+  its problems on `inputs.<key>` (Dhru keeps them on `IMEI`: our list leaves the field out); a missing value is refused only when the field
+  is required. The request schemas refuse an empty `imei` with `422` on `imei` before placement. A bridged `imei` is stored under the
+  field's key only when the request sent that key, so an IMEI typed into the field makes the same order (duplicate check, dispatch as
+  `IMEI`) as one sent as `imei`. `imei` sent for a non-IMEI service stays `422 not_applicable`; a field that is only
   keyed `imei` is an ordinary field. A Dhru caller names its `CUSTOMFIELD` values by field **Name** (what `imeiservicelist` shows as `fieldname`): `inputsByFieldName`
   (`domain/field-inputs.ts`) matches a name to a Name exactly (the `supplier_key` column), then to a key exactly, then to a Name trimmed and
   without regard to case, and keeps a name that matches nothing as sent (so `inputProblems` answers `unknown_field`); a field sent twice is `422`
@@ -178,10 +184,10 @@ are ISO with milliseconds, ids are numbers, lists are simple-rest with `x-total-
   `answers: [{key, label, value}]` (decision 065) and `events: [{id, type, message, createdAt}]`, only the types `created`, `hold`, `accepted`, `completed`, `rejected`, `release`,
   `refund`, `reopened` and `verification` (never a note, a supplier line or the settlement, which shows the cost).
 - `POST /client/orders` (`201 { orders: [order] }`): body `{ serviceId, imei? | imeis? (1-100), quantity?, inputs?, fileId? }`.
-  An IMEI service's IMEI goes under its main-input field's key in `inputs` (decision 070), or as `imei` (older pages; it wins).
-  `imeis` places one order per IMEI of the same service, **all or none** in one transaction (the first refusal, including
+  An IMEI service's main input goes under its main-input field's key in `inputs` (decision 070), or as `imei` (older pages; it is that
+  field's value and wins, decision 073). `imeis` places one order per item of the same service, **all or none** in one transaction (the first refusal, including
   `INSUFFICIENT_FUNDS` or a duplicate inside the list, undoes the request); it stays accepted, but the shop no longer sends it. Problems are
-  named by field: `imei`, `imeis.2`, `quantity`, `inputs.<key>` (also every problem of an IMEI typed into the main-input field), `fileId`. Optional header `Idempotency-Key` (feature 24B, scope
+  named by field: `imei`, `imeis.2`, `quantity`, `inputs.<key>` (also every problem of a value typed into the main-input field), `fileId`. Optional header `Idempotency-Key` (feature 24B, scope
   `portal`, migration 0020): the same key and body sends the first `201` again with `idempotency-replayed: true` and places nothing;
   another body is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS`; a refusal
   stores nothing; the answer is kept 7 days. The key is not written to `orders.idempotency_key` (a bulk makes several orders). The

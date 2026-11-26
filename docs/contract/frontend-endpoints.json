@@ -16041,6 +16041,7 @@
         "fieldType": {
          "enum": [
           "number",
+          "imei",
           "text",
           "select",
           "textarea"
@@ -41447,6 +41448,7 @@
           "fieldType": {
            "enum": [
             "number",
+            "imei",
             "text",
             "select",
             "textarea"
@@ -41510,6 +41512,7 @@
       "fieldType": {
        "enum": [
         "number",
+        "imei",
         "text",
         "select",
         "textarea"

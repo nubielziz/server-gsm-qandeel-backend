@@ -165,7 +165,7 @@ describe('a plain IMEI supplier service in the shop (decision 071)', () => {
     const page = await t.app.inject({ method: 'GET', url: '/store/v1/services/sample-shop-imei-check' });
     expect(page.statusCode).toBe(200);
     expect(json(page).fields).toEqual([
-      { key: 'imei', label: 'IMEI', fieldType: 'text', options: [], required: true, isMainInput: true },
+      { key: 'imei', label: 'IMEI', fieldType: 'imei', options: [], required: true, isMainInput: true },
       { key: 'model', label: 'Model', fieldType: 'text', options: [], required: false, isMainInput: false },
     ]);
 
@@ -187,6 +187,39 @@ describe('a plain IMEI supplier service in the shop (decision 071)', () => {
     const calls = supplier.callsOf('placeimeiorder');
     expect(calls).toHaveLength(1);
     expect(calls[0]!.parameters).toEqual({ ID: '9501', IMEI: APPLE_IMEI, QNT: 1, CUSTOMFIELD: { Model: 'Sample Z' } });
+
+    // Decision 073: staff may make the main input a text field (an ECID): the shop takes letters and the supplier gets them as IMEI.
+    const saved = await staff.put(`/admin/services/${serviceId}/fields`, {
+      fields: [
+        {
+          key: 'imei',
+          name: 'ECID',
+          label: 'ECID',
+          fieldType: 'text',
+          required: true,
+          options: [],
+          regex: '',
+          isMainInput: true,
+        },
+        { key: 'model', name: 'Model', fieldType: 'text', required: false, options: [], regex: '' },
+      ],
+    });
+    expect(saved.status).toBe(200);
+    const ecid = await paidOrder(t, clock, world, {
+      serviceId,
+      email: 'ecid@mail.example',
+      imei: null,
+      inputs: { imei: 'ABCDEF0123456' },
+    });
+    expect(await orderRow(world.db, ecid.orderId)).toMatchObject({
+      type: 'imei',
+      imei: 'ABCDEF0123456',
+      inputs: { imei: 'ABCDEF0123456' },
+    });
+    expect(
+      await t.app.get(SupplierDispatch, { strict: false }).run(ecid.orderId, { lastAttempt: false }),
+    ).toMatchObject({ status: 'sent' });
+    expect(supplier.callsOf('placeimeiorder')[1]!.parameters).toEqual({ ID: '9501', IMEI: 'ABCDEF0123456', QNT: 1 });
   });
 });
 

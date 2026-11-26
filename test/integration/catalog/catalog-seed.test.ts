@@ -116,7 +116,8 @@ describe.skipIf(!frontendPresent)('the catalog seed', () => {
         isMainInput: false,
       },
     ]);
-    // Decision 070: every demo IMEI service has the main-input field its IMEI is typed into; no other service has one.
+    // Decision 070: every demo IMEI service has the main-input field its IMEI is typed into, of type imei (decision 073); no other service
+    // has one.
     const fieldRows = await db.select().from(s.serviceFields).orderBy(s.serviceFields.id);
     const imeiIds = services.filter((service) => service.type === 'imei').map((service) => service.id);
     expect(imeiIds.length).toBeGreaterThan(0);
@@ -127,7 +128,7 @@ describe.skipIf(!frontendPresent)('the catalog seed', () => {
         key: 'imei',
         supplierKey: 'IMEI',
         label: 'IMEI',
-        fieldType: 'text',
+        fieldType: 'imei',
         required: true,
         regex: '',
         sort: 0,
@@ -139,7 +140,7 @@ describe.skipIf(!frontendPresent)('the catalog seed', () => {
         key: 'imei',
         name: 'IMEI',
         label: 'IMEI',
-        fieldType: 'text',
+        fieldType: 'imei',
         required: true,
         options: [],
         regex: '',

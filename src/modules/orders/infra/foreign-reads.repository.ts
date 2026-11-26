@@ -10,6 +10,7 @@
 // Replace the bodies with calls to their services; nothing outside this file knows (the read model imports the table handles from here).
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
+import type { PlacementFieldType } from '../domain/placement-rules';
 
 /** The table handles the read model joins, so no other file of this module names a foreign table. */
 export const foreignTables = {
@@ -58,7 +59,7 @@ export interface ServiceFieldRow {
   readonly id: number;
   readonly key: string;
   readonly label: string;
-  readonly fieldType: 'text' | 'number' | 'select' | 'textarea';
+  readonly fieldType: PlacementFieldType;
   readonly options: string[];
   readonly required: boolean;
   readonly regex: string;

@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from 'bu
 import type { Pool } from 'pg';
 import { migrateDatabase } from '@src/infra/db/migrate';
 import {
+  IMEI_FIELD_TYPE_SUFFIX,
   IMEI_MAIN_INPUT_SUFFIX,
   ScratchDatabases,
   migrateUntil,
@@ -137,7 +138,8 @@ describe('the stored IMEI services', () => {
       ids.serverBare,
     ]);
 
-    expect(await migrateDatabase(url)).toBeGreaterThan(0);
+    // Only this migration: the next one (decision 073) makes the field it inserts of type imei.
+    expect(await migrateUntil(url, IMEI_FIELD_TYPE_SUFFIX)).toBeGreaterThan(0);
   });
 
   it('gives a plain IMEI service the IMEI field first, its own fields moved down by one in their order', async () => {

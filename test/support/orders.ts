@@ -178,6 +178,32 @@ export async function ordersWorld(db: Database): Promise<OrdersWorld> {
   };
 }
 
+/**
+ * Gives an IMEI service the field a new or imported IMEI service gets by default (decisions 071 and 073): key `imei`, Name and label
+ * `IMEI`, type `imei` (15 digits, Luhn), required, the main input, first.
+ *
+ * @param db the test database
+ * @param serviceId the service
+ * @param values columns to override
+ */
+export async function addImeiField(
+  db: Database,
+  serviceId: number,
+  values: Partial<typeof s.serviceFields.$inferInsert> = {},
+): Promise<void> {
+  await db.insert(s.serviceFields).values({
+    serviceId,
+    key: 'imei',
+    label: 'IMEI',
+    supplierKey: 'IMEI',
+    fieldType: 'imei',
+    required: true,
+    isMainInput: true,
+    sort: 0,
+    ...values,
+  });
+}
+
 /** A merchant portal session with helpers for the order routes (cookie, CSRF token, no Origin: the guards judge the session). */
 export async function portalFor(t: TestApp, clientId: number) {
   const session = await openSession(t, { type: 'account', id: clientId });

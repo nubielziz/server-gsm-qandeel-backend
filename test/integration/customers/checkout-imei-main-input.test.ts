@@ -1,8 +1,9 @@
 // Decision 070 at the storefront checkout: the shop's order form draws only the custom fields, so the IMEI of an IMEI service is typed into
-// the field flagged as the main input (decision 065) and sent under its key in `inputs`. The checkout reads it there when no `imei` is
-// sent, checks it as an IMEI (15 digits, Luhn) and reports every problem about it on `inputs.<key>`; the session and the paid order are
-// exactly those of an IMEI sent as `imei` (the encrypted IMEI, the blocklist match, `orders.imei`, the stored inputs). `imei` still works
-// and wins when both are sent. Real application, Postgres and Redis.
+// the field flagged as the main input (decision 065) and sent under its key in `inputs`. Decision 073: the field is judged by its own type:
+// one of type `imei` is checked as an IMEI (15 digits, Luhn) with every problem on `inputs.<key>`, an optional one may be left empty, a
+// text one takes letters (an ECID), and an IMEI service without fields takes `imei` as typed. The session and the paid order are exactly
+// those of an IMEI sent as `imei` (the encrypted main input, the blocklist match, `orders.imei`, the stored inputs). `imei` still works and
+// wins when both are sent. Real application, Postgres and Redis.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s, type Database } from '@src/infra/db';
@@ -52,12 +53,13 @@ beforeEach(async () => {
   await clearStoreRateLimits(t);
   world = await b2cWorld(t, db, fake);
   await seedDefaultTemplates(db);
-  // The key and the Name say nothing: the flag makes the field the IMEI's box.
+  // The key and the Name say nothing: the flag makes the field the IMEI's box, and its type `imei` makes it check an IMEI (decision 073).
   await db.insert(s.serviceFields).values({
     serviceId: world.icloud.serviceId,
     key: 'serial',
     label: 'Serial',
     supplierKey: 'Serial number',
+    fieldType: 'imei',
     isMainInput: true,
     required: true,
     sort: 1,
@@ -123,22 +125,26 @@ describe('POST /store/v1/checkout-sessions: the IMEI typed into the main-input f
     await expectNothingOpened();
   });
 
-  it('asks for a missing IMEI once, on inputs.<key>, also when the field itself is optional', async () => {
+  it('asks for a missing value once, on inputs.<key>, while the field is required; an optional main input may be left empty', async () => {
     for (const payload of [{}, { inputs: { serial: '  ' } }]) {
       const missing = await open(payload);
       expect(missing.statusCode).toBe(422);
       expect(json(missing).code).toBe('VALIDATION_FAILED');
       expect(json(missing).errors).toEqual([
-        expect.objectContaining({ field: 'inputs.serial', code: 'required', message: 'Enter the IMEI.' }),
+        expect.objectContaining({ field: 'inputs.serial', code: 'required', message: 'Serial is required.' }),
       ]);
     }
+    await expectNothingOpened();
+    // Decision 073: staff made the main input optional, so the checkout opens without one and keeps no main input.
     await db
       .update(s.serviceFields)
       .set({ required: false })
       .where(eq(s.serviceFields.serviceId, world.icloud.serviceId));
     const optional = await open({});
-    expect(json(optional).errors).toEqual([expect.objectContaining({ field: 'inputs.serial', code: 'required' })]);
-    await expectNothingOpened();
+    expect(optional.statusCode).toBe(201);
+    expect(json(optional).imei).toBeNull();
+    const [session] = await db.select().from(s.checkoutSessions);
+    expect(session).toMatchObject({ imeiEnc: null, inputs: {} });
   });
 
   it("judges the field's pattern on the IMEI typed there, on inputs.<key>", async () => {
@@ -176,12 +182,65 @@ describe('POST /store/v1/checkout-sessions: the IMEI typed into the main-input f
     await expectNothingOpened();
   });
 
-  it('still refuses a missing imei, on imei, for an IMEI service without a main-input field', async () => {
+  it('opens the checkout of an IMEI service with no fields: nothing is asked, and an imei sent is taken as typed (decision 073)', async () => {
     await db.delete(s.serviceFields).where(eq(s.serviceFields.serviceId, world.icloud.serviceId));
-    const missing = await open({});
-    expect(missing.statusCode).toBe(422);
-    expect(json(missing).code).toBe('INVALID_IMEI');
-    expect(json(missing).errors).toEqual([expect.objectContaining({ field: 'imei', code: 'invalid_imei' })]);
+    const bare = await open({});
+    expect(bare.statusCode).toBe(201);
+    expect(json(bare).imei).toBeNull();
+    const typed = await paidOrder(t, clock, world, { email: 'ann@mail.example', imei: ' F2LXK0ABCD12 ' });
+    expect(await orderRow(db, typed.orderId)).toMatchObject({ imei: 'F2LXK0ABCD12', inputs: {} });
+  });
+});
+
+describe('POST /store/v1/checkout-sessions: an IMEI service whose main input is a text field (decision 073)', () => {
+  beforeEach(async () => {
+    await db
+      .update(s.serviceFields)
+      .set({ fieldType: 'text', supplierKey: 'ECID', label: 'ECID' })
+      .where(eq(s.serviceFields.serviceId, world.icloud.serviceId));
+  });
+
+  it('takes letters typed into the field as the main input: the masked line, the encrypted copy and the paid order', async () => {
+    const opened = await open({ inputs: { serial: ' 0x1A2B3C4D5E6F ' } });
+    expect(opened.statusCode).toBe(201);
+    expect(json(opened).imei).toBe('••••••••••5E6F');
+    const paid = await paidOrder(t, clock, world, {
+      email: 'ann@mail.example',
+      imei: null,
+      inputs: { serial: '0x1A2B3C4D5E6F' },
+    });
+    expect(await orderRow(db, paid.orderId)).toMatchObject({
+      imei: '0x1A2B3C4D5E6F',
+      inputs: { serial: '0x1A2B3C4D5E6F' },
+    });
+    const sent = await paidOrder(t, clock, world, { email: 'bob@mail.example', imei: 'F2LXK0ABCD12' });
+    expect((await orderRow(db, sent.orderId)).imei).toBe('F2LXK0ABCD12');
+  });
+
+  it('still refuses a blocklisted IMEI typed with spaces into the text field', async () => {
+    await insertBlock(t, db, 'imei', ACCEPTED);
+    const typed = await open({ inputs: { serial: ' 3538 9011-0000004 ' } });
+    expect(typed.statusCode).toBe(403);
+    expect(json(typed).code).toBe('ACCOUNT_SUSPENDED');
     await expectNothingOpened();
+    // A value that is no IMEI is not matched against the IMEI entries.
+    expect((await open({ inputs: { serial: 'F2LXK0ABCD12' } })).statusCode).toBe(201);
+  });
+
+  it('refuses a blocklisted IMEI typed into a field of type imei that is not the main input', async () => {
+    await db.insert(s.serviceFields).values({
+      serviceId: world.icloud.serviceId,
+      key: 'device',
+      label: 'Device IMEI',
+      supplierKey: 'Device',
+      fieldType: 'imei',
+      sort: 2,
+    });
+    await insertBlock(t, db, 'imei', ACCEPTED);
+    const typed = await open({ inputs: { serial: 'F2LXK0ABCD12', device: '3538 9011-0000004' } });
+    expect(typed.statusCode).toBe(403);
+    expect(json(typed).code).toBe('ACCOUNT_SUSPENDED');
+    await expectNothingOpened();
+    expect((await open({ inputs: { serial: 'F2LXK0ABCD12', device: ACCEPTED_TOO } })).statusCode).toBe(201);
   });
 });

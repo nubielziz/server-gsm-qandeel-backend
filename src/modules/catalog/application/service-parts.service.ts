@@ -5,8 +5,7 @@ import { AppError, type FieldError } from '../../../common/errors';
 import { fieldPatternProblem } from '../../../common/field-pattern';
 import { DbService, isUniqueViolation } from '../../../infra/db';
 import { AuditService } from '../../platform';
-import type { ServiceField } from '../db/schema';
-import { type FieldDraft, fieldListProblems, plannedFieldRows } from '../domain/service-parts';
+import { type FieldDraft, auditedField, fieldListProblems, plannedFieldRows } from '../domain/service-parts';
 import { laterRepeatedNameIndexes } from '../infra/field-name.repository';
 import { listFieldRows, lockLiveService, replaceFieldRows } from '../infra/service.repository';
 import { type FieldView, toFieldView } from './service-admin.service';
@@ -23,18 +22,6 @@ function problems(list: ReadonlyArray<{ field: string; message: string }>): AppE
 }
 
 const notFound = () => new AppError('NOT_FOUND', { detail: 'No service has this id.' });
-
-/**
- * What the audit row of a fields save says about one field: the main-input flag decides what travels as the IMEI parameter, and the Name,
- * label and `required` what a supplier and a buyer see (decision 065).
- */
-const auditedField = (field: ServiceField) => ({
-  key: field.key,
-  name: field.supplierKey,
-  label: field.label,
-  required: field.required,
-  isMainInput: field.isMainInput,
-});
 
 /**
  * Replaces the custom fields that hang on a service.
@@ -61,8 +48,9 @@ export class ServicePartsService {
    *
    * A row that names a saved field keeps that field's key; a row without a key is a new field and gets a key made from its Name; the
    * Name is stored as the field's `supplier_key` (decision 065). On an IMEI service a list that leaves no field flagged as the main input
-   * flags the first field named IMEI in any letter case. The audit row names each field before and after by key, Name, label,
-   * `required` and the main-input flag.
+   * flags the first field named IMEI in any letter case; any other list is accepted for an IMEI service (decision 073: renamed, another
+   * type, optional, no main input, no fields). The audit row names each field before and after by key, Name, label, type, pattern, `required`
+   * and the main-input flag (decision 073: a type or pattern change decides what is refused).
    *
    * @param serviceId the service id
    * @param fields the whole list in order (the index is the sort order)

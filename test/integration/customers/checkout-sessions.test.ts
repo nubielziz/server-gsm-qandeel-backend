@@ -291,12 +291,28 @@ describe('POST /store/v1/checkout-sessions', () => {
   it('refuses a bad IMEI with INVALID_IMEI and leaves no guest row and no session behind', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
-    for (const imei of [undefined, '353890110000005', 'abc', '35389011000000']) {
+    // Decision 073: the IMEI is checked by the service's field of type imei (the default of an IMEI service), not by its type.
+    await db.insert(s.serviceFields).values({
+      serviceId: world.icloud.serviceId,
+      key: 'imei',
+      label: 'IMEI',
+      supplierKey: 'IMEI',
+      fieldType: 'imei',
+      required: true,
+      isMainInput: true,
+    });
+    for (const imei of ['353890110000005', 'abc', '35389011000000']) {
       const res = await open(valid(world, { imei }));
       expect(res.statusCode, String(imei)).toBe(422);
       expect(body(res).code).toBe('INVALID_IMEI');
       expect(body(res).errors[0].field).toBe('imei');
     }
+    // Nothing sent: the required field is missing, on the field.
+    const none = await open(valid(world, { imei: undefined }));
+    expect(body(none)).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      errors: [{ field: 'inputs.imei', code: 'required' }],
+    });
     // An empty string never reaches the IMEI rule: the body schema refuses it.
     expect(body(await open(valid(world, { imei: '' }))).code).toBe('VALIDATION_FAILED');
     expect(await counts()).toEqual({ accounts: 0, sessions: 0, consents: 0 });

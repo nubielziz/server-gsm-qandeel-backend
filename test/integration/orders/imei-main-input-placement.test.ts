@@ -1,11 +1,14 @@
 // Decision 070: the order forms draw only the custom fields, so the IMEI of an IMEI service is typed into the field flagged as the main
-// input (decision 065) and sent under its key in `inputs`. Placement reads it there when no `imei` is sent, checks it as an IMEI (spaces and
-// dashes removed, 15 digits, Luhn) and reports every problem about it on `inputs.<key>`; the order ends exactly like one sent as `imei`
-// (`orders.imei`, the stored inputs, the duplicate rule). `imei` still works and wins when both are sent; Dhru reads only its `IMEI`
-// parameter. Real application, Postgres and Redis.
+// input (decision 065) and sent under its key in `inputs`. Decision 073: the field is judged by its own type: one of type `imei` is checked
+// as an IMEI (spaces and dashes removed, 15 digits, Luhn) with every problem on `inputs.<key>`, an optional one may be left empty, a text
+// one takes letters (an ECID), and an IMEI service without fields takes `imei` as typed. The order ends exactly like one sent as `imei`
+// (`orders.imei`, the stored inputs, the duplicate rule). `imei` still works and wins when both are sent, judged by the field; Dhru's
+// `IMEI` parameter is the field's value too. Real application, Postgres and Redis.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import { schema as s } from '@src/infra/db';
+import { AppError } from '@src/common/errors';
+import { DbService, schema as s } from '@src/infra/db';
+import { INVALID_IMEI_MESSAGE, OrderPlacement } from '@src/modules/orders';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
@@ -46,17 +49,39 @@ beforeEach(async () => {
   const { db } = await testDb();
   world = await ordersWorld(db);
   creds = await credentialsFor(t, db, world.merchant.id);
-  // The key and the Name say nothing: the flag makes the field the IMEI's box.
+  // The key and the Name say nothing: the flag makes the field the IMEI's box, and its type `imei` makes it check an IMEI (decision 073).
   await world.db.insert(s.serviceFields).values({
     serviceId: world.auto.serviceId,
     key: 'serial',
     label: 'Serial',
     supplierKey: 'Serial number',
+    fieldType: 'imei',
     isMainInput: true,
     required: true,
     sort: 1,
   });
 });
+
+/**
+ * What `OrderPlacement` refuses for one Dhru item of the IMEI service, as the Dhru action calls it (its envelope shows only the message).
+ */
+async function dhruRefusal(item: { imei: string | undefined; inputs: Record<string, string> }): Promise<AppError> {
+  try {
+    await t.app.get(DbService).runInTransaction(({ tx }) =>
+      t.app.get(OrderPlacement).place(tx, {
+        accountId: world.merchant.id,
+        source: 'dhru',
+        serviceId: world.auto.serviceId,
+        items: [{ ...item, imeiField: 'IMEI' }],
+        actor: { type: 'account', id: world.merchant.id },
+      }),
+    );
+  } catch (error) {
+    if (error instanceof AppError) return error;
+    throw error;
+  }
+  throw new Error('The item was placed.');
+}
 
 /** Asserts nothing was placed and nothing is held for the merchant. */
 async function expectNothingPlaced(): Promise<void> {
@@ -96,23 +121,27 @@ describe('POST /client/orders: the IMEI typed into the main-input field (decisio
     await expectNothingPlaced();
   });
 
-  it('asks for a missing IMEI once, on inputs.<key>, also when the field itself is optional', async () => {
+  it('asks for a missing value once, on inputs.<key>, while the field is required; an optional main input may be left empty', async () => {
     const portal = await portalFor(t, world.merchant.id);
     for (const body of [{}, { inputs: { serial: '   ' } }]) {
       const missing = await portal.post('/client/orders', { serviceId: world.auto.serviceId, ...body });
       expect(missing.statusCode).toBe(422);
       expect(json(missing).code).toBe('VALIDATION_FAILED');
       expect(json(missing).errors).toEqual([
-        expect.objectContaining({ field: 'inputs.serial', code: 'required', message: 'Enter the IMEI.' }),
+        expect.objectContaining({ field: 'inputs.serial', code: 'required', message: 'Serial is required.' }),
       ]);
     }
+    await expectNothingPlaced();
+    // Decision 073: the service type forces nothing; staff made the main input optional, so the order goes without one.
     await world.db
       .update(s.serviceFields)
       .set({ required: false })
       .where(eq(s.serviceFields.serviceId, world.auto.serviceId));
     const optional = await portal.post('/client/orders', { serviceId: world.auto.serviceId });
-    expect(json(optional).errors).toEqual([expect.objectContaining({ field: 'inputs.serial', code: 'required' })]);
-    await expectNothingPlaced();
+    expect(optional.statusCode).toBe(201);
+    const order = await orderRow(world.db, json(optional).orders[0].id);
+    expect(order.imei).toBeNull();
+    expect(order.inputs).toEqual({});
   });
 
   it("judges the field's pattern on the IMEI typed there, on inputs.<key>", async () => {
@@ -240,37 +269,123 @@ describe('POST /client/orders: the IMEI typed into the main-input field (decisio
     expect(json(again)).toMatchObject({ code: 'DUPLICATE_ORDER', orderId: json(first).orders[0].id });
   });
 
-  it('still needs imei, on imei, for an IMEI service without a main-input field', async () => {
+  it('orders an IMEI service with no fields: nothing is asked, and an imei sent is taken as typed (decision 073)', async () => {
     await world.db.delete(s.serviceFields).where(eq(s.serviceFields.serviceId, world.auto.serviceId));
     const portal = await portalFor(t, world.merchant.id);
-    const missing = await portal.post('/client/orders', { serviceId: world.auto.serviceId });
-    expect(missing.statusCode).toBe(422);
-    expect(json(missing).errors).toEqual([
-      expect.objectContaining({ field: 'imei', code: 'required', message: 'Enter the IMEI.' }),
-    ]);
     const stray = await portal.post('/client/orders', {
       serviceId: world.auto.serviceId,
       inputs: { serial: ACCEPTED },
     });
-    expect(json(stray).errors).toEqual([
-      expect.objectContaining({ field: 'imei', code: 'required' }),
-      expect.objectContaining({ field: 'inputs.serial', code: 'unknown_field' }),
-    ]);
+    expect(json(stray).errors).toEqual([expect.objectContaining({ field: 'inputs.serial', code: 'unknown_field' })]);
     await expectNothingPlaced();
+
+    const bare = await portal.post('/client/orders', { serviceId: world.auto.serviceId });
+    expect(bare.statusCode).toBe(201);
+    expect((await orderRow(world.db, json(bare).orders[0].id)).imei).toBeNull();
+    const typed = await portal.post('/client/orders', { serviceId: world.auto.serviceId, imei: ' F2LXK0ABCD12 ' });
+    expect(typed.statusCode).toBe(201);
+    const order = await orderRow(world.db, json(typed).orders[0].id);
+    expect(order).toMatchObject({ imei: 'F2LXK0ABCD12', inputs: {} });
   });
 });
 
-describe('Dhru placeimeiorder: the IMEI parameter only (decision 070)', () => {
-  it('never reads the IMEI from CUSTOMFIELD: a missing IMEI parameter is refused as before', async () => {
-    const dhru = dhruClient(t, creds);
-    const refused = await dhru.call('placeimeiorder', {
-      ID: world.auto.serviceId,
-      CUSTOMFIELD: { 'Serial number': ACCEPTED },
+describe('POST /client/orders: an IMEI service whose main input is a text field (decision 073)', () => {
+  beforeEach(async () => {
+    await world.db
+      .update(s.serviceFields)
+      .set({ fieldType: 'text', supplierKey: 'ECID', label: 'ECID' })
+      .where(eq(s.serviceFields.serviceId, world.auto.serviceId));
+  });
+
+  it('takes letters typed into the field, or sent as imei, as the main input, judged only by the field', async () => {
+    const portal = await portalFor(t, world.merchant.id);
+    const typed = await portal.post('/client/orders', {
+      serviceId: world.auto.serviceId,
+      inputs: { serial: ' 0x1A2B3C4D5E6F ' },
     });
-    expect(refused.ERROR?.[0]?.MESSAGE).toBe('Enter the IMEI.');
+    expect(typed.statusCode).toBe(201);
+    expect(await orderRow(world.db, json(typed).orders[0].id)).toMatchObject({
+      imei: '0x1A2B3C4D5E6F',
+      inputs: { serial: '0x1A2B3C4D5E6F' },
+    });
+    const sent = await portal.post('/client/orders', { serviceId: world.auto.serviceId, imei: 'F2LXK0ABCD12' });
+    expect(sent.statusCode).toBe(201);
+    expect((await orderRow(world.db, json(sent).orders[0].id)).imei).toBe('F2LXK0ABCD12');
+    // A pattern on the field judges a value sent as imei too, on imei.
+    await world.db
+      .update(s.serviceFields)
+      .set({ regex: '^[A-Z0-9]{12}$' })
+      .where(eq(s.serviceFields.serviceId, world.auto.serviceId));
+    const refused = await portal.post('/client/orders', { serviceId: world.auto.serviceId, imei: 'short' });
+    expect(refused.statusCode).toBe(422);
+    expect(json(refused).errors).toEqual([expect.objectContaining({ field: 'imei', code: 'invalid_format' })]);
+  });
+});
+
+describe('Dhru placeimeiorder: the IMEI parameter is the main-input field (decision 073)', () => {
+  it('judges the IMEI parameter by the field; a missing one is refused while the field is required', async () => {
+    const dhru = dhruClient(t, creds);
+    const refused = await dhru.call('placeimeiorder', { ID: world.auto.serviceId });
+    expect(refused.ERROR?.[0]?.MESSAGE).toBe('Serial is required.');
+    const bad = await dhru.call('placeimeiorder', { ID: world.auto.serviceId, IMEI: BAD_CHECK_DIGIT });
+    expect(bad.ERROR?.[0]?.MESSAGE).toBe(INVALID_IMEI_MESSAGE);
+    // The Dhru envelope carries the message only: the refusal itself is INVALID_IMEI on the IMEI parameter.
+    expect(await dhruRefusal({ imei: BAD_CHECK_DIGIT, inputs: {} })).toMatchObject({
+      code: 'INVALID_IMEI',
+      errors: [{ field: 'IMEI', code: 'invalid_imei' }],
+    });
+    expect(await dhruRefusal({ imei: undefined, inputs: {} })).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      errors: [{ field: 'IMEI', code: 'required' }],
+    });
     await expectNothingPlaced();
-    const placed = await dhru.call('placeimeiorder', { ID: world.auto.serviceId, IMEI: ACCEPTED });
+    const placed = await dhru.call('placeimeiorder', { ID: world.auto.serviceId, IMEI: '3529 0511-2490861' });
     expect(placed.SUCCESS).toBeDefined();
     expect((await orderRow(world.db, Number(placed.SUCCESS[0].REFERENCEID))).imei).toBe(ACCEPTED);
+  });
+
+  it('judges each item of placeimeiorderbulk by the field: a bad IMEI is refused on its own item, the others are placed', async () => {
+    const dhru = dhruClient(t, creds);
+    const answer = await dhru.call('placeimeiorderbulk', {
+      a1: { ID: world.auto.serviceId, IMEI: ACCEPTED },
+      b2: { ID: world.auto.serviceId, IMEI: BAD_CHECK_DIGIT },
+      c3: { ID: world.auto.serviceId, IMEI: '3546 0711-1076240' },
+    });
+    expect(answer.a1.SUCCESS[0]).toMatchObject({ MESSAGE: 'Order received' });
+    expect(answer.b2.ERROR[0].MESSAGE).toBe(INVALID_IMEI_MESSAGE);
+    expect(answer.c3.SUCCESS[0]).toMatchObject({ MESSAGE: 'Order received' });
+    const orders = await world.db.select().from(s.orders).orderBy(s.orders.id);
+    expect(orders.map((order) => [order.source, order.imei])).toEqual([
+      ['dhru', ACCEPTED],
+      ['dhru', ACCEPTED_TOO],
+    ]);
+  });
+
+  it('takes letters as the IMEI parameter when the main input is a text field', async () => {
+    await world.db
+      .update(s.serviceFields)
+      .set({ fieldType: 'text', supplierKey: 'ECID', label: 'ECID' })
+      .where(eq(s.serviceFields.serviceId, world.auto.serviceId));
+    const dhru = dhruClient(t, creds);
+    const placed = await dhru.call('placeimeiorder', { ID: world.auto.serviceId, IMEI: 'F2LXK0ABCD12' });
+    expect(placed.SUCCESS).toBeDefined();
+    expect((await orderRow(world.db, Number(placed.SUCCESS[0].REFERENCEID))).imei).toBe('F2LXK0ABCD12');
+  });
+});
+
+describe('POST /client/orders: an IMEI service whose main input is an optional text area (decision 073)', () => {
+  it('is ordered empty, with no main input, and with free text as the main input', async () => {
+    await world.db
+      .update(s.serviceFields)
+      .set({ fieldType: 'textarea', required: false, supplierKey: 'Notes', label: 'Notes' })
+      .where(eq(s.serviceFields.serviceId, world.auto.serviceId));
+    const portal = await portalFor(t, world.merchant.id);
+    const empty = await portal.post('/client/orders', { serviceId: world.auto.serviceId });
+    expect(empty.statusCode).toBe(201);
+    expect(await orderRow(world.db, json(empty).orders[0].id)).toMatchObject({ imei: null, inputs: {} });
+    const text = 'Phone was bought second hand.\nPlease check the iCloud lock.';
+    const typed = await portal.post('/client/orders', { serviceId: world.auto.serviceId, inputs: { serial: text } });
+    expect(typed.statusCode).toBe(201);
+    expect(await orderRow(world.db, json(typed).orders[0].id)).toMatchObject({ imei: text, inputs: { serial: text } });
   });
 });

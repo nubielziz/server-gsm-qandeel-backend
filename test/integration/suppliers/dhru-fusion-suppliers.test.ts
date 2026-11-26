@@ -17,6 +17,7 @@ import { clearIdentityCaches } from '../../support/auth';
 import { insertCategory, insertService } from '../../support/catalog';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { fundWallet } from '../../support/money';
+import { credentialsFor, dhruClient } from '../../support/machine-orders';
 import { IMEIS, type OrdersWorld, json, orderRow, ordersWorld, portalFor, walletOf } from '../../support/orders';
 import { catalogVersionOf } from '../../support/pricing';
 import {
@@ -412,7 +413,7 @@ describe('a plain IMEI service gets the IMEI field (decision 071)', () => {
         field.regex,
       ]),
     ).toEqual([
-      ['imei', 'IMEI', 'IMEI', 'text', true, true, 0, ''],
+      ['imei', 'IMEI', 'IMEI', 'imei', true, true, 0, ''],
       ['model', 'Model', 'Model', 'text', false, false, 1, ''],
     ]);
 
@@ -684,7 +685,14 @@ describe("which value is sent as the supplier's main box (the field flagged isMa
   /** A fresh automatic service of the given type with fields, linked (with a field map) to a new supplier at the fake. */
   async function routeWith(
     type: 'imei' | 'server',
-    fields: Array<{ key: string; supplierKey: string; sort: number; required?: boolean; isMainInput?: boolean }>,
+    fields: Array<{
+      key: string;
+      supplierKey: string;
+      sort: number;
+      required?: boolean;
+      isMainInput?: boolean;
+      fieldType?: 'text' | 'imei';
+    }>,
     fieldMap: Record<string, string> = {},
   ): Promise<number> {
     const { db } = world;
@@ -759,13 +767,55 @@ describe("which value is sent as the supplier's main box (the field flagged isMa
   });
 
   it('sends an IMEI typed into the flagged field of an IMEI service exactly as one sent as imei (decision 070)', async () => {
-    const serviceId = await routeWith('imei', [{ key: 'serial', supplierKey: 'Serial', sort: 0, isMainInput: true }]);
+    const serviceId = await routeWith('imei', [
+      { key: 'serial', supplierKey: 'Serial', sort: 0, isMainInput: true, fieldType: 'imei' },
+    ]);
     const orderId = await placed({ serviceId, inputs: { serial: '3546 0711-1076240' } });
     const order = await orderRow(world.db, orderId);
     expect(order.imei).toBe(IMEIS[1]);
     expect(order.inputs).toEqual({ serial: IMEIS[1] });
     expect(await dispatch.run(orderId, { lastAttempt: false })).toMatchObject({ status: 'sent' });
     expect(fake.callsOf('placeimeiorder')[0]!.parameters).toEqual({ ID: '4412', IMEI: IMEIS[1], QNT: 1 });
+  });
+
+  it('sends no IMEI when the optional main input of an IMEI service is left empty: a required ECID beside it travels once (decision 073)', async () => {
+    const serviceId = await routeWith('imei', [
+      { key: 'imei', supplierKey: 'IMEI', sort: 0, isMainInput: true, fieldType: 'imei' },
+      { key: 'ecid', supplierKey: 'ECID', sort: 1, required: true },
+    ]);
+    const orderId = await placed({ serviceId, inputs: { ecid: 'ABC123' } });
+    expect(await orderRow(world.db, orderId)).toMatchObject({ type: 'imei', imei: null, inputs: { ecid: 'ABC123' } });
+    expect(await dispatch.run(orderId, { lastAttempt: false })).toMatchObject({ status: 'sent' });
+    expect(fake.callsOf('placeimeiorder')[0]!.parameters).toEqual({
+      ID: '4412',
+      QNT: 1,
+      CUSTOMFIELD: { ECID: 'ABC123' },
+    });
+  });
+
+  it('sends letters typed into the text main input of an IMEI service as IMEI, from the portal and Dhru (decision 073)', async () => {
+    const serviceId = await routeWith('imei', [
+      { key: 'ecid', supplierKey: 'ECID', sort: 0, required: true, isMainInput: true },
+      { key: 'note', supplierKey: 'Note', sort: 1 },
+    ]);
+    const typed = await placed({ serviceId, inputs: { ecid: 'ABCDEF0123456', note: 'n' } });
+    expect(await orderRow(world.db, typed)).toMatchObject({ type: 'imei', imei: 'ABCDEF0123456' });
+    expect(await dispatch.run(typed, { lastAttempt: false })).toMatchObject({ status: 'sent' });
+    expect(fake.callsOf('placeimeiorder')[0]!.parameters).toEqual({
+      ID: '4412',
+      IMEI: 'ABCDEF0123456',
+      QNT: 1,
+      CUSTOMFIELD: { Note: 'n' },
+    });
+
+    // Our Dhru API: the IMEI parameter is the main-input field's value, judged as text.
+    const dhru = dhruClient(t, await credentialsFor(t, world.db, world.merchant.id));
+    const answer = await dhru.call('placeimeiorder', { ID: serviceId, IMEI: 'F2LXK0ABCD12' });
+    expect(answer.SUCCESS).toBeDefined();
+    const viaDhru = Number(answer.SUCCESS[0].REFERENCEID);
+    expect(await orderRow(world.db, viaDhru)).toMatchObject({ source: 'dhru', imei: 'F2LXK0ABCD12', inputs: {} });
+    expect(await dispatch.run(viaDhru, { lastAttempt: false })).toMatchObject({ status: 'sent' });
+    expect(fake.callsOf('placeimeiorder')[1]!.parameters).toEqual({ ID: '4412', IMEI: 'F2LXK0ABCD12', QNT: 1 });
   });
 
   it("sends a field under the link's field map name when it has one, else under its Name; the map never makes a field the main box", async () => {

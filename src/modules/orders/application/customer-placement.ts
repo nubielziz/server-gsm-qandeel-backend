@@ -31,7 +31,10 @@ export interface CustomerPlacementRequest {
   readonly checkoutSessionId: number;
   readonly serviceId: number;
   readonly quantity: number;
-  /** The IMEI the buyer gave (already decrypted), for an IMEI service. */
+  /**
+   * The main input the checkout stored encrypted for an IMEI service (already decrypted): the main-input field's value, else the `imei` an
+   * older page sent (decision 073: an IMEI service's main input need not be an IMEI).
+   */
   readonly imei: string | undefined;
   /** The order field values by field key. */
   readonly inputs: Readonly<Record<string, string>>;
@@ -67,6 +70,8 @@ const CURRENCY = 'USD';
  * `holdReason` set) starts `held` through `placementDispatchState({ held })`: it claims no stock, queues no dispatch and carries the
  * hold sentence on its timeline, so the review queue shows why. An IMEI typed while the service was an IMEI service and paid after the
  * supplier sync made it a server service (decision 042) is kept under the field flagged as the main input (`carriedImeiInputs`, decision 065).
+ * `orders.imei` is `mainInputOf`: on an IMEI service with a main-input field that field's value, else the stored main input, else
+ * nothing; without one the stored main input, else the server rule (decision 073).
  *
  * Side effects (on the caller's transaction): inserts `orders` and `order_events`; claims and sells stock codes (not for a held order);
  * posts the settlement of a stock delivery; inserts `outbox_events` (`order.dispatch_requested`, or `order.status_changed` for a stock

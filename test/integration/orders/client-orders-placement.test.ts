@@ -14,6 +14,7 @@ import { accountFigures, fundWallet, insertWalletMerchant, ledgerTotals } from '
 import { makeCustomer } from '../../support/store';
 import {
   IMEIS,
+  addImeiField,
   eventsOf,
   json,
   ledgerOf,
@@ -36,6 +37,9 @@ beforeEach(async () => {
   await resetDb();
   await clearIdentityCaches(t);
   world = await ordersWorld((await testDb()).db);
+  // Decision 073: an IMEI service checks an IMEI through its default field of type imei (what an import or a hand-made service gets).
+  await addImeiField(world.db, world.auto.serviceId);
+  await addImeiField(world.db, world.manual.serviceId);
 });
 afterAll(async () => {
   await resetDb();
@@ -180,7 +184,11 @@ describe('POST /client/orders: refusals', () => {
     expect(json(short).code).toBe('INVALID_IMEI');
     const none = await portal.post('/client/orders', { serviceId: auto.serviceId });
     expect(none.statusCode).toBe(422);
-    expect(json(none)).toMatchObject({ code: 'VALIDATION_FAILED', errors: [{ field: 'imei', code: 'required' }] });
+    // Nothing sent: the required IMEI field is asked for where the form draws it.
+    expect(json(none)).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      errors: [{ field: 'inputs.imei', code: 'required' }],
+    });
     expect(await db.select().from(s.orders)).toHaveLength(0);
     expect(await walletOf(db, merchant.id)).toEqual({ wallet: '100.0000', hold: '0.0000' });
   });

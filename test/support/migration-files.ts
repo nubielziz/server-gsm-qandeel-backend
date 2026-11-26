@@ -25,6 +25,9 @@ export const CODE_STOCK_SUFFIX = '_code_stock.sql';
 /** The end of the file name of the migration that gives every plain IMEI service its IMEI field (decision 071). */
 export const IMEI_MAIN_INPUT_SUFFIX = '_imei_main_input_field.sql';
 
+/** The end of the file name of the migration that adds the field type `imei` and gives it to the IMEI fields (decision 073). */
+export const IMEI_FIELD_TYPE_SUFFIX = '_imei_field_type.sql';
+
 /**
  * The file name of the migration that ends with a suffix.
  *

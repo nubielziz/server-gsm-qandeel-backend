@@ -38,7 +38,9 @@ const PLACE_FIELDS = {
 const PlaceImeiParams = z.object({
   ...PLACE_FIELDS,
   IMEI: Text.optional().describe(
-    'The IMEI of an IMEI service (15 digits, Luhn); leave it out for a server or remote service.',
+    "The main input of an IMEI service: the value of its main-input field, judged by that field's type (an IMEI, 15 digits and Luhn, " +
+      'for the type `imei`), required tick and pattern; a service without such a field takes it as sent. Leave it out for a server or ' +
+      'remote service.',
   ),
 });
 
@@ -104,7 +106,8 @@ export const dhruPlaceImeiOrder = defineDhruAction({
   summary: 'Place an IMEI, server or remote order',
   description:
     "Orders a service at the merchant's own price and holds it from the wallet. `ID` is the `SERVICEID` of `imeiservicelist`; an IMEI " +
-    'service takes `IMEI`, a server or remote service its custom fields in `CUSTOMFIELD`. The answer is immediate: `REFERENCEID` is our ' +
+    'service takes its main input as `IMEI` (decision 073: an IMEI only when its main-input field is of type `imei`) and its other ' +
+    'fields in `CUSTOMFIELD`, a server or remote service its custom fields in `CUSTOMFIELD`. The answer is immediate: `REFERENCEID` is our ' +
     'order id (status 0). A price that rose more than the tolerance above the price last listed is refused with "Price changed. Please ' +
     'refresh the service list and order again."; a balance that is too low with "Not enough credits". A File service is placed with ' +
     '`placefileorder`.',

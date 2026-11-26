@@ -87,9 +87,10 @@ export type ServiceDuplicateRule = (typeof SERVICE_DUPLICATE_RULES)[number];
 /**
  * Input types of a custom service field.
  *
- * Why: the console's service field wire enum (PUT /admin/services/:id/fields).
+ * Why: the console's service field wire enum (PUT /admin/services/:id/fields). Decision 073 adds `imei`: the field holds one IMEI (read as
+ * digits, 15 with a valid Luhn check digit), on any service type; it is the default main input of an IMEI service.
  */
-export const SERVICE_FIELD_TYPES = ['text', 'number', 'select', 'textarea'] as const;
+export const SERVICE_FIELD_TYPES = ['text', 'number', 'select', 'textarea', 'imei'] as const;
 
 /** One value of {@link SERVICE_FIELD_TYPES}. */
 export type ServiceFieldType = (typeof SERVICE_FIELD_TYPES)[number];

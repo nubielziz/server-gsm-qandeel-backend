@@ -1,7 +1,7 @@
-// Unit tests of the main input of an order (RESOLUTIONS orders-suppliers-2): one value for every service type; and where the IMEI of an
-// IMEI order was typed (decision 070).
+// Unit tests of the main input of an order (RESOLUTIONS orders-suppliers-2): one value for every service type; and the bridge that puts the
+// `imei` of an older caller onto the main-input field of an IMEI service (decisions 070 and 073).
 import { describe, expect, it } from 'bun:test';
-import { carriedImeiInputs, mainInputOf, typedImeiOf } from '@src/modules/orders/domain/main-input';
+import { bridgedImeiOf, carriedImeiInputs, mainInputOf } from '@src/modules/orders/domain/main-input';
 
 const fields = [
   { id: 3, key: 'serial', isMainInput: false, required: false, sort: 1 },
@@ -10,10 +10,28 @@ const fields = [
 ];
 
 describe('mainInputOf', () => {
-  it('an IMEI service stores the IMEI, trimmed', () => {
+  it('an IMEI service without a main-input field stores the sent imei as typed, trimmed (decision 073: no IMEI check)', () => {
     expect(mainInputOf({ type: 'imei', imei: ' 352905112490861 ', inputs: {}, fields: [] })).toBe('352905112490861');
     expect(mainInputOf({ type: 'imei', imei: '  ', inputs: {}, fields: [] })).toBeNull();
     expect(mainInputOf({ type: 'imei', inputs: {}, fields: [] })).toBeNull();
+    expect(mainInputOf({ type: 'imei', imei: ' F2LXK0ABCD ', inputs: {}, fields: [] })).toBe('F2LXK0ABCD');
+  });
+
+  it('an IMEI service with a main-input field reads that field, then the sent imei, else nothing (decision 073)', () => {
+    const flagged = fields.map((field) => ({ ...field, isMainInput: field.key === 'serial' }));
+    // The field's value wins (placement has already put a sent imei there).
+    expect(mainInputOf({ type: 'imei', imei: '352905112490861', inputs: { serial: 'ECID-1' }, fields: flagged })).toBe(
+      'ECID-1',
+    );
+    // An optional main input left empty: the sent imei, else nothing; never the first required field, which travels in CUSTOMFIELD.
+    expect(mainInputOf({ type: 'imei', imei: ' A1 ', inputs: { serial: ' ' }, fields: flagged })).toBe('A1');
+    expect(mainInputOf({ type: 'imei', inputs: { username: 'amir92' }, fields: flagged })).toBeNull();
+    expect(mainInputOf({ type: 'imei', inputs: {}, fields: flagged })).toBeNull();
+  });
+
+  it('an IMEI service without a main-input field reads the sent imei, else the rule of a server service (decision 073)', () => {
+    expect(mainInputOf({ type: 'imei', imei: ' A1 ', inputs: { username: 'amir92' }, fields })).toBe('A1');
+    expect(mainInputOf({ type: 'imei', inputs: { username: 'amir92' }, fields })).toBe('amir92');
   });
 
   it('a server or remote service stores the first required field by sort, then by id', () => {
@@ -37,8 +55,8 @@ describe('mainInputOf', () => {
       'amir92',
     );
     expect(mainInputOf({ type: 'file', inputs: { serial: 'S1' }, fields: flagged, fileName: 'input.zip' })).toBe('S1');
-    // An IMEI service stores the typed IMEI, whatever is flagged.
-    expect(mainInputOf({ type: 'imei', imei: '352905112490861', inputs, fields: flagged })).toBe('352905112490861');
+    // An IMEI service reads the flagged field first too (decision 073).
+    expect(mainInputOf({ type: 'imei', imei: '352905112490861', inputs, fields: flagged })).toBe('acc-1');
   });
 
   it("a file service stores the first field's value when it has fields, else the file name", () => {
@@ -92,51 +110,45 @@ describe('carriedImeiInputs (decision 042, decision 065)', () => {
   });
 });
 
-describe('typedImeiOf (decision 070)', () => {
-  it('reads imei when it has text, trimmed, on the item path, whatever the main-input field holds', () => {
-    expect(typedImeiOf({ imei: ' 352905112490861 ', inputs: {}, imeiPath: 'imei', fieldKey: 'serial' })).toEqual({
-      text: '352905112490861',
-      path: 'imei',
-      fieldKey: undefined,
-    });
+describe('bridgedImeiOf (decision 073)', () => {
+  it('puts a sent imei with text, trimmed, under the main-input field, over its own value, its problems on the item path', () => {
     expect(
-      typedImeiOf({
-        imei: '352905112490861',
-        inputs: { serial: '354607111076240' },
+      bridgedImeiOf({
+        imei: ' F2LXK0ABCD ',
+        inputs: { serial: 'other', note: 'x' },
         imeiPath: 'imeis.3',
         fieldKey: 'serial',
       }),
-    ).toEqual({ text: '352905112490861', path: 'imeis.3', fieldKey: undefined });
+    ).toEqual({ inputs: { serial: 'F2LXK0ABCD', note: 'x' }, paths: { serial: 'imeis.3' }, imei: 'F2LXK0ABCD' });
   });
 
-  it('reads the main-input field when imei is missing or blank, and reports on inputs.<key>', () => {
+  it('leaves the values and the paths alone when no imei has text: the field is judged on inputs.<key>', () => {
     for (const imei of [undefined, '', '   ']) {
-      expect(
-        typedImeiOf({
-          imei,
-          inputs: { serial: ' 3529 0511 2490861 ', note: 'x' },
-          imeiPath: 'imei',
-          fieldKey: 'serial',
-        }),
-      ).toEqual({ text: '3529 0511 2490861', path: 'inputs.serial', fieldKey: 'serial' });
+      const inputs = { serial: ' 3529 0511 2490861 ' };
+      expect(bridgedImeiOf({ imei, inputs, imeiPath: 'imei', fieldKey: 'serial' })).toEqual({
+        inputs,
+        paths: {},
+        imei: undefined,
+      });
     }
   });
 
-  it('asks for a missing IMEI on the main-input field when there is one, else on the item path', () => {
-    expect(typedImeiOf({ imei: undefined, inputs: {}, imeiPath: 'imei', fieldKey: 'serial' })).toEqual({
-      text: '',
-      path: 'inputs.serial',
-      fieldKey: 'serial',
-    });
-    expect(typedImeiOf({ imei: undefined, inputs: { serial: ' ' }, imeiPath: 'imei', fieldKey: 'serial' }).text).toBe(
-      '',
-    );
+  it('keeps the problems of the field on the IMEI path for a caller that cannot see it (Dhru)', () => {
     expect(
-      typedImeiOf({ imei: undefined, inputs: { serial: '352905112490861' }, imeiPath: 'IMEI', fieldKey: undefined }),
+      bridgedImeiOf({ imei: undefined, inputs: {}, imeiPath: 'IMEI', fieldKey: 'imei', onImeiPath: true }),
     ).toEqual({
-      text: '',
-      path: 'IMEI',
-      fieldKey: undefined,
+      inputs: {},
+      paths: { imei: 'IMEI' },
+      imei: undefined,
+    });
+  });
+
+  it('without a main-input field, hands back the sent imei as typed and changes no value', () => {
+    const inputs = { note: 'x' };
+    expect(bridgedImeiOf({ imei: ' A1 ', inputs, imeiPath: 'imei', fieldKey: undefined })).toEqual({
+      inputs,
+      paths: {},
+      imei: 'A1',
     });
   });
 });

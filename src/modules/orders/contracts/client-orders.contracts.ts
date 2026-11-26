@@ -98,7 +98,8 @@ const PlaceOrderBody = z
       .max(64)
       .optional()
       .describe(
-        'The IMEI of an IMEI service. The shop now types it into the main-input field (`inputs`); when both are sent, this one wins.',
+        'The main input of an IMEI service, from older pages: the value of its main-input field (it wins over a value sent under that ' +
+          "field's key; a service without such a field takes it as sent). The shop now types it into the field (`inputs`).",
       ),
     imeis: z
       .array(z.string().trim().min(1, 'Enter the IMEI.').max(64))
@@ -106,15 +107,16 @@ const PlaceOrderBody = z
       .max(MAX_BULK_IMEIS, `At most ${MAX_BULK_IMEIS} IMEIs per bulk order.`)
       .optional()
       .describe(
-        'A bulk order: one order of the same service per IMEI, placed all together or not at all. Still accepted; the shop no longer sends it.',
+        'A bulk order: one order of the same service per item, each the value of the main-input field like `imei`, placed all together ' +
+          'or not at all. Still accepted; the shop no longer sends it.',
       ),
     quantity: z.number().int().min(1).max(100_000).optional().describe("Defaults to the service's minimum."),
     inputs: z
       .record(z.string().min(1).max(60), z.string().max(500))
       .optional()
       .describe(
-        "The values of the service's custom fields by field key (`GET /client/services/:id`); on an IMEI service the IMEI goes under the " +
-          'key of the field with `isMainInput` when `imei` is not sent.',
+        "The values of the service's custom fields by field key (`GET /client/services/:id`), each judged by its field's type, " +
+          'required tick and pattern; a field of type `imei` is stored as digits.',
       ),
     fileId: zId.optional().describe('The uploaded input file of a File service.'),
   })
@@ -131,11 +133,13 @@ export const placeClientOrder = defineRoute({
     "Orders a service at the merchant's own price (the one price resolver). The price is held from the wallet in the same transaction; " +
     'an order that would cost more than the tolerance above the price the merchant last listed is refused (`PRICE_CHANGED`, with both ' +
     'prices), a smaller raise is charged and recorded; a second open order for the same service and input is refused under the ' +
-    "service's `block_open` rule (`DUPLICATE_ORDER`). An IMEI service takes its IMEI (15 digits, Luhn) under the key of its main-input " +
-    'field in `inputs` (the order form draws only the custom fields; every problem about it, `INVALID_IMEI` included, is reported on ' +
-    '`inputs.<key>`), or as `imei` (older pages; it wins when both are sent, its problems on `imei`), or `imeis` (a bulk of up to 100: ' +
-    'one order each, all placed or none; still accepted, the shop no longer sends it). A service with no main-input field needs `imei`. ' +
-    'A server or remote service takes `inputs`; a File service a `fileId` and/or `inputs`. The ' +
+    "service's `block_open` rule (`DUPLICATE_ORDER`). Every service takes its custom fields in `inputs`, each judged by its own type, " +
+    'required tick and pattern (decision 073: the service type `imei` forces nothing); a field of type `imei` holds one IMEI (spaces and ' +
+    'dashes removed, 15 digits, Luhn; else `422 INVALID_IMEI` with `invalid_imei` on `inputs.<key>`) and is stored as digits. On an IMEI ' +
+    'service the main input may also come as `imei` (older pages; it is the value of the main-input field, wins over a value under its ' +
+    'key and is reported on `imei`; a service without such a field takes it as sent) or `imeis` (a bulk of up to 100: one order each, ' +
+    'all placed or none, each item reported on `imeis.N`; still accepted, the shop no longer sends it); `imei` on another service is ' +
+    '`422 not_applicable`. A File service takes a `fileId` and/or `inputs`. The ' +
     'answer is immediate: the orders are `pending`, in the manual queue or waiting for the dispatch job. Send an `Idempotency-Key` (a new ' +
     'one per form submission) so that a double click or a retry never places or holds twice: the same key and body sends the first `201` ' +
     'again with the response header `idempotency-replayed: true` (nothing is placed); another body with the key is `409 ' +

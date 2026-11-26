@@ -2,10 +2,13 @@
 import { describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
 import {
+  INVALID_IMEI_MESSAGE,
   type PlacementField,
+  fieldValueOf,
   inputProblems,
   isValidImei,
   normalizeImei,
+  normalizedInputs,
   quantityProblem,
   totalOf,
 } from '@src/modules/orders/domain/placement-rules';
@@ -111,6 +114,62 @@ describe('inputProblems', () => {
     const problems = inputProblems([field({ regex: '^(a+)+$' })], { username: `${'a'.repeat(30)}!` });
     expect(problems).toEqual([]);
     expect(performance.now() - started).toBeLessThan(50);
+  });
+});
+
+describe('a field of type imei (decision 073)', () => {
+  const imeiField = (over: Partial<PlacementField> = {}): PlacementField => ({
+    id: 1,
+    key: 'device',
+    name: 'Device',
+    label: 'Device IMEI',
+    fieldType: 'imei',
+    options: [],
+    required: true,
+    regex: '',
+    isMainInput: false,
+    sort: 0,
+    ...over,
+  });
+
+  it('accepts one IMEI typed with spaces and dashes, on any field (main input or not)', () => {
+    expect(inputProblems([imeiField()], { device: ' 3529 0511-2490 861 ' })).toEqual([]);
+    expect(inputProblems([imeiField({ isMainInput: true })], { device: '352905112490861' })).toEqual([]);
+  });
+
+  it('refuses a bad check digit, a short value and letters with invalid_imei on its path', () => {
+    for (const value of ['352905112490860', '35290511249086', 'ABCDEF012345678']) {
+      expect(inputProblems([imeiField()], { device: value })).toEqual([
+        { field: 'inputs.device', code: 'invalid_imei', message: INVALID_IMEI_MESSAGE },
+      ]);
+    }
+    expect(inputProblems([imeiField()], { device: '352905112490860' }, { device: 'imeis.2' })[0]?.field).toBe(
+      'imeis.2',
+    );
+  });
+
+  it('keeps Required and the pattern: an optional one may be empty, a pattern is matched on the digits', () => {
+    expect(inputProblems([imeiField()], {})).toEqual([
+      { field: 'inputs.device', code: 'required', message: 'Device IMEI is required.' },
+    ]);
+    expect(inputProblems([imeiField({ required: false })], { device: '  ' })).toEqual([]);
+    const apple = imeiField({ regex: '^35\\d{13}$' });
+    expect(inputProblems([apple], { device: '35 2905 1124 90861' })).toEqual([]);
+    expect(inputProblems([apple], { device: '490154203237518' })).toEqual([
+      { field: 'inputs.device', code: 'invalid_format', message: 'Device IMEI is not in the expected format.' },
+    ]);
+  });
+
+  it('stores the digits of an imei field and leaves every other value as sent', () => {
+    expect(fieldValueOf({ fieldType: 'imei' }, ' 35-2905 112490861 ')).toBe('352905112490861');
+    expect(fieldValueOf({ fieldType: 'text' }, ' 35-2905 ')).toBe('35-2905');
+    expect(
+      normalizedInputs([imeiField(), { ...imeiField(), key: 'note', fieldType: 'text' }], {
+        device: '3529 0511 2490 861',
+        note: ' 35-29 ',
+        gone: 'x',
+      }),
+    ).toEqual({ device: '352905112490861', note: ' 35-29 ', gone: 'x' });
   });
 });
 

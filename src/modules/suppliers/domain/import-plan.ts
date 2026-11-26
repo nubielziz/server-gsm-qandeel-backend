@@ -96,7 +96,7 @@ export interface ImportedField {
   /** The hidden key, made from the supplier's field name (`fieldKeyBase`, unique in the service). */
   readonly key: string;
   readonly label: string;
-  readonly fieldType: 'text' | 'number' | 'select' | 'textarea';
+  readonly fieldType: 'text' | 'number' | 'select' | 'textarea' | 'imei';
   readonly options: string[];
   readonly required: boolean;
   /** The field's Name (decision 065): what the supplier receives in CUSTOMFIELD, unique in the service ignoring letter case. */
@@ -154,9 +154,9 @@ export const IMEI_FIELD_NAME = 'IMEI';
  * Why: decision 071: since decision 070 the order forms draw only a service's custom fields, and an IMEI service's IMEI is typed into the
  * field flagged `isMainInput`. A Dhru supplier names its main box only when it is not an IMEI (`CUSTOM`, decision 042): the IMEI is the
  * `IMEI` parameter of every IMEI order, so the supplier never lists it among its fields, and a plain IMEI service was imported with no
- * field the shop could take its IMEI in. The field is required text named and labelled `IMEI`, first in the form, with no pattern: the
- * backend checks the IMEI itself (15 digits and the Luhn digit). Its value never travels in CUSTOMFIELD: the dispatch sends the order's IMEI
- * as the `IMEI` parameter.
+ * field the shop could take its IMEI in. The field is required, named and labelled `IMEI`, first in the form, with no pattern, of type
+ * `imei` (decision 073: the field type checks the IMEI, 15 digits and the Luhn digit; the service type forces nothing). Its value never
+ * travels in CUSTOMFIELD: the dispatch sends the order's main input as the `IMEI` parameter.
  *
  * @param usedKeys the keys of the service's other fields (the key is `imei`, else `imei_2`, `imei_3`, ...)
  * @returns the field, with `sort` 0
@@ -165,7 +165,7 @@ export function imeiInputField(usedKeys: ReadonlySet<string>): ImportedField {
   return {
     key: freeFieldKey(fieldKeyBase(IMEI_FIELD_NAME), usedKeys),
     label: IMEI_FIELD_NAME,
-    fieldType: 'text',
+    fieldType: 'imei',
     options: [],
     required: true,
     supplierKey: IMEI_FIELD_NAME,
@@ -353,7 +353,8 @@ export interface ImportShape {
  * `Requires.Custom`. Every reader of the catalog type of a supplier service (the import, the preview, the quick add) asks this.
  * A `server`, `remote` or `file` supplier service is never changed by `CUSTOM`. Decision 065: a service that stays `imei` takes the
  * first field whose Name is IMEI in any letter case as its main input ({@link imeiNamedFieldIndex}): it is the IMEI itself, so no form
- * draws a second IMEI box for it and its value is never sent in CUSTOMFIELD. Decision 071: a service that stays `imei` with no field named
+ * draws a second IMEI box for it and its value is never sent in CUSTOMFIELD; decision 073 makes it of type `imei` when the supplier's type
+ * is text (other types are kept). Decision 071: a service that stays `imei` with no field named
  * IMEI gets one ({@link imeiInputField}) as its first field, the supplier's fields after it, so the shop's form (only the fields, decision
  * 070) has a box for the IMEI.
  *
@@ -372,9 +373,15 @@ export function importShape(row: {
     if (type !== 'imei') return { type, fields: others };
     const named = imeiNamedFieldIndex(others);
     if (named >= 0) {
+      // Decision 073: the flagged field holds the IMEI, so a supplier field that is plain text becomes of type `imei` (as migration 0072
+      // did to the stored ones); a list, a number or a text area keeps the supplier's type.
       return {
         type,
-        fields: others.map((other, index) => (index === named ? { ...other, isMainInput: true } : other)),
+        fields: others.map((other, index) =>
+          index === named
+            ? { ...other, isMainInput: true, fieldType: other.fieldType === 'text' ? 'imei' : other.fieldType }
+            : other,
+        ),
       };
     }
     // Decision 071: the supplier never lists the IMEI (it is the IMEI parameter), so the service gets the field the forms take it in.
