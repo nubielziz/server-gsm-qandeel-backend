@@ -93,6 +93,12 @@ const FieldSchema = z.object({
   fieldType: z.enum(['text', 'number', 'select', 'textarea']),
   options: z.array(z.string()).describe('The choices of a `select` field.'),
   required: z.boolean(),
+  isMainInput: z
+    .boolean()
+    .describe(
+      "The service's main input (at most one field). On an IMEI service the buyer types the IMEI here: it is checked as an IMEI " +
+        '(15 digits, Luhn) and sent as the IMEI.',
+    ),
 });
 
 const ServicePageSchema = ServiceCardSchema.extend({
@@ -107,7 +113,10 @@ const ServicePageSchema = ServiceCardSchema.extend({
   }),
   fields: z
     .array(FieldSchema)
-    .describe('What the order form asks for besides the IMEI. On an IMEI service the main-input field is left out.'),
+    .describe(
+      'Everything the order form asks for, in form order: the form draws only these fields. On an IMEI service the IMEI is typed into ' +
+        'the field with `isMainInput` (a service without one takes the IMEI as `imei`).',
+    ),
   faqs: z.array(z.object({ question: z.string(), answerMd: z.string() })),
 });
 
@@ -317,7 +326,7 @@ export const showStoreService = defineRoute({
       seoTitle: 'iCloud Clean / Lost Check',
       seoDescription: 'Check iCloud status from the IMEI.',
       quantity: { min: 1, max: 1, options: [] },
-      fields: [],
+      fields: [{ key: 'imei', label: 'IMEI', fieldType: 'text', options: [], required: true, isMainInput: true }],
       faqs: [{ question: 'How fast is it?', answerMd: 'Most checks finish in two minutes.' }],
     },
   },

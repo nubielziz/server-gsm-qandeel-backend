@@ -1,6 +1,7 @@
 // The main input of an order (RESOLUTIONS orders-suppliers-2): the one value stored in `orders.imei` for every service type,
-// written by one helper that every placement path (portal, Dhru, store, admin) calls, and the carry of a shop IMEI onto the
-// supplier's main box field after the service's type changed (decision 042). Pure; no database.
+// written by one helper that every placement path (portal, Dhru, store, admin) calls, the carry of a shop IMEI onto the
+// supplier's main box field after the service's type changed (decision 042), and where the IMEI of an IMEI order was typed
+// (decision 070). Pure; no database.
 
 /** The part of a service field the helper needs. */
 export interface MainInputField {
@@ -100,4 +101,45 @@ export function carriedImeiInputs(source: {
   const box = [...source.fields].sort((a, b) => a.sort - b.sort || a.id - b.id).find((field) => field.isMainInput);
   if (!box || (source.inputs[box.key]?.trim() ?? '') !== '') return source.inputs;
   return { ...source.inputs, [box.key]: imei };
+}
+
+/** Where the IMEI of one item of an IMEI service order was typed (decision 070). */
+export interface TypedImei {
+  /** The IMEI as typed, trimmed (not yet normalised); `''` when the request has none. */
+  readonly text: string;
+  /** The request path every problem about the IMEI is reported on: the item's IMEI path, or `inputs.<key>` of the main-input field. */
+  readonly path: string;
+  /** The key of the main-input field the IMEI is read from (and asked for when it is missing); `undefined` when only the IMEI path counts. */
+  readonly fieldKey: string | undefined;
+}
+
+/**
+ * Finds the IMEI of one item of an order for an IMEI service, and the request path its problems belong to.
+ *
+ * Why: decision 070: the order forms of the shop and the portal draw only the service's custom fields, so the buyer types the IMEI into
+ * the field flagged as the main input (decision 065). Older shop pages and every Dhru call still send it as `imei` (Dhru's `IMEI`), and
+ * that value wins when it has text, with its problems on the item's IMEI path as before. Otherwise the IMEI is the value under the
+ * main-input field's key, and every problem about it (missing, `invalid_imei`, the field's pattern) is reported on `inputs.<key>`,
+ * where the form draws the box. With neither and no main-input field (or a caller that reads the IMEI only from its own parameter),
+ * the IMEI is missing on the item's IMEI path, as before.
+ *
+ * @param source the `imei` the request sent, the values by field key, the item's IMEI path (`imei`, `imeis.N`, `IMEI`) and the key of
+ *   the main-input field the IMEI may be typed into (`undefined`: the service has none, or the caller reads the IMEI only as `imei`)
+ * @returns the typed text (trimmed, `''` for none), the path its problems are reported on and the field it came from, if any
+ * @see docs/decisions/070-fields-only-order-forms.md
+ */
+export function typedImeiOf(source: {
+  readonly imei: string | undefined;
+  readonly inputs: Readonly<Record<string, string>>;
+  readonly imeiPath: string;
+  readonly fieldKey: string | undefined;
+}): TypedImei {
+  const sent = source.imei?.trim() ?? '';
+  // `imei` wins when it has text (both sent: the order of before); a field-only form never sends it.
+  if (sent !== '' || source.fieldKey === undefined) return { text: sent, path: source.imeiPath, fieldKey: undefined };
+  return {
+    text: source.inputs[source.fieldKey]?.trim() ?? '',
+    path: `inputs.${source.fieldKey}`,
+    fieldKey: source.fieldKey,
+  };
 }

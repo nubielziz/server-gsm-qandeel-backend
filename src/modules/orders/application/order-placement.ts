@@ -24,7 +24,7 @@ import { SettingsReader } from '../../platform';
 import type { Order } from '../db/schema';
 import { PLACEMENT_REFUSAL_DETAILS, placementRefusal } from '../domain/buyer-rules';
 import { inputsByFieldName } from '../domain/field-inputs';
-import { mainInputOf } from '../domain/main-input';
+import { mainInputOf, typedImeiOf } from '../domain/main-input';
 import { placementDispatchState } from '../domain/order-machine';
 import {
   type TimelineActor,
@@ -60,7 +60,10 @@ export interface PlacementItem {
   readonly imei?: string | undefined;
   /** Custom field values by field key (by field Name, or key, for a Dhru order: decision 065). */
   readonly inputs: Readonly<Record<string, string>>;
-  /** Where the problems of this item are named in the request (`imei`, `imeis.2`): the console maps them onto form fields. */
+  /**
+   * Where the problems of this item's IMEI are named in the request when it came as `imei` (`imei`, `imeis.2`, Dhru's `IMEI`): the forms
+   * map them onto their fields. An IMEI typed into the main-input field is reported on `inputs.<key>` instead (decision 070).
+   */
   readonly imeiField: string;
 }
 
@@ -98,7 +101,9 @@ function detailOf(errors: readonly FieldError[]): string {
  * Rules (the brief): the price is the resolver's for this merchant; an order more than the
  * tolerance above the price the merchant last saw is refused (`409 PRICE_CHANGED`, user rule 9), a smaller raise is charged and
  * recorded in `pricing_snapshot`; a second open order for the same service and input is refused under `duplicate_rule =
- * block_open` (`409 DUPLICATE_ORDER`, catalog-2); `orders.imei` holds the main input (orders-suppliers-2); `placed_at` and
+ * block_open` (`409 DUPLICATE_ORDER`, catalog-2); `orders.imei` holds the main input (orders-suppliers-2): on an IMEI service the IMEI
+ * sent as `imei`, else (not on Dhru) the one typed into the field flagged as the main input (decision 070), normalised and Luhn-checked
+ * either way; `placed_at` and
  * `created_at` are never set, so both take the transaction time (orders-suppliers-1); the first dispatch state is the placement
  * rule's (manual, or pending with a `order.dispatch_requested` row for the dispatch job of feature 6). An archived, disabled or
  * hidden service is not orderable. All items of a request are placed in the caller's one transaction: the first refusal
@@ -132,7 +137,7 @@ export class OrderPlacement {
    * @param request the buyer account, the service and the items
    * @returns the stored orders, in the order of the items
    * @throws {AppError} `NOT_FOUND` / `SERVICE_DISABLED` (the service cannot be ordered), `INVALID_IMEI` or `VALIDATION_FAILED`
-   *   (422, with the field), `PRICE_CHANGED`, `DUPLICATE_ORDER` (409), `INSUFFICIENT_FUNDS` (402), `UNAUTHORIZED` (the
+   *   (422, with the field; an IMEI typed into the main-input field is reported on `inputs.<key>`, decision 070), `PRICE_CHANGED`, `DUPLICATE_ORDER` (409), `INSUFFICIENT_FUNDS` (402), `UNAUTHORIZED` (the
    *   account no longer exists), `RANK_NOT_ALLOWED` (403: the account holds a retail rank), `ACCOUNT_SUSPENDED` (403), `WALLET_FROZEN`
    *   (409: its merchant wallet is on hold)
    */
@@ -336,16 +341,29 @@ export class OrderPlacement {
       const named = request.source === 'dhru' ? inputsByFieldName(fields, trimmed) : { inputs: trimmed, problems: [] };
       problems.push(...named.problems);
       const { inputs } = named;
+      // A service may define a main-input field (decision 065: the field flagged `isMainInput`, whatever its key; it carries the pattern the
+      // supplier wants): on an IMEI service it is the IMEI itself.
+      const box = fields.find((field) => field.isMainInput);
       let imei: string | undefined;
+      // Where the problems of the IMEI are reported: the item's IMEI path, or the main-input field when the IMEI was typed there.
+      let imeiPath = item.imeiField;
       if (service.type === 'imei') {
-        const typed = item.imei?.trim() ?? '';
-        if (typed === '') {
-          problems.push({ field: item.imeiField, code: 'required', message: 'Enter the IMEI.' });
+        // Decision 070: the forms draw only the custom fields, so the IMEI is `imei` when it is sent, else the value under the main-input
+        // field's key. Dhru carries it in its own `IMEI` parameter only (its list does not show that field), so a Dhru order reads no field.
+        const typed = typedImeiOf({
+          imei: item.imei,
+          inputs,
+          imeiPath: item.imeiField,
+          fieldKey: request.source === 'dhru' ? undefined : box?.key,
+        });
+        imeiPath = typed.path;
+        if (typed.text === '') {
+          problems.push({ field: imeiPath, code: 'required', message: 'Enter the IMEI.' });
         } else {
-          imei = normalizeImei(typed);
+          imei = normalizeImei(typed.text);
           if (!isValidImei(imei)) {
             imeiProblems.push({
-              field: item.imeiField,
+              field: imeiPath,
               code: 'invalid_imei',
               message: 'This IMEI is not valid: it must be 15 digits with a correct check digit.',
             });
@@ -358,17 +376,15 @@ export class OrderPlacement {
           message: 'This service does not take an IMEI.',
         });
       }
-      // A service may define a main-input field (decision 065: the field flagged `isMainInput`, whatever its key; it carries the pattern the
-      // supplier wants): it receives the IMEI itself. The typed IMEI is the value stored in `orders.imei` and sent to the supplier, so it
-      // is the one the pattern judges: a value under that field's key never stands in for it. On an IMEI service no form draws that field,
-      // so its problems are shown on the item's IMEI path; a missing IMEI is already refused there.
-      const box = fields.find((field) => field.isMainInput);
+      // The main-input field receives the IMEI. The IMEI (normalised) is the value stored in `orders.imei` and sent to the supplier, so it
+      // is the one the pattern judges: when the IMEI came as `imei`, a value under that field's key never stands in for it. On an IMEI
+      // service the field's problems are shown where the IMEI's are (`imeiPath`); a missing IMEI is already refused there.
       const fieldInputs = imei !== undefined && box ? { ...inputs, [box.key]: imei } : inputs;
-      const onImei = service.type === 'imei' && box ? { [box.key]: item.imeiField } : {};
+      const onImei = service.type === 'imei' && box ? { [box.key]: imeiPath } : {};
       const fieldProblems = inputProblems(fields, fieldInputs, onImei);
       problems.push(
         ...(service.type === 'imei' && imei === undefined
-          ? fieldProblems.filter((problem) => problem.field !== item.imeiField)
+          ? fieldProblems.filter((problem) => problem.field !== imeiPath)
           : fieldProblems),
       );
       // What is stored under that key is the typed IMEI too, so the order never shows two different IMEIs.

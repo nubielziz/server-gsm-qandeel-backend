@@ -1,7 +1,9 @@
 // The pattern of a service's main-input field (the one flagged `isMainInput`, whatever its key, decision 065) judges the IMEI the buyer typed
-// (the value that is stored and sent to the supplier), on every order surface: the portal and Dhru. Its problems are reported on the item's
-// IMEI path, where the forms show the IMEI's (no form draws that field). A value the buyer also puts under that field's key never stands in
-// for it, and a field that is only keyed `imei` (not flagged) is an ordinary field. Real application, Postgres and Redis.
+// (the value that is stored and sent to the supplier), on every order surface: the portal and Dhru. When the IMEI is sent as `imei` its
+// problems are reported on the item's IMEI path; a value the buyer also puts under that field's key never stands in for it. A missing IMEI
+// is asked for on the field, where the fields-only form draws it (decision 070; the IMEI typed there is tested in
+// `imei-main-input-placement.test.ts`). A field that is only keyed `imei` (not flagged) is an ordinary field. Real application, Postgres
+// and Redis.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
@@ -78,15 +80,16 @@ describe('the pattern of the main-input field keyed imei on an IMEI service', ()
     await expectNothingPlaced();
   });
 
-  it('portal: reports a bulk IMEI the pattern refuses on its own place in the list, and a missing IMEI once', async () => {
+  it('portal: reports a bulk IMEI the pattern refuses on its own place in the list, and a missing IMEI once, on the field', async () => {
     const portal = await portalFor(t, world.merchant.id);
     const bulk = await portal.post('/client/orders', { serviceId: world.auto.serviceId, imeis: [ACCEPTED, REFUSED] });
     expect(bulk.statusCode).toBe(422);
     expect(json(bulk).errors).toEqual([expect.objectContaining({ field: 'imeis.1', code: 'invalid_format' })]);
+    // Decision 070: with no `imei`, the IMEI is asked for where the form draws it, the main-input field.
     const missing = await portal.post('/client/orders', { serviceId: world.auto.serviceId });
     expect(missing.statusCode).toBe(422);
     expect(json(missing).errors).toEqual([
-      expect.objectContaining({ field: 'imei', code: 'required', message: 'Enter the IMEI.' }),
+      expect.objectContaining({ field: 'inputs.imei', code: 'required', message: 'Enter the IMEI.' }),
     ]);
     await expectNothingPlaced();
   });

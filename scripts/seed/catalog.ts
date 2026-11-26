@@ -58,6 +58,8 @@ function codesFor(serviceId: number, prefix: string, count: number, firstId: num
  *
  * Why: the console's Services & pricing page and the later pricing, order and storefront features start from the same 27
  * services. Every service has `effective_cost` equal to its cost (no supplier is seeded yet: feature 6 links them and recomputes).
+ * Every IMEI service gets the main-input field `imei` (decision 070: the order forms draw only the custom fields, so the demo shop and
+ * portal can order it); the Z3X credits keep their one account field.
  *
  * @param db the transaction to write with
  * @param demo the loaded frontend demo state
@@ -137,10 +139,23 @@ export async function seedCatalog(db: DbExecutor, demo: DemoSeed, config?: AppCo
   // One custom field and one set of option lists, so the console's dialogs have something to show (the mock's).
   const z3x = idOfCode.get('SRV-Z3X-10');
   const att = idOfCode.get('IMEI-ATT-USA');
-  const fields = await insertRows(
-    db,
-    s.serviceFields,
-    z3x === undefined
+  // Decision 070: the order forms draw only the custom fields, so every demo IMEI service gets the main-input field its IMEI is typed into
+  // (demo data only: production IMEI services get theirs from staff, no migration adds it).
+  const imeiFields = demoServices
+    .filter((service) => service.type === 'IMEI')
+    .map((service) => ({
+      serviceId: demoNumericId(service.id),
+      key: 'imei',
+      label: 'IMEI',
+      fieldType: 'text' as const,
+      required: true,
+      supplierKey: 'IMEI',
+      isMainInput: true,
+      sort: 0,
+      createdAt,
+    }));
+  const fields = await insertRows(db, s.serviceFields, [
+    ...(z3x === undefined
       ? []
       : [
           {
@@ -153,8 +168,9 @@ export async function seedCatalog(db: DbExecutor, demo: DemoSeed, config?: AppCo
             sort: 0,
             createdAt,
           },
-        ],
-  );
+        ]),
+    ...imeiFields,
+  ]);
   await syncIdentity(db, s.serviceFields);
   const options = await insertRows(
     db,

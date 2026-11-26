@@ -11,7 +11,14 @@ import { CapabilityTokenVault, EncryptionService } from '../../../infra/crypto';
 import { StorefrontServices, type SellableField } from '../../catalog';
 import { AccountDirectory, type AccountRecord, canAct } from '../../identity';
 import { CustomerWallets, StorefrontMoney } from '../../money';
-import { OrderReadService, inputProblems, isValidImei, normalizeImei, quantityProblem } from '../../orders';
+import {
+  OrderReadService,
+  inputProblems,
+  isValidImei,
+  normalizeImei,
+  quantityProblem,
+  typedImeiOf,
+} from '../../orders';
 import { Blocklist } from '../../risk';
 import { StorefrontPolicies, StorefrontQuotes, inCurrency } from '../../storefront';
 import type { openCheckoutSession } from '../contracts/checkout.contracts';
@@ -101,8 +108,9 @@ function merchantAtRetailDoor(): AppError {
  * signed-in buyer is not matched by a blocklist entry limited to guest checkouts; and the visitor's country the proxy header reported is
  * kept on the session. While a country has a regional tax window in force, the checkout must name a region that has one (any case); the
  * region is the buyer's own statement, like the country. The service's main-input field (the one flagged `isMainInput`, whatever its key, decision 065)
- * is judged (pattern and required) on the typed IMEI, never on a value sent under its key, its problems are reported on `imei`, and what is stored
- * under that key is the typed IMEI, as on the other order surfaces.
+ * is judged (pattern and required) on the IMEI, and what is stored under that key is the IMEI, as on the other order surfaces. Decision 070: the
+ * shop's form draws only the custom fields, so the IMEI is `imei` when the request sends it (older shop pages; its problems on `imei`, a value
+ * under the field's key never stands in for it), else the value typed into the main-input field (every problem about it on `inputs.<key>`).
  *
  * Side effects: one transaction: may insert a guest row of `clients` (through `AccountDirectory`) when the email is new, holds the signed-in
  * account's row `FOR KEY SHARE`, and inserts one `checkout_sessions` row (with `account_id` and `ip_country`).
@@ -133,7 +141,8 @@ export class CheckoutSessionService {
    * @throws {AppError} `UNAUTHORIZED` when the shop requires an account and nobody is signed in (or the signed-in account is
    *   gone); `RANK_NOT_ALLOWED` (403) when the signed-in account holds a merchant rank (nothing is written); `VALIDATION_FAILED`
    *   for a service that cannot be sold or ordered online, a quantity or order field that does not fit, a currency that is not offered,
-   *   or (signed in) an email that is not the account's; `INVALID_IMEI` for a bad IMEI;
+   *   or (signed in) an email that is not the account's, or (on `inputs.<key>`, `required`) an IMEI missing from the main-input field;
+   *   `INVALID_IMEI` for a bad IMEI (on `imei`, or on `inputs.<key>` when it was typed into the main-input field);
    *   `ACCOUNT_SUSPENDED` for an account or guest row that may not act, a suspended, blocked or erased login row of the typed
    *   address (signed out), or a blocklisted email, email domain or IMEI (one message for all);
    *   `VALIDATION_FAILED` on `country` (`unsupported`) for a country without a tax window while the shop has one; `VALIDATION_FAILED` on
@@ -174,20 +183,31 @@ export class CheckoutSessionService {
 
       const quantity = request.quantity ?? service.minQty;
       const fields = await this.services.fields(tx, service.id);
-      const imei = service.type === 'imei' ? this.readImei(request.imei) : undefined;
+      // A service may define a main-input field (decision 065: flagged `isMainInput`, whatever its key; it carries the pattern the supplier
+      // wants): on an IMEI service it is the IMEI itself. Decision 070: the shop draws only the custom fields, so the IMEI is `imei` when the
+      // request sends it (older shop pages), else the value typed into that field; its problems are reported where it was typed.
+      const typedInputs = request.inputs ?? {};
+      const box = fields.find((field) => field.isMainInput);
+      const typed =
+        service.type === 'imei'
+          ? typedImeiOf({ imei: request.imei, inputs: typedInputs, imeiPath: 'imei', fieldKey: box?.key })
+          : undefined;
+      // Nothing typed into the main-input field is a missing answer of the form; nothing at all without such a field is refused as a bad
+      // IMEI on `imei`, as before.
+      const missing = typed !== undefined && typed.text === '' && typed.fieldKey !== undefined;
+      const imei = typed === undefined || missing ? undefined : this.readImei(typed.text, typed.path);
       const problems: FieldError[] = [];
       const quantityIssue = quantityProblem(quantity, service);
       if (quantityIssue !== undefined)
         problems.push({ field: 'quantity', code: 'invalid_quantity', message: quantityIssue });
-      // A service may define a main-input field (decision 065: flagged `isMainInput`, whatever its key; it carries the pattern the supplier
-      // wants): it receives the IMEI itself. The typed IMEI is the value stored encrypted and sent to the supplier, so it is the one the pattern
-      // judges and the one that satisfies a required field: a value under that field's key never stands in for it. The shop draws no box
-      // for that field, so its problems are shown on `imei`, where the checkout shows the IMEI's.
-      const typedInputs = request.inputs ?? {};
-      const box = fields.find((field) => field.isMainInput);
+      if (missing) problems.push({ field: typed.path, code: 'required', message: 'Enter the IMEI.' });
+      // The IMEI is the value stored encrypted and sent to the supplier, so it is the one the pattern judges and the one that satisfies a
+      // required field: when it came as `imei`, a value under that field's key never stands in for it. The field's problems are shown where
+      // the IMEI's are.
       const fieldInputs = imei !== undefined && box ? { ...typedInputs, [box.key]: imei } : typedInputs;
-      const onImei = imei !== undefined && box ? { [box.key]: 'imei' } : {};
-      problems.push(...inputProblems(fields.map(placementField), fieldInputs, onImei));
+      const onImei = typed !== undefined && box ? { [box.key]: typed.path } : {};
+      const fieldProblems = inputProblems(fields.map(placementField), fieldInputs, onImei);
+      problems.push(...(missing ? fieldProblems.filter((problem) => problem.field !== typed.path) : fieldProblems));
       if (problems.length > 0) throw new AppError('VALIDATION_FAILED', { errors: problems });
 
       // RULES risk 5: a blocklisted email, email domain or IMEI cannot open a checkout. It gets the answer a blocked account gets, so the
@@ -312,13 +332,13 @@ export class CheckoutSessionService {
     };
   }
 
-  /** The IMEI the buyer typed, digits only, or the `INVALID_IMEI` refusal. */
-  private readImei(typed: string | undefined): string {
-    const imei = normalizeImei(typed ?? '');
+  /** The IMEI the buyer typed, digits only, or the `INVALID_IMEI` refusal on `path` (`imei`, or the main-input field's `inputs.<key>`). */
+  private readImei(typed: string, path: string): string {
+    const imei = normalizeImei(typed);
     if (!isValidImei(imei)) {
       throw new AppError('INVALID_IMEI', {
         detail: 'This is not a valid IMEI. Check the 15 digits (dial *#06# on the phone).',
-        errors: [{ field: 'imei', code: 'invalid_imei', message: 'Enter a valid 15-digit IMEI.' }],
+        errors: [{ field: path, code: 'invalid_imei', message: 'Enter a valid 15-digit IMEI.' }],
       });
     }
     return imei;

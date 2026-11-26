@@ -41,6 +41,8 @@ export interface ClientServiceDetailView extends ClientServiceView {
     required: boolean;
     options: string[];
     regex: string;
+    /** The field is the service's main input (decision 065); on an IMEI service the merchant types the IMEI into it (decision 070). */
+    isMainInput: boolean;
   }>;
   readonly options: Array<{ list: ServiceOptionList; value: string; label: string }>;
 }
@@ -116,7 +118,7 @@ export class ClientCatalogService {
    *
    * @param clientId the signed-in merchant
    * @param serviceId the service id
-   * @returns the service at the merchant's price with its fields and options
+   * @returns the service at the merchant's price with its fields (every one, the main-input field flagged: decision 070) and options
    * @throws {AppError} `NOT_FOUND` (404: unknown, archived, off, or hidden from the merchant's group); `UNAUTHORIZED` (401) and
    *   `RANK_NOT_ALLOWED` (403) as {@link ClientCatalogService.list}
    */
@@ -131,18 +133,17 @@ export class ClientCatalogService {
     await this.remember(clientId, [entry]);
     return {
       ...toClientServiceView(entry),
-      // The supplier's field names and values are internal: the merchant sees what its own order form needs. The main input of an IMEI
-      // service is the IMEI the form already asks for in its own box (decision 065).
-      fields: fields
-        .filter((field) => !(entry.service.type === 'imei' && field.isMainInput))
-        .map((field) => ({
-          key: field.key,
-          label: field.label,
-          fieldType: field.fieldType,
-          required: field.required,
-          options: field.options,
-          regex: field.regex,
-        })),
+      // The supplier's field names and values are internal: the merchant sees what its own order form needs. Decision 070: the form draws
+      // only these fields, so the main input (decision 065) is listed with its flag: on an IMEI service the IMEI is typed into it.
+      fields: fields.map((field) => ({
+        key: field.key,
+        label: field.label,
+        fieldType: field.fieldType,
+        required: field.required,
+        options: field.options,
+        regex: field.regex,
+        isMainInput: field.isMainInput,
+      })),
       options: options.map((option) => ({ list: option.list, value: option.value, label: option.label })),
     };
   }

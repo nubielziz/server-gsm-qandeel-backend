@@ -484,16 +484,16 @@ export class StorefrontCatalogService {
         max: priced.service.maxQty,
         options: [...priced.service.qtyOptions],
       },
-      // The main input of an IMEI service is the IMEI the order form asks for in its own box (decision 065).
-      fields: fields
-        .filter((field) => !(priced.service.type === 'imei' && field.isMainInput))
-        .map((field) => ({
-          key: field.key,
-          label: field.label,
-          fieldType: field.fieldType,
-          options: [...field.options],
-          required: field.required,
-        })),
+      // Decision 070: the order form draws only these fields. On an IMEI service the buyer types the IMEI into the one flagged as the
+      // main input (decision 065), so it is listed with the flag, never left out.
+      fields: fields.map((field) => ({
+        key: field.key,
+        label: field.label,
+        fieldType: field.fieldType,
+        options: [...field.options],
+        required: field.required,
+        isMainInput: field.isMainInput,
+      })),
       faqs: faqs.map((faq) => ({ question: faq.question, answerMd: faq.answerMd })),
     };
   }

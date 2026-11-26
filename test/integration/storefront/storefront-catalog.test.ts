@@ -332,7 +332,7 @@ describe('GET /store/v1/services/:slug', () => {
       })
       .where(eq(s.serviceListings.id, world.icloud.listingId));
     await db.insert(s.serviceFields).values([
-      // The main input of an IMEI service is the IMEI the order form asks for in its own box.
+      // Decision 070: the main input of an IMEI service is the field the order form takes the IMEI in; it is listed with its flag.
       {
         serviceId: world.icloud.serviceId,
         key: 'imei',
@@ -375,14 +375,17 @@ describe('GET /store/v1/services/:slug', () => {
     expect(page.descriptionMd).toBe('We check **iCloud**.');
     expect(page.etaText).toBe('Usually 2 minutes');
     expect(page.quantity).toEqual({ min: 1, max: 1, options: [] });
-    expect(page.fields).toEqual([{ key: 'note', label: 'Note', fieldType: 'text', options: [], required: false }]);
+    expect(page.fields).toEqual([
+      { key: 'imei', label: 'IMEI', fieldType: 'text', options: [], required: true, isMainInput: true },
+      { key: 'note', label: 'Note', fieldType: 'text', options: [], required: false, isMainInput: false },
+    ]);
     expect(page.faqs).toEqual([{ question: 'How fast?', answerMd: 'Two minutes.' }]);
     expect(page.price.gross).toBe('3.8400');
     expect(JSON.stringify(page)).not.toContain('secret_supplier_key');
     expect(JSON.stringify(page)).not.toContain('secret_main_input_name');
   });
 
-  it('leaves the main-input field out of an IMEI service page only', async () => {
+  it('lists the main-input field with its flag on every service page, IMEI services included (decision 070)', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
     const credits = await insertCategory(db, { name: 'Credits', type: 'server' });
@@ -397,11 +400,16 @@ describe('GET /store/v1/services/:slug', () => {
       { serviceId: world.icloud.serviceId, key: 'imei', label: 'IMEI', supplierKey: 'IMEI', sort: 1 },
       { serviceId: server.serviceId, key: 'device', label: 'Device', supplierKey: 'Device', isMainInput: true },
     ]);
-    // The flag decides, not the key or the text of the Name: the field named IMEI that is not the main input stays.
+    // The flag decides, not the key or the text of the Name: the field named IMEI that is not the main input is an ordinary field.
+    const flags = (page: { fields: Array<{ key: string; isMainInput: boolean }> }) =>
+      page.fields.map((field) => [field.key, field.isMainInput]);
     const imei = body(await get(`/store/v1/services/${world.icloud.slug}`));
-    expect(imei.fields.map((field: { key: string }) => field.key)).toEqual(['imei']);
+    expect(flags(imei)).toEqual([
+      ['serial', true],
+      ['imei', false],
+    ]);
     const serverPage = body(await get(`/store/v1/services/${server.slug}`));
-    expect(serverPage.fields.map((field: { key: string }) => field.key)).toEqual(['device']);
+    expect(flags(serverPage)).toEqual([['device', true]]);
   });
 
   it('answers 404 for an unknown slug, a page that is off and a service that cannot be sold', async () => {

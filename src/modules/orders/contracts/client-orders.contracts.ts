@@ -91,18 +91,31 @@ export const getMyDashboard = defineRoute({
 const PlaceOrderBody = z
   .object({
     serviceId: zId,
-    imei: z.string().trim().min(1, 'Enter the IMEI.').max(64).optional().describe('The IMEI of an IMEI service.'),
+    imei: z
+      .string()
+      .trim()
+      .min(1, 'Enter the IMEI.')
+      .max(64)
+      .optional()
+      .describe(
+        'The IMEI of an IMEI service. The shop now types it into the main-input field (`inputs`); when both are sent, this one wins.',
+      ),
     imeis: z
       .array(z.string().trim().min(1, 'Enter the IMEI.').max(64))
       .min(1, 'Add at least one IMEI.')
       .max(MAX_BULK_IMEIS, `At most ${MAX_BULK_IMEIS} IMEIs per bulk order.`)
       .optional()
-      .describe('A bulk order: one order of the same service per IMEI, placed all together or not at all.'),
+      .describe(
+        'A bulk order: one order of the same service per IMEI, placed all together or not at all. Still accepted; the shop no longer sends it.',
+      ),
     quantity: z.number().int().min(1).max(100_000).optional().describe("Defaults to the service's minimum."),
     inputs: z
       .record(z.string().min(1).max(60), z.string().max(500))
       .optional()
-      .describe("The values of the service's custom fields by field key (`GET /client/services/:id`)."),
+      .describe(
+        "The values of the service's custom fields by field key (`GET /client/services/:id`); on an IMEI service the IMEI goes under the " +
+          'key of the field with `isMainInput` when `imei` is not sent.',
+      ),
     fileId: zId.optional().describe('The uploaded input file of a File service.'),
   })
   .refine((body) => body.imei === undefined || body.imeis === undefined, {
@@ -118,8 +131,11 @@ export const placeClientOrder = defineRoute({
     "Orders a service at the merchant's own price (the one price resolver). The price is held from the wallet in the same transaction; " +
     'an order that would cost more than the tolerance above the price the merchant last listed is refused (`PRICE_CHANGED`, with both ' +
     'prices), a smaller raise is charged and recorded; a second open order for the same service and input is refused under the ' +
-    "service's `block_open` rule (`DUPLICATE_ORDER`). An IMEI service takes `imei` (15 digits, Luhn) or `imeis` (a bulk of up to 100: " +
-    'one order each, all placed or none); a server or remote service takes `inputs`; a File service a `fileId` and/or `inputs`. The ' +
+    "service's `block_open` rule (`DUPLICATE_ORDER`). An IMEI service takes its IMEI (15 digits, Luhn) under the key of its main-input " +
+    'field in `inputs` (the order form draws only the custom fields; every problem about it, `INVALID_IMEI` included, is reported on ' +
+    '`inputs.<key>`), or as `imei` (older pages; it wins when both are sent, its problems on `imei`), or `imeis` (a bulk of up to 100: ' +
+    'one order each, all placed or none; still accepted, the shop no longer sends it). A service with no main-input field needs `imei`. ' +
+    'A server or remote service takes `inputs`; a File service a `fileId` and/or `inputs`. The ' +
     'answer is immediate: the orders are `pending`, in the manual queue or waiting for the dispatch job. Send an `Idempotency-Key` (a new ' +
     'one per form submission) so that a double click or a retry never places or holds twice: the same key and body sends the first `201` ' +
     'again with the response header `idempotency-replayed: true` (nothing is placed); another body with the key is `409 ' +
@@ -149,7 +165,7 @@ export const placeClientOrder = defineRoute({
     'IDEMPOTENCY_IN_PROGRESS',
   ],
   examples: {
-    request: { serviceId: 5, imei: '352905112490861' },
+    request: { serviceId: 5, inputs: { imei: '352905112490861' } },
     response: {
       orders: [
         { ...ORDER_EXAMPLE, status: 'pending', result: { code: null, comment: null, fileId: null }, completedAt: null },

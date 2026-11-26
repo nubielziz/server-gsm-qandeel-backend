@@ -4,7 +4,7 @@ Map domain H. The content of the public storefront: service listings, content pa
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 022 caching, 034 Turnstile, 038 search on Typesense, 068 the landing pages are retired. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 022 caching, 034 Turnstile, 038 search on Typesense, 068 the landing pages are retired, 070 order forms draw only the custom fields. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -58,7 +58,9 @@ tables).
 - **Wire** (money is 4-decimal text): the list row is `{ id (the service id), slug, title, summary, brand, network, country,
   isFeatured, type, deliveryTime, price: { currency, fxRate, net, tax, gross, taxRate, taxCountry } }`; the page adds
   `descriptionMd, etaText, requirementsMd, seoTitle, seoDescription, quantity { min, max, options }, fields [{ key, label, fieldType,
-  options, required }], faqs [{ question, answerMd }]` (the published help articles linked to the service).
+  options, required, isMainInput }], faqs [{ question, answerMd }]` (the published help articles linked to the service). `fields` is
+  every field of the service in form order (decision 070: the order form draws only these; on an IMEI service the IMEI is typed into the
+  one with `isMainInput`, which is no longer left out).
   The list is the simple-rest dialect (`_start`, `_end` up to 100 rows, `_sort` featured|sort|title, default featured first, then
   `sort`, then title; filters `brand`, `network`, `country` (case-insensitive), `featured`; `locale` is an unknown parameter (422); `q` over
   title, summary, brand and network) with `x-total-count`; the buyer's `buyerCountry`, `region` and `currency` are extra query

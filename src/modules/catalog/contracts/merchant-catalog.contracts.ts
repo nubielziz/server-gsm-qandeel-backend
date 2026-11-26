@@ -68,6 +68,12 @@ export const CatalogField = z.object({
   required: z.boolean(),
   options: z.array(z.string()).describe('The choices of a `select` field.'),
   regex: z.string().describe('`""` when there is no pattern.'),
+  isMainInput: z
+    .boolean()
+    .describe(
+      "The service's main input (at most one field). On an IMEI service the merchant types the IMEI here: it is checked as an IMEI " +
+        '(15 digits, Luhn) and sent as the IMEI.',
+    ),
 });
 
 /** One model, network or MEP choice. The supplier's own value is not sent. */
@@ -138,8 +144,9 @@ export const showClientService = defineRoute({
   key: 'GET /client/services/:id',
   summary: 'One service of my catalog',
   description:
-    'The catalog row plus the custom `fields` in order and the model, network and MEP `options` the order form needs. On an IMEI ' +
-    'service the main-input field is left out: the order form takes the IMEI in its own box. A service ' +
+    'The catalog row plus the custom `fields` in order and the model, network and MEP `options` the order form needs. The form draws ' +
+    'only these fields: on an IMEI service the IMEI is typed into the field with `isMainInput` (sent under its key in `inputs`; a ' +
+    'service without one takes the IMEI as `imei`). A service ' +
     'the merchant may not see (unknown, archived, off, or hidden from its group) is `404`. The price shown is remembered as the ' +
     'listed price, so a request that the browser marks as started by another site (`Sec-Fetch-Site: cross-site` or `same-site`, ' +
     "without an `Origin` that is one of the shop's origins) is `403 CSRF_FAILED` and remembers nothing; the portal's own server " +
@@ -159,12 +166,22 @@ export const showClientService = defineRoute({
       ...ROW_EXAMPLE,
       fields: [
         {
+          key: 'imei',
+          label: 'IMEI',
+          fieldType: 'text',
+          required: true,
+          options: [],
+          regex: '',
+          isMainInput: true,
+        },
+        {
           key: 'carrier_account',
           label: 'Carrier account',
           fieldType: 'text',
           required: false,
           options: [],
           regex: '',
+          isMainInput: false,
         },
       ],
       options: [{ list: 'model', value: 'iphone15', label: 'iPhone 15' }],

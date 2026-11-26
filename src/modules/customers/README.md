@@ -7,7 +7,7 @@ frozen and unread, until the contract release. This module owns `checkout_sessio
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 010 ids and tokens, 018 authentication, sessions and CSRF, 019 encryption, 034 Turnstile, 053 abuse limits, 054 secrets at rest and 064 one account type. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 010 ids and tokens, 018 authentication, sessions and CSRF, 019 encryption, 034 Turnstile, 053 abuse limits, 054 secrets at rest, 064 one account type and 070 order forms draw only the custom fields. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -20,7 +20,7 @@ Built (feature 14a, storefront-checkout): the checkout, 3 of the 13 storefront r
   utm? }`. In one transaction: the policy `guestCheckout` (off answers `401 UNAUTHORIZED` "Sign in to check out." to a guest; a
   signed-in account is not a guest, see **Who the buyer is** below); the service must be one the shop sells, lists
   (a switched-on `service_listings` row) and has priced (`StorefrontQuotes`, else `422` on `serviceId`; a `file` service cannot be ordered online yet); the quantity and the
-  order fields are checked with the orders module's placement rules (`quantityProblem`, `inputProblems`; the service's main-input field, the one flagged `isMainInput` whatever its key (decision 065), is judged on the typed IMEI, which also satisfies it when it is required, its problems are reported on `imei`, and what is stored under that key is the typed IMEI); an IMEI service needs a
+  order fields are checked with the orders module's placement rules (`quantityProblem`, `inputProblems`; the service's main-input field, the one flagged `isMainInput` whatever its key (decision 065), is judged on the IMEI, which also satisfies it when it is required, and what is stored under that key is the IMEI). Decision 070: the shop draws only the custom fields, so the IMEI is `imei` when the request sends it (older pages; it wins, its problems on `imei`), else the value typed into the main-input field (`typedImeiOf`; every problem about it, a missing one as `required`, on `inputs.<key>`); with no such field and no `imei` it is `INVALID_IMEI` on `imei` as before. An IMEI service needs a
   valid IMEI (`INVALID_IMEI`, stored as `imei_enc`, context `checkout_sessions.imei_enc`, never returned: the answer shows the last
   four digits). The buyer is an account row (see **Who the buyer is** below); the typed email is trimmed and lower-cased. A failed open rolls
   everything back (no guest row is left behind). The session stores USD `net_amount`, `tax_rate`, `tax_amount`, `gross_amount`

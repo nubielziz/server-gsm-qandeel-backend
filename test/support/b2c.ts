@@ -305,8 +305,10 @@ export async function openCheckout(
     currency?: string;
     quantity?: number;
     country?: string;
-    /** The values of the service's order fields (a server service). */
+    /** The values of the service's order fields (a server service, or the main-input field of an IMEI service). */
     inputs?: Record<string, string>;
+    /** The IMEI sent as `imei` (default `APPLE_IMEI`); `null` leaves it out, as the fields-only form does (decision 070). */
+    imei?: string | null;
     /** Extra request headers of the open call (for example the visitor-country header of a proxy). */
     headers?: Record<string, string>;
   } = {},
@@ -321,7 +323,7 @@ export async function openCheckout(
       email: options.email ?? 'sam@mail.example',
       country: options.country ?? 'GB',
       currency: options.currency ?? 'GBP',
-      imei: APPLE_IMEI,
+      ...(options.imei === null ? {} : { imei: options.imei ?? APPLE_IMEI }),
       ...(options.quantity === undefined ? {} : { quantity: options.quantity }),
       ...(options.inputs === undefined ? {} : { inputs: options.inputs }),
     },
@@ -559,6 +561,8 @@ export async function paidOrder(
     currency?: string;
     card?: TestCard;
     inputs?: Record<string, string>;
+    /** The IMEI sent as `imei` (default `APPLE_IMEI`); `null` leaves it out (decision 070). */
+    imei?: string | null;
     /** Extra request headers of the checkout open call (the visitor-country header of a proxy). */
     openHeaders?: Record<string, string>;
   } = {},

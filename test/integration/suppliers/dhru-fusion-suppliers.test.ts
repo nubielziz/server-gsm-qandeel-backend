@@ -378,7 +378,7 @@ describe("the supplier's main box (CUSTOM)", () => {
 });
 
 describe('a field named IMEI on a service that stays an IMEI service (decision 065)', () => {
-  it('is the main input: the order form leaves it out, the typed IMEI fills it and travels as IMEI, never in CUSTOMFIELD', async () => {
+  it('is the main input: the order form lists it flagged, the IMEI typed into it travels as IMEI, never in CUSTOMFIELD', async () => {
     fake.services = [
       {
         id: '9105',
@@ -404,8 +404,14 @@ describe('a field named IMEI on a service that stays an IMEI service (decision 0
     ]);
     const portal = await portalFor(t, world.merchant.id);
     const form = await portal.get(`/client/services/${serviceId}`);
-    expect(json(form).fields.map((field: { key: string }) => field.key)).toEqual(['model']);
-    const orderId = await placed({ serviceId, imei: IMEIS[2], inputs: { model: 'Sample Y' } });
+    // Decision 070: the order form draws only the fields, so the main input is listed with its flag and the IMEI is typed into it.
+    expect(
+      json(form).fields.map((field: { key: string; isMainInput: boolean }) => [field.key, field.isMainInput]),
+    ).toEqual([
+      ['imei', true],
+      ['model', false],
+    ]);
+    const orderId = await placed({ serviceId, inputs: { imei: IMEIS[2], model: 'Sample Y' } });
     expect(await dispatch.run(orderId, { lastAttempt: false })).toMatchObject({ status: 'sent' });
     expect(fake.callsOf('placeimeiorder')[0]!.parameters).toEqual({
       ID: '9105',
@@ -648,6 +654,16 @@ describe("which value is sent as the supplier's main box (the field flagged isMa
     const orderId = await placed({ serviceId, imei: IMEIS[0], inputs: { serial: 'SERIAL-TEST-0002' } });
     expect(await dispatch.run(orderId, { lastAttempt: false })).toMatchObject({ status: 'sent' });
     expect(fake.callsOf('placeimeiorder')[0]!.parameters).toEqual({ ID: '4412', IMEI: IMEIS[0], QNT: 1 });
+  });
+
+  it('sends an IMEI typed into the flagged field of an IMEI service exactly as one sent as imei (decision 070)', async () => {
+    const serviceId = await routeWith('imei', [{ key: 'serial', supplierKey: 'Serial', sort: 0, isMainInput: true }]);
+    const orderId = await placed({ serviceId, inputs: { serial: '3546 0711-1076240' } });
+    const order = await orderRow(world.db, orderId);
+    expect(order.imei).toBe(IMEIS[1]);
+    expect(order.inputs).toEqual({ serial: IMEIS[1] });
+    expect(await dispatch.run(orderId, { lastAttempt: false })).toMatchObject({ status: 'sent' });
+    expect(fake.callsOf('placeimeiorder')[0]!.parameters).toEqual({ ID: '4412', IMEI: IMEIS[1], QNT: 1 });
   });
 
   it("sends a field under the link's field map name when it has one, else under its Name; the map never makes a field the main box", async () => {

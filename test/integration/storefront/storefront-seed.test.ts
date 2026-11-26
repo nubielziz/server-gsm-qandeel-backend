@@ -261,12 +261,19 @@ describe.skipIf(!frontendPresent)('the storefront seed through the public API', 
   });
 
   it('lets a buyer open a checkout against the seeded catalogue, end to end', async () => {
+    // Decision 070: the seeded IMEI service has the main-input field the fields-only form types the IMEI into.
     const opened = await t.app.inject({
       method: 'POST',
       url: '/store/v1/checkout-sessions',
       headers: TURNSTILE_HEADERS,
       remoteAddress: freshClientIp(),
-      payload: { serviceId: 1, email: 'Buyer@Mail.example', country: 'GB', currency: 'GBP', imei: '353890110000004' },
+      payload: {
+        serviceId: 1,
+        email: 'Buyer@Mail.example',
+        country: 'GB',
+        currency: 'GBP',
+        inputs: { imei: '353890110000004' },
+      },
     });
     expect(opened.statusCode).toBe(201);
     expect(body(opened).amounts.usd.net).toBe('3.9900');

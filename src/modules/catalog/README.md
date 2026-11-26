@@ -4,8 +4,7 @@ Map domain B. What is for sale and at what price: client groups, categories, ser
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 065 one Name per field and the main input flag. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
-Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 066 the `ids` read of the merchant catalog, 068 the TAC catalog loses its routes. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 065 one Name per field and the main input flag, 066 the `ids` read of the merchant catalog, 068 the TAC catalog loses its routes, 070 order forms draw only the custom fields. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -156,7 +155,9 @@ No migration, no queue or cache key change.
   keep unique group keys by adding the type), `SERVICES` by service id with the keys of decision 026 (`SERVICEID`, `SERVICETYPE`,
   `SERVICENAME`, `CREDIT`, `INFO`, `TIME`, `QNT`, `QNTOPTIONS`, `MINQNT`, `MAXQNT`, the twelve `Requires.*` flags and `Requires.Custom`
   built from the service's fields: `fieldname` is the field's Name and `description` its label; an IMEI service's main-input field is not
-  repeated there, and neither in the portal's `GET /client/services/:id` nor on the shop's service page). File services are not in the Dhru list.
+  repeated there, because the `IMEI` parameter carries it). The portal's `GET /client/services/:id` and the shop's service page list every
+  field with `isMainInput` (decision 070: the order forms draw only the fields, and an IMEI service's IMEI is typed into the flagged one).
+  File services are not in the Dhru list.
   Every list records the prices it showed (`ListedPrices.record`, user rule 9). Nothing is cached: a price list is never the truth for a
   charge (the order path prices again) and staleness would show an old price after a change.
 - **Merchant switches** (feature 7a): `POST /admin/services` and `PATCH /admin/services/:id` accept the optional `allowCancel`,

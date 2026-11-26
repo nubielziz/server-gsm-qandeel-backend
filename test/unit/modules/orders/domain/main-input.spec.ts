@@ -1,6 +1,7 @@
-// Unit tests of the main input of an order (RESOLUTIONS orders-suppliers-2): one value for every service type.
+// Unit tests of the main input of an order (RESOLUTIONS orders-suppliers-2): one value for every service type; and where the IMEI of an
+// IMEI order was typed (decision 070).
 import { describe, expect, it } from 'bun:test';
-import { carriedImeiInputs, mainInputOf } from '@src/modules/orders/domain/main-input';
+import { carriedImeiInputs, mainInputOf, typedImeiOf } from '@src/modules/orders/domain/main-input';
 
 const fields = [
   { id: 3, key: 'serial', isMainInput: false, required: false, sort: 1 },
@@ -88,5 +89,54 @@ describe('carriedImeiInputs (decision 042, decision 065)', () => {
     expect(carriedImeiInputs({ type: 'server', imei: undefined, inputs, fields: box })).toBe(inputs);
     expect(carriedImeiInputs({ type: 'server', imei: '  ', inputs, fields: box })).toBe(inputs);
     expect(carriedImeiInputs({ type: 'server', imei: 'A1', inputs, fields: [box[0]!] })).toBe(inputs);
+  });
+});
+
+describe('typedImeiOf (decision 070)', () => {
+  it('reads imei when it has text, trimmed, on the item path, whatever the main-input field holds', () => {
+    expect(typedImeiOf({ imei: ' 352905112490861 ', inputs: {}, imeiPath: 'imei', fieldKey: 'serial' })).toEqual({
+      text: '352905112490861',
+      path: 'imei',
+      fieldKey: undefined,
+    });
+    expect(
+      typedImeiOf({
+        imei: '352905112490861',
+        inputs: { serial: '354607111076240' },
+        imeiPath: 'imeis.3',
+        fieldKey: 'serial',
+      }),
+    ).toEqual({ text: '352905112490861', path: 'imeis.3', fieldKey: undefined });
+  });
+
+  it('reads the main-input field when imei is missing or blank, and reports on inputs.<key>', () => {
+    for (const imei of [undefined, '', '   ']) {
+      expect(
+        typedImeiOf({
+          imei,
+          inputs: { serial: ' 3529 0511 2490861 ', note: 'x' },
+          imeiPath: 'imei',
+          fieldKey: 'serial',
+        }),
+      ).toEqual({ text: '3529 0511 2490861', path: 'inputs.serial', fieldKey: 'serial' });
+    }
+  });
+
+  it('asks for a missing IMEI on the main-input field when there is one, else on the item path', () => {
+    expect(typedImeiOf({ imei: undefined, inputs: {}, imeiPath: 'imei', fieldKey: 'serial' })).toEqual({
+      text: '',
+      path: 'inputs.serial',
+      fieldKey: 'serial',
+    });
+    expect(typedImeiOf({ imei: undefined, inputs: { serial: ' ' }, imeiPath: 'imei', fieldKey: 'serial' }).text).toBe(
+      '',
+    );
+    expect(
+      typedImeiOf({ imei: undefined, inputs: { serial: '352905112490861' }, imeiPath: 'IMEI', fieldKey: undefined }),
+    ).toEqual({
+      text: '',
+      path: 'IMEI',
+      fieldKey: undefined,
+    });
   });
 });

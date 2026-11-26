@@ -116,6 +116,36 @@ describe.skipIf(!frontendPresent)('the catalog seed', () => {
         isMainInput: false,
       },
     ]);
+    // Decision 070: every demo IMEI service has the main-input field its IMEI is typed into; no other service has one.
+    const fieldRows = await db.select().from(s.serviceFields).orderBy(s.serviceFields.id);
+    const imeiIds = services.filter((service) => service.type === 'imei').map((service) => service.id);
+    expect(imeiIds.length).toBeGreaterThan(0);
+    const mainInputs = fieldRows.filter((field) => field.isMainInput);
+    expect(mainInputs.map((field) => field.serviceId).sort((a, b) => a - b)).toEqual(imeiIds);
+    for (const field of mainInputs) {
+      expect(field).toMatchObject({
+        key: 'imei',
+        supplierKey: 'IMEI',
+        label: 'IMEI',
+        fieldType: 'text',
+        required: true,
+        regex: '',
+        sort: 0,
+      });
+    }
+    expect(fieldRows).toHaveLength(imeiIds.length + 1);
+    expect((await admin.get('/admin/services/5')).body.fields).toEqual([
+      {
+        key: 'imei',
+        name: 'IMEI',
+        label: 'IMEI',
+        fieldType: 'text',
+        required: true,
+        options: [],
+        regex: '',
+        isMainInput: true,
+      },
+    ]);
     // The demo's pricing (feature 4b): three client prices, the Carrier unlock promo and the resolver on top of them.
     const clientPrices = await admin.get('/admin/client-prices?_start=0&_end=200&_sort=id&_order=asc');
     expect(

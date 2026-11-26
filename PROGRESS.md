@@ -4,6 +4,16 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**Order forms draw only the custom fields (2026-11-26, decision 070): merged and pushed on the owner's word.** The owner had the shop's built-in
+IMEI box and bulk IMEI list removed. `GET /store/v1/services/:slug` and `GET /client/services/:id` list every field with `isMainInput` (an IMEI
+service's main-input field is no longer left out); the checkout and `POST /client/orders` take the IMEI from `imei` when sent, else from the value
+under the main-input field's key (`typedImeiOf`; same normalisation and Luhn check, problems on `inputs.<key>`). `imeis`, the Dhru actions and
+`imeiservicelist` are unchanged. No migration by the owner's ruling: **production's 276 active IMEI services have no main-input field and cannot be
+ordered in the shop until staff add one to each** (Dhru orders keep working); the demo seed gives its IMEI services the field. Built by an Opus
+implementer, reviewed by an Opus reviewer (no blocker), final review by the lead (Fable 5.2). **Checks:** typecheck, lint, format, English, routes,
+contract, OpenAPI, coverage; the touched test files and the 16 seed files (2 seed cases and 3 Dhru file cases need the object store, not running
+locally). The whole suite was not run locally. **Release order:** backend, then the shop (its decision 007); console decision 029 any time.
+
 **Code-stock services and a service's own cost (2026-11-25, decision 069): merged, not released.** The owner sells gift-card codes
 they buy themselves. `services.stock_delivery` ("Delivered from code stock", migration `0070_code_stock`, backfilled true for services that
 hold any code that is not void): only such a service accepts a code import and only its orders take codes at placement (every path goes through

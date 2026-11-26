@@ -49,11 +49,23 @@ const OpenBody = z.object({
     .optional()
     .describe('The currency to pay in (one `GET /store/v1/config` lists). Default: USD.'),
   quantity: z.number().int().min(1).max(100_000).optional().describe("Defaults to the service's minimum."),
-  imei: z.string().trim().min(1).max(64).optional().describe('The 15-digit IMEI of an IMEI service (required there).'),
+  imei: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .optional()
+    .describe(
+      'The 15-digit IMEI of an IMEI service, from older shop pages: the shop now types it into the main-input field (`inputs`). ' +
+        'When both are sent, this one wins.',
+    ),
   inputs: z
     .record(z.string().min(1).max(60), z.string().max(MAX_VALUE))
     .optional()
-    .describe("The values of the service's order fields by field key (`GET /store/v1/services/:slug`)."),
+    .describe(
+      "The values of the service's order fields by field key (`GET /store/v1/services/:slug`); on an IMEI service the IMEI goes under " +
+        'the key of the field with `isMainInput` when `imei` is not sent.',
+    ),
   utm: UtmSchema.optional(),
 });
 
@@ -156,8 +168,11 @@ export const openCheckoutSession = defineRoute({
     '`email` must be the email of the account in any case (else `422` on `email`: "Use the email of your account, or sign out to ' +
     'check out as a guest."), the `guestCheckout` switch does not apply and the session belongs to the signed-in account. A signed-in ' +
     'merchant rank is refused (`403 RANK_NOT_ALLOWED`, "Your account orders from its price list.") and nothing is written. A request ' +
-    'without a usable account session is a guest. An IMEI service needs a valid `imei` (else `422 ' +
-    'INVALID_IMEI`); a service with order fields needs their `inputs`. An account or guest record that may not act is refused (`403 ' +
+    'without a usable account session is a guest. An IMEI service needs a valid IMEI (15 digits, Luhn; else `422 INVALID_IMEI`): typed ' +
+    'into its main-input field in `inputs` (the order form draws only the custom fields; every problem about it is reported on ' +
+    '`inputs.<key>`, a missing one as `required`), or sent as `imei` (older shop pages; it wins when both are sent, its problems on ' +
+    '`imei`). A service with no main-input field needs `imei`. A service with order fields needs their `inputs`. An account or ' +
+    'guest record that may not act is refused (`403 ' +
     'ACCOUNT_SUSPENDED`), and so is a guest whose email belongs to a login account that is suspended, blocked or erased, with the same ' +
     'answer as a blocklist hit and no guest record made; when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the ' +
     'shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is ' +
@@ -177,7 +192,13 @@ export const openCheckoutSession = defineRoute({
   success: { status: 201, schema: CheckoutSessionSchema },
   errors: ['VALIDATION_FAILED', 'INVALID_IMEI', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'CSRF_FAILED', 'RANK_NOT_ALLOWED'],
   examples: {
-    request: { serviceId: 1, email: 'sam@mail.example', country: 'GB', currency: 'GBP', imei: '353890110000004' },
+    request: {
+      serviceId: 1,
+      email: 'sam@mail.example',
+      country: 'GB',
+      currency: 'GBP',
+      inputs: { imei: '353890110000004' },
+    },
     response: SESSION_EXAMPLE,
   },
 });

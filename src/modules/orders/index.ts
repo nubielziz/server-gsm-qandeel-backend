@@ -27,10 +27,10 @@ export type {
   PaymentStop,
   WireDispatchState,
 } from './domain/order-machine';
-export { mainInputOf } from './domain/main-input';
+export { mainInputOf, typedImeiOf } from './domain/main-input';
 export { MAX_INPUT_LENGTH, inputProblems, isValidImei, normalizeImei, quantityProblem } from './domain/placement-rules';
 export type { PlacementField, QuantityRules } from './domain/placement-rules';
-export type { MainInputField, MainInputSource } from './domain/main-input';
+export type { MainInputField, MainInputSource, TypedImei } from './domain/main-input';
 export { channelSql, pastSlaPredicate, queueSql } from './infra/order-sql';
 export { rewriteCustomerOrderInputs } from './infra/order.repository';
 export type { CustomerOrderInputs } from './infra/order.repository';
