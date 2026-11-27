@@ -146732,7 +146732,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Any of the fields below; at least one. `isListed` and `retailPrice` (4-decimal net USD before VAT) work as before: `retailPrice` writes the retail group price of the service, so it applies only to new storefront checkouts; a price of zero or less, or under `floorPrice`, is `422` on `retailPrice` (\"Below the storefront floor of $X.\"); a typed price stops the price following a rule. `retailPricing: \"rule\"` writes the price the retail price rule of the service gives now and makes it follow the rule from then on (decision 040); it is `422` on `retailPricing` with the code `conflict` when `retailPrice` is sent too, `no_rule` when no active rule covers the service, `no_cost` when the service has no cost, and `409 LISTING_LOCKED` as for a price. Switching a disabled service on is `409 SERVICE_DISABLED`; switching on or pricing a service that can never be public is `409 LISTING_LOCKED`. Switching off is always allowed. Switching on for the first time sets `listedAt`; it never resets. Content: `publicTitle`, `slug` (a form that is not lower-case words joined by hyphens is `422` on `slug`; one used by another listing is `409 LISTING_EXISTS` on `slug`; changing it changes the public link), `summary`, `descriptionMd`, `requirementsMd`, `etaText`, `seoTitle`, `seoDescription`, `brand`, `carrier`, `country` (empty or two letters), `isFeatured`, `sort`. Every refusal is decided before the first write. Each change is audited (`listed on storefront`, `unlisted from storefront`, `changed retail price of`, `edited listing of`; the audit row keeps the length of the Markdown bodies, not their text). Every row also says whether its price follows a rule (`retailPriceSource`, `retailPriceRule`, `retailPriceWaiting`). Besides `storefront:update`: switching a listing on (`isListed` true while it is off) also needs `storefront:publish`; `retailPrice` and `retailPricing` also need `pricing:update` (`403 FORBIDDEN`, decision 046).",
+        "description": "Any of the fields below; at least one. `isListed` and `retailPrice` (4-decimal net USD before VAT) work as before: `retailPrice` writes the retail group price of the service, so it applies only to new storefront checkouts; a price of zero or less, or under `floorPrice`, is `422` on `retailPrice` (\"Below the storefront floor of $X.\"); a typed price stops the price following a rule. `retailPricing: \"rule\"` writes the price the retail price rule of the service gives now and makes it follow the rule from then on (decision 040); it is `422` on `retailPricing` with the code `conflict` when `retailPrice` is sent too, `no_rule` when no active rule covers the service, `no_cost` when the service has no cost, and `409 LISTING_LOCKED` as for a price. Switching a disabled service on is `409 SERVICE_DISABLED`; switching on or pricing a service that can never be public is `409 LISTING_LOCKED`. Switching off is always allowed. Switching on for the first time sets `listedAt`; it never resets. Content: `publicTitle`, `slug` (a form that is not lower-case words joined by hyphens is `422` on `slug`; one used by another listing is `409 LISTING_EXISTS` on `slug`; changing it changes the public link), `summary`, `descriptionMd`, `requirementsMd`, `etaText`, `seoTitle`, `seoDescription`, `brand`, `carrier`, `country` (empty or two letters), `isFeatured`, `sort`. Every refusal is decided before the first write. Each change is audited (`listed on storefront`, `unlisted from storefront`, `changed retail price of`, `edited listing of`; the audit row keeps the length of the Markdown bodies, not their text). An `isListed` equal to what the listing already holds (decision 074) changes nothing: no audit row, `listedAt` untouched, no search signal, and the answer is still `200` with the listing; the other keys of the request are handled as usual. Every row also says whether its price follows a rule (`retailPriceSource`, `retailPriceRule`, `retailPriceWaiting`). Besides `storefront:update`: switching a listing on (`isListed` true while it is off) also needs `storefront:publish`; `retailPrice` and `retailPricing` also need `pricing:update` (`403 FORBIDDEN`, decision 046).",
         "operationId": "patchAdminServiceListingsById",
         "parameters": [
           {
@@ -149695,7 +149695,7 @@
                       },
                       "allowCancel": {
                         "type": "boolean",
-                        "description": "Whether a merchant may cancel an order of this service that was never sent. Sent to every reader."
+                        "description": "Whether a merchant may cancel an order of this service that was never sent. While it is on, an order placed on the website waits 2 minutes before it is sent to its supplier (decision 075). Sent to every reader."
                       },
                       "allowVerify": {
                         "type": "boolean",
@@ -150243,7 +150243,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Starts `active`, `auto`, with a fixed price mode, the `block_open` duplicate rule, no minimum profit of its own and a cost of 0 until a supplier is linked or imported. The type must be the type of the category: `422` on `categoryId` otherwise. A code that another live service has (ignoring case) is `409 CODE_TAKEN` on `code`. `basePrice` must be above zero. The optional `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) switch on the merchant's cancel and verification of this service's orders; all three start off. The optional `minQty`, `maxQty` (whole, 1 to 100000) and `qtyOptions` (at most 50 whole pack sizes, no repeats) say what one order may buy; they start at 1, 1 and none. A service sells a range or packs: with `qtyOptions` the server stores `minQty` as the smallest and `maxQty` as the largest pack and refuses a different one sent (`422` `packs_set`); without packs a `maxQty` under `minQty` is `422` `below_min` on `maxQty` (`above_max` on `minQty` when only `minQty` was sent). Every pack problem (`invalid_pack`, `duplicate_pack`) is on `qtyOptions`. The optional `stockDelivery` (default `false`) makes it a service delivered from code stock, and the optional `ownCost` (0 to 1000000000, default `0`) is its own cost: the effective `cost` starts equal to it (decision 069). With `ownCost` sent, a `basePrice` under the floor it sets is `422` on `basePrice` with the code `below_floor`, as on a change. The values are in the audit row `created service`. An IMEI service is created with one custom field in the same transaction (decision 073): Name and label `IMEI`, type `imei`, required, the main input, first in the form, with the audit row `replaced custom fields of service`; staff may then change or remove it on the fields route.",
+        "description": "Starts `active`, `auto`, with a fixed price mode, the `block_open` duplicate rule, no minimum profit of its own and a cost of 0 until a supplier is linked or imported. The type must be the type of the category: `422` on `categoryId` otherwise. The optional `code` (decision 074) is what staff typed; left out, the server makes it: `IMEI-<id>`, `SRV-<id>`, `RMT-<id>` or `FILE-<id>` by the type, with the new service's own id (`-2`, `-3`, ... after it when a live service already holds that code), and the answer, the stored row and the audit row `created service` carry it. A typed code that another live service has (ignoring case) is `409 CODE_TAKEN` on `code`. `basePrice` must be above zero. The optional `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) switch on the merchant's cancel and verification of this service's orders; all three start off. The optional `minQty`, `maxQty` (whole, 1 to 100000) and `qtyOptions` (at most 50 whole pack sizes, no repeats) say what one order may buy; they start at 1, 1 and none. A service sells a range or packs: with `qtyOptions` the server stores `minQty` as the smallest and `maxQty` as the largest pack and refuses a different one sent (`422` `packs_set`); without packs a `maxQty` under `minQty` is `422` `below_min` on `maxQty` (`above_max` on `minQty` when only `minQty` was sent). Every pack problem (`invalid_pack`, `duplicate_pack`) is on `qtyOptions`. The optional `stockDelivery` (default `false`) makes it a service delivered from code stock, and the optional `ownCost` (0 to 1000000000, default `0`) is its own cost: the effective `cost` starts equal to it (decision 069). With `ownCost` sent, a `basePrice` under the floor it sets is `422` on `basePrice` with the code `below_floor`, as on a change. The values are in the audit row `created service`. An IMEI service is created with one custom field in the same transaction (decision 073): Name and label `IMEI`, type `imei`, required, the main input, first in the form, with the audit row `replaced custom fields of service`; staff may then change or remove it on the fields route.",
         "operationId": "postAdminServices",
         "parameters": [],
         "requestBody": {
@@ -150259,6 +150259,7 @@
                     "maxLength": 120
                   },
                   "code": {
+                    "description": "The code staff typed (unique ignoring case among live services). Left out, the server makes it: `IMEI-<id>`, `SRV-<id>`, `RMT-<id>` or `FILE-<id>` (decision 074).",
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 40
@@ -150346,7 +150347,6 @@
                 },
                 "required": [
                   "name",
-                  "code",
                   "categoryId",
                   "type",
                   "slaMinutes",
@@ -150595,7 +150595,7 @@
                     },
                     "allowCancel": {
                       "type": "boolean",
-                      "description": "Whether a merchant may cancel an order of this service that was never sent. Sent to every reader."
+                      "description": "Whether a merchant may cancel an order of this service that was never sent. While it is on, an order placed on the website waits 2 minutes before it is sent to its supplier (decision 075). Sent to every reader."
                     },
                     "allowVerify": {
                       "type": "boolean",
@@ -153568,7 +153568,7 @@
                     },
                     "allowCancel": {
                       "type": "boolean",
-                      "description": "Whether a merchant may cancel an order of this service that was never sent. Sent to every reader."
+                      "description": "Whether a merchant may cancel an order of this service that was never sent. While it is on, an order placed on the website waits 2 minutes before it is sent to its supplier (decision 075). Sent to every reader."
                     },
                     "allowVerify": {
                       "type": "boolean",
@@ -153751,9 +153751,19 @@
                               "number",
                               "select",
                               "textarea",
-                              "imei"
+                              "imei",
+                              "imei_bulk",
+                              "imeisv",
+                              "serial",
+                              "iccid",
+                              "eid",
+                              "meid",
+                              "ecid",
+                              "mac_address",
+                              "mi_lock_code",
+                              "box_sn"
                             ],
-                            "description": "`imei` holds one IMEI: the value is read as digits (spaces and dashes removed) and must be 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`), on any service type."
+                            "description": "Each value is trimmed, read into its stored form and judged by its type, on any service type (decisions 073 and 076). `imei`: one IMEI, spaces and dashes removed, 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`). `imei_bulk`: 1 to 30 IMEIs split on line breaks, commas and semicolons and stored one per line; still one order at one price (a bad line is `422 INVALID_IMEI`, `invalid_imei` \"Line N ...\"; more than 30 `too_many_imeis`, a repeat `duplicate_imei`). The other check types answer `422 VALIDATION_FAILED` with `invalid_<type>`: `imeisv` 16 digits; `serial` 5 to 30 letters and digits (stored upper-case); `iccid` 18 to 22 digits starting with 89; `eid` 32 digits; `meid` 14 or 15 hexadecimal characters or 18 digits; `ecid` an optional `0x` and 8 to 16 hexadecimal characters, or 8 to 20 digits; `mac_address` 12 hexadecimal characters, alone or in pairs by `:` or `-` or in fours by `.`, stored as `AA:BB:CC:DD:EE:FF`; `mi_lock_code` 6 to 64 letters, digits and dashes; `box_sn` 4 to 32 letters, digits and dashes (stored upper-case). `text`, `number`, `select` and `textarea` are stored as sent."
                           },
                           "required": {
                             "type": "boolean"
@@ -154692,7 +154702,7 @@
                     },
                     "allowCancel": {
                       "type": "boolean",
-                      "description": "Whether a merchant may cancel an order of this service that was never sent. Sent to every reader."
+                      "description": "Whether a merchant may cancel an order of this service that was never sent. While it is on, an order placed on the website waits 2 minutes before it is sent to its supplier (decision 075). Sent to every reader."
                     },
                     "allowVerify": {
                       "type": "boolean",
@@ -155806,8 +155816,19 @@
                             "number",
                             "select",
                             "textarea",
-                            "imei"
-                          ]
+                            "imei",
+                            "imei_bulk",
+                            "imeisv",
+                            "serial",
+                            "iccid",
+                            "eid",
+                            "meid",
+                            "ecid",
+                            "mac_address",
+                            "mi_lock_code",
+                            "box_sn"
+                          ],
+                          "description": "Each value is trimmed, read into its stored form and judged by its type, on any service type (decisions 073 and 076). `imei`: one IMEI, spaces and dashes removed, 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`). `imei_bulk`: 1 to 30 IMEIs split on line breaks, commas and semicolons and stored one per line; still one order at one price (a bad line is `422 INVALID_IMEI`, `invalid_imei` \"Line N ...\"; more than 30 `too_many_imeis`, a repeat `duplicate_imei`). The other check types answer `422 VALIDATION_FAILED` with `invalid_<type>`: `imeisv` 16 digits; `serial` 5 to 30 letters and digits (stored upper-case); `iccid` 18 to 22 digits starting with 89; `eid` 32 digits; `meid` 14 or 15 hexadecimal characters or 18 digits; `ecid` an optional `0x` and 8 to 16 hexadecimal characters, or 8 to 20 digits; `mac_address` 12 hexadecimal characters, alone or in pairs by `:` or `-` or in fours by `.`, stored as `AA:BB:CC:DD:EE:FF`; `mi_lock_code` 6 to 64 letters, digits and dashes; `box_sn` 4 to 32 letters, digits and dashes (stored upper-case). `text`, `number`, `select` and `textarea` are stored as sent."
                         },
                         "required": {
                           "type": "boolean"
@@ -155892,9 +155913,19 @@
                           "number",
                           "select",
                           "textarea",
-                          "imei"
+                          "imei",
+                          "imei_bulk",
+                          "imeisv",
+                          "serial",
+                          "iccid",
+                          "eid",
+                          "meid",
+                          "ecid",
+                          "mac_address",
+                          "mi_lock_code",
+                          "box_sn"
                         ],
-                        "description": "`imei` holds one IMEI: the value is read as digits (spaces and dashes removed) and must be 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`), on any service type."
+                        "description": "Each value is trimmed, read into its stored form and judged by its type, on any service type (decisions 073 and 076). `imei`: one IMEI, spaces and dashes removed, 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`). `imei_bulk`: 1 to 30 IMEIs split on line breaks, commas and semicolons and stored one per line; still one order at one price (a bad line is `422 INVALID_IMEI`, `invalid_imei` \"Line N ...\"; more than 30 `too_many_imeis`, a repeat `duplicate_imei`). The other check types answer `422 VALIDATION_FAILED` with `invalid_<type>`: `imeisv` 16 digits; `serial` 5 to 30 letters and digits (stored upper-case); `iccid` 18 to 22 digits starting with 89; `eid` 32 digits; `meid` 14 or 15 hexadecimal characters or 18 digits; `ecid` an optional `0x` and 8 to 16 hexadecimal characters, or 8 to 20 digits; `mac_address` 12 hexadecimal characters, alone or in pairs by `:` or `-` or in fours by `.`, stored as `AA:BB:CC:DD:EE:FF`; `mi_lock_code` 6 to 64 letters, digits and dashes; `box_sn` 4 to 32 letters, digits and dashes (stored upper-case). `text`, `number`, `select` and `textarea` are stored as sent."
                       },
                       "required": {
                         "type": "boolean"
@@ -196662,7 +196693,7 @@
                               "description": "The values of the service custom fields by field name: base64 of a JSON object (an object is accepted too)."
                             },
                             "IMEI": {
-                              "description": "The main input of an IMEI service: the value of its main-input field, judged by that field's type (an IMEI, 15 digits and Luhn, for the type `imei`), required tick and pattern; a service without such a field takes it as sent. Leave it out for a server or remote service.",
+                              "description": "The main input of an IMEI service: the value of its main-input field, judged by that field's type (an IMEI, 15 digits and Luhn, for the type `imei`; decision 076: 1 to 30 IMEIs, one per line, for `imei_bulk`, still one order; the other check types by their own rule), required tick and pattern; a service without such a field takes it as sent. Leave it out for a server or remote service.",
                               "type": [
                                 "string",
                                 "number"
@@ -196762,7 +196793,7 @@
                                 "description": "The values of the service custom fields by field name: base64 of a JSON object (an object is accepted too)."
                               },
                               "IMEI": {
-                                "description": "The main input of an IMEI service: the value of its main-input field, judged by that field's type (an IMEI, 15 digits and Luhn, for the type `imei`), required tick and pattern; a service without such a field takes it as sent. Leave it out for a server or remote service.",
+                                "description": "The main input of an IMEI service: the value of its main-input field, judged by that field's type (an IMEI, 15 digits and Luhn, for the type `imei`; decision 076: 1 to 30 IMEIs, one per line, for `imei_bulk`, still one order; the other check types by their own rule), required tick and pattern; a service without such a field takes it as sent. Leave it out for a server or remote service.",
                                 "type": [
                                   "string",
                                   "number"
@@ -202623,9 +202654,77 @@
                             "type": "boolean",
                             "description": "`POST /client/orders/:id/cancel` would be accepted now."
                           },
+                          "cancelUntil": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "x-gsm-alias": "IsoDateTime",
+                                "description": "ISO 8601 UTC time with milliseconds.",
+                                "examples": [
+                                  "2026-03-01T09:30:00.000Z"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Until when the order waits before it is sent, so it can still be cancelled (decision 075): an order placed on the website for a service that allows cancellation is sent 2 minutes after it was placed. Set only while `canCancel` is true and the order is inside that window; `null` otherwise (a cancellable manual or held order has no deadline)."
+                          },
+                          "cancelBlocked": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "closed",
+                                  "not_allowed",
+                                  "already_sent",
+                                  "in_progress"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Why the order cannot be cancelled now, `null` exactly when `canCancel` is true. The first that applies: `closed` (completed or rejected), `not_allowed` (the service does not allow cancellation), `already_sent` (sent to a supplier, or claimed for a send, at least once: the cancel would be `409 ALREADY_SENT`), `in_progress` (anything else: staff are working on it)."
+                          },
                           "canVerify": {
                             "type": "boolean",
                             "description": "`POST /client/orders/:id/verify` would be accepted now."
+                          },
+                          "verifyUntil": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "x-gsm-alias": "IsoDateTime",
+                                "description": "ISO 8601 UTC time with milliseconds.",
+                                "examples": [
+                                  "2026-03-01T09:30:00.000Z"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Until when a verification can be asked for: `completedAt` plus the service's `verify_window_h` hours. Set only while `canVerify` is true, `null` otherwise."
+                          },
+                          "verifyBlocked": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "already_requested",
+                                  "not_allowed",
+                                  "not_completed",
+                                  "window_passed"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Why a verification cannot be asked for now, `null` exactly when `canVerify` is true. The first that applies: `already_requested` (asked once already), `not_allowed` (the service does not allow verification), `not_completed` (the order is not completed), `window_passed` (the window has passed, or the service has a window of 0 hours)."
                           },
                           "createdAt": {
                             "type": "string",
@@ -202668,7 +202767,11 @@
                           "verificationStatus",
                           "inputFileId",
                           "canCancel",
+                          "cancelUntil",
+                          "cancelBlocked",
                           "canVerify",
+                          "verifyUntil",
+                          "verifyBlocked",
                           "createdAt",
                           "completedAt"
                         ],
@@ -202722,7 +202825,11 @@
                       "verificationStatus": null,
                       "inputFileId": null,
                       "canCancel": false,
+                      "cancelUntil": null,
+                      "cancelBlocked": "closed",
                       "canVerify": false,
+                      "verifyUntil": null,
+                      "verifyBlocked": "not_allowed",
                       "createdAt": "2026-10-02T06:23:25.000Z",
                       "completedAt": "2026-10-02T07:01:10.000Z"
                     }
@@ -209584,7 +209691,7 @@
     },
     "/client/orders": {
       "get": {
-        "description": "The signed-in account's orders placed through the portal and the Dhru API (an order the same account paid first in the shop is not listed here: it is in `GET /store/v1/me/orders`). Filters: `status` (repeat for IN, `status_ne`), `type`, `serviceId`, `createdAt_gte` and `createdAt_lte`. `q` searches the input and the service name, and the order id exactly when it is all digits. Sort by `createdAt` (default, newest first), `totalPrice` or `status`. Never cached.",
+        "description": "The signed-in account's orders placed through the portal and the Dhru API (an order the same account paid first in the shop is not listed here: it is in `GET /store/v1/me/orders`). Filters: `status` (repeat for IN, `status_ne`), `type`, `serviceId`, `createdAt_gte` and `createdAt_lte`. `q` searches the input and the service name, and the order id exactly when it is all digits. Sort by `createdAt` (default, newest first), `totalPrice` or `status`. Each order says whether it can be cancelled or verified now, until when (`cancelUntil`, `verifyUntil`) and, when not, why (`cancelBlocked`, `verifyBlocked`; decision 075). Never cached.",
         "operationId": "getClientOrders",
         "parameters": [
           {
@@ -209953,9 +210060,77 @@
                         "type": "boolean",
                         "description": "`POST /client/orders/:id/cancel` would be accepted now."
                       },
+                      "cancelUntil": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time",
+                            "x-gsm-alias": "IsoDateTime",
+                            "description": "ISO 8601 UTC time with milliseconds.",
+                            "examples": [
+                              "2026-03-01T09:30:00.000Z"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Until when the order waits before it is sent, so it can still be cancelled (decision 075): an order placed on the website for a service that allows cancellation is sent 2 minutes after it was placed. Set only while `canCancel` is true and the order is inside that window; `null` otherwise (a cancellable manual or held order has no deadline)."
+                      },
+                      "cancelBlocked": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "closed",
+                              "not_allowed",
+                              "already_sent",
+                              "in_progress"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Why the order cannot be cancelled now, `null` exactly when `canCancel` is true. The first that applies: `closed` (completed or rejected), `not_allowed` (the service does not allow cancellation), `already_sent` (sent to a supplier, or claimed for a send, at least once: the cancel would be `409 ALREADY_SENT`), `in_progress` (anything else: staff are working on it)."
+                      },
                       "canVerify": {
                         "type": "boolean",
                         "description": "`POST /client/orders/:id/verify` would be accepted now."
+                      },
+                      "verifyUntil": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time",
+                            "x-gsm-alias": "IsoDateTime",
+                            "description": "ISO 8601 UTC time with milliseconds.",
+                            "examples": [
+                              "2026-03-01T09:30:00.000Z"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Until when a verification can be asked for: `completedAt` plus the service's `verify_window_h` hours. Set only while `canVerify` is true, `null` otherwise."
+                      },
+                      "verifyBlocked": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "already_requested",
+                              "not_allowed",
+                              "not_completed",
+                              "window_passed"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Why a verification cannot be asked for now, `null` exactly when `canVerify` is true. The first that applies: `already_requested` (asked once already), `not_allowed` (the service does not allow verification), `not_completed` (the order is not completed), `window_passed` (the window has passed, or the service has a window of 0 hours)."
                       },
                       "createdAt": {
                         "type": "string",
@@ -209998,7 +210173,11 @@
                       "verificationStatus",
                       "inputFileId",
                       "canCancel",
+                      "cancelUntil",
+                      "cancelBlocked",
                       "canVerify",
+                      "verifyUntil",
+                      "verifyBlocked",
                       "createdAt",
                       "completedAt"
                     ],
@@ -210029,7 +210208,11 @@
                     "verificationStatus": null,
                     "inputFileId": null,
                     "canCancel": false,
+                    "cancelUntil": null,
+                    "cancelBlocked": "closed",
                     "canVerify": false,
+                    "verifyUntil": null,
+                    "verifyBlocked": "not_allowed",
                     "createdAt": "2026-10-02T06:23:25.000Z",
                     "completedAt": "2026-10-02T07:01:10.000Z"
                   }
@@ -210341,7 +210524,7 @@
         "x-gsm-surface": "client"
       },
       "post": {
-        "description": "Orders a service at the merchant's own price (the one price resolver). The price is held from the wallet in the same transaction; an order that would cost more than the tolerance above the price the merchant last listed is refused (`PRICE_CHANGED`, with both prices), a smaller raise is charged and recorded; a second open order for the same service and input is refused under the service's `block_open` rule (`DUPLICATE_ORDER`). Every service takes its custom fields in `inputs`, each judged by its own type, required tick and pattern (decision 073: the service type `imei` forces nothing); a field of type `imei` holds one IMEI (spaces and dashes removed, 15 digits, Luhn; else `422 INVALID_IMEI` with `invalid_imei` on `inputs.<key>`) and is stored as digits. On an IMEI service the main input may also come as `imei` (older pages; it is the value of the main-input field, wins over a value under its key and is reported on `imei`; a service without such a field takes it as sent) or `imeis` (a bulk of up to 100: one order each, all placed or none, each item reported on `imeis.N`; still accepted, the shop no longer sends it); `imei` on another service is `422 not_applicable`. A File service takes a `fileId` and/or `inputs`. The answer is immediate: the orders are `pending`, in the manual queue or waiting for the dispatch job. Send an `Idempotency-Key` (a new one per form submission) so that a double click or a retry never places or holds twice: the same key and body sends the first `201` again with the response header `idempotency-replayed: true` (nothing is placed); another body with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS` (`Retry-After`). A refused request stores nothing, so the key may be sent again. The answer is kept 7 days; a replay is the first answer as it was (the orders may have moved on). Without the header nothing changes. An account that is not active is refused with `403 ACCOUNT_SUSPENDED` and a frozen merchant wallet with `409 WALLET_FROZEN`; nothing is written (a retail rank never reaches this route: `403 RANK_NOT_ALLOWED`).",
+        "description": "Orders a service at the merchant's own price (the one price resolver). The price is held from the wallet in the same transaction; an order that would cost more than the tolerance above the price the merchant last listed is refused (`PRICE_CHANGED`, with both prices), a smaller raise is charged and recorded; a second open order for the same service and input is refused under the service's `block_open` rule (`DUPLICATE_ORDER`). Every service takes its custom fields in `inputs`, each judged by its own type, required tick and pattern (decision 073: the service type `imei` forces nothing); a field of type `imei` holds one IMEI (spaces and dashes removed, 15 digits, Luhn; else `422 INVALID_IMEI` with `invalid_imei` on `inputs.<key>`) and is stored as digits. Decision 076: a field of type `imei_bulk` holds 1 to 30 IMEIs, still one order at one price (a bad line is `422 INVALID_IMEI`), and the other check types (`imeisv`, `serial`, `iccid`, `eid`, `meid`, `ecid`, `mac_address`, `mi_lock_code`, `box_sn`) answer `422 VALIDATION_FAILED` with `invalid_<type>` on `inputs.<key>`. On an IMEI service the main input may also come as `imei` (older pages; it is the value of the main-input field, wins over a value under its key and is reported on `imei`; a service without such a field takes it as sent) or `imeis` (a bulk of up to 100: one order each, all placed or none, each item reported on `imeis.N`; still accepted, the shop no longer sends it); `imei` on another service is `422 not_applicable`. A File service takes a `fileId` and/or `inputs`. The answer is immediate: the orders are `pending`, in the manual queue or waiting for the dispatch job. An order of a service that allows cancellation waits 2 minutes before it is sent, so the merchant can still cancel it (`cancelUntil`, decision 075). Send an `Idempotency-Key` (a new one per form submission) so that a double click or a retry never places or holds twice: the same key and body sends the first `201` again with the response header `idempotency-replayed: true` (nothing is placed); another body with the key is `409 IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS` (`Retry-After`). A refused request stores nothing, so the key may be sent again. The answer is kept 7 days; a replay is the first answer as it was (the orders may have moved on). Without the header nothing changes. An account that is not active is refused with `403 ACCOUNT_SUSPENDED` and a frozen merchant wallet with `409 WALLET_FROZEN`; nothing is written (a retail rank never reaches this route: `403 RANK_NOT_ALLOWED`).",
         "operationId": "postClientOrders",
         "parameters": [
           {
@@ -210382,7 +210565,7 @@
                     "maxLength": 64
                   },
                   "imeis": {
-                    "description": "A bulk order: one order of the same service per item, each the value of the main-input field like `imei`, placed all together or not at all. Still accepted; the shop no longer sends it.",
+                    "description": "A bulk order: one order of the same service per item, each the value of the main-input field like `imei`, placed all together or not at all. Still accepted; the shop no longer sends it. Unrelated to a field of type `imei_bulk`, whose list is the value of one field of one order (decision 076).",
                     "minItems": 1,
                     "maxItems": 100,
                     "type": "array",
@@ -210399,7 +210582,7 @@
                     "maximum": 100000
                   },
                   "inputs": {
-                    "description": "The values of the service's custom fields by field key (`GET /client/services/:id`), each judged by its field's type, required tick and pattern; a field of type `imei` is stored as digits.",
+                    "description": "The values of the service's custom fields by field key (`GET /client/services/:id`), each judged by its field's type, required tick and pattern and stored in its type's form (an `imei` as digits, an `imei_bulk` list one IMEI per line, a `mac_address` as `AA:BB:CC:DD:EE:FF`; decisions 073 and 076). At most 2000 characters as sent; the stored form at most 500 (`too_long` on `inputs.<key>`; an `imei_bulk` list of more than 30 IMEIs is `too_many_imeis` first).",
                     "type": "object",
                     "propertyNames": {
                       "type": "string",
@@ -210408,7 +210591,7 @@
                     },
                     "additionalProperties": {
                       "type": "string",
-                      "maxLength": 500
+                      "maxLength": 2000
                     }
                   },
                   "fileId": {
@@ -210628,9 +210811,77 @@
                             "type": "boolean",
                             "description": "`POST /client/orders/:id/cancel` would be accepted now."
                           },
+                          "cancelUntil": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "x-gsm-alias": "IsoDateTime",
+                                "description": "ISO 8601 UTC time with milliseconds.",
+                                "examples": [
+                                  "2026-03-01T09:30:00.000Z"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Until when the order waits before it is sent, so it can still be cancelled (decision 075): an order placed on the website for a service that allows cancellation is sent 2 minutes after it was placed. Set only while `canCancel` is true and the order is inside that window; `null` otherwise (a cancellable manual or held order has no deadline)."
+                          },
+                          "cancelBlocked": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "closed",
+                                  "not_allowed",
+                                  "already_sent",
+                                  "in_progress"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Why the order cannot be cancelled now, `null` exactly when `canCancel` is true. The first that applies: `closed` (completed or rejected), `not_allowed` (the service does not allow cancellation), `already_sent` (sent to a supplier, or claimed for a send, at least once: the cancel would be `409 ALREADY_SENT`), `in_progress` (anything else: staff are working on it)."
+                          },
                           "canVerify": {
                             "type": "boolean",
                             "description": "`POST /client/orders/:id/verify` would be accepted now."
+                          },
+                          "verifyUntil": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "x-gsm-alias": "IsoDateTime",
+                                "description": "ISO 8601 UTC time with milliseconds.",
+                                "examples": [
+                                  "2026-03-01T09:30:00.000Z"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Until when a verification can be asked for: `completedAt` plus the service's `verify_window_h` hours. Set only while `canVerify` is true, `null` otherwise."
+                          },
+                          "verifyBlocked": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "already_requested",
+                                  "not_allowed",
+                                  "not_completed",
+                                  "window_passed"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Why a verification cannot be asked for now, `null` exactly when `canVerify` is true. The first that applies: `already_requested` (asked once already), `not_allowed` (the service does not allow verification), `not_completed` (the order is not completed), `window_passed` (the window has passed, or the service has a window of 0 hours)."
                           },
                           "createdAt": {
                             "type": "string",
@@ -210673,7 +210924,11 @@
                           "verificationStatus",
                           "inputFileId",
                           "canCancel",
+                          "cancelUntil",
+                          "cancelBlocked",
                           "canVerify",
+                          "verifyUntil",
+                          "verifyBlocked",
                           "createdAt",
                           "completedAt"
                         ],
@@ -210710,8 +210965,12 @@
                       },
                       "verificationStatus": null,
                       "inputFileId": null,
-                      "canCancel": false,
+                      "canCancel": true,
+                      "cancelUntil": "2026-10-02T06:25:25.000Z",
+                      "cancelBlocked": null,
                       "canVerify": false,
+                      "verifyUntil": null,
+                      "verifyBlocked": "not_completed",
                       "createdAt": "2026-10-02T06:23:25.000Z",
                       "completedAt": null
                     }
@@ -211898,9 +212157,77 @@
                       "type": "boolean",
                       "description": "`POST /client/orders/:id/cancel` would be accepted now."
                     },
+                    "cancelUntil": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Until when the order waits before it is sent, so it can still be cancelled (decision 075): an order placed on the website for a service that allows cancellation is sent 2 minutes after it was placed. Set only while `canCancel` is true and the order is inside that window; `null` otherwise (a cancellable manual or held order has no deadline)."
+                    },
+                    "cancelBlocked": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "closed",
+                            "not_allowed",
+                            "already_sent",
+                            "in_progress"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Why the order cannot be cancelled now, `null` exactly when `canCancel` is true. The first that applies: `closed` (completed or rejected), `not_allowed` (the service does not allow cancellation), `already_sent` (sent to a supplier, or claimed for a send, at least once: the cancel would be `409 ALREADY_SENT`), `in_progress` (anything else: staff are working on it)."
+                    },
                     "canVerify": {
                       "type": "boolean",
                       "description": "`POST /client/orders/:id/verify` would be accepted now."
+                    },
+                    "verifyUntil": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Until when a verification can be asked for: `completedAt` plus the service's `verify_window_h` hours. Set only while `canVerify` is true, `null` otherwise."
+                    },
+                    "verifyBlocked": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "already_requested",
+                            "not_allowed",
+                            "not_completed",
+                            "window_passed"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Why a verification cannot be asked for now, `null` exactly when `canVerify` is true. The first that applies: `already_requested` (asked once already), `not_allowed` (the service does not allow verification), `not_completed` (the order is not completed), `window_passed` (the window has passed, or the service has a window of 0 hours)."
                     },
                     "createdAt": {
                       "type": "string",
@@ -212033,7 +212360,11 @@
                     "verificationStatus",
                     "inputFileId",
                     "canCancel",
+                    "cancelUntil",
+                    "cancelBlocked",
                     "canVerify",
+                    "verifyUntil",
+                    "verifyBlocked",
                     "createdAt",
                     "completedAt",
                     "answers",
@@ -212064,7 +212395,11 @@
                   "verificationStatus": null,
                   "inputFileId": null,
                   "canCancel": false,
+                  "cancelUntil": null,
+                  "cancelBlocked": "closed",
                   "canVerify": false,
+                  "verifyUntil": null,
+                  "verifyBlocked": "not_allowed",
                   "createdAt": "2026-10-02T06:23:25.000Z",
                   "completedAt": "2026-10-02T07:01:10.000Z",
                   "answers": [
@@ -212475,7 +212810,7 @@
     },
     "/client/orders/{id}/cancel": {
       "post": {
-        "description": "Cancels an order that was never sent (`pending`, manual or held) when its service allows it: the order is rejected as \"Cancelled by the merchant\" and the hold returns to the wallet. An order that was sent to a supplier once (being sent now, sent, or sent and then failed or queued again) is `409 ALREADY_SENT`: it is cancelled by staff. A service that does not allow cancellation, or an order already being worked on, is `409 INVALID_TRANSITION`. The account's own store order (paid first, in the shop) is `404`: it is refunded by staff, never cancelled here.",
+        "description": "Cancels an order that was never sent (`pending`, manual or held) when its service allows it: the order is rejected as \"Cancelled by the merchant\" and the hold returns to the wallet. An order placed on the website for a service that allows cancellation is sent only 2 minutes after it was placed (the order's `cancelUntil`, decision 075), so it can be cancelled during that wait; a Dhru order is sent at once. An order that was sent to a supplier once (being sent now, sent, or sent and then failed or queued again) is `409 ALREADY_SENT`: it is cancelled by staff. A service that does not allow cancellation, or an order already being worked on, is `409 INVALID_TRANSITION`. The account's own store order (paid first, in the shop) is `404`: it is refunded by staff, never cancelled here.",
         "operationId": "postClientOrdersByIdCancel",
         "parameters": [
           {
@@ -217879,9 +218214,19 @@
                               "number",
                               "select",
                               "textarea",
-                              "imei"
+                              "imei",
+                              "imei_bulk",
+                              "imeisv",
+                              "serial",
+                              "iccid",
+                              "eid",
+                              "meid",
+                              "ecid",
+                              "mac_address",
+                              "mi_lock_code",
+                              "box_sn"
                             ],
-                            "description": "`imei` holds one IMEI: read as digits (spaces and dashes removed), 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`)."
+                            "description": "Each value is trimmed, read into its stored form and judged by its type, on any service type (decisions 073 and 076). `imei`: one IMEI, spaces and dashes removed, 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`). `imei_bulk`: 1 to 30 IMEIs split on line breaks, commas and semicolons and stored one per line; still one order at one price (a bad line is `422 INVALID_IMEI`, `invalid_imei` \"Line N ...\"; more than 30 `too_many_imeis`, a repeat `duplicate_imei`). The other check types answer `422 VALIDATION_FAILED` with `invalid_<type>`: `imeisv` 16 digits; `serial` 5 to 30 letters and digits (stored upper-case); `iccid` 18 to 22 digits starting with 89; `eid` 32 digits; `meid` 14 or 15 hexadecimal characters or 18 digits; `ecid` an optional `0x` and 8 to 16 hexadecimal characters, or 8 to 20 digits; `mac_address` 12 hexadecimal characters, alone or in pairs by `:` or `-` or in fours by `.`, stored as `AA:BB:CC:DD:EE:FF`; `mi_lock_code` 6 to 64 letters, digits and dashes; `box_sn` 4 to 32 letters, digits and dashes (stored upper-case). `text`, `number`, `select` and `textarea` are stored as sent."
                           },
                           "required": {
                             "type": "boolean"
@@ -226642,7 +226987,7 @@
     },
     "/store/v1/checkout-sessions": {
       "post": {
-        "description": "Starts a purchase, as a guest or as a signed-in retail account: the session locks the retail price, the tax rate of the buyer's `country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) the guest record of that email: it never attaches to the login account of the email, whatever its rank. A request that carries the cookie of a signed-in account (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the checkout as that account instead: `email` must be the email of the account in any case (else `422` on `email`: \"Use the email of your account, or sign out to check out as a guest.\"), the `guestCheckout` switch does not apply and the session belongs to the signed-in account. A signed-in merchant rank is refused (`403 RANK_NOT_ALLOWED`, \"Your account orders from its price list.\") and nothing is written. A request without a usable account session is a guest. The order fields come in `inputs`, each judged by its own type, required tick and pattern (decision 073: the service type `imei` forces nothing); a field of type `imei` holds one IMEI (spaces and dashes removed, 15 digits, Luhn; else `422 INVALID_IMEI` with `invalid_imei` on `inputs.<key>`). On an IMEI service the main input may also come as `imei` (older shop pages; it is the value of the main-input field, wins over a value under its key and is reported on `imei`; a service without such a field takes it as sent). A blocklisted IMEI is refused whenever the main input reads as a valid IMEI. An account or guest record that may not act is refused (`403 ACCOUNT_SUSPENDED`), and so is a guest whose email belongs to a login account that is suspended, blocked or erased, with the same answer as a blocklist hit and no guest record made; when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is `422` on `country` (code `unsupported`, \"Choose a country.\"), the refusal of the customer profile; a shop with no tax window in force accepts any country without tax. While the `country` has a regional tax window in force, `region` must name a region that has one (any case), else `422` on `region` (code `unsupported`, \"Choose a region.\"); the national window alone does not apply then. An email that staff blocked for guest checkouts is refused to a guest like any blocked email (`403 ACCOUNT_SUSPENDED`) and accepted for its signed-in account (decision 050). The answer carries the session token: the whole credential of the next two routes. Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached. `currency` must be on offer in `GET /store/v1/config` (`422` on `currency` otherwise).",
+        "description": "Starts a purchase, as a guest or as a signed-in retail account: the session locks the retail price, the tax rate of the buyer's `country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) the guest record of that email: it never attaches to the login account of the email, whatever its rank. A request that carries the cookie of a signed-in account (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the checkout as that account instead: `email` must be the email of the account in any case (else `422` on `email`: \"Use the email of your account, or sign out to check out as a guest.\"), the `guestCheckout` switch does not apply and the session belongs to the signed-in account. A signed-in merchant rank is refused (`403 RANK_NOT_ALLOWED`, \"Your account orders from its price list.\") and nothing is written. A request without a usable account session is a guest. The order fields come in `inputs`, each judged by its own type, required tick and pattern (decision 073: the service type `imei` forces nothing); a field of type `imei` holds one IMEI (spaces and dashes removed, 15 digits, Luhn; else `422 INVALID_IMEI` with `invalid_imei` on `inputs.<key>`). Decision 076: a field of type `imei_bulk` holds 1 to 30 IMEIs, still one order at one price (a bad line is `422 INVALID_IMEI`), and the other check types answer `422 VALIDATION_FAILED` with `invalid_<type>` on `inputs.<key>`. On an IMEI service the main input may also come as `imei` (older shop pages; it is the value of the main-input field, wins over a value under its key and is reported on `imei`; a service without such a field takes it as sent). A blocklisted IMEI is refused whenever the main input, a field of type `imei` or a line of a field of type `imei_bulk` reads as a valid IMEI. An account or guest record that may not act is refused (`403 ACCOUNT_SUSPENDED`), and so is a guest whose email belongs to a login account that is suspended, blocked or erased, with the same answer as a blocklist hit and no guest record made; when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is `422` on `country` (code `unsupported`, \"Choose a country.\"), the refusal of the customer profile; a shop with no tax window in force accepts any country without tax. While the `country` has a regional tax window in force, `region` must name a region that has one (any case), else `422` on `region` (code `unsupported`, \"Choose a region.\"); the national window alone does not apply then. An email that staff blocked for guest checkouts is refused to a guest like any blocked email (`403 ACCOUNT_SUSPENDED`) and accepted for its signed-in account (decision 050). The answer carries the session token: the whole credential of the next two routes. Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached. `currency` must be on offer in `GET /store/v1/config` (`422` on `currency` otherwise).",
         "operationId": "postStoreV1CheckoutSessions",
         "parameters": [
           {
@@ -226708,7 +227053,7 @@
                     "maxLength": 64
                   },
                   "inputs": {
-                    "description": "The values of the service's order fields by field key (`GET /store/v1/services/:slug`), each judged by its field's type, required tick and pattern; a field of type `imei` is stored as digits.",
+                    "description": "The values of the service's order fields by field key (`GET /store/v1/services/:slug`), each judged by its field's type, required tick and pattern and stored in its type's form (an `imei` as digits, an `imei_bulk` list one IMEI per line; decisions 073 and 076). At most 2000 characters as sent; the stored form at most 500 (`too_long` on `inputs.<key>`; an `imei_bulk` list of more than 30 IMEIs is `too_many_imeis` first).",
                     "type": "object",
                     "propertyNames": {
                       "type": "string",
@@ -226717,7 +227062,7 @@
                     },
                     "additionalProperties": {
                       "type": "string",
-                      "maxLength": 500
+                      "maxLength": 2000
                     }
                   },
                   "utm": {
@@ -226851,7 +227196,7 @@
                       "maximum": 9007199254740991
                     },
                     "imei": {
-                      "description": "The main input of an IMEI service (usually its IMEI) with all but its last four characters hidden; null for another service or none.",
+                      "description": "The main input of an IMEI service (usually its IMEI) with all but its last four characters hidden; a list of IMEIs (a main input of type `imei_bulk`, decision 076) shows its first IMEI so, then ` +N more` for the others (`•••••••••••0861 +2 more`; a one-item list reads like one IMEI). null for another service or none.",
                       "type": [
                         "string",
                         "null"
@@ -227585,7 +227930,7 @@
                       "maximum": 9007199254740991
                     },
                     "imei": {
-                      "description": "The main input of an IMEI service (usually its IMEI) with all but its last four characters hidden; null for another service or none.",
+                      "description": "The main input of an IMEI service (usually its IMEI) with all but its last four characters hidden; a list of IMEIs (a main input of type `imei_bulk`, decision 076) shows its first IMEI so, then ` +N more` for the others (`•••••••••••0861 +2 more`; a one-item list reads like one IMEI). null for another service or none.",
                       "type": [
                         "string",
                         "null"
@@ -249619,9 +249964,19 @@
                               "number",
                               "select",
                               "textarea",
-                              "imei"
+                              "imei",
+                              "imei_bulk",
+                              "imeisv",
+                              "serial",
+                              "iccid",
+                              "eid",
+                              "meid",
+                              "ecid",
+                              "mac_address",
+                              "mi_lock_code",
+                              "box_sn"
                             ],
-                            "description": "`imei` holds one IMEI: read as digits (spaces and dashes removed), 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`)."
+                            "description": "Each value is trimmed, read into its stored form and judged by its type (decisions 073 and 076). `imei`: one IMEI, spaces and dashes removed, 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`). `imei_bulk`: 1 to 30 IMEIs split on line breaks, commas and semicolons and stored one per line, still one order at one price (a bad line is `422 INVALID_IMEI`; more than 30 `too_many_imeis`, a repeat `duplicate_imei`). `imeisv`, `serial`, `iccid`, `eid`, `meid`, `ecid`, `mac_address`, `mi_lock_code` and `box_sn` answer `422 VALIDATION_FAILED` with `invalid_<type>` (the rules of `GET /admin/services/:id`)."
                           },
                           "options": {
                             "type": "array",

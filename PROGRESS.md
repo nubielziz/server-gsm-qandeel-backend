@@ -4,6 +4,23 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**The owner's notes of 2026-11-27 (decisions 074, 075, 076): merged and pushed on the owner's order ("go ahead ... when you finish push the work and
+confirm live").** Three features, one squash commit each, built in parallel worktrees (Sonnet and Opus implementers, two Opus reviewers, final review by
+the lead, Fable 5.2). **074:** `POST /admin/services` makes the code when none is sent (`IMEI-`, `SRV-`, `RMT-`, `FILE-` and the service's own
+id; `-2`, `-3` when taken; no existing code changes), and `PATCH /admin/service-listings/:id` with the stored `isListed` writes no audit row
+(`AuditService.nothingChanged`). **075:** a website order (`source = 'portal'`) of a service with `allow_cancel` waits 2 minutes before the dispatch
+claims it (`cancelWindowEnd`, the job moves itself to `delayed`; Dhru, shop, manual and held orders and services without the switch are sent at
+once; a staff send inside the window waits too), and the merchant's order gains `cancelUntil`, `cancelBlocked`, `verifyUntil`, `verifyBlocked`
+(a replay of an answer stored before the release has them filled in). **076:** ten more custom field types (`imei_bulk`, `imeisv`, `serial`,
+`iccid`, `eid`, `meid`, `ecid`, `mac_address`, `mi_lock_code`, `box_sn`), one rule table (`FIELD_TYPE_RULES`) on every surface; `imei_bulk` is
+one order at one price (up to 30 IMEIs, each checked; the blocklist, the payment step and the account block read every line); migration
+`0073_more_field_types` (the check only, no data step). The console (its decisions 033, 034) and the shop (009, 010) carry their sides.
+**Why it was asked:** the owner's test on production (service 199): the shop switch of Retail Purchase kept "Yes" (a console bug, their 033), the
+Cancel button never showed (an automatic order is sent in the second it is placed) and the Verify button was only on the order's page.
+**Checks:** typecheck, lint, format, English, routes, contract, OpenAPI, coverage, `db:check` (74 migrations) and the whole suite locally on the
+merged main (see the commit of this entry for its counts). **Release order:** console, backend, shop. **Open:** the local database `gsm` needs
+`bun run db:migrate` (0073) when the dev stack is started again; the `withActionFacts` fill-in can go 7 days after the release.
+
 **IMEI is a field type; the service type forces nothing (2026-11-26, decision 073): merged, not pushed (waiting for the owner's word).** The owner's
 order: "do not make the server force an IMEI in services of type imei; make the IMEI input the default and give the user the freedom". A custom field
 has a fifth type `imei` (digits, 15, Luhn; `invalid_imei` on `inputs.<key>`), judged on any service. An IMEI service is placed like a server service:

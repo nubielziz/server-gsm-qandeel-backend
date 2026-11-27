@@ -4,7 +4,7 @@ Status: accepted, 2026-11-27 (the owner's order of that day: "in the Code field 
 owner accepted the lead's format). Builds on decisions 060 (the Catalog page), 069 (own cost) and 073 (an IMEI service's default field). The
 console and the shop record their own side of the change.
 
-**Context.** A service made by hand had a code that staff typed (production holds typed codes such as "Fix Phone" and "SKT!"); a service
+**Context.** A service made by hand had a code that staff typed (typed codes of any shape, some with spaces or punctuation); a service
 brought in by a supplier import already gets one by itself (`IMP-<supplier service id>`, then `-2`, `-3`, ...). The owner does not want
 to invent codes. Separately, production's audit log holds rows "unlisted from storefront" whose `before` and `after` are both
 `{ "isListed": false }`: the console once sent the same shop switch five times, and the route wrote a row for each.

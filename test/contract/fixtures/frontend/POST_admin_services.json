@@ -6,7 +6,7 @@
   "body": {
     "id": 28,
     "name": "Harvest sample",
-    "code": "HARVEST-1",
+    "code": "IMEI-28",
     "type": "imei",
     "status": "active",
     "executionMode": "auto",

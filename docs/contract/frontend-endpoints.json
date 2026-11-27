@@ -16044,7 +16044,17 @@
           "imei",
           "text",
           "select",
-          "textarea"
+          "textarea",
+          "imei_bulk",
+          "imeisv",
+          "serial",
+          "iccid",
+          "eid",
+          "meid",
+          "ecid",
+          "mac_address",
+          "mi_lock_code",
+          "box_sn"
          ]
         },
         "required": {
@@ -38542,7 +38552,8 @@
         "type": "string"
        },
        "code": {
-        "type": "string"
+        "type": "string",
+        "optional": true
        },
        "categoryId": {
         "type": "number",
@@ -41451,7 +41462,17 @@
             "imei",
             "text",
             "select",
-            "textarea"
+            "textarea",
+            "imei_bulk",
+            "imeisv",
+            "serial",
+            "iccid",
+            "eid",
+            "meid",
+            "ecid",
+            "mac_address",
+            "mi_lock_code",
+            "box_sn"
            ]
           },
           "required": {
@@ -41515,7 +41536,17 @@
         "imei",
         "text",
         "select",
-        "textarea"
+        "textarea",
+        "imei_bulk",
+        "imeisv",
+        "serial",
+        "iccid",
+        "eid",
+        "meid",
+        "ecid",
+        "mac_address",
+        "mi_lock_code",
+        "box_sn"
        ]
       },
       "required": {
