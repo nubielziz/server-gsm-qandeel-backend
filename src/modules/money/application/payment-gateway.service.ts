@@ -6,6 +6,7 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import type { UploadedFile } from '../../../common/multipart';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError, type FieldError } from '../../../common/errors';
+import { firstFreeIdentifier } from '../../../common/identifier';
 import { Money } from '../../../common/money';
 import { type DbExecutor, DbService } from '../../../infra/db';
 import { isUniqueViolation } from '../../../infra/db/pg-errors';
@@ -21,11 +22,13 @@ import {
   presetProblems,
 } from '../domain/gateway-presets';
 import {
+  GATEWAY_CODE_MAX_LENGTH,
   type GatewayFields,
   type WebhookSecretChange,
   changesAutomaticSetup,
   changesCredentials,
   checkGatewayFields,
+  madeGatewayCode,
   nextWebhookSecrets,
   secretHintOf,
 } from '../domain/gateway-rules';
@@ -37,6 +40,7 @@ import {
   findGatewayByCode,
   gatewayIsUsed,
   insertGateway,
+  insertGatewayIfCodeFree,
   listGatewayRows,
   topupVolumes,
   updateGateway,
@@ -44,8 +48,14 @@ import {
 import { type WireGateway, gatewayToWire } from './billing-wire';
 import { GatewayCredentialsVault } from './gateway-credentials';
 
-/** The body of a new gateway as the contract hands it over (decimals as typed text). */
-export interface CreateGatewayInput extends GatewayFields, WebhookSecretChange {
+/**
+ * The body of a new gateway as the contract hands it over (decimals as typed text).
+ *
+ * Why: decision 077: `code` is optional; left out, the server makes it (`madeGatewayCode`).
+ */
+export interface CreateGatewayInput extends Omit<GatewayFields, 'code'>, WebhookSecretChange {
+  /** The code staff typed (judged as before); `undefined` when the server makes it. */
+  readonly code?: string | undefined;
   readonly allowedGroupIds: readonly number[];
   readonly supportsRefunds: boolean;
   readonly supports3ds: boolean;
@@ -58,6 +68,9 @@ export interface CreateGatewayInput extends GatewayFields, WebhookSecretChange {
 
 /** What a change may carry. */
 export type UpdateGatewayInput = Partial<CreateGatewayInput>;
+
+/** A gateway request whose code is known: the typed one, the stored one on a change, or the base of the one the server makes. */
+type CodedGatewayInput = CreateGatewayInput & { readonly code: string };
 
 const DAY_MS = 86_400_000;
 const GATEWAY_OWNER_DETAIL = 'Only an owner can set up an automatic payment method or change its secrets.';
@@ -196,52 +209,73 @@ export class PaymentGatewayService {
   /**
    * Adds a gateway.
    *
+   * Why: decision 077: `code` is optional. A code that was sent is judged as before (`422` on `code` when another gateway holds it). A code
+   * that was left out is made by the server inside this transaction: the preset's key, or the name as an identifier, then `_2`, `_3`, ...
+   * when another gateway holds it; two creates at the same moment get different codes, never a refusal for a code nobody typed. The row,
+   * the answer and the audit row carry the final code, which is part of the webhook address and never changes.
+   *
    * @param caller the signed-in staff member (only an Owner adds an automatic method or sends a secret, decision 046)
    * @param input the request body
    * @returns the new gateway
-   * @throws {AppError} `VALIDATION_FAILED` for a bad field, a code another gateway uses, a group that does not exist, a second webhook
+   * @throws {AppError} `VALIDATION_FAILED` for a bad field, a code another gateway uses (a typed one), a group that does not exist, a second webhook
    *   secret without a first, or a `preset` that is unknown (`preset` `unknown`), not available yet (`preset` `unavailable`), of another
    *   kind than `isManual` (`isManual` `preset_kind`) or of another driver (`driver` `preset_driver`); `FORBIDDEN` (403) for a
    *   caller who is not an Owner and adds an automatic method or sends a secret, after the validation and before any write
    */
   async create(caller: PermissionHolder, input: CreateGatewayInput): Promise<WireGateway> {
-    const errors = [...(await this.problems(input, input.allowedGroupIds)), ...presetProblems(input)];
+    // The made code (or, for a typed one, the typed text) is what the field rules judge, so a request without a code gets every other check as before.
+    const base = input.code ?? madeGatewayCode(input.name, input.preset);
+    const errors = [
+      ...(await this.problems({ ...input, code: base }, input.allowedGroupIds)),
+      ...presetProblems(input),
+    ];
     if (errors.length > 0) throw refuse(...errors);
     // Decision 046: a method that confirms payments by itself, and the keys it is checked against, are set by an Owner.
     if (!input.isManual || changesCredentials(input)) requireOwner(caller, GATEWAY_OWNER_DETAIL);
     const { secrets } = webhookSecretsAfter([], input);
     const row = await this.db.runInTransaction(async ({ tx }) => {
-      if (await findGatewayByCode(tx, input.code)) throw refuse(codeTaken);
       const now = this.clock.now();
+      const rowWith = (code: string): NewPaymentGateway => ({
+        code,
+        driver: input.driver,
+        name: input.name,
+        // `presetProblems` passed: the key is a catalog entry (or absent for a custom method).
+        preset: presetOf(input.preset)?.key ?? null,
+        audience: input.audience as PaymentGateway['audience'],
+        feePercent: input.feePercent,
+        feeFixed: fixed(input.feeFixed),
+        minAmount: fixed(input.minAmount),
+        maxAmount: fixed(input.maxAmount),
+        allowedGroupIds: [...input.allowedGroupIds],
+        supportsRefunds: input.supportsRefunds,
+        supports3ds: input.supports3ds,
+        isManual: input.isManual,
+        instructions: input.instructions,
+        holdHours: input.holdHours,
+        isActive: input.isActive,
+        configEnc: input.secret ? this.vault.sealConfig(null, { secret: input.secret }, 0) : null,
+        webhookSecretEnc: secrets.length > 0 ? this.vault.sealWebhookSecrets(secrets) : null,
+        createdAt: now,
+        updatedAt: now,
+      });
       let created: PaymentGateway;
-      try {
-        created = await insertGateway(tx, {
-          code: input.code,
-          driver: input.driver,
-          name: input.name,
-          // `presetProblems` passed: the key is a catalog entry (or absent for a custom method).
-          preset: presetOf(input.preset)?.key ?? null,
-          audience: input.audience as PaymentGateway['audience'],
-          feePercent: input.feePercent,
-          feeFixed: fixed(input.feeFixed),
-          minAmount: fixed(input.minAmount),
-          maxAmount: fixed(input.maxAmount),
-          allowedGroupIds: [...input.allowedGroupIds],
-          supportsRefunds: input.supportsRefunds,
-          supports3ds: input.supports3ds,
-          isManual: input.isManual,
-          instructions: input.instructions,
-          holdHours: input.holdHours,
-          isActive: input.isActive,
-          configEnc: input.secret ? this.vault.sealConfig(null, { secret: input.secret }, 0) : null,
-          webhookSecretEnc: secrets.length > 0 ? this.vault.sealWebhookSecrets(secrets) : null,
-          createdAt: now,
-          updatedAt: now,
+      if (input.code === undefined) {
+        // Made code: the read skips the codes held, the conflict-safe insert settles a clash with a create at the same moment (decision 077).
+        created = await firstFreeIdentifier({
+          base,
+          maxLength: GATEWAY_CODE_MAX_LENGTH,
+          isTaken: async (code) => (await findGatewayByCode(tx, code)) !== undefined,
+          insert: (code) => insertGatewayIfCodeFree(tx, rowWith(code)),
         });
-      } catch (error) {
-        // Two requests with the same code passed the check above together: the unique index decides.
-        if (isUniqueViolation(error)) throw refuse(codeTaken);
-        throw error;
+      } else {
+        if (await findGatewayByCode(tx, input.code)) throw refuse(codeTaken);
+        try {
+          created = await insertGateway(tx, rowWith(input.code));
+        } catch (error) {
+          // Two requests with the same typed code passed the check above together: the unique index decides.
+          if (isUniqueViolation(error)) throw refuse(codeTaken);
+          throw error;
+        }
       }
       await this.audit.record(tx, {
         action: 'added payment method',
@@ -280,7 +314,7 @@ export class PaymentGatewayService {
           message: 'The code of a payment method cannot change: it is part of its webhook address.',
         });
       }
-      const merged: CreateGatewayInput = {
+      const merged: CodedGatewayInput = {
         code: current.code,
         driver: input.driver ?? current.driver,
         name: input.name ?? current.name,
@@ -447,7 +481,7 @@ export class PaymentGatewayService {
 
   /** Every problem of a gateway: its fields, a code that is taken, and the requested groups that do not exist. */
   private async problems(
-    fields: CreateGatewayInput,
+    fields: CodedGatewayInput,
     requestedGroupIds: readonly number[],
     db: DbExecutor = this.db.db,
   ): Promise<FieldError[]> {

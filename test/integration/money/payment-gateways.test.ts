@@ -123,6 +123,204 @@ describe('POST /admin/payment-gateways', () => {
   });
 });
 
+describe('POST /admin/payment-gateways without a code (decision 077)', () => {
+  /** A manual custom method without a code and without a secret: the staff member needs only payments:gateways. */
+  const manual = (overrides: Record<string, unknown> = {}) =>
+    body({
+      code: undefined,
+      driver: 'cliq',
+      name: 'Bank of Jordan',
+      isManual: true,
+      secret: undefined,
+      ...overrides,
+    });
+  const gatewayRows = async () => (await testDb()).db.select().from(s.paymentGateways).orderBy(s.paymentGateways.id);
+  const auditRows = async () => (await testDb()).db.select().from(s.auditLogs).orderBy(s.auditLogs.id);
+
+  it('makes the code from the name of a custom method: the stored row, the answer and the audit row carry it', async () => {
+    const admin = await adminWith(t, ['payments:gateways']);
+    const res = await admin.post('/admin/payment-gateways', manual());
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ code: 'bank_of_jordan', name: 'Bank of Jordan', preset: null });
+    const [row] = await gatewayRows();
+    expect(row).toMatchObject({ id: res.body.id, code: 'bank_of_jordan', preset: null });
+    const [audit] = await auditRows();
+    expect(audit).toMatchObject({
+      action: 'added payment method',
+      entityType: 'payment_gateway',
+      entityId: res.body.id,
+      entityLabel: 'Bank of Jordan',
+      actorId: admin.staffId,
+    });
+    expect(audit!.after).toMatchObject({ code: 'bank_of_jordan', name: 'Bank of Jordan' });
+    expect((await admin.get(`/admin/payment-gateways/${res.body.id}`)).body.code).toBe('bank_of_jordan');
+  });
+
+  it('keeps the made code for good: a change that names another code is refused, the same code is accepted', async () => {
+    const admin = await adminWith(t, ['payments:gateways']);
+    const created = await admin.post('/admin/payment-gateways', manual());
+    const other = await admin.patch(`/admin/payment-gateways/${created.body.id}`, { code: 'renamed' });
+    expect(other.status).toBe(422);
+    expect(other.body.errors[0]).toMatchObject({ field: 'code', code: 'immutable' });
+    const same = await admin.patch(`/admin/payment-gateways/${created.body.id}`, {
+      code: 'bank_of_jordan',
+      isActive: false,
+    });
+    expect(same.status).toBe(200);
+    expect(same.body).toMatchObject({ code: 'bank_of_jordan', isActive: false });
+  });
+
+  it('takes _2, _3 when a method already holds the code, a typed one included, and never answers 422 for it', async () => {
+    const admin = await adminWith(t, ['payments:gateways']);
+    expect((await admin.post('/admin/payment-gateways', manual({ code: 'bank_of_jordan' }))).body.code).toBe(
+      'bank_of_jordan',
+    );
+    const second = await admin.post('/admin/payment-gateways', manual());
+    const third = await admin.post('/admin/payment-gateways', manual());
+    expect([second.status, second.body.code]).toEqual([201, 'bank_of_jordan_2']);
+    expect([third.status, third.body.code]).toEqual([201, 'bank_of_jordan_3']);
+    // A typed code that is taken is still refused as before.
+    const typed = await admin.post('/admin/payment-gateways', manual({ code: 'bank_of_jordan_2' }));
+    expect(typed.status).toBe(422);
+    expect(typed.body.errors[0]).toMatchObject({ field: 'code', code: 'taken' });
+    expect((await gatewayRows()).map((row) => row.code)).toEqual([
+      'bank_of_jordan',
+      'bank_of_jordan_2',
+      'bank_of_jordan_3',
+    ]);
+    const audits = await auditRows();
+    expect(audits.map((row) => (row.after as { code: string }).code)).toEqual([
+      'bank_of_jordan',
+      'bank_of_jordan_2',
+      'bank_of_jordan_3',
+    ]);
+  });
+
+  it('keeps a typed code exactly as before, whatever the name would make', async () => {
+    const admin = await adminWith(t, ['payments:gateways']);
+    const typed = await admin.post('/admin/payment-gateways', manual({ code: 'my-code_1' }));
+    expect([typed.status, typed.body.code]).toEqual([201, 'my-code_1']);
+    const bad = await admin.post('/admin/payment-gateways', manual({ code: 'Bad Code' }));
+    expect(bad.status).toBe(422);
+    expect(bad.body.errors).toMatchObject([{ field: 'code', code: 'format' }]);
+    // A blank code is a typed code that is empty: still 422 on code, not a request to make one.
+    const blank = await admin.post('/admin/payment-gateways', manual({ code: '   ' }));
+    expect(blank.status).toBe(422);
+    expect(blank.body.errors).toMatchObject([{ field: 'code', code: 'required' }]);
+    expect(await gatewayRows()).toHaveLength(1);
+  });
+
+  it('judges every other field as before, and reports no problem on code for a request without one', async () => {
+    const admin = await adminWith(t, ['payments:gateways']);
+    const res = await admin.post('/admin/payment-gateways', manual({ name: ' ', feePercent: '120' }));
+    expect(res.status).toBe(422);
+    expect(res.body.errors.map((error: { field: string }) => error.field).sort()).toEqual(['feePercent', 'name']);
+    expect(await gatewayRows()).toHaveLength(0);
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it('makes method for a name with no letter or digit a-z in it, and a digit-first name stays a valid code', async () => {
+    const admin = await adminWith(t, ['payments:gateways']);
+    const arabic = await admin.post(
+      '/admin/payment-gateways',
+      manual({ name: '\u0628\u0646\u0643 \u0627\u0644\u0623\u0631\u062f\u0646' }),
+    );
+    const again = await admin.post('/admin/payment-gateways', manual({ name: '\u0628\u0646\u0643' }));
+    const digits = await admin.post('/admin/payment-gateways', manual({ name: '7 Eleven pay' }));
+    expect([arabic.body.code, again.body.code, digits.body.code]).toEqual(['method', 'method_2', '7_eleven_pay']);
+    expect(arabic.body.name).toBe('\u0628\u0646\u0643 \u0627\u0644\u0623\u0631\u062f\u0646');
+  });
+
+  it('cuts a long name to 40 characters and still fits the suffix of the next one', async () => {
+    const admin = await adminWith(t, ['payments:gateways']);
+    const name = `${'x'.repeat(30)} ${'y'.repeat(30)}`;
+    const first = await admin.post('/admin/payment-gateways', manual({ name }));
+    const second = await admin.post('/admin/payment-gateways', manual({ name }));
+    expect(first.body.code).toBe(`${'x'.repeat(30)}_${'y'.repeat(9)}`);
+    expect(first.body.code).toHaveLength(40);
+    expect(second.body.code).toBe(`${'x'.repeat(30)}_${'y'.repeat(7)}_2`);
+    expect(second.body.code).toHaveLength(40);
+  });
+
+  it('makes the key of the preset for a ready-made method, and _2 for the second one made from it', async () => {
+    const admin = await adminWith(t, ['payments:gateways']);
+    const vodafone = (name: string) =>
+      manual({ driver: 'vodafone_cash', name, preset: 'vodafone_cash', instructions: 'Send it to 01000000000.' });
+    const first = await admin.post('/admin/payment-gateways', vodafone('Vodafone Cash'));
+    const second = await admin.post('/admin/payment-gateways', vodafone('Vodafone Cash (second line)'));
+    expect([first.status, first.body.code, first.body.preset]).toEqual([201, 'vodafone_cash', 'vodafone_cash']);
+    expect([second.status, second.body.code, second.body.preset]).toEqual([201, 'vodafone_cash_2', 'vodafone_cash']);
+    expect((await gatewayRows()).map((row) => [row.code, row.preset])).toEqual([
+      ['vodafone_cash', 'vodafone_cash'],
+      ['vodafone_cash_2', 'vodafone_cash'],
+    ]);
+    expect((await auditRows()).map((row) => (row.after as { code: string }).code)).toEqual([
+      'vodafone_cash',
+      'vodafone_cash_2',
+    ]);
+    // A custom method with the same words as the preset's key meets the preset-made code and takes the next number.
+    const custom = await admin.post('/admin/payment-gateways', manual({ driver: 'cash', name: 'Vodafone cash' }));
+    expect(custom.body.code).toBe('vodafone_cash_3');
+    // A typed code beats the preset's key.
+    const typed = await admin.post('/admin/payment-gateways', vodafone('Vodafone Cash third'));
+    expect(typed.body.code).toBe('vodafone_cash_4');
+    const named = await admin.post('/admin/payment-gateways', {
+      ...vodafone('Vodafone Cash fourth'),
+      code: 'vf-office',
+    });
+    expect(named.body.code).toBe('vf-office');
+  });
+
+  it('keeps the preset refusals: an unknown preset is 422 on preset and nothing is written', async () => {
+    const admin = await adminWith(t, ['payments:gateways']);
+    const res = await admin.post('/admin/payment-gateways', manual({ preset: 'not_a_preset' }));
+    expect(res.status).toBe(422);
+    expect(res.body.errors).toMatchObject([{ field: 'preset', code: 'unknown' }]);
+    expect(await gatewayRows()).toHaveLength(0);
+  });
+
+  it('gives six creates of one name at the same moment six different codes, each with its audit row', async () => {
+    const admin = await adminWith(t, ['payments:gateways']);
+    const answers = await Promise.all(
+      Array.from({ length: 6 }, () => admin.post('/admin/payment-gateways', manual({ name: 'Cash pickup' }))),
+    );
+    expect(answers.map((answer) => answer.status)).toEqual([201, 201, 201, 201, 201, 201]);
+    const codes = answers.map((answer) => answer.body.code as string).sort();
+    expect(codes).toEqual([
+      'cash_pickup',
+      'cash_pickup_2',
+      'cash_pickup_3',
+      'cash_pickup_4',
+      'cash_pickup_5',
+      'cash_pickup_6',
+    ]);
+    expect((await gatewayRows()).map((row) => row.code).sort()).toEqual(codes);
+    expect((await auditRows()).map((row) => (row.after as { code: string }).code).sort()).toEqual(codes);
+  });
+
+  it('gives a made code and a typed one that meet at the same moment their own rows: only the typed one can be refused', async () => {
+    const admin = await adminWith(t, ['payments:gateways']);
+    const answers = await Promise.all([
+      admin.post('/admin/payment-gateways', manual({ code: 'cash_pickup' })),
+      admin.post('/admin/payment-gateways', manual({ name: 'Cash pickup' })),
+    ]);
+    const made = answers[1];
+    expect(made.status).toBe(201);
+    if (answers[0].status === 201) expect(made.body.code).toBe('cash_pickup_2');
+    else {
+      expect(answers[0].status).toBe(422);
+      expect(made.body.code).toBe('cash_pickup');
+    }
+    expect(await gatewayRows()).toHaveLength(2 - (answers[0].status === 201 ? 0 : 1));
+  });
+
+  it('refuses a caller without payments:gateways before it makes anything', async () => {
+    const reader = await adminWith(t, ['payments:read']);
+    expect((await reader.post('/admin/payment-gateways', manual())).status).toBe(403);
+    expect(await gatewayRows()).toHaveLength(0);
+  });
+});
+
 describe('GET /admin/payment-gateways', () => {
   it('lists with the secret hint and the 30-day volume of captured top-ups only', async () => {
     const { db } = await testDb();

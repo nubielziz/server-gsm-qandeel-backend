@@ -4,12 +4,14 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
+import { firstFreeIdentifier } from '../../../common/identifier';
 import { CacheKeys, CacheService } from '../../../infra/cache';
 import { DbService, type TransactionContext } from '../../../infra/db';
 import { isUniqueViolation } from '../../../infra/db/pg-errors';
 import { AuditService } from '../../platform';
-import type { AlertChannel, AlertEvent, AlertRule } from '../db/schema';
+import type { AlertChannel, AlertEvent, AlertRule, NewAlertRule } from '../db/schema';
 import { conditionOf, isMuted } from '../domain/alert-evaluation';
+import { ALERT_KEY_MAX_LENGTH, madeAlertRuleKey } from '../domain/alert-rule-key';
 import { type MetricKey, unitOf } from '../domain/metric-registry';
 import { resolveOpenAlertsOfRule } from '../infra/alert-events.repository';
 import {
@@ -17,6 +19,7 @@ import {
   type AlertRuleRow,
   findRuleRow,
   insertRule,
+  insertRuleIfKeyFree,
   listRuleRows,
   lockRule,
   ruleKeyTaken,
@@ -49,7 +52,8 @@ export interface AlertRuleView {
 
 /** The fields of a new rule (the contract has validated them). */
 export interface CreateRuleInput {
-  readonly key: string;
+  /** The key staff typed (judged as before); `undefined` when the server makes it from the name (decision 077). */
+  readonly key?: string | undefined;
   readonly name: string;
   readonly metric: MetricKey;
   readonly comparator: AlertRule['comparator'];
@@ -178,35 +182,51 @@ export class AlertRulesService {
   /**
    * Adds a rule.
    *
+   * Why: decision 077: `key` is optional. A key that was sent is judged as before (422 on `key` when another rule that is not deleted holds
+   * it). A key that was left out is made by the server inside this transaction: the name as an identifier, then `_2`, `_3`, ... when another
+   * live rule holds it; two creates at the same moment get different keys, never a refusal for a key nobody typed. The row, the answer and the
+   * audit row carry the final key.
+   *
    * @param staffId the staff member who adds it
    * @param input the validated fields
    * @returns the new rule (`open` false)
-   * @throws {AppError} `VALIDATION_FAILED` (422 on `key` when another rule that is not deleted has it)
+   * @throws {AppError} `VALIDATION_FAILED` (422 on `key` when a key that was sent is held by another rule that is not deleted)
    */
   async create(staffId: number, input: CreateRuleInput): Promise<AlertRuleView> {
     const now = this.clock.now();
     return this.db.runInTransaction(async ({ tx }) => {
-      if (await ruleKeyTaken(tx, input.key)) throw KEY_TAKEN();
+      const rowWith = (key: string): NewAlertRule => ({
+        key,
+        name: input.name,
+        metric: input.metric,
+        comparator: input.comparator,
+        threshold: input.threshold.toFixed(4),
+        windowSeconds: input.windowSeconds,
+        severity: input.severity,
+        channels: input.channels,
+        isActive: input.isActive ?? true,
+        mutedUntil: null,
+        createdBy: staffId,
+        createdAt: now,
+      });
       let rule: AlertRule;
-      try {
-        rule = await insertRule(tx, {
-          key: input.key,
-          name: input.name,
-          metric: input.metric,
-          comparator: input.comparator,
-          threshold: input.threshold.toFixed(4),
-          windowSeconds: input.windowSeconds,
-          severity: input.severity,
-          channels: input.channels,
-          isActive: input.isActive ?? true,
-          mutedUntil: null,
-          createdBy: staffId,
-          createdAt: now,
+      if (input.key === undefined) {
+        // Made key: the read skips the keys held, the conflict-safe insert settles a clash with a create at the same moment (decision 077).
+        rule = await firstFreeIdentifier({
+          base: madeAlertRuleKey(input.name),
+          maxLength: ALERT_KEY_MAX_LENGTH,
+          isTaken: (key) => ruleKeyTaken(tx, key),
+          insert: (key) => insertRuleIfKeyFree(tx, rowWith(key)),
         });
-      } catch (error) {
-        // A parallel request passed the pre-check; the partial unique index has the last word.
-        if (isUniqueViolation(error, 'alert_rules_key_uq')) throw KEY_TAKEN();
-        throw error;
+      } else {
+        if (await ruleKeyTaken(tx, input.key)) throw KEY_TAKEN();
+        try {
+          rule = await insertRule(tx, rowWith(input.key));
+        } catch (error) {
+          // A parallel request passed the pre-check; the partial unique index has the last word.
+          if (isUniqueViolation(error, 'alert_rules_key_uq')) throw KEY_TAKEN();
+          throw error;
+        }
       }
       await this.audit.record(tx, {
         action: 'added alert rule',

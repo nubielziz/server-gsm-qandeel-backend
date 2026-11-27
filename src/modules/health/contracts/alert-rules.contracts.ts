@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
 import { ALERT_CHANNELS, ALERT_COMPARATORS, ALERT_SEVERITIES, ALERT_UNITS, type AlertChannel } from '../db/schema';
+import { ALERT_KEY_PATTERN } from '../domain/alert-rule-key';
 import { METRIC_KEYS } from '../domain/metric-registry';
 
 const id = z.object({ id: zIdParam });
@@ -52,7 +53,7 @@ const RULE_EXAMPLE = {
 
 const Key = z
   .string({ error: 'Enter a key.' })
-  .regex(/^[a-z][a-z0-9_]{2,40}$/, 'Use 3 to 41 lowercase letters, digits or underscores, starting with a letter.');
+  .regex(ALERT_KEY_PATTERN, 'Use 3 to 41 lowercase letters, digits or underscores, starting with a letter.');
 const Name = z
   .string({ error: 'Enter a name of 3 to 80 characters.' })
   .trim()
@@ -130,8 +131,11 @@ export const createAlertRule = defineRoute({
   key: 'POST /admin/alert-rules',
   summary: 'Add an alert rule',
   description:
-    'Every field is required except `isActive` (default true). `key` is unique among the rules that are not deleted (a duplicate is `422` on ' +
-    '`key`). `metric` is one of the ten registry keys and the server sets `unit` from it: `supplier.timeout_rate`, `supplier.error_rate`, ' +
+    'Every field is required except `isActive` (default true) and `key`. `key` is unique among the rules that are not deleted (a duplicate is ' +
+    '`422` on `key`). Decision 077: leave `key` out and the server makes it, in the same transaction, from the name (lower case, every run of ' +
+    'characters other than a-z and 0-9 one `_`, none at either end, cut to 41; `rule_` in front when the result starts with a digit or has ' +
+    'fewer than 3 characters; `rule` when nothing is left), and takes `_2`, `_3`, ... when another rule that is not deleted already holds it, ' +
+    'so a made key is never refused as a duplicate; the stored row, the answer and the audit entry carry the final key. `metric` is one of the ten registry keys and the server sets `unit` from it: `supplier.timeout_rate`, `supplier.error_rate`, ' +
     '`api.rate5xx`, `db.connection_usage` and `redis.memory_usage` are `percent`; `api.p95` is `ms`; `queue.oldest_age` is ' +
     '`s`; `orders.past_sla` and `ledger.mismatch_count` are `count`; `supplier.balance` has no unit (`null`). `threshold` is a number in that unit. ' +
     '`windowSeconds` (60 to 86400) is the period a rate or percentile is measured over (`supplier.timeout_rate`, `supplier.error_rate`, `api.p95`, ' +
@@ -144,7 +148,7 @@ export const createAlertRule = defineRoute({
   access: 'staff-permission',
   permission: 'alerts:create',
   body: z.object({
-    key: Key,
+    key: Key.optional(),
     name: Name,
     metric: Metric,
     comparator: Comparator,

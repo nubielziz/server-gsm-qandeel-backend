@@ -190,6 +190,12 @@ Queues, jobs and schedules: `docs/queues.md`.
   switched off, deleted, muted or edited to judge differently while the run was reading its metric: nothing would ever close such an alert (later runs
   skip an inactive rule and no route resolves an alert), so either the alert commits first and the change resolves it, or the change commits first and
   the evaluator skips.
+- **The key is made by the server (decision 077).** `key` is optional on `POST /admin/alert-rules`. Sent, it is judged as before (`ALERT_KEY_PATTERN`, `422` on
+  `key` when another rule that is not deleted holds it). Left out, the create makes it in its own transaction from the name (`madeAlertRuleKey` in
+  `domain/alert-rule-key.ts`, on `identifierFrom` of `src/common/identifier.ts`: lower case, accents dropped, each run of other characters one `_`, cut to
+  41, `rule_` in front of a result that starts with a digit or has fewer than 3 characters, `rule` when nothing is left), then `_2`, `_3`, ... while
+  another live rule holds it. The loop is `firstFreeIdentifier` with `insertRuleIfKeyFree` (`ON CONFLICT (key) WHERE deleted_at IS NULL DO NOTHING`), so
+  two creates at once never share a key and a made key is never refused as a duplicate. The row, the answer and the audit row carry the final key; `PATCH` is unchanged.
 - **Rules** (`AlertRulesService`): a deleted rule keeps its row (`deleted_at`) and its alerts; switching a rule off, deleting it or changing its metric
   resolves its open alerts and sends their "resolved" messages in the same transaction; a mute (`muted_until`) stops new alerts and reminders only.
   Editing only `windowSeconds` keeps the running stretch (a longer window waits for it to grow, a shorter one counts it at once); editing the metric,

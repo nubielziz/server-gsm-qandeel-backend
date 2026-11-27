@@ -10,7 +10,10 @@ import {
   checkGatewayFields,
   depositFee,
   effectiveMaxAmount,
+  GATEWAY_CODE_MAX_LENGTH,
+  GATEWAY_SLUG_PATTERN,
   type GatewayFields,
+  madeGatewayCode,
   nextWebhookSecrets,
   REQUIRE_3DS_KEY,
   secretHintOf,
@@ -221,5 +224,32 @@ describe('asks3ds (decision 049)', () => {
     expect(asks3ds(false, true)).toBe(false);
     expect(asks3ds(undefined, false)).toBe(false);
     expect(asks3ds(true, false)).toBe(false);
+  });
+});
+
+describe('madeGatewayCode (decision 077)', () => {
+  it('is the key of the preset when a preset is named, whatever the name', () => {
+    expect(madeGatewayCode('My Vodafone line', 'vodafone_cash')).toBe('vodafone_cash');
+    expect(madeGatewayCode('Anything', 'bank_transfer')).toBe('bank_transfer');
+  });
+
+  it('is the name as an identifier for a custom method, and for a preset key the catalog does not know', () => {
+    expect(madeGatewayCode('Bank of Jordan', undefined)).toBe('bank_of_jordan');
+    expect(madeGatewayCode('Bank of Jordan', null)).toBe('bank_of_jordan');
+    expect(madeGatewayCode('CliQ transfer', 'not_a_preset')).toBe('cliq_transfer');
+  });
+
+  it('is method when the name has no letter or digit a-z in it', () => {
+    expect(madeGatewayCode('\u0628\u0646\u0643', undefined)).toBe('method');
+    expect(madeGatewayCode('???', undefined)).toBe('method');
+  });
+
+  it('always fits the format of a code, cut to its longest length', () => {
+    for (const name of ['A', '9 lives', 'x'.repeat(80), 'Caf\u00e9 d\u00e9j\u00e0 vu \u2013 EUR/USD (live)']) {
+      const code = madeGatewayCode(name, undefined);
+      expect(code).toMatch(GATEWAY_SLUG_PATTERN);
+      expect(code.length).toBeLessThanOrEqual(GATEWAY_CODE_MAX_LENGTH);
+      expect(checkGatewayFields(fields({ code }))).toEqual([]);
+    }
   });
 });

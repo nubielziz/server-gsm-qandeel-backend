@@ -168,6 +168,156 @@ describe('POST /admin/alert-rules', () => {
   });
 });
 
+describe('POST /admin/alert-rules without a key (decision 077)', () => {
+  /** A rule body without the key. */
+  const unkeyed = (overrides: Record<string, unknown> = {}) => body({ key: undefined, ...overrides });
+  const ruleRows = async () => (await testDb()).db.select().from(s.alertRules).orderBy(s.alertRules.id);
+
+  it('makes the key from the name: the stored row, the answer and the audit row carry it', async () => {
+    const res = await staff.post('/admin/alert-rules', unkeyed());
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ key: 'supplier_timeouts', name: 'Supplier timeouts', unit: 'percent' });
+    const [row] = await ruleRows();
+    expect(row).toMatchObject({ id: res.body.id, key: 'supplier_timeouts', createdBy: staff.staffId, deletedAt: null });
+    const [entry] = await audit();
+    expect(entry).toMatchObject({
+      action: 'added alert rule',
+      entityType: 'alert_rule',
+      entityId: res.body.id,
+      entityLabel: 'Supplier timeouts',
+      actorId: staff.staffId,
+    });
+    expect(entry!.after).toMatchObject({ key: 'supplier_timeouts', name: 'Supplier timeouts' });
+    expect((await reader.get(`/admin/alert-rules/${res.body.id}`)).body.key).toBe('supplier_timeouts');
+  });
+
+  it('takes _2, _3 when another rule holds the key, a typed one included, and never answers 422 for it', async () => {
+    expect((await staff.post('/admin/alert-rules', body({ key: 'supplier_timeouts' }))).status).toBe(201);
+    const second = await staff.post('/admin/alert-rules', unkeyed());
+    const third = await staff.post('/admin/alert-rules', unkeyed());
+    expect([second.status, second.body.key]).toEqual([201, 'supplier_timeouts_2']);
+    expect([third.status, third.body.key]).toEqual([201, 'supplier_timeouts_3']);
+    // A typed key that is taken is still a 422 on key.
+    const typed = await staff.post('/admin/alert-rules', body({ key: 'supplier_timeouts_2' }));
+    expect(typed.status).toBe(422);
+    expect(typed.body.errors).toMatchObject([{ field: 'key', message: 'A rule with this key already exists.' }]);
+    expect((await ruleRows()).map((row) => row.key)).toEqual([
+      'supplier_timeouts',
+      'supplier_timeouts_2',
+      'supplier_timeouts_3',
+    ]);
+    expect((await audit()).map((row) => (row.after as { key: string }).key)).toEqual([
+      'supplier_timeouts',
+      'supplier_timeouts_2',
+      'supplier_timeouts_3',
+    ]);
+  });
+
+  it('lets a deleted rule give its key back: the made key is the base again', async () => {
+    const first = await staff.post('/admin/alert-rules', unkeyed());
+    expect((await staff.delete(`/admin/alert-rules/${first.body.id}`)).status).toBe(204);
+    const again = await staff.post('/admin/alert-rules', unkeyed());
+    expect([again.status, again.body.key]).toEqual([201, 'supplier_timeouts']);
+  });
+
+  it('keeps a typed key exactly as before, whatever the name would make', async () => {
+    const typed = await staff.post('/admin/alert-rules', body({ key: 'my_own_key' }));
+    expect([typed.status, typed.body.key]).toEqual([201, 'my_own_key']);
+    const bad = await staff.post('/admin/alert-rules', body({ key: 'Bad Key' }));
+    expect(bad.status).toBe(422);
+    expect(bad.body.errors).toMatchObject([{ field: 'key' }]);
+    expect(await ruleRows()).toHaveLength(1);
+  });
+
+  it('judges every other field as before, and reports no problem on key for a request without one', async () => {
+    const res = await staff.post('/admin/alert-rules', unkeyed({ name: 'ab', metric: 'made.up' }));
+    expect(res.status).toBe(422);
+    expect(res.body.errors.map((error: { field: string }) => error.field).sort()).toEqual(['metric', 'name']);
+    expect(await ruleRows()).toHaveLength(0);
+    expect(await audit()).toHaveLength(0);
+  });
+
+  it('makes a key in the format of a key from any name: a digit first, a short name, a name in another script, a long name', async () => {
+    const keys: string[] = [];
+    for (const name of [
+      '5xx rate',
+      'A!!',
+      'CPU',
+      '\u062a\u0646\u0628\u064a\u0647 \u0627\u0644\u0645\u0648\u0631\u062f',
+      '!!!',
+      `${'long '.repeat(12)}name`,
+      'D\u00e9lai des commandes',
+    ]) {
+      const res = await staff.post('/admin/alert-rules', unkeyed({ name }));
+      expect(res.status, name).toBe(201);
+      keys.push(res.body.key);
+    }
+    expect(keys).toEqual([
+      'rule_5xx_rate',
+      'rule_a',
+      'cpu',
+      'rule',
+      'rule_2',
+      'long_long_long_long_long_long_long_long_l',
+      'delai_des_commandes',
+    ]);
+    for (const key of keys) expect(key).toMatch(/^[a-z][a-z0-9_]{2,40}$/);
+  });
+
+  it('cuts a long name to 41 characters and still fits the suffix of the next one', async () => {
+    const name = `${'x'.repeat(30)} ${'y'.repeat(30)}`;
+    const first = await staff.post('/admin/alert-rules', unkeyed({ name }));
+    const second = await staff.post('/admin/alert-rules', unkeyed({ name }));
+    expect(first.body.key).toBe(`${'x'.repeat(30)}_${'y'.repeat(10)}`);
+    expect(first.body.key).toHaveLength(41);
+    expect(second.body.key).toBe(`${'x'.repeat(30)}_${'y'.repeat(8)}_2`);
+    expect(second.body.key).toHaveLength(41);
+  });
+
+  it('gives six creates of one name at the same moment six different keys, each with its audit row', async () => {
+    const answers = await Promise.all(Array.from({ length: 6 }, () => staff.post('/admin/alert-rules', unkeyed())));
+    expect(answers.map((answer) => answer.status)).toEqual([201, 201, 201, 201, 201, 201]);
+    const keys = answers.map((answer) => answer.body.key as string).sort();
+    expect(keys).toEqual([
+      'supplier_timeouts',
+      'supplier_timeouts_2',
+      'supplier_timeouts_3',
+      'supplier_timeouts_4',
+      'supplier_timeouts_5',
+      'supplier_timeouts_6',
+    ]);
+    expect((await ruleRows()).map((row) => row.key).sort()).toEqual(keys);
+    expect((await audit()).map((row) => (row.after as { key: string }).key).sort()).toEqual(keys);
+  });
+
+  it('lets a made key and a typed one that meet at the same moment both be written: only the typed one can be refused', async () => {
+    const answers = await Promise.all([
+      staff.post('/admin/alert-rules', body({ key: 'supplier_timeouts' })),
+      staff.post('/admin/alert-rules', unkeyed()),
+    ]);
+    const made = answers[1];
+    expect(made.status).toBe(201);
+    if (answers[0].status === 201) expect(made.body.key).toBe('supplier_timeouts_2');
+    else {
+      expect(answers[0].status).toBe(422);
+      expect(made.body.key).toBe('supplier_timeouts');
+    }
+  });
+
+  it('leaves the change of a rule alone: the made key is a normal key that PATCH can still move, and a taken one is refused', async () => {
+    const first = await staff.post('/admin/alert-rules', unkeyed());
+    const second = await staff.post('/admin/alert-rules', unkeyed({ name: 'Other rule' }));
+    expect((await staff.patch(`/admin/alert-rules/${second.body.id}`, { key: first.body.key })).status).toBe(422);
+    const moved = await staff.patch(`/admin/alert-rules/${second.body.id}`, { key: 'moved_key' });
+    expect([moved.status, moved.body.key]).toEqual([200, 'moved_key']);
+  });
+
+  it('refuses a staff member without alerts:create before it makes anything', async () => {
+    expect((await reader.post('/admin/alert-rules', unkeyed())).status).toBe(403);
+    expect(await ruleRows()).toHaveLength(0);
+  });
+});
+
 describe('GET /admin/alert-rules', () => {
   it('lists the rules by name with x-total-count, pages them, and leaves deleted rules out', async () => {
     const { db } = await testDb();

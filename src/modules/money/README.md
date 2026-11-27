@@ -296,6 +296,12 @@ services as they appear (identity, catalog 4a, suppliers 6, customers 14b). Noth
     optional `preset`: an unknown key is `422` on `preset` (`unknown`), an entry that is not available is `422` on `preset` (`unavailable`), `isManual`
     other than the entry's kind is `422` on `isManual` (`preset_kind`), a `driver` other than the entry's is `422` on `driver` (`preset_driver`). Several
     methods may come from one preset; `PATCH` never changes it (the key is stripped) and keeps its promise: the merged `isManual` and `driver` of a preset-made method must still be the entry's (`422` `preset_kind` / `preset_driver`; no `unknown` or `unavailable` check, an existing row stays editable).
+  - **The code is made by the server (decision 077).** `code` is optional on `POST /admin/payment-gateways`. Sent, it is judged as before (format, `422` on
+    `code` when taken). Left out, the create makes it in its own transaction: the preset's key for a method made from a preset, else the name as an
+    identifier (`madeGatewayCode` in `domain/gateway-rules.ts`, on `identifierFrom` of `src/common/identifier.ts`: lower case, accents dropped, each run
+    of other characters one `_`, cut to 40, `method` when nothing is left), then `_2`, `_3`, ... while another method holds it. The loop is
+    `firstFreeIdentifier` with `insertGatewayIfCodeFree` (`ON CONFLICT (code) DO NOTHING`), so two creates at once never share a code and a made code is
+    never refused as taken. The row, the answer and the audit row carry the final code; it is still the webhook address and `PATCH` still cannot change it.
   - **Routes beyond the map** (`scripts/map-additions/32.mjs`, `payments:gateways`): `GET /admin/payment-gateway-presets` (the catalog, a plain array),
     `POST /admin/payment-gateways/:id/logo` (multipart part `file`; `PublicImages.store`: a clean JPEG, PNG or WebP of at most 2 MiB and 64 to 4096 pixels on each side, stored once under
     its SHA-256 as the listing picture is; the `422` codes on `file`, `413`, `415`; `/admin/payment-gateways/:id/logo` is in `MULTIPART_ROUTES`) and

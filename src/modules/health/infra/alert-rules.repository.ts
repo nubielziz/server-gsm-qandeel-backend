@@ -152,6 +152,26 @@ export async function insertRule(db: DbExecutor, values: NewAlertRule): Promise<
 }
 
 /**
+ * Inserts a rule unless another rule that is not deleted holds its key.
+ *
+ * Why: decision 077: a key the server made may meet a rule added at the same moment. `ON CONFLICT DO NOTHING` (on the partial unique index of
+ * live keys) waits for the other transaction to end and then reports the clash as no row instead of an error, so the caller's transaction stays
+ * usable and it tries the next number.
+ *
+ * @param db the caller's transaction
+ * @param values the rule
+ * @returns the new row, or `undefined` when another live rule holds the key
+ */
+export async function insertRuleIfKeyFree(db: DbExecutor, values: NewAlertRule): Promise<AlertRule | undefined> {
+  const [row] = await db
+    .insert(alertRules)
+    .values(values)
+    .onConflictDoNothing({ target: alertRules.key, where: sql`deleted_at is null` })
+    .returning();
+  return row;
+}
+
+/**
  * Changes a rule.
  *
  * @param db the transaction that holds the lock

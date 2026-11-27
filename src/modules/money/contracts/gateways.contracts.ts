@@ -141,7 +141,16 @@ const presetExample = {
 
 /** The body of `POST /admin/payment-gateways`: the console's `CreateGatewayBody` plus the optional webhook secrets. */
 const CreateGatewayBody = z.object({
-  code: z.string().trim(),
+  code: z
+    .string()
+    .trim()
+    .optional()
+    .describe(
+      'The code of the method, the `:gateway` of its webhook address. Create: optional (decision 077); sent, it is judged as before ' +
+        '(lower-case letters, digits, `-` and `_`, up to 40; 422 on `code` when another method holds it); left out, the server makes it: the key ' +
+        'of the `preset`, or the name as an identifier (lower case, every run of other characters one `_`, none at either end, cut to 40; ' +
+        '`method` when nothing is left), then `_2`, `_3`, ... when another method holds it. Change: it never changes; a different code is 422.',
+    ),
   driver: z.string().trim(),
   name: z.string().trim(),
   audience: z.enum(GATEWAY_AUDIENCES),
@@ -239,6 +248,10 @@ export const createGateway = defineRoute({
   description:
     'Adds a gateway. `secret` (the API credential), `webhookSecret` and `secondaryWebhookSecret` are write-only and stored encrypted. ' +
     "`preset` makes it a ready-made method of the catalog (its logo, kind and driver are the catalog entry's). " +
+    '`code` is optional (decision 077): leave it out and the server makes it, in the same transaction, from the `preset` key or from the ' +
+    'name (`Bank of Jordan` is `bank_of_jordan`; `method` when the name has no letter or digit a-z), and takes `_2`, `_3`, ... when another ' +
+    'method already holds it, so a made code is never refused as taken; the stored row, the answer and the audit row carry the final code. ' +
+    'A code that is sent is judged as before. ' +
     `${VALIDATION} Audited. ` +
     'Only an owner may add an automatic method (`isManual` false) or send `secret`, `webhookSecret` or `secondaryWebhookSecret` (`403 FORBIDDEN`, after the validation above; decision 046).',
   tags: ['settings'],

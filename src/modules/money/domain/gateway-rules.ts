@@ -1,12 +1,20 @@
 // Rules of the payment gateways (map routes /admin/payment-gateways, /client/payment-methods, stage 8): field checks, the secret
 // hint, the top-up method of a gateway, the fee of a deposit and the amount limits. Pure: the services read rows and apply these.
 import type { FieldError } from '../../../common/errors';
+import { identifierFrom } from '../../../common/identifier';
 import { Money } from '../../../common/money';
 import { GATEWAY_AUDIENCES, type TopupMethod } from '../db/schema';
 import { fractionDigits } from './b2c-money';
+import { presetOf } from './gateway-presets';
 
 /** A gateway code or driver name: lower-case letters, digits, `-` and `_`, up to 40 (it is a URL segment, `/webhooks/payments/:gateway`). */
 export const GATEWAY_SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+
+/** The longest gateway code (the `{0,39}` of {@link GATEWAY_SLUG_PATTERN} after its first character). */
+export const GATEWAY_CODE_MAX_LENGTH = 40;
+
+/** The code the server makes for a custom method whose name has no letter or digit a-z in it (a name in another script). */
+export const GATEWAY_CODE_FALLBACK = 'method';
 
 const PERCENT = /^\d{1,3}(\.\d{1,4})?$/;
 const AMOUNT = /^\d{1,14}(\.\d{1,4})?$/;
@@ -74,6 +82,23 @@ export function checkGatewayFields(fields: GatewayFields): FieldError[] {
   }
   if (fields.instructions.length > 2000) bad('instructions', 'length', 'Keep the instructions to 2000 characters.');
   return problems;
+}
+
+/**
+ * The code the server makes for a new payment method that came without one.
+ *
+ * Why: decision 077: staff no longer type the code. A method made from a ready-made preset takes the preset's key (`vodafone_cash`); a
+ * custom method takes its name as an identifier (`Bank of Jordan` is `bank_of_jordan`, a name with nothing a-z or 0-9 in it is `method`).
+ * The code is part of the webhook address (`/webhooks/payments/:gateway`) and never changes afterwards.
+ *
+ * @param name the method's name
+ * @param presetKey the `preset` of the request (an unknown key is judged elsewhere and falls back to the name here)
+ * @returns the code to try first (a slug of {@link GATEWAY_SLUG_PATTERN}); the caller adds `_2`, `_3` when another method holds it
+ */
+export function madeGatewayCode(name: string, presetKey: string | null | undefined): string {
+  const preset = presetOf(presetKey);
+  if (preset !== undefined) return preset.key;
+  return identifierFrom(name, { maxLength: GATEWAY_CODE_MAX_LENGTH, fallback: GATEWAY_CODE_FALLBACK });
 }
 
 /**

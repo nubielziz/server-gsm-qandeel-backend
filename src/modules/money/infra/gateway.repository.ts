@@ -137,6 +137,31 @@ export async function insertGateway(db: DbExecutor, row: NewPaymentGateway): Pro
 }
 
 /**
+ * Inserts a gateway unless another one holds its code.
+ *
+ * Why: decision 077: a code the server made may meet a method added at the same moment. `ON CONFLICT DO NOTHING` waits for the other
+ * transaction to end and then reports the clash as no row instead of an error, so the caller's transaction stays usable and it tries the
+ * next number.
+ *
+ * Side effects: inserts a `payment_gateways` row when the code is free.
+ *
+ * @param db the caller's transaction
+ * @param row the new row
+ * @returns the stored row, or `undefined` when another gateway holds the code
+ */
+export async function insertGatewayIfCodeFree(
+  db: DbExecutor,
+  row: NewPaymentGateway,
+): Promise<PaymentGateway | undefined> {
+  const [created] = await db
+    .insert(paymentGateways)
+    .values(row)
+    .onConflictDoNothing({ target: paymentGateways.code })
+    .returning();
+  return created;
+}
+
+/**
  * Updates a gateway.
  *
  * Side effects: updates the `payment_gateways` row.
