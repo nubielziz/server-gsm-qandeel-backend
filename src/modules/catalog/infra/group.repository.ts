@@ -1,6 +1,6 @@
 // Drizzle queries of the merchant group routes on `client_groups`, plus the deletes that go with removing a group
 // (`service_group_prices`, `pricing_rules` of the group, the group id inside `service_categories.allowed_group_ids`).
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
 import {
@@ -181,17 +181,31 @@ export async function deletePricingRulesOfGroup(db: DbExecutor, groupId: number)
 /**
  * Removes a group id from the allowed groups of every service category.
  *
+ * Why: the categories that listed the group are locked first, in ascending id order, and only then updated. A single `UPDATE` locks
+ * the rows in the order its scan meets them, which is the order on the page and not the id order. The other writer that takes several
+ * categories at once, `lockCategoryPositions` of `POST /admin/service-categories/order` (`CategoryOrderService`, decision 078), takes
+ * them in ascending id order; two writers that take the same rows in two orders can each hold one row and wait for the other's
+ * (a deadlock). With one order for both, one of them waits for the other and then goes on.
+ *
  * @param db the transaction
  * @param groupId the group
- * @returns the ids of the categories that listed it
+ * @returns the ids of the categories that listed it, ascending
  */
 export async function dropGroupFromCategories(db: DbExecutor, groupId: number): Promise<number[]> {
-  const rows = await db
+  // The condition is checked again on the locked row, so a category that stopped listing the group meanwhile is left out.
+  const locked = await db
+    .select({ id: serviceCategories.id })
+    .from(serviceCategories)
+    .where(sql`${groupId}::bigint = any(${serviceCategories.allowedGroupIds})`)
+    .orderBy(asc(serviceCategories.id))
+    .for('update');
+  if (locked.length === 0) return [];
+  const ids = locked.map((row) => row.id);
+  await db
     .update(serviceCategories)
     .set({ allowedGroupIds: sql`array_remove(${serviceCategories.allowedGroupIds}, ${groupId}::bigint)` })
-    .where(sql`${groupId}::bigint = any(${serviceCategories.allowedGroupIds})`)
-    .returning({ id: serviceCategories.id });
-  return rows.map((row) => row.id).sort((a, b) => a - b);
+    .where(inArray(serviceCategories.id, ids));
+  return ids;
 }
 
 /**

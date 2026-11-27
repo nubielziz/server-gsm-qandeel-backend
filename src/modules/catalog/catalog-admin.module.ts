@@ -5,6 +5,7 @@
 import { Module } from '@nestjs/common';
 import { BulkPriceAdminService } from './application/bulk-price-admin.service';
 import { CategoryAdminService } from './application/category-admin.service';
+import { CategoryOrderService } from './application/category-order.service';
 import { ClientCatalogService } from './application/client-catalog.service';
 import { ClientGroupAdminService } from './application/client-group-admin.service';
 import { ClientPriceAdminService } from './application/client-price-admin.service';
@@ -60,6 +61,7 @@ import { ServicesController } from './controllers/services.controller';
   providers: [
     ClientGroupAdminService,
     CategoryAdminService,
+    CategoryOrderService,
     ServiceAdminService,
     ServicePriceGridService,
     ServiceOrderService,

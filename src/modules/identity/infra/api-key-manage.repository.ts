@@ -1,6 +1,6 @@
 // Drizzle queries of the API key routes on `api_keys` (identity module): a merchant's own (read-only) list, the admin's list, the one
 // row a change locks, and the writes. The guards' lookup by key hash is `security/machine/api-keys/api-key.repository.ts`.
-import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, like, or, sql } from 'drizzle-orm';
 import { type DbExecutor, type ListColumns, listOrderBy } from '../../../infra/db';
 import { type ApiKey, type NewApiKey, apiKeys, clients } from '../db/schema';
 
@@ -106,6 +106,41 @@ export async function lockKey(db: DbExecutor, id: number): Promise<ApiKey | unde
 }
 
 /**
+ * Reads the account a key belongs to without locking it.
+ *
+ * Why: a change of a key's expiry takes the account's advisory lock before the key row (decision 078), so it needs the account first.
+ * `api_keys.client_id` never changes, so an unlocked read cannot go stale.
+ *
+ * @param db the transaction
+ * @param id the key id
+ * @returns the account id, or `undefined` when there is no such key
+ */
+export async function clientIdOfKey(db: DbExecutor, id: number): Promise<number | undefined> {
+  const [row] = await db.select({ clientId: apiKeys.clientId }).from(apiKeys).where(eq(apiKeys.id, id)).limit(1);
+  return row?.clientId;
+}
+
+/**
+ * Reads the names of an account's keys that start like a default name, revoked and expired keys included.
+ *
+ * Why: decision 078: a key made without a name is called `API key <n>`, so the creation needs the numbers already taken. The caller holds
+ * the advisory lock `api-keys:<accountId>`, so two creations at once read different sets.
+ *
+ * @param db the transaction that holds the account's key lock
+ * @param clientId the account id
+ * @param prefix the start of a default name (`API key `)
+ * @returns the names (the caller keeps only the exact `<prefix><n>` form)
+ */
+export async function keyNamesStartingWith(db: DbExecutor, clientId: number, prefix: string): Promise<string[]> {
+  const escaped = prefix.replace(/[\\%_]/g, (character) => `\\${character}`);
+  const rows = await db
+    .select({ name: apiKeys.name })
+    .from(apiKeys)
+    .where(and(eq(apiKeys.clientId, clientId), like(apiKeys.name, `${escaped}%`)));
+  return rows.map((row) => row.name);
+}
+
+/**
  * Inserts a key.
  *
  * Side effects: inserts an `api_keys` row (the unique index on `key_hash` refuses a repeated hash).
@@ -120,7 +155,7 @@ export async function insertKey(db: DbExecutor, values: NewApiKey): Promise<ApiK
 }
 
 /**
- * Changes the name, the allowed addresses or the per-minute limit of a key.
+ * Changes the name, the allowed addresses, the per-minute limit or the expiry of a key.
  *
  * @param db the transaction that holds the key
  * @param id the key id
@@ -130,7 +165,13 @@ export async function insertKey(db: DbExecutor, values: NewApiKey): Promise<ApiK
 export async function updateKey(
   db: DbExecutor,
   id: number,
-  changes: { readonly name?: string; readonly allowedIps?: readonly string[]; readonly rateLimitPerMin?: number },
+  changes: {
+    readonly name?: string;
+    readonly allowedIps?: readonly string[];
+    readonly rateLimitPerMin?: number;
+    /** A new time, or `null` to remove the expiry; left out, the expiry stays. */
+    readonly expiresAt?: Date | null;
+  },
 ): Promise<ApiKey> {
   const [row] = await db
     .update(apiKeys)
@@ -138,6 +179,7 @@ export async function updateKey(
       ...(changes.name === undefined ? {} : { name: changes.name }),
       ...(changes.allowedIps === undefined ? {} : { allowedIps: [...changes.allowedIps] }),
       ...(changes.rateLimitPerMin === undefined ? {} : { rateLimitPerMin: changes.rateLimitPerMin }),
+      ...(changes.expiresAt === undefined ? {} : { expiresAt: changes.expiresAt }),
       updatedAt: sql`now()`,
     })
     .where(eq(apiKeys.id, id))

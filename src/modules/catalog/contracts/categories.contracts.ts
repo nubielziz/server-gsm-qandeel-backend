@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam } from '../../../common/contract';
 import { SERVICE_TYPES } from '../db/schema';
+import { MAX_ORDER_ITEMS } from './service-grid.contracts';
 
 /** The four Dhru service types, as the console's `ServiceType`. */
 const ServiceTypeField = z.enum(SERVICE_TYPES);
@@ -37,7 +38,13 @@ const CATEGORY_EXAMPLE = {
 /** The category name: trimmed, 1 to 80 characters. */
 const CategoryName = z.string().trim().min(1, 'Enter a name.').max(80, 'Use at most 80 characters.');
 const GroupIds = z.array(zId).max(200, 'Choose at most 200 groups.');
-const SortField = z.number().int('Enter a whole number.').min(0, 'Enter a whole number, 0 or more.').max(1_000_000);
+/** The largest position a category may be given (the same bound as a service's position, decision 063). */
+const MAX_CATEGORY_SORT = 1_000_000;
+const SortField = z
+  .number()
+  .int('Enter a whole number.')
+  .min(0, 'Enter a whole number, 0 or more.')
+  .max(MAX_CATEGORY_SORT);
 
 /** `GET /admin/service-categories`: every category with its live service count. */
 export const listCategories = defineRoute({
@@ -132,6 +139,57 @@ export const updateCategory = defineRoute({
   success: { status: 200, schema: CategoryRow },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED'],
   examples: { request: { isActive: false }, response: { ...CATEGORY_EXAMPLE, isActive: false } },
+});
+
+/** `POST /admin/service-categories/order`: store the order of categories (the console's Group view). */
+export const orderCategories = defineRoute({
+  key: 'POST /admin/service-categories/order',
+  summary: 'Set the order of service categories',
+  description:
+    'Sets the position (`sort`) of 1 to ' +
+    String(MAX_ORDER_ITEMS) +
+    ' categories (the groups of the console) in one transaction: either every position is saved or none is. It does what `PATCH ' +
+    '/admin/service-categories/:id` does when only `sort` is sent, once for the whole call: the same permission, the cached merchant ' +
+    'price lists start over once, and one audit entry (`changed the order of`, entity `category`) names the categories that moved ' +
+    'with their old and new positions (the first 200). A position is a whole number from 0 to ' +
+    String(MAX_CATEGORY_SORT) +
+    '; merchants and API clients read categories by this number, then the id. A category already at its position is left alone. ' +
+    'A category that is listed twice or is unknown is `422` on `items.N.id` (N the later of two equal ids; every problem comes ' +
+    'back together) and nothing is saved. The answer says how many categories changed. The categories are locked in id order, so ' +
+    "two saves never interleave. The search index is not told: it holds a category's name and id, never its position (decision 078).",
+  tags: ['service-categories'],
+  surface: 'admin',
+  access: 'staff-permission',
+  permission: 'catalog:update',
+  body: z.object({
+    items: z
+      .array(
+        z.object({
+          id: zId,
+          sort: z
+            .number()
+            .int('Enter a whole number.')
+            .min(0, 'Enter 0 or more.')
+            .max(MAX_CATEGORY_SORT, `Use at most ${MAX_CATEGORY_SORT}.`),
+        }),
+      )
+      .min(1, 'Send at least one category.')
+      .max(MAX_ORDER_ITEMS, `Send at most ${MAX_ORDER_ITEMS} categories at a time.`),
+  }),
+  success: {
+    status: 200,
+    schema: z.object({ updated: z.number().int().min(0).describe('How many categories changed position.') }),
+  },
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'VALIDATION_FAILED'],
+  examples: {
+    request: {
+      items: [
+        { id: 4, sort: 1 },
+        { id: 5, sort: 2 },
+      ],
+    },
+    response: { updated: 2 },
+  },
 });
 
 /** `DELETE /admin/service-categories/:id`: delete a category no service uses. */

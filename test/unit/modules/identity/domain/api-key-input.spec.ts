@@ -9,6 +9,7 @@ import {
   checkAllowedIps,
   classifyKeyChange,
   composeApiKey,
+  nextDefaultKeyName,
 } from '@src/modules/identity/domain/api-key-input';
 
 describe('checkAllowedIps', () => {
@@ -137,5 +138,78 @@ describe('classifyKeyChange', () => {
     const ranged = { allowedIps: ['198.51.100.0/24'], rateLimitPerMin: 60 };
     expect(classifyKeyChange(ranged, { allowedIps: ['198.51.100.7/32'] })).toBe('widens');
     expect(classifyKeyChange(ranged, { allowedIps: ['198.51.100.0/24'] })).toBe('none');
+  });
+});
+
+describe('classifyKeyChange: the expiry (decision 078)', () => {
+  const day = 86_400_000;
+  const t0 = new Date('2026-11-01T10:00:00.000Z');
+  const later = new Date(t0.getTime() + day);
+  const earlier = new Date(t0.getTime() - day);
+  const never = { allowedIps: ['198.51.100.7/32'], rateLimitPerMin: 60, expiresAt: null };
+  const expiring = { allowedIps: ['198.51.100.7/32'], rateLimitPerMin: 60, expiresAt: t0 };
+
+  it('says none when the expiry is not sent, is the stored time, or stays "never"', () => {
+    expect(classifyKeyChange(never, {})).toBe('none');
+    expect(classifyKeyChange(expiring, {})).toBe('none');
+    expect(classifyKeyChange(expiring, { expiresAt: new Date(t0.getTime()) })).toBe('none');
+    expect(classifyKeyChange(never, { expiresAt: null })).toBe('none');
+    // A stored key without the property reads as "never".
+    expect(classifyKeyChange({ allowedIps: [], rateLimitPerMin: 60 }, { expiresAt: null })).toBe('none');
+  });
+
+  it('says widens when the expiry is removed or moved later, also from a time that has passed', () => {
+    expect(classifyKeyChange(expiring, { expiresAt: null })).toBe('widens');
+    expect(classifyKeyChange(expiring, { expiresAt: later })).toBe('widens');
+    expect(classifyKeyChange({ ...expiring, expiresAt: earlier }, { expiresAt: later })).toBe('widens');
+  });
+
+  it('says narrows when a key that never expired gets an expiry or the expiry moves earlier', () => {
+    expect(classifyKeyChange(never, { expiresAt: later })).toBe('narrows');
+    expect(classifyKeyChange(expiring, { expiresAt: earlier })).toBe('narrows');
+  });
+
+  it('lets a widening expiry win over a narrowing limit or list, and a narrowing expiry never hide a wider list', () => {
+    expect(classifyKeyChange(expiring, { expiresAt: later, rateLimitPerMin: 1 })).toBe('widens');
+    expect(classifyKeyChange(expiring, { expiresAt: earlier, allowedIps: [] })).toBe('widens');
+    expect(classifyKeyChange(expiring, { expiresAt: earlier, rateLimitPerMin: 61 })).toBe('widens');
+    expect(classifyKeyChange(expiring, { expiresAt: earlier, rateLimitPerMin: 30 })).toBe('narrows');
+  });
+});
+
+describe('nextDefaultKeyName', () => {
+  it('starts at API key 1 for an account with no key and for names that hold no number', () => {
+    expect(nextDefaultKeyName([])).toBe('API key 1');
+    expect(nextDefaultKeyName(['Production', 'Test key'])).toBe('API key 1');
+  });
+
+  it('takes the smallest whole number from 1 that no name holds in that exact form', () => {
+    expect(nextDefaultKeyName(['API key 1'])).toBe('API key 2');
+    expect(nextDefaultKeyName(['API key 1', 'API key 2', 'API key 4'])).toBe('API key 3');
+    expect(nextDefaultKeyName(['API key 2', 'API key 3'])).toBe('API key 1');
+    expect(nextDefaultKeyName(['API key 3', 'API key 1', 'API key 2'])).toBe('API key 4');
+  });
+
+  it('is not fooled by a number that only looks like one', () => {
+    for (const lookalike of [
+      'API key 0',
+      'API key 01',
+      'api key 1',
+      'API key 1 ',
+      'API key  1',
+      'API key 1b',
+      'API key',
+      'API key -1',
+      'API key 1.5',
+      'X API key 1',
+    ]) {
+      expect(nextDefaultKeyName([lookalike])).toBe('API key 1');
+    }
+  });
+
+  it('counts numbers past nine, and ignores one too long to be a plausible number', () => {
+    const names = Array.from({ length: 12 }, (_, index) => `API key ${index + 1}`);
+    expect(nextDefaultKeyName(names)).toBe('API key 13');
+    expect(nextDefaultKeyName(['API key 9999999999999999999999'])).toBe('API key 1');
   });
 });

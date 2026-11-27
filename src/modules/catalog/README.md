@@ -276,6 +276,16 @@ No migration, no queue or cache key change.
   default order is category, name), the price export and the Dhru service list (`MerchantCatalog.all`: category position, `services.sort`, name).
   `_sort=sort` of the admin list and of the grid is the same order. One definition: `infra/service-order.sql.ts`.
   Inside a Dhru group `SERVICES` is an object keyed by service id, which a JSON reader sorts by key whatever the writer did.
+- **Stored order of categories** (`POST /admin/service-categories/order`, `application/category-order.service.ts`, `catalog:update`, decision 078,
+  `scripts/map-additions/78-group-order.mjs`): the console's Group view saves a drag in one call instead of one `PATCH /admin/service-categories/:id`
+  per moved group (that route stays). The route mirrors `POST /admin/services/order`: `{ items: [{ id, sort }] }` (1 to 500, `sort` 0 to
+  1000000), categories locked in id order (`lockCategoryPositions`), a category listed twice or unknown is `422` on `items.N.id` (all problems
+  together, nothing saved; a category has no archived state), only the positions that differ are written (`writeCategoryPositions`), `{ updated }`.
+  What a `PATCH` with only `sort` does, once for the whole call: the catalog price version moves after the commit when a position changed
+  (the merchant catalog, the price list and the Dhru list read the category position), and one `changed the order of` audit entry (entity
+  `category`, written also when nothing moved) names the moved categories as `Name (#id)` with the old and new position (the first 200).
+  **No `catalog.category_changed` event**: the PATCH writes one per category, but a search document holds the category's name and id and never its
+  position, so no indexed fact changes (decision 038); a drag of twenty groups would otherwise re-index every service of them.
 
 ### Retail price rules (feature 31, decision 040, B229)
 
@@ -489,7 +499,7 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 ## Permissions
 
 Staff permissions the map requires on this module's admin routes: `catalog:*`, `catalog:update`, `groups:*`, `inventory:read`, `inventory:write`, `pricing:*`, `pricing:read`, `pricing:update`. A `*` row means the action of the method: `groups:read|create|update|delete` (client groups), `catalog:read|create|update|delete` (categories, services), `pricing:read|create|update|delete` (client prices, pricing rules); fields and options need `catalog:update`; group prices and the bulk price change `pricing:update`; the resolver `pricing:read`; the inventory routes `inventory:read` and `inventory:write`. Audit entity types written: `client_group`, `category`, `service` (also the group prices and the bulk change), `account` (client prices; the entity word of every account since decision 064), `pricing_rule`, `retail_price_rule` (feature 31) and `inventory_code` (a void; the import is audited on the `service`). The retail price
-rules (feature 31, routes beyond the map) use `pricing:read` (list, preview), `pricing:create`, `pricing:update` and `pricing:delete`. A `basePrice` or `minProfit` change on `PATCH /admin/services/:id` also needs `pricing:update` (decision 046). `GET /admin/services/price-grid` (decision 063) needs `catalog:read` and also `pricing:read`; `POST /admin/services/order` needs `catalog:update` and writes the audit entry `changed the order of` (entity `service`).
+rules (feature 31, routes beyond the map) use `pricing:read` (list, preview), `pricing:create`, `pricing:update` and `pricing:delete`. A `basePrice` or `minProfit` change on `PATCH /admin/services/:id` also needs `pricing:update` (decision 046). `GET /admin/services/price-grid` (decision 063) needs `catalog:read` and also `pricing:read`; `POST /admin/services/order` needs `catalog:update` and writes the audit entry `changed the order of` (entity `service`); `POST /admin/service-categories/order` (decision 078) needs `catalog:update` too and writes the same entry under entity `category`.
 
 Keep this list in step with the contracts (`permission` of each `defineRoute`).
 

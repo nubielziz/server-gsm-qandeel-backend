@@ -8,16 +8,22 @@ import { AuditService } from '../../platform';
 import { canAct } from '../accounts/account-status';
 import {
   type ApiKeyWire,
+  DEFAULT_KEY_NAME_PREFIX,
   DEFAULT_RATE_LIMIT_PER_MIN,
   MAX_LIVE_KEYS,
   apiKeyToWire,
   checkAllowedIps,
   classifyKeyChange,
+  nextDefaultKeyName,
 } from '../domain/api-key-input';
 import {
   accountNameOf,
+  clientIdOfKey,
+  countLiveKeys,
+  keyNamesStartingWith,
   listAllKeysOfClient,
   lockKey,
+  lockKeysOfClient,
   revokeKeyRow,
   updateKey,
 } from '../infra/api-key-manage.repository';
@@ -27,12 +33,25 @@ import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory'
 import { ApiKeyIssuer } from './api-key-issuer';
 import { MerchantLifecycleMails } from './mail/merchant-lifecycle-mails';
 
-/** The refusal text when a staff member who is not an Owner widens a key (decision 046). */
-const WIDEN_KEY_DETAIL = 'Only an owner can widen the allowed addresses of an API key or raise its limit.';
+/** The refusal text when a staff member who is not an Owner widens a key: more addresses, a higher limit, or a later or no end date (decisions 046, 078). */
+const WIDEN_KEY_DETAIL =
+  'Only an owner can widen an API key: more addresses, a higher limit, or a later or no end date.';
+
+/** What staff change on a key: each part left out stays as it is. */
+export interface UpdateApiKeyInput {
+  /** The new name (trimmed, 1 to 60 characters, checked by the contract). */
+  readonly name?: string | undefined;
+  readonly rateLimitPerMin?: number | undefined;
+  /** `[]` removes the restriction. */
+  readonly allowedIps?: readonly string[] | undefined;
+  /** An ISO time in the future, or `null` to remove the expiry. */
+  readonly expiresAt?: string | null | undefined;
+}
 
 /** What staff send to create a key for a merchant. */
 export interface CreateClientApiKeyInput {
-  readonly name: string;
+  /** Left out, the server names the key `API key <n>` (decision 078). */
+  readonly name?: string | undefined;
   readonly allowedIps?: readonly string[] | undefined;
   readonly expiresAt?: string | undefined;
   readonly rateLimitPerMin?: number | undefined;
@@ -45,12 +64,12 @@ export interface CreatedClientApiKey {
 }
 
 /**
- * Lets staff read, create, limit and revoke the API keys of accounts.
+ * Lets staff read, create, change and revoke the API keys of accounts.
  *
  * Why: the Accounts page lists an account's keys with their last use, revokes one that leaked or is no longer wanted
  * (map rows `GET /admin/clients/:id/api-keys`, `DELETE /admin/api-keys/:id`, MISMATCHES B31) and, since feature 20 (O-9), creates a key
  * for an active account of a merchant rank (`api_keys:create` and an Owner, decision 046; shown once, recorded in `api_keys.created_by`, the
- * merchant is mailed) and changes a key's per-minute limit and allowed addresses (`api_keys:update`). Every change is effective at once: the
+ * merchant is mailed) and changes a key's name, per-minute limit, allowed addresses and expiry (`api_keys:update`; decision 078). Every change is effective at once: the
  * cached view of the key is dropped after the commit (P2.5c), and each one writes an audit row under the account (decision 064: the audit
  * entity is `account`). The keys of an account that left the merchant rank stay readable (revoked), but no key is made for it.
  *
@@ -95,7 +114,7 @@ export class ApiKeyAdminService {
    *
    * @param caller the signed-in staff member
    * @param clientId the account id
-   * @param input the name, allowed addresses, expiry and per-minute limit
+   * @param input the name (optional: left out, the smallest free `API key <n>` of the account), allowed addresses, expiry and per-minute limit
    * @returns the stored key (`createdByStaff: true`) and the full key text
    * @throws {AppError} `FORBIDDEN` (403: only an Owner creates a key for a merchant, decision 046), `NOT_FOUND` (404), `CONFLICT`
    *   (409: the account is not of a merchant rank, so a key could not be used), `NOT_ACTIVE` (409: the account is suspended, blocked or
@@ -118,9 +137,12 @@ export class ApiKeyAdminService {
           detail: 'Only an active account can have an API key. Reactivate the account first.',
         });
       }
+      // The default name is chosen under the account's key lock, so two creations at once never take the same number.
+      const name =
+        input.name ?? nextDefaultKeyName(await keyNamesStartingWith(work.tx, clientId, DEFAULT_KEY_NAME_PREFIX));
       const { row, secret } = await this.issuer.issue(work.tx, {
         clientId,
-        name: input.name,
+        name,
         allowedIps: input.allowedIps ?? [],
         expiresAt: input.expiresAt,
         rateLimitPerMin: input.rateLimitPerMin ?? DEFAULT_RATE_LIMIT_PER_MIN,
@@ -148,27 +170,45 @@ export class ApiKeyAdminService {
   }
 
   /**
-   * Changes a key's per-minute limit and allowed addresses.
+   * Changes a key's name, per-minute limit, allowed addresses and expiry.
    *
-   * Why: a change that gives the key more reach (an empty list, an address that was not stored, a higher limit) is kept for Owners, like
-   * the creation of a key (decision 046); the other staff may narrow a key. The judgement is made on the row this transaction holds, so
-   * a concurrent change cannot make a stale read pass. The merchant is mailed a security notice for every change that alters a value.
+   * Why: the owner's ruling of decision 078: the permissions of a key are the addresses that may use it and the period it is valid, so
+   * both are editable besides the limit, and a key made in one click is named afterwards. A change that gives the key more reach (an
+   * empty list, an address that was not stored, a higher limit, no expiry or a later one) is kept for Owners, like the creation of a key
+   * (decision 046); the other staff may narrow a key and rename it. The judgement is made on the row this transaction holds, so a
+   * concurrent change cannot make a stale read pass. The merchant is mailed a security notice for every change that alters the reach of
+   * the key; a new name alone is no change of reach and is not mailed.
+   *
+   * An expired key may get a later expiry (or none) and works again; a revoked key stays revoked. Because that brings a key back to life,
+   * the account's live keys are counted again under the account's key lock, which is taken before the key row (the order of the creation).
    *
    * @param caller the signed-in staff member
    * @param id the key id
-   * @param changes the new limit and/or the new address list (`[]` removes the restriction); a missing one stays
+   * @param changes the new name, limit, address list (`[]` removes the restriction) and/or expiry (`null` removes it); a missing one stays
    * @returns the key after the change
    * @throws {AppError} `NOT_FOUND` (404), `ALREADY_REVOKED` (409), `FORBIDDEN` (403: the change widens the key and the caller is not an
-   *   Owner), `VALIDATION_FAILED` (422) on `allowedIps.N`
+   *   Owner), `VALIDATION_FAILED` (422) on `allowedIps.N`, on `expiresAt` (not in the future, or it would bring an expired key back
+   *   while the account already holds 10 live keys)
    */
-  async update(
-    caller: StaffPrincipal,
-    id: number,
-    changes: { readonly rateLimitPerMin?: number | undefined; readonly allowedIps?: readonly string[] | undefined },
-  ): Promise<ApiKeyWire> {
+  async update(caller: StaffPrincipal, id: number, changes: UpdateApiKeyInput): Promise<ApiKeyWire> {
     const allowed = changes.allowedIps === undefined ? undefined : checkAllowedIps(changes.allowedIps);
-    if (allowed && !allowed.ok) throw new AppError('VALIDATION_FAILED', { errors: allowed.errors });
+    const now = this.clock.now();
+    const expiresAt =
+      changes.expiresAt === undefined ? undefined : changes.expiresAt === null ? null : new Date(changes.expiresAt);
+    const errors = [
+      ...(allowed && !allowed.ok ? allowed.errors : []),
+      ...(expiresAt instanceof Date && expiresAt.getTime() <= now.getTime()
+        ? [{ field: 'expiresAt', code: 'in_the_past', message: 'Choose a time in the future.' }]
+        : []),
+    ];
+    if (errors.length > 0) throw new AppError('VALIDATION_FAILED', { errors });
     return this.db.runInTransaction(async (work) => {
+      // Lock order (decision 078): the account's key lock, then the key row. Only a new expiry can bring a key back to life, so only it
+      // needs the count of live keys, and only it takes the account's key lock.
+      if (expiresAt !== undefined) {
+        const clientId = await clientIdOfKey(work.tx, id);
+        if (clientId !== undefined) await lockKeysOfClient(work.tx, clientId);
+      }
       const row = await lockKey(work.tx, id);
       if (!row) throw new AppError('NOT_FOUND', { detail: 'No API key has this id.' });
       if (row.revokedAt !== null) throw new AppError('ALREADY_REVOKED', { detail: 'This key was revoked.' });
@@ -176,24 +216,41 @@ export class ApiKeyAdminService {
       const kind = classifyKeyChange(row, {
         rateLimitPerMin: changes.rateLimitPerMin,
         allowedIps: allowed?.ok ? allowed.value : undefined,
+        expiresAt,
       });
       if (kind === 'widens') requireOwner(caller, WIDEN_KEY_DETAIL);
+      const wasLive = row.expiresAt === null || row.expiresAt.getTime() > now.getTime();
+      if (!wasLive && expiresAt !== undefined && (await countLiveKeys(work.tx, row.clientId, now)) >= MAX_LIVE_KEYS) {
+        throw new AppError('VALIDATION_FAILED', {
+          errors: [
+            {
+              field: 'expiresAt',
+              code: 'invalid',
+              message: `This merchant already has ${MAX_LIVE_KEYS} active keys; revoke one first.`,
+            },
+          ],
+        });
+      }
       const updated = await updateKey(work.tx, id, {
+        ...(changes.name === undefined ? {} : { name: changes.name }),
         ...(changes.rateLimitPerMin === undefined ? {} : { rateLimitPerMin: changes.rateLimitPerMin }),
         ...(allowed?.ok ? { allowedIps: allowed.value } : {}),
+        ...(expiresAt === undefined ? {} : { expiresAt }),
       });
-      // The cached view holds both values: drop it so the change applies on the next call.
+      // The cached view holds the addresses, the limit and the expiry: drop it so the change applies on the next call.
       await this.directory.invalidate([row.keyHash], work);
       const merchantName = (await accountNameOf(work.tx, row.clientId)) ?? `Account ${row.clientId}`;
       if (kind !== 'none') {
         await this.lifecycleMails.securityNotice(work, { id: row.clientId, name: merchantName }, 'api_key_changed');
       }
+      // Never the key or its hash: only what identifies it and what can change.
       const facts = (key: typeof row) => ({
         keyId: key.id,
         name: key.name,
         prefix: key.prefix,
         rateLimitPerMin: key.rateLimitPerMin,
         allowedIps: key.allowedIps,
+        expiresAt: key.expiresAt?.toISOString() ?? null,
       });
       await this.audit.record(work.tx, {
         action: 'changed limits of API key of',

@@ -12,6 +12,7 @@ import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { insertGateway } from '../../support/billing';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertUsd } from '../../support/fixtures';
+import { eventually } from '../../support/infra';
 
 let t: TestApp;
 let admin: AdminApi;
@@ -498,6 +499,55 @@ describe('DELETE /admin/client-groups/:id', () => {
       removedFromCategoryIds: [category!.id],
     });
     expect(audit!.after).toBeNull();
+  });
+
+  it('locks the categories it changes in id order, so it never meets a save of category positions in a cycle', async () => {
+    const groups = await demoGroups();
+    const { db, pool } = await testDb();
+    const [first, second] = await db
+      .insert(s.serviceCategories)
+      .values([
+        { name: 'Apple', type: 'imei', sort: 1, allowedGroupIds: [groups.vip] },
+        { name: 'Samsung', type: 'imei', sort: 2, allowedGroupIds: [groups.vip] },
+      ])
+      .returning({ id: s.serviceCategories.id });
+    // A new version of the lower id goes after the higher one on the page: a plain scan of the table now meets the higher id first.
+    await db.update(s.serviceCategories).set({ sort: 1 }).where(eq(s.serviceCategories.id, first!.id));
+    // The order route (CategoryOrderService) holds the lower id and wants the higher one next: it takes them in id order.
+    const holder = await pool.connect();
+    const probe = await pool.connect();
+    let deleting: Promise<{ status: number }> | undefined;
+    try {
+      await holder.query('begin');
+      await holder.query('select id from service_categories where id = $1 for update', [first!.id]);
+      deleting = admin.delete(`/admin/client-groups/${groups.vip}`);
+      await eventually(async () => {
+        const { rows } = await pool.query(
+          `select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query ilike '%service_categories%'`,
+        );
+        return rows.length > 0 ? true : undefined;
+      });
+      // The delete waits at the lower id and has not touched the higher one, so the holder can still take it: no cycle can form.
+      await probe.query('begin');
+      const higher = await probe
+        .query('select id from service_categories where id = $1 for update nowait', [second!.id])
+        .then(() => 'free')
+        .catch((error: { code?: string }) => error.code);
+      await probe.query('rollback');
+      expect(higher).toBe('free');
+      await holder.query('commit');
+      expect((await deleting).status).toBe(204);
+    } finally {
+      await holder.query('rollback').catch(() => undefined);
+      holder.release();
+      probe.release();
+      // A failed expectation must not leave the delete running into the next test.
+      await deleting?.catch(() => undefined);
+    }
+    const rows = await db.select().from(s.serviceCategories).orderBy(s.serviceCategories.id);
+    expect(rows.map((row) => row.allowedGroupIds)).toEqual([[], []]);
+    const [audit] = (await auditRows()).slice(-1);
+    expect(audit!.before).toMatchObject({ removedFromCategoryIds: [first!.id, second!.id] });
   });
 
   it('takes the deleted group out of every payment method that listed it, in the same transaction', async () => {

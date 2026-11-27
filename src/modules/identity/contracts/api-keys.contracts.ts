@@ -1,5 +1,5 @@
 // Route contracts of API keys (map domain A, stage 7): the read-only list of the keys of an account of a merchant rank under
-// /client/api-keys (MISMATCHES B155) and the staff's view, creation, limits and revocation under /admin (identity.md). Merchants no longer
+// /client/api-keys (MISMATCHES B155) and the staff's view, creation, edits and revocation under /admin (identity.md). Merchants no longer
 // create, change or revoke keys (decision 067): the three routes of those writes are retired and have no contract. The shape is the
 // console's ApiKey (identity-platform-5).
 import { z } from 'zod';
@@ -23,7 +23,7 @@ const ApiKeyRow = z.object({
   createdByStaff: z.boolean().optional(),
 });
 
-/** The key name: trimmed, 1 to 60 characters. */
+/** The key name: trimmed, 1 to 60 characters (when it is sent). */
 const KeyName = z.string().trim().min(1, 'Name the key.').max(60, 'Use at most 60 characters.');
 /** Allowed addresses: each an address or a range; checked and written by the use case (`allowedIps.N`). */
 const AllowedIps = z
@@ -96,8 +96,10 @@ export const adminCreateClientApiKey = defineRoute({
   description:
     'Only for an `active` account of a merchant rank (`409 CONFLICT` for a retail rank, `409 NOT_ACTIVE` for a suspended, blocked or ' +
     'erased account: such a key could not be used). The ' +
-    `body is \`name\`, \`allowedIps\` and \`expiresAt\` plus \`rateLimitPerMin\` (an integer from ${RATE_LIMIT_PER_MIN_RANGE.min} to ` +
-    `${RATE_LIMIT_PER_MIN_RANGE.max}, default 60). The answer carries the full key once as \`secret\` (\`Cache-Control: no-store\`); ` +
+    `body is \`name\` (optional), \`allowedIps\` and \`expiresAt\` plus \`rateLimitPerMin\` (an integer from ${RATE_LIMIT_PER_MIN_RANGE.min} to ` +
+    `${RATE_LIMIT_PER_MIN_RANGE.max}, default 60). A name that is left out is made by the server: \`API key <n>\`, n the smallest whole number ` +
+    'from 1 that no key of the account, revoked ones included, already carries in that exact form (decision 078); a name that is sent is ' +
+    'trimmed, 1 to 60 characters, and a blank one is `422` on `name`. The answer carries the full key once as `secret` (`Cache-Control: no-store`); ' +
     'only a keyed hash is stored, so a lost key cannot be shown again. The key is marked `createdByStaff` and `api_keys.created_by` ' +
     'records the staff member, the merchant is sent a security notice by email, and the audit entry `created API key for <merchant>` ' +
     `never holds the key. A merchant may hold ${MAX_LIVE_KEYS} live keys: the next one is \`422\` on \`name\`. ` +
@@ -108,7 +110,7 @@ export const adminCreateClientApiKey = defineRoute({
   permission: 'api_keys:create',
   params: z.object({ id: zIdParam }),
   body: z.object({
-    name: KeyName,
+    name: KeyName.optional(),
     allowedIps: AllowedIps.optional(),
     expiresAt: zIsoDateTime.optional(),
     rateLimitPerMin: RateLimitPerMin.optional(),
@@ -128,27 +130,37 @@ export const adminCreateClientApiKey = defineRoute({
   },
 });
 
-/** `PATCH /admin/api-keys/:id`: staff change a key's per-minute limit and allowed addresses. */
+/** `PATCH /admin/api-keys/:id`: staff change a key's name, per-minute limit, allowed addresses and expiry. */
 export const adminUpdateApiKey = defineRoute({
   key: 'PATCH /admin/api-keys/:id',
-  summary: "Change a merchant key's limits",
+  summary: 'Change a merchant API key',
   description:
-    'A partial body with at least one key: `rateLimitPerMin` (an integer from ' +
-    `${RATE_LIMIT_PER_MIN_RANGE.min} to ${RATE_LIMIT_PER_MIN_RANGE.max}) and \`allowedIps\` (up to ${MAX_ALLOWED_IPS} addresses or ` +
-    'ranges; `[]` removes the restriction). Takes effect on the next call with the key: its cached view is dropped after the commit. ' +
-    'A change that gives the key more reach (an empty list, an address that is not stored, a higher limit) needs an owner: ' +
-    '`403 FORBIDDEN` for everyone else, judged on the stored key; a narrower list or a lower limit stays under `api_keys:update`. ' +
-    'A revoked key is `409 ALREADY_REVOKED`. Writes the audit entry `changed limits of API key of <merchant>` with the old and new values; ' +
-    'a change of a value sends the merchant a security notice by email.',
+    'A partial body with at least one key: `name` (trimmed, 1 to 60 characters), `rateLimitPerMin` (an integer from ' +
+    `${RATE_LIMIT_PER_MIN_RANGE.min} to ${RATE_LIMIT_PER_MIN_RANGE.max}), \`allowedIps\` (up to ${MAX_ALLOWED_IPS} addresses or ` +
+    'ranges; `[]` removes the restriction) and `expiresAt` (an ISO time in the future, or `null` to remove the expiry; a time that is not in ' +
+    'the future is `422` on `expiresAt`): the addresses that may use the key and the period it is valid are all the permissions a key has ' +
+    '(decision 078). Takes effect on the next call with the key: its cached view is dropped after the commit. ' +
+    'A change that gives the key more reach (an empty list, an address that is not stored, a higher limit, no expiry or a later one) needs ' +
+    'an owner: `403 FORBIDDEN` for everyone else, judged on the stored key; a narrower list, a lower limit, a first or an earlier expiry ' +
+    'and a new name stay under `api_keys:update`. An expired key may get a later expiry (or none) and works again, which needs an owner ' +
+    `and counts against the ${MAX_LIVE_KEYS} live keys of the account (\`422\` on \`expiresAt\` when it already holds them); ` +
+    'a revoked key is `409 ALREADY_REVOKED` for every field and stays revoked. Writes the audit entry `changed limits of API key of ' +
+    '<merchant>` with the old and new name, limit, addresses and expiry (never the key); a change of the addresses, the limit or the expiry ' +
+    'sends the merchant a security notice by email, a new name alone does not.',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'api_keys:update',
   params: z.object({ id: zIdParam }),
   body: z
-    .object({ rateLimitPerMin: RateLimitPerMin.optional(), allowedIps: AllowedIps.optional() })
-    .refine((body) => body.rateLimitPerMin !== undefined || body.allowedIps !== undefined, {
-      message: 'Send a limit or the allowed addresses.',
+    .object({
+      name: KeyName.optional(),
+      rateLimitPerMin: RateLimitPerMin.optional(),
+      allowedIps: AllowedIps.optional(),
+      expiresAt: zIsoDateTime.nullable().optional(),
+    })
+    .refine((body) => Object.values(body).some((value) => value !== undefined), {
+      message: 'Send at least one field to change.',
     }),
   success: { status: 200, schema: ApiKeyRow },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'ALREADY_REVOKED', 'VALIDATION_FAILED'],

@@ -1,5 +1,5 @@
 // HTTP controllers of the API key routes (map domain A, stage 7): the read-only list of the own keys of an account of a merchant rank
-// under /client/api-keys (B155, decision 067) and the staff's view, creation, limits and revocation under /admin. Thin; the rules live in
+// under /client/api-keys (B155, decision 067) and the staff's view, creation, edits and revocation under /admin. Thin; the rules live in
 // MerchantApiKeyService and ApiKeyAdminService.
 import { Body, Controller, Header, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
@@ -50,7 +50,7 @@ export class MerchantApiKeysController {
  * The admin API key routes.
  *
  * Why: the merchants tab of the console reads a merchant's keys, creates one (shown once, `Cache-Control: no-store`), changes a key's
- * limits and revokes one (MISMATCHES B31, M45; feature 20, R5 and R6).
+ * name, limits and expiry and revokes one (MISMATCHES B31, M45; feature 20, R5 and R6).
  *
  * @route GET /admin/clients/:id/api-keys
  * @route POST /admin/clients/:id/api-keys
@@ -78,7 +78,7 @@ export class ApiKeysAdminController {
    *
    * @param staff the signed-in staff member
    * @param params the merchant id
-   * @param body the name, allowed addresses, expiry and limit
+   * @param body the name (optional, decision 078), allowed addresses, expiry and limit
    * @returns the key and its secret
    * @route POST /admin/clients/:id/api-keys
    */
@@ -93,7 +93,7 @@ export class ApiKeysAdminController {
   }
 
   /**
-   * Changes a key's per-minute limit and allowed addresses.
+   * Changes a key's name, per-minute limit, allowed addresses and expiry (decision 078).
    *
    * @param staff the signed-in staff member
    * @param params the key id

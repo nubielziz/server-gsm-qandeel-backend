@@ -1,12 +1,14 @@
 // HTTP controller of the service category routes (map domain B, /admin/service-categories, stage 4). Thin: the rules live in
-// CategoryAdminService.
+// CategoryAdminService and CategoryOrderService.
 import { Body, Controller, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
 import { CategoryAdminService } from '../application/category-admin.service';
+import { CategoryOrderService } from '../application/category-order.service';
 import {
   createCategory,
   deleteCategory,
   listCategories,
+  orderCategories,
   showCategory,
   updateCategory,
 } from '../contracts/categories.contracts';
@@ -21,10 +23,14 @@ import {
  * @route POST /admin/service-categories
  * @route PATCH /admin/service-categories/:id
  * @route DELETE /admin/service-categories/:id
+ * @route POST /admin/service-categories/order
  */
 @Controller()
 export class CategoriesController {
-  constructor(private readonly categories: CategoryAdminService) {}
+  constructor(
+    private readonly categories: CategoryAdminService,
+    private readonly order: CategoryOrderService,
+  ) {}
 
   /**
    * Lists categories.
@@ -76,6 +82,18 @@ export class CategoriesController {
     @Body() body: BodyOf<typeof updateCategory>,
   ): Promise<ResultOf<typeof updateCategory>> {
     return this.categories.update(params.id, body);
+  }
+
+  /**
+   * Sets the position of categories in one call (the console's Group view, decision 078).
+   *
+   * @param body the categories and their positions
+   * @returns how many categories changed position
+   * @route POST /admin/service-categories/order
+   */
+  @Route(orderCategories)
+  setOrder(@Body() body: BodyOf<typeof orderCategories>): Promise<ResultOf<typeof orderCategories>> {
+    return this.order.apply(body.items);
   }
 
   /**

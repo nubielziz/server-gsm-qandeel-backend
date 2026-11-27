@@ -4,13 +4,13 @@
   "domain": "B",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 30,
-    "endpoints": 52,
+    "rows": 31,
+    "endpoints": 53,
     "bySurface": {
       "dhru": 1,
       "v1": 2,
       "client": 3,
-      "admin": 46
+      "admin": 47
     },
     "frontendCalled": 41
   },
@@ -20,7 +20,8 @@
     7,
     14,
     31,
-    47
+    47,
+    78
   ],
   "ownedTables": [
     {
@@ -2041,6 +2042,41 @@
       "addition": {
         "file": "scripts/map-additions/47.mjs",
         "spec": "B241"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/service-categories/order",
+      "method": "POST",
+      "path": "/admin/service-categories/order",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "Set the order of service categories (the console groups): the new positions of some categories, all or none.",
+      "access": "staff-permission",
+      "permission": "catalog:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:update",
+      "stage": 78,
+      "tables": [
+        "service_categories",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/service-categories/order",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/service-categories/order"
+      },
+      "module": "catalog",
+      "description": "Set the order of service categories (the console groups): the new positions of some categories, all or none.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/78-group-order.mjs",
+        "spec": "B-TBD group-order"
       },
       "successStatus": 200
     }

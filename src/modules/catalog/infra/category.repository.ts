@@ -256,6 +256,58 @@ export async function updateCategoryRow(
   return row;
 }
 
+/** A category as the order of categories reads it. */
+export interface CategoryPosition {
+  readonly id: number;
+  readonly name: string;
+  readonly sort: number;
+}
+
+/**
+ * Locks the given categories for the rest of the transaction, in id order, and reads their position.
+ *
+ * Why: decision 078: a new order of categories is written from the positions nobody can change until the transaction ends, so two
+ * saves (or a save and a category edit or delete) never interleave; the id order keeps two saves from deadlocking.
+ *
+ * @param db the transaction
+ * @param ids the category ids to lock (duplicates are fine)
+ * @returns the categories among them, by id; an unknown id is not in the list
+ */
+export async function lockCategoryPositions(db: DbExecutor, ids: readonly number[]): Promise<CategoryPosition[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  return db
+    .select({ id: serviceCategories.id, name: serviceCategories.name, sort: serviceCategories.sort })
+    .from(serviceCategories)
+    .where(inArray(serviceCategories.id, unique))
+    .orderBy(asc(serviceCategories.id))
+    .for('update');
+}
+
+/**
+ * Writes the positions of categories that changed, in one statement.
+ *
+ * @param db the transaction (the categories are locked)
+ * @param items the categories and their new position
+ * @returns the ids of the categories whose position changed (a category already at its position is left alone)
+ */
+export async function writeCategoryPositions(
+  db: DbExecutor,
+  items: ReadonlyArray<{ readonly id: number; readonly sort: number }>,
+): Promise<number[]> {
+  if (items.length === 0) return [];
+  const result = await db.execute<{ id: string }>(sql`
+    update ${serviceCategories} as target
+    set sort = changed.sort, updated_at = now()
+    from (values ${sql.join(
+      items.map((item) => sql`(${item.id}::bigint, ${item.sort}::integer)`),
+      sql`, `,
+    )}) as changed(id, sort)
+    where target.id = changed.id and target.sort is distinct from changed.sort
+    returning target.id`);
+  return result.rows.map((row) => Number(row.id)).sort((a, b) => a - b);
+}
+
 /**
  * Deletes the pricing rules that apply to one category.
  *
