@@ -1,7 +1,8 @@
 // Integration tests of the BullMQ base (decisions 006, 020) on the test queue Redis (database 1): producers with the queue
 // defaults, de-duplication by job id, the request id on jobs, the queue gauge, idempotent scheduler upserts, producers that
 // fail fast while Redis is down and recover by themselves, and workers (processors found by decorator, retries with
-// backoff, permanent failures, a graceful close that waits for the running job, the drain deadline, a Redis outage).
+// backoff, permanent failures, a job that moves itself to later, a graceful close that waits for the running job, the drain deadline, a
+// Redis outage).
 // Every group uses its own BULL_PREFIX and the file deletes its keys at the end; nothing here flushes the database.
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { Injectable } from '@nestjs/common';
@@ -10,6 +11,7 @@ import { getRequestId, runWithRequestId } from '@src/common/request-id';
 import { parseEnv } from '@src/config';
 import { MetricsModule, MetricsService } from '@src/infra/metrics';
 import {
+  DelayedError,
   type Job,
   type JobProcessor,
   JobSchedulerRegistry,
@@ -272,6 +274,7 @@ describe('a queue Redis that is down', () => {
 const seen = {
   echo: [] as Array<{ id: string | undefined; n: number; requestId: string | undefined }>,
   flaky: new Map<string, number>(),
+  deferred: new Map<string, number>(),
   slow: { started: false, finished: false, release: (): void => undefined },
   hang: { started: false, release: (): void => undefined },
 };
@@ -294,6 +297,19 @@ class FlakyProcessor implements JobProcessor<{ key: string; failTimes?: number; 
     if (job.data.fatal) return Promise.reject(new UnrecoverableError('this can never work'));
     if (calls <= (job.data.failTimes ?? 0)) return Promise.reject(new Error(`transient failure ${calls}`));
     return Promise.resolve('ok');
+  }
+}
+
+@Injectable()
+@QueueProcessor('notifications')
+class DeferringProcessor implements JobProcessor<{ key: string }, string> {
+  async process(job: Job<{ key: string }, string, string>, token?: string): Promise<string> {
+    const runs = (seen.deferred.get(job.data.key) ?? 0) + 1;
+    seen.deferred.set(job.data.key, runs);
+    if (runs > 1) return 'ran again';
+    // The first run waits (decision 075): the job moves itself to later with its lock token and ends the run with DelayedError.
+    await job.moveToDelayed(Date.now() + 200, token);
+    throw new DelayedError();
   }
 }
 
@@ -329,14 +345,14 @@ describe('workers', () => {
   beforeAll(async () => {
     harness = await infra('workers', {
       modules: workerModules,
-      providers: [EchoProcessor, FlakyProcessor, SlowProcessor],
+      providers: [EchoProcessor, FlakyProcessor, DeferringProcessor, SlowProcessor],
     });
     queues = harness.get(QueuesService);
     await harness.get(QueueWorkers).whenReady();
   });
 
   it('starts one worker for each queue that has a processor, and none for the others', () => {
-    expect(harness.get(QueueWorkers).queues().sort()).toEqual(['files', 'imports', 'maintenance']);
+    expect(harness.get(QueueWorkers).queues().sort()).toEqual(['files', 'imports', 'maintenance', 'notifications']);
   });
 
   it('runs a job on the processor of its job name, with the request id of the job as the current request id', async () => {
@@ -396,6 +412,21 @@ describe('workers', () => {
     expect(failed.attemptsMade).toBe(1);
     expect(failed.failedReason).toBe('this can never work');
     expect(failed.opts.attempts).toBe(3);
+  });
+
+  it('runs a job that moved itself to later again at that time, with no attempt used and nothing counted as failed', async () => {
+    const job = await queues.add('notifications', 'later', { key: 'later' });
+    const done = await waitForState(() => queues.queue('notifications').getJob(job.id as string), 'completed');
+    expect(seen.deferred.get('later')).toBe(2);
+    // One attempt: the completion. The wait used none (a failure would have counted one).
+    expect(done.attemptsMade).toBe(1);
+    expect(done.returnvalue).toBe('ran again');
+    expect(done.failedReason ?? '').toBe('');
+    const text = await scrape(harness);
+    const series = { queue: 'notifications', job: 'later' };
+    expect(metricValue(text, 'queue_jobs_processed_total', { ...series, outcome: 'delayed' })).toBe(1);
+    expect(metricValue(text, 'queue_jobs_processed_total', { ...series, outcome: 'completed' })).toBe(1);
+    expect(metricValue(text, 'queue_jobs_processed_total', { ...series, outcome: 'failed' })).toBe(0);
   });
 
   it('fails a job whose name has no processor at once, and does not retry it', async () => {

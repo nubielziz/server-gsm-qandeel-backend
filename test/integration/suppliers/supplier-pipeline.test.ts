@@ -1,21 +1,25 @@
 // The supplier pipeline the way the worker wires it (feature 6, decision 020): placing an order writes the outbox row, the relay hands it to
 // the `supplier-dispatch` queue, the queue worker runs the dispatch job against a fake Dhru supplier, a `poll` job on `supplier-poll`
-// settles the order, and the scheduled `price_sync` of `supplier-sync` goes through the suppliers and is recorded in `job_runs`. Real
-// Postgres and Redis (a private BullMQ prefix), real workers; the waits are polls for the effect.
+// settles the order, and the scheduled `price_sync` of `supplier-sync` goes through the suppliers and is recorded in `job_runs`. An order
+// inside its cancel window (decision 075) waits in `delayed` without using an attempt. Real Postgres and Redis (a private BullMQ prefix),
+// real workers; the waits are polls for the effect.
 import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { EncryptionService } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
-import { QueueWorkersModule, QueuesService } from '@src/infra/queues';
+import { MetricsService } from '@src/infra/metrics';
+import { QueueWorkersModule, QueuesService, queueJobId } from '@src/infra/queues';
 import { RedisService } from '@src/infra/redis';
+import { CANCEL_WINDOW_MS } from '@src/modules/orders';
 import { OutboxRelayModule } from '@src/modules/platform';
-import { SUPPLIER_SCHEDULERS, SupplierJobsModule } from '@src/modules/suppliers';
+import { DispatchRequests, SUPPLIER_SCHEDULERS, SupplierJobsModule } from '@src/modules/suppliers';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { eventually } from '../../support/infra';
 import { IMEIS, eventsOf, json, orderRow, ordersWorld, portalFor, type OrdersWorld } from '../../support/orders';
-import { deleteBullKeys, testBullPrefix } from '../../support/queues';
+import { metricValue } from '../../support/metrics';
+import { deleteBullKeys, testBullPrefix, waitForState } from '../../support/queues';
 import { FakeDhruSupplier, SupplierTestModule, automaticRoute } from '../../support/suppliers';
 
 setDefaultTimeout(40_000);
@@ -93,6 +97,49 @@ describe('the supplier pipeline through the real queues', () => {
     expect(stopped.supplierRef).toBeNull();
     await Bun.sleep(1500);
     expect(fake.callsOf('placeimeiorder').filter((call) => call.parameters.IMEI === IMEIS[1])).toHaveLength(1);
+  });
+
+  it('keeps an order inside its cancel window waiting in delayed, with no attempt used, then sends it (decision 075)', async () => {
+    const { db, merchant } = world;
+    const queues = t.app.get(QueuesService, { strict: false });
+    // The file's one route (a second supplier would change the price sync's counts below), with cancellation on until its job waits.
+    await db.update(s.services).set({ allowCancel: true }).where(eq(s.services.id, serviceId));
+    const res = await (await portalFor(t, merchant.id)).post('/client/orders', { serviceId, imei: IMEIS[2] });
+    expect(res.statusCode).toBe(201);
+    const orderId = json(res).orders[0].id as number;
+    const [request] = await db
+      .select({ id: s.outboxEvents.id })
+      .from(s.outboxEvents)
+      .where(and(eq(s.outboxEvents.aggregateId, orderId), eq(s.outboxEvents.type, 'order.dispatch_requested')));
+    const jobOf = () => queues.queue('supplier-dispatch').getJob(queueJobId('outbox', request!.id));
+
+    // The job ran once and moved itself to delayed until the end of the window: no attempt used, no failure, nothing written.
+    const waiting = await waitForState(jobOf, 'delayed', 20_000);
+    expect(waiting.attemptsMade).toBe(0);
+    expect(waiting.failedReason ?? '').toBe('');
+    expect(waiting.delay).toBeGreaterThan(CANCEL_WINDOW_MS - 30_000);
+    expect(await orderRow(db, orderId)).toMatchObject({ status: 'pending', dispatchState: 'pending', sentAt: null });
+    expect((await eventsOf(db, orderId)).map((event) => event.type)).toEqual(['created', 'hold']);
+    expect(fake.callsOf('placeimeiorder').filter((call) => call.parameters.IMEI === IMEIS[2])).toHaveLength(0);
+    await db.update(s.services).set({ allowCancel: false }).where(eq(s.services.id, serviceId));
+    // The waiting job is a live request for the dispatch sweep (it never asks again for this order).
+    expect((await t.app.get(DispatchRequests, { strict: false }).inspect(db, orderId)).state).toBe('live');
+    const metrics = await t.app.get(MetricsService, { strict: false }).render();
+    const series = { queue: 'supplier-dispatch', job: 'order.dispatch_requested' };
+    expect(metricValue(metrics, 'queue_jobs_processed_total', { ...series, outcome: 'delayed' })).toBe(1);
+    expect(metricValue(metrics, 'queue_jobs_processed_total', { ...series, outcome: 'failed' })).toBe(0);
+
+    // The window ends (placed two minutes earlier) and the job is due now: it claims and sends the order once.
+    await db
+      .update(s.orders)
+      .set({ placedAt: new Date(Date.now() - CANCEL_WINDOW_MS - 1_000) })
+      .where(eq(s.orders.id, orderId));
+    await waiting.promote();
+    const done = await waitForState(jobOf, 'completed', 20_000);
+    expect(done.attemptsMade).toBe(1);
+    expect(done.returnvalue).toMatchObject({ status: 'sent' });
+    expect(await orderRow(db, orderId)).toMatchObject({ status: 'processing', dispatchState: 'sent' });
+    expect(fake.callsOf('placeimeiorder').filter((call) => call.parameters.IMEI === IMEIS[2])).toHaveLength(1);
   });
 
   it('registers the dispatch sweep on the maintenance queue', async () => {

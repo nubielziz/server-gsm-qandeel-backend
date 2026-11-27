@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { zId, zIsoDateTime, zJsonObject, zMoney } from '../../../common/contract';
 import { SERVICE_TYPES } from '../../catalog';
+import { CANCEL_BLOCKED_REASONS, CANCEL_WINDOW_MS, VERIFY_BLOCKED_REASONS } from '../domain/merchant-actions';
 import { WIRE_DISPATCH_STATES } from '../domain/order-machine';
 import {
   ORDER_EVENT_ACTOR_TYPES,
@@ -152,7 +153,36 @@ export const MerchantOrderSchema = z.object({
   verificationStatus: z.enum(ORDER_VERIFICATION_STATUSES).nullable(),
   inputFileId: zId.nullable(),
   canCancel: z.boolean().describe('`POST /client/orders/:id/cancel` would be accepted now.'),
+  cancelUntil: zIsoDateTime
+    .nullable()
+    .describe(
+      `Until when the order waits before it is sent, so it can still be cancelled (decision 075): an order placed on the website for a ` +
+        `service that allows cancellation is sent ${CANCEL_WINDOW_MS / 60_000} minutes after it was placed. Set only while \`canCancel\` is ` +
+        'true and the order is inside that window; `null` otherwise (a cancellable manual or held order has no deadline).',
+    ),
+  cancelBlocked: z
+    .enum(CANCEL_BLOCKED_REASONS)
+    .nullable()
+    .describe(
+      'Why the order cannot be cancelled now, `null` exactly when `canCancel` is true. The first that applies: `closed` (completed or ' +
+        'rejected), `not_allowed` (the service does not allow cancellation), `already_sent` (sent to a supplier, or claimed for a send, at ' +
+        'least once: the cancel would be `409 ALREADY_SENT`), `in_progress` (anything else: staff are working on it).',
+    ),
   canVerify: z.boolean().describe('`POST /client/orders/:id/verify` would be accepted now.'),
+  verifyUntil: zIsoDateTime
+    .nullable()
+    .describe(
+      "Until when a verification can be asked for: `completedAt` plus the service's `verify_window_h` hours. Set only while " +
+        '`canVerify` is true, `null` otherwise.',
+    ),
+  verifyBlocked: z
+    .enum(VERIFY_BLOCKED_REASONS)
+    .nullable()
+    .describe(
+      'Why a verification cannot be asked for now, `null` exactly when `canVerify` is true. The first that applies: ' +
+        '`already_requested` (asked once already), `not_allowed` (the service does not allow verification), `not_completed` (the order is ' +
+        'not completed), `window_passed` (the window has passed, or the service has a window of 0 hours).',
+    ),
   createdAt: zIsoDateTime,
   completedAt: zIsoDateTime.nullable(),
 });

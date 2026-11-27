@@ -5,10 +5,10 @@ import { type SQL, and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, escapeLike, listOrderBy, listWhere } from '../../../infra/db';
 import { type RankKind, rankKindOf } from '../../identity';
-import { type Order, orderEvents, orders } from '../db/schema';
+import { type Order, orders } from '../db/schema';
 import type { ShopOrderRow } from '../ports/shop-orders';
 import { foreignTables as f } from './foreign-reads.repository';
-import { channelSql, merchantDoorSql, pastSlaPredicate, queueSql, shopDoorSql } from './order-sql';
+import { channelSql, everDispatchedSql, merchantDoorSql, pastSlaPredicate, queueSql, shopDoorSql } from './order-sql';
 
 /** An order with the names the console's row shows. */
 export interface OrderRow {
@@ -49,8 +49,7 @@ function selectRows(db: DbExecutor) {
         order: orders,
         serviceName: f.services.name,
         slaMinutes: f.services.slaMinutes,
-        // One EXISTS in the same select (never a query per row); `order_events_order_idx` serves it.
-        everDispatched: sql<boolean>`exists (select 1 from ${orderEvents} where ${orderEvents.orderId} = ${orders.id} and ${orderEvents.type} = 'dispatch')`,
+        everDispatched: everDispatchedSql,
         allowCancel: f.services.allowCancel,
         allowVerify: f.services.allowVerify,
         verifyWindowH: f.services.verifyWindowH,

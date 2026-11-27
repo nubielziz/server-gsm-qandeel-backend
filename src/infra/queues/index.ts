@@ -24,6 +24,7 @@ export { JobSchedulerRunner } from './job-scheduler-runner';
 export { DEFAULT_QUEUE_WORKERS_OPTIONS, QUEUE_WORKERS_OPTIONS, QueueWorkers } from './queue-workers.service';
 export type { QueueWorkersOptions } from './queue-workers.service';
 export { QUEUE_JOB_STATES, QueueMetrics } from './queue-metrics';
-// Modules import these from here so that no feature depends on BullMQ directly.
-export { UnrecoverableError } from 'bullmq';
+// Modules import these from here so that no feature depends on BullMQ directly. `DelayedError` ends a run that moved its own job to
+// later (`job.moveToDelayed(timestamp, token)`, decision 075): no attempt is used and nothing fails.
+export { DelayedError, UnrecoverableError } from 'bullmq';
 export type { Job } from 'bullmq';

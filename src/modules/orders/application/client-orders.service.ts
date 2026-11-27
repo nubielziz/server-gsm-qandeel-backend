@@ -9,7 +9,7 @@ import { DbService } from '../../../infra/db';
 import { MERCHANT_CANCEL_REASON } from '../domain/order-timeline';
 import { findOrderRow } from '../infra/order-read.repository';
 import { IdempotencyStore } from './idempotency-store';
-import { canCancel, canVerify, type MerchantOrderView, toMerchantOrder } from './order-views';
+import { canCancel, canVerify, type MerchantOrderView, toMerchantOrder, withActionFacts } from './order-views';
 import { OrderPlacement } from './order-placement';
 import { OrderTransitions } from './order-transitions';
 
@@ -102,7 +102,9 @@ export class ClientOrdersService {
         { accountId, key, scope: 'portal', requestHash: this.idempotency.hashOf('portal', input) },
         work,
       );
-      return { orders: (stored.body as unknown as { orders: MerchantOrderView[] }).orders, replayed: stored.replayed };
+      // An answer stored before decision 075 lacks the four action facts: fill them in, or the response contract refuses the replay.
+      const orders = (stored.body as unknown as { orders: MerchantOrderView[] }).orders.map(withActionFacts);
+      return { orders, replayed: stored.replayed };
     });
   }
 

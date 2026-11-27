@@ -6,6 +6,7 @@ import { defineRoute, listQuery, zId, zIdParam, zMoney, zSignedMoney } from '../
 import { SERVICE_TYPES } from '../../catalog';
 import { ORDER_STATUSES } from '../db/schema';
 import { IDEMPOTENCY_WINDOW_DAYS } from '../domain/idempotency-window';
+import { CANCEL_WINDOW_MS } from '../domain/merchant-actions';
 import { IdempotencyHeaders } from './idempotency-headers';
 import { MerchantEventSchema, MerchantOrderSchema, ORDER_SORTS, OrderAnswerSchema } from './shared';
 
@@ -39,9 +40,25 @@ const ORDER_EXAMPLE = {
   verificationStatus: null,
   inputFileId: null,
   canCancel: false,
+  cancelUntil: null,
+  cancelBlocked: 'closed',
   canVerify: false,
+  verifyUntil: null,
+  verifyBlocked: 'not_allowed',
   createdAt: '2026-10-02T06:23:25.000Z',
   completedAt: '2026-10-02T07:01:10.000Z',
+} as const;
+
+/** A website order of a service that allows cancellation, just placed: it waits two minutes before it is sent (decision 075). */
+const PLACED_EXAMPLE = {
+  ...ORDER_EXAMPLE,
+  status: 'pending',
+  result: { code: null, comment: null, fileId: null },
+  canCancel: true,
+  cancelUntil: '2026-10-02T06:25:25.000Z',
+  cancelBlocked: null,
+  verifyBlocked: 'not_completed',
+  completedAt: null,
 } as const;
 
 const WALLET = z.object({
@@ -140,7 +157,9 @@ export const placeClientOrder = defineRoute({
     'key and is reported on `imei`; a service without such a field takes it as sent) or `imeis` (a bulk of up to 100: one order each, ' +
     'all placed or none, each item reported on `imeis.N`; still accepted, the shop no longer sends it); `imei` on another service is ' +
     '`422 not_applicable`. A File service takes a `fileId` and/or `inputs`. The ' +
-    'answer is immediate: the orders are `pending`, in the manual queue or waiting for the dispatch job. Send an `Idempotency-Key` (a new ' +
+    'answer is immediate: the orders are `pending`, in the manual queue or waiting for the dispatch job. An order of a service that allows ' +
+    `cancellation waits ${CANCEL_WINDOW_MS / 60_000} minutes before it is sent, so the merchant can still cancel it (\`cancelUntil\`, decision 075). ` +
+    'Send an `Idempotency-Key` (a new ' +
     'one per form submission) so that a double click or a retry never places or holds twice: the same key and body sends the first `201` ' +
     'again with the response header `idempotency-replayed: true` (nothing is placed); another body with the key is `409 ' +
     'IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS` (`Retry-After`). A refused request stores nothing, so the key ' +
@@ -170,11 +189,7 @@ export const placeClientOrder = defineRoute({
   ],
   examples: {
     request: { serviceId: 5, inputs: { imei: '352905112490861' } },
-    response: {
-      orders: [
-        { ...ORDER_EXAMPLE, status: 'pending', result: { code: null, comment: null, fileId: null }, completedAt: null },
-      ],
-    },
+    response: { orders: [PLACED_EXAMPLE] },
   },
 });
 
@@ -186,7 +201,8 @@ export const listClientOrders = defineRoute({
     "The signed-in account's orders placed through the portal and the Dhru API (an order the same account paid first in the shop is not " +
     'listed here: it is in `GET /store/v1/me/orders`). Filters: `status` (repeat for IN, `status_ne`), `type`, `serviceId`, `createdAt_gte` and ' +
     '`createdAt_lte`. `q` searches the input and the service name, and the order id exactly when it is all digits. Sort by ' +
-    '`createdAt` (default, newest first), `totalPrice` or `status`. Never cached.',
+    '`createdAt` (default, newest first), `totalPrice` or `status`. Each order says whether it can be cancelled or verified now, until ' +
+    'when (`cancelUntil`, `verifyUntil`) and, when not, why (`cancelBlocked`, `verifyBlocked`; decision 075). Never cached.',
   tags: ['client-orders'],
   surface: 'client',
   access: 'merchant-session',
@@ -245,7 +261,9 @@ export const cancelClientOrder = defineRoute({
   summary: 'Cancel an order',
   description:
     'Cancels an order that was never sent (`pending`, manual or held) when its service allows it: the order is rejected as ' +
-    '"Cancelled by the merchant" and the hold returns to the wallet. An order that was sent to a supplier once (being sent now, sent, or ' +
+    '"Cancelled by the merchant" and the hold returns to the wallet. An order placed on the website for a service that allows ' +
+    `cancellation is sent only ${CANCEL_WINDOW_MS / 60_000} minutes after it was placed (the order's \`cancelUntil\`, decision 075), so it can be ` +
+    'cancelled during that wait; a Dhru order is sent at once. An order that was sent to a supplier once (being sent now, sent, or ' +
     'sent and then failed or queued again) is `409 ALREADY_SENT`: it is cancelled by staff. A service that does not allow cancellation, or an ' +
     "order already being worked on, is `409 INVALID_TRANSITION`. The account's own store order (paid first, in the shop) is `404`: it is refunded " +
     'by staff, never cancelled here.',

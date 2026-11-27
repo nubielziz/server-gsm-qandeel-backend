@@ -11,6 +11,7 @@ import { AccountDirectory } from '../../identity';
 import { AuditService } from '../../platform';
 import { type Order, type OrderEventType, orders } from '../db/schema';
 import { isPrepaidOrder } from '../domain/door';
+import { cancelWindowEnd } from '../domain/merchant-actions';
 import {
   type OrderAction,
   type OrderTransition,
@@ -36,6 +37,7 @@ import {
   type SupplierOrderUsage,
   type UnansweredClaim,
   type UnclaimedOrder,
+  cancelWindowReads,
   claimDispatch,
   completedSpend,
   openOrderCounts,
@@ -159,6 +161,24 @@ export class OrderSupplierMoves {
    */
   paymentStop(db: DbExecutor, order: Pick<Order, 'id' | 'source'>): Promise<PaymentStop | undefined> {
     return paymentStopOfOrder(db, order);
+  }
+
+  /**
+   * Tells until when the dispatch of an order waits for its cancel window.
+   *
+   * Why: decision 075: a website order of a service that allows cancellation (now) is not claimed for a supplier call before
+   * `placed_at + CANCEL_WINDOW_MS`, so the merchant can still cancel it; the dispatch job asks here before it claims and waits until the
+   * time this returns. The rule is `cancelWindowEnd`, the same one the portal's `cancelUntil` reads, on the service's `allow_cancel` as it
+   * is now and the order's `dispatch` events, read through this module's own queries.
+   *
+   * @param db the database or a transaction
+   * @param order the order as the job read it
+   * @returns the end of the window while the order is inside it (the injected clock's time), else `null` (send it now)
+   */
+  async cancelWindowEnd(db: DbExecutor, order: Order): Promise<Date | null> {
+    const reads = await cancelWindowReads(db, order.id);
+    if (!reads) return null;
+    return cancelWindowEnd({ order, ...reads }, this.clock.now());
   }
 
   /**

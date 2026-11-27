@@ -46,6 +46,11 @@ listed in `docs/queues.md`; a test fails when that document and `QUEUES` disagre
 - **Retries.** The queue's `attempts` and exponential backoff with jitter apply to every job. Throw `UnrecoverableError`
   (re-exported here) for a permanent failure. `supplier-dispatch` jobs are never re-run after a worker died (`maxStalledCount`
   0) and its processor throws `UnrecoverableError` for a send that may have reached the supplier (decision 025).
+- **Waiting inside a job** (decision 075). A processor that must run later calls `job.moveToDelayed(timestamp, token)` with the lock token
+  `process(job, token)` receives (the worker passes BullMQ's token of the run; without it the lock would not be released), then throws
+  `DelayedError` (re-exported here). BullMQ keeps the job id, runs it again at that time and uses no attempt; the worker rethrows the error
+  as it is, writes no failure (no `failed` event, error log or report) and counts `queue_jobs_processed_total{outcome="delayed"}`. Only
+  `supplier-dispatch` does it (the cancel window of a website order).
 - **Shutdown** (decision 001): on SIGTERM `QueueWorkers.onModuleDestroy` stops taking jobs and waits for the running ones (at
   most `shutdownGraceMs`, 25 s); the pool, Redis and producers close later in `onApplicationShutdown`. When the queue Redis
   is away the workers are closed at once, since no job could be reported finished anyway.

@@ -28,6 +28,14 @@ export type {
   WireDispatchState,
 } from './domain/order-machine';
 export { bridgedImeiOf, mainInputOf } from './domain/main-input';
+// The cancel window of a website order and why a merchant's action is not available (decision 075).
+export {
+  CANCEL_BLOCKED_REASONS,
+  CANCEL_WINDOW_MS,
+  VERIFY_BLOCKED_REASONS,
+  cancelWindowEnd,
+} from './domain/merchant-actions';
+export type { CancelBlocked, CancelWindowFacts, VerifyBlocked } from './domain/merchant-actions';
 export {
   INVALID_IMEI_MESSAGE,
   MAX_INPUT_LENGTH,

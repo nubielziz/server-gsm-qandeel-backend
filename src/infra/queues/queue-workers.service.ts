@@ -2,7 +2,7 @@
 // worker process boots and drained in onModuleDestroy. Only src/worker.module.ts imports it; the API never runs jobs.
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
-import { type Job, UnrecoverableError, Worker } from 'bullmq';
+import { DelayedError, type Job, UnrecoverableError, Worker } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { Counter, Histogram } from 'prom-client';
 import { sanitizeError, withoutStatementText } from '../../common/errors/safe-error';
@@ -55,6 +55,19 @@ function requestIdOf(job: Job): string {
 }
 
 /**
+ * Tells whether a processor ended its run by moving its own job to later.
+ *
+ * Why: decision 075: a processor that waits calls `job.moveToDelayed(timestamp, token)` and throws `DelayedError`; BullMQ then neither fails
+ * nor retries the job and uses up no attempt (it checks the class or the name, as here), so the worker does not count it as failed either.
+ *
+ * @param error whatever the processor threw
+ * @returns true for BullMQ's `DelayedError`
+ */
+export function isDelayedError(error: unknown): boolean {
+  return error instanceof DelayedError || (error instanceof Error && error.name === 'DelayedError');
+}
+
+/**
  * The error a processor's failure is stored as.
  *
  * Why: decision 054: BullMQ stores the message and stack of the error thrown from the worker function (`failedReason`,
@@ -86,7 +99,8 @@ export function toQueueError(error: unknown): unknown {
  * BullMQ. While a job runs, the request id it carries is the current request id, so logs and follow-up outbox rows keep it.
  *
  * Side effects: reads and writes the BullMQ keys of the queues that have processors; counts
- * `queue_jobs_processed_total{queue,job,outcome}` and observes `queue_job_duration_seconds{queue,job}`; logs failures and
+ * `queue_jobs_processed_total{queue,job,outcome}` (`completed`, `failed`, or `delayed` for a run that moved its own job to later,
+ * decision 075) and observes `queue_job_duration_seconds{queue,job}`; logs failures and
  * reports a job that failed for good to Sentry when `SENTRY_DSN` is set. A failed job's stored reason and stack, its log line and
  * its report never carry a database statement or its values (decision 054: {@link toQueueError}).
  *
@@ -110,7 +124,7 @@ export class QueueWorkers implements OnApplicationBootstrap, OnModuleDestroy {
   ) {
     this.processed = new Counter({
       name: 'queue_jobs_processed_total',
-      help: 'Jobs a worker finished, by queue, job name and outcome (completed or failed; a retried job counts per attempt).',
+      help: 'Jobs a worker finished, by queue, job name and outcome (completed, failed, or delayed: the job moved itself to later; a retried job counts per attempt).',
       labelNames: ['queue', 'job', 'outcome'],
       registers: [metrics.registry],
     });
@@ -175,7 +189,8 @@ export class QueueWorkers implements OnApplicationBootstrap, OnModuleDestroy {
 
   private start(queue: QueueName, handlers: QueueHandlers, connection: Redis): Worker {
     const definition: QueueDefinition = QUEUES[queue];
-    const worker = new Worker(queue, (job: Job) => this.run(queue, handlers, job), {
+    // BullMQ hands the processor the lock token of the run: a job that waits needs it for `moveToDelayed` (decision 075).
+    const worker = new Worker(queue, (job: Job, token?: string) => this.run(queue, handlers, job, token), {
       connection,
       prefix: this.config.redis.bullPrefix,
       concurrency: definition.concurrency,
@@ -226,15 +241,20 @@ export class QueueWorkers implements OnApplicationBootstrap, OnModuleDestroy {
   }
 
   /** Runs one job: picks the processor, binds the request id and records the metrics. */
-  private async run(queue: QueueName, handlers: QueueHandlers, job: Job): Promise<unknown> {
+  private async run(queue: QueueName, handlers: QueueHandlers, job: Job, token: string | undefined): Promise<unknown> {
     const processor = handlerFor(handlers, job.name);
     if (!processor) throw new UnrecoverableError(`Queue "${queue}" has no processor for job "${job.name}".`);
     const stopTimer = this.duration.startTimer({ queue, job: job.name });
     try {
-      const result: unknown = await runWithRequestId(requestIdOf(job), () => processor.instance.process(job));
+      const result: unknown = await runWithRequestId(requestIdOf(job), () => processor.instance.process(job, token));
       this.processed.inc({ queue, job: job.name, outcome: 'completed' });
       return result;
     } catch (error) {
+      // The job moved itself to later (decision 075): not a failure, and BullMQ must see the error as it is to leave the job delayed.
+      if (isDelayedError(error)) {
+        this.processed.inc({ queue, job: job.name, outcome: 'delayed' });
+        throw error;
+      }
       this.processed.inc({ queue, job: job.name, outcome: 'failed' });
       // BullMQ stores the message and stack of the error thrown here (failedReason, stacktrace): a database failure is stored as
       // its SQLSTATE and names (decision 054).

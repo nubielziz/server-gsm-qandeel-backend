@@ -1,14 +1,21 @@
-// Unit tests of what a merchant may do with an order (the portal's `canCancel` and `canVerify`), of when a review reason is sent and of the
-// buyer account the staff row and the timeline name (decision 064).
+// Unit tests of what a merchant may do with an order (the portal's `canCancel` and `canVerify`, until when and why not: decision 075), of
+// when a review reason is sent and of the buyer account the staff row and the timeline name (decision 064).
 import { describe, expect, it } from 'bun:test';
 import type { Order, OrderEvent } from '@src/modules/orders/db/schema';
 import type { OrderRow } from '@src/modules/orders/infra/order-read.repository';
+import { CANCEL_WINDOW_MS } from '@src/modules/orders/domain/merchant-actions';
 import {
+  cancelBlockedReason,
+  cancelDeadline,
   canCancel,
   canVerify,
   carriesReason,
+  toMerchantOrder,
   toStaffEvent,
   toStaffOrder,
+  verifyBlockedReason,
+  verifyDeadline,
+  withActionFacts,
 } from '@src/modules/orders/application/order-views';
 
 const NOW = new Date('2026-11-07T12:00:00.000Z');
@@ -109,6 +116,170 @@ describe('canVerify', () => {
     expect(canVerify(row({}), NOW)).toBe(false);
     expect(canVerify(row({ status: 'rejected', dispatchState: 'done', completedAt: NOW }), NOW)).toBe(false);
     expect(canVerify({ ...completed(1), verifyWindowH: 0 }, NOW)).toBe(false);
+  });
+});
+
+describe('cancelDeadline: the end of the cancel window (decision 075)', () => {
+  const placedAt = new Date(NOW.getTime() - 30_000);
+  const end = new Date(placedAt.getTime() + CANCEL_WINDOW_MS).toISOString();
+  const website = (order: Partial<Order> = {}, rules: Parameters<typeof row>[1] = {}) =>
+    row({ source: 'portal', placedAt, ...order }, rules);
+
+  it('is placed_at plus two minutes for a cancellable website order waiting for its first send', () => {
+    expect(cancelDeadline(website(), NOW)).toBe(end);
+    expect(cancelDeadline(website(), new Date(placedAt.getTime() + CANCEL_WINDOW_MS))).toBeNull();
+  });
+
+  it('is null for a cancellable manual or held order, a Dhru order, and whenever the order cannot be cancelled', () => {
+    expect(cancelDeadline(website({ dispatchState: 'manual' }), NOW)).toBeNull();
+    expect(cancelDeadline(website({ dispatchState: 'held' }), NOW)).toBeNull();
+    expect(cancelDeadline(website({ source: 'dhru' }), NOW)).toBeNull();
+    expect(cancelDeadline(website({}, { allowCancel: false }), NOW)).toBeNull();
+    expect(cancelDeadline(website({}, { everDispatched: true }), NOW)).toBeNull();
+    expect(cancelDeadline(website({ dispatchState: 'dispatching', sentAt: NOW }), NOW)).toBeNull();
+  });
+});
+
+describe('cancelBlockedReason', () => {
+  it('is null exactly when the order can be cancelled', () => {
+    for (const dispatchState of ['pending', 'manual', 'held'] as const) {
+      expect(cancelBlockedReason(row({ dispatchState }))).toBeNull();
+    }
+  });
+
+  it('says closed first for a completed or rejected order, whatever the service allows', () => {
+    expect(cancelBlockedReason(row({ status: 'completed', dispatchState: 'done' }))).toBe('closed');
+    expect(cancelBlockedReason(row({ status: 'rejected', dispatchState: 'done' }, { allowCancel: false }))).toBe(
+      'closed',
+    );
+  });
+
+  it('says not_allowed for an open order of a service without cancellation, even one already sent', () => {
+    expect(cancelBlockedReason(row({}, { allowCancel: false }))).toBe('not_allowed');
+    expect(cancelBlockedReason(row({ status: 'processing', dispatchState: 'sent' }, { allowCancel: false }))).toBe(
+      'not_allowed',
+    );
+  });
+
+  it('says already_sent for the facts the machine answers ALREADY_SENT to', () => {
+    expect(cancelBlockedReason(row({ status: 'processing', dispatchState: 'sent' }))).toBe('already_sent');
+    expect(cancelBlockedReason(row({ dispatchState: 'dispatching', sentAt: NOW }))).toBe('already_sent');
+    expect(cancelBlockedReason(row({ dispatchState: 'pending', sentAt: NOW }))).toBe('already_sent');
+    expect(cancelBlockedReason(row({ dispatchState: 'pending' }, { everDispatched: true }))).toBe('already_sent');
+    expect(cancelBlockedReason(row({ dispatchState: 'needs_attention' }, { everDispatched: true }))).toBe(
+      'already_sent',
+    );
+  });
+
+  it('says in_progress for anything else (staff work on it, or it waits for a person)', () => {
+    expect(cancelBlockedReason(row({ status: 'processing', dispatchState: 'operator' }))).toBe('in_progress');
+    expect(cancelBlockedReason(row({ dispatchState: 'needs_attention' }))).toBe('in_progress');
+  });
+});
+
+describe('verifyDeadline and verifyBlockedReason', () => {
+  const completedAt = new Date(NOW.getTime() - HOUR);
+  const completed = (overrides: Partial<Order> = {}, rules: Parameters<typeof row>[1] = {}) =>
+    row({ status: 'completed', dispatchState: 'done', completedAt, ...overrides }, rules);
+
+  it('gives completed_at plus the window and no reason while a verification can be asked for', () => {
+    expect(verifyDeadline(completed(), NOW)).toBe(new Date(completedAt.getTime() + 24 * HOUR).toISOString());
+    expect(verifyBlockedReason(completed(), NOW)).toBeNull();
+  });
+
+  it('says already_requested first, then not_allowed, then not_completed, then window_passed', () => {
+    for (const verificationStatus of ['requested', 'accepted', 'refunded'] as const) {
+      expect(verifyBlockedReason(completed({ verificationStatus }, { allowVerify: false }), NOW)).toBe(
+        'already_requested',
+      );
+    }
+    expect(verifyBlockedReason(completed({}, { allowVerify: false }), NOW)).toBe('not_allowed');
+    expect(verifyBlockedReason(row({}, { allowVerify: false }), NOW)).toBe('not_allowed');
+    expect(verifyBlockedReason(row({}), NOW)).toBe('not_completed');
+    expect(verifyBlockedReason(row({ status: 'rejected', dispatchState: 'done', completedAt }), NOW)).toBe(
+      'not_completed',
+    );
+    expect(verifyBlockedReason(completed({ completedAt: new Date(NOW.getTime() - 25 * HOUR) }), NOW)).toBe(
+      'window_passed',
+    );
+    expect(verifyBlockedReason(completed({}, { verifyWindowH: 0 }), NOW)).toBe('window_passed');
+    expect(verifyDeadline(completed({}, { verifyWindowH: 0 }), NOW)).toBeNull();
+  });
+});
+
+describe('toMerchantOrder: the four facts agree with canCancel and canVerify in every state', () => {
+  const placedAt = new Date(NOW.getTime() - 30_000);
+  const statuses = ['pending', 'processing', 'completed', 'rejected'] as const;
+  const dispatchStates = [
+    'pending',
+    'dispatching',
+    'held',
+    'manual',
+    'operator',
+    'sent',
+    'needs_attention',
+    'done',
+  ] as const;
+  const verifications = [null, 'requested', 'accepted', 'refunded'] as const;
+
+  it('cancelBlocked is null exactly when canCancel, verifyBlocked exactly when canVerify, and a deadline only with its action', () => {
+    let states = 0;
+    for (const status of statuses)
+      for (const dispatchState of dispatchStates)
+        for (const source of ['portal', 'dhru'] as const)
+          for (const sentAt of [null, NOW])
+            for (const everDispatched of [false, true])
+              for (const allowCancel of [false, true])
+                for (const verificationStatus of verifications)
+                  for (const completedHoursAgo of [null, 1, 30])
+                    for (const verifyWindowH of [0, 24]) {
+                      const view = toMerchantOrder(
+                        row(
+                          {
+                            id: 1,
+                            status,
+                            dispatchState,
+                            source,
+                            sentAt,
+                            placedAt,
+                            createdAt: placedAt,
+                            verificationStatus,
+                            completedAt:
+                              completedHoursAgo === null ? null : new Date(NOW.getTime() - completedHoursAgo * HOUR),
+                          },
+                          { everDispatched, allowCancel, allowVerify: allowCancel, verifyWindowH },
+                        ),
+                        NOW,
+                      );
+                      const label = JSON.stringify({
+                        status,
+                        dispatchState,
+                        source,
+                        sentAt,
+                        everDispatched,
+                        allowCancel,
+                      });
+                      expect(view.cancelBlocked === null, label).toBe(view.canCancel);
+                      expect(view.verifyBlocked === null, label).toBe(view.canVerify);
+                      if (view.cancelUntil !== null) expect(view.canCancel, label).toBe(true);
+                      if (view.verifyUntil !== null) expect(view.canVerify, label).toBe(true);
+                      states += 1;
+                    }
+    expect(states).toBeGreaterThan(1000);
+  });
+
+  it('shows the window of a website order just placed, and none on Dhru', () => {
+    const fresh = row({ id: 1, source: 'portal', placedAt, createdAt: placedAt });
+    expect(toMerchantOrder(fresh, NOW)).toMatchObject({
+      canCancel: true,
+      cancelUntil: new Date(placedAt.getTime() + CANCEL_WINDOW_MS).toISOString(),
+      cancelBlocked: null,
+      canVerify: false,
+      verifyUntil: null,
+      verifyBlocked: 'not_completed',
+    });
+    const dhru = row({ id: 2, source: 'dhru', placedAt, createdAt: placedAt });
+    expect(toMerchantOrder(dhru, NOW)).toMatchObject({ canCancel: true, cancelUntil: null, cancelBlocked: null });
   });
 });
 
@@ -232,5 +403,39 @@ describe('toStaffEvent: the account of the actor', () => {
       actor: { type: 'customer', id: 99, name: null },
       account: null,
     });
+  });
+});
+
+describe('withActionFacts: an answer stored before decision 075', () => {
+  it('fills the four missing keys from the stored flags: no deadline, a reason only where the flag is false', () => {
+    expect(withActionFacts({ id: 9, canCancel: false, canVerify: false })).toEqual({
+      id: 9,
+      canCancel: false,
+      canVerify: false,
+      cancelUntil: null,
+      cancelBlocked: 'in_progress',
+      verifyUntil: null,
+      verifyBlocked: 'not_completed',
+    });
+    expect(withActionFacts({ canCancel: true, canVerify: true })).toEqual({
+      canCancel: true,
+      canVerify: true,
+      cancelUntil: null,
+      cancelBlocked: null,
+      verifyUntil: null,
+      verifyBlocked: null,
+    });
+  });
+
+  it('leaves an answer that has the keys as it was stored', () => {
+    const stored = {
+      canCancel: true,
+      canVerify: false,
+      cancelUntil: '2026-11-27T10:02:00.000Z',
+      cancelBlocked: null,
+      verifyUntil: null,
+      verifyBlocked: 'not_allowed' as const,
+    };
+    expect(withActionFacts(stored)).toEqual(stored);
   });
 });

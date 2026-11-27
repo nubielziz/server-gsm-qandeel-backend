@@ -71,7 +71,9 @@ const ServiceRow = z.object({
   fallbackSupplier: NamedRef.nullable().describe('The second active supplier link by priority.'),
   allowCancel: z
     .boolean()
-    .describe('Whether a merchant may cancel an order of this service that was never sent. Sent to every reader.'),
+    .describe(
+      'Whether a merchant may cancel an order of this service that was never sent. While it is on, an order placed on the website waits 2 minutes before it is sent to its supplier (decision 075). Sent to every reader.',
+    ),
   allowVerify: z
     .boolean()
     .describe('Whether a merchant may ask for the verification of a completed order. Sent to every reader.'),

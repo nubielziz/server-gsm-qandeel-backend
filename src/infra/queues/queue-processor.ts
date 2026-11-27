@@ -15,16 +15,19 @@ export interface QueueProcessorMetadata {
  * Anything that processes jobs: the shape a `@QueueProcessor` provider must have.
  *
  * Why: the worker calls `process` for each job of the queue (or of the one job name) the class is marked for. Throw
- * `UnrecoverableError` for a permanent failure (no retry); any other error is retried with the queue's backoff.
+ * `UnrecoverableError` for a permanent failure (no retry); any other error is retried with the queue's backoff. A job that must wait
+ * (decision 075) calls `job.moveToDelayed(timestamp, token)` with the token it was given and then throws `DelayedError`: it runs again at
+ * that time, no attempt is used up and nothing counts as a failure.
  */
 export interface JobProcessor<Data = unknown, Result = unknown> {
   /**
    * Handles one job.
    *
    * @param job the BullMQ job; `job.data` carries ids only (and `requestId` when the producer was inside a request)
+   * @param token the worker's lock token of this run, for `job.moveToDelayed(timestamp, token)` (the worker always passes it)
    * @returns the job result (kept with the job; small and free of secrets)
    */
-  process(job: Job<Data, Result, string>): Promise<Result>;
+  process(job: Job<Data, Result, string>, token?: string): Promise<Result>;
 }
 
 const Marker = DiscoveryService.createDecorator<QueueProcessorMetadata>();

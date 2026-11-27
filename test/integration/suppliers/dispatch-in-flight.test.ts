@@ -1,14 +1,15 @@
 // A supplier send in flight (decision 044): while the supplier call is held, the order is `dispatching` (the console still reads `pending`),
 // the actions that would change it wait, and the answer applies only to its own claim; an acceptance that arrives after the order moved on,
 // or whose own recording failed, is kept; an order claimed once is never cancelled by its merchant. Real Postgres and Redis, the fake Dhru
-// supplier with a held answer, a TestClock, no sleeps.
+// supplier with a held answer, a TestClock, no sleeps. The service allows cancellation, so each order is sent after its cancel window
+// (decision 075).
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import type { Logger } from '@nestjs/common';
 import { EncryptionService } from '@src/infra/crypto';
 import { DbService, schema as s } from '@src/infra/db';
 import { ErrorReporter } from '@src/infra/observability';
 import { RedisService } from '@src/infra/redis';
-import { OrderSupplierMoves, SEND_IN_PROGRESS_DETAIL } from '@src/modules/orders';
+import { CANCEL_WINDOW_MS, OrderSupplierMoves, SEND_IN_PROGRESS_DETAIL } from '@src/modules/orders';
 import { DISPATCH_ANSWER_MARGIN_MS, DispatchSweep, SupplierDispatch } from '@src/modules/suppliers';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
@@ -91,9 +92,11 @@ async function freshRoute(timeoutMs: number = TIMEOUT_MS) {
   await linkService(db, serviceId, supplierId, { credit: '13.5000' });
 }
 
+/** The merchant places an order on the website; the clock then passes its cancel window, so the dispatch claims it (decision 075). */
 async function place(imei: string = IMEIS[0]): Promise<number> {
   const res = await (await portalFor(t, world.merchant.id)).post('/client/orders', { serviceId, imei });
   expect(res.statusCode).toBe(201);
+  clock.advance(CANCEL_WINDOW_MS);
   return json(res).orders[0].id as number;
 }
 

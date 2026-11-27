@@ -179,7 +179,15 @@ are ISO with milliseconds, ids are numbers, lists are simple-rest with `x-total-
 - `GET /client/dashboard`: `{ wallet: {balance, reserved, creditLimit, available}, counts: {pending, processing, completed,
   rejected}, openOrders, latestOrders: [order x 5] }`.
 - The merchant's order: `{ id, status, imei, quantity, inputs, unitPrice, totalPrice, currency, service: {id, name, type}, source,
-  result: {code, comment, fileId}, verificationStatus, inputFileId, canCancel, canVerify, createdAt, completedAt }`.
+  result: {code, comment, fileId}, verificationStatus, inputFileId, canCancel, cancelUntil, cancelBlocked, canVerify, verifyUntil,
+  verifyBlocked, createdAt, completedAt }` (the list rows, the detail, the dashboard's latest orders and the placement's answer). The four
+  facts of decision 075 (`order-views.ts`: `cancelDeadline`, `cancelBlockedReason`, `verifyDeadline`, `verifyBlockedReason`): `cancelUntil`
+  is `placed_at + CANCEL_WINDOW_MS` (ISO) only while `canCancel` and the order is inside its cancel window (`cancelWindowEnd`, below), else
+  `null` (a cancellable manual or held order has no deadline); `cancelBlocked` is `null` exactly when `canCancel`, else the first of
+  `closed` (completed or rejected), `not_allowed` (no `allow_cancel`), `already_sent` (sent or claimed at least once: the facts the machine
+  answers `ALREADY_SENT` to) and `in_progress`; `verifyUntil` is `completed_at + verify_window_h` hours only while `canVerify`;
+  `verifyBlocked` is `null` exactly when `canVerify`, else the first of `already_requested`, `not_allowed`, `not_completed` and
+  `window_passed` (a window of 0 hours included). The shop reads the four keys as optional until this release is live.
   Never cost, supplier, supplier reference, notes, queue, dispatch state, pricing snapshot or risk. `GET /client/orders/:id` adds
   `answers: [{key, label, value}]` (decision 065) and `events: [{id, type, message, createdAt}]`, only the types `created`, `hold`, `accepted`, `completed`, `rejected`, `release`,
   `refund`, `reopened` and `verification` (never a note, a supplier line or the settlement, which shows the cost).
@@ -197,7 +205,16 @@ are ISO with milliseconds, ids are numbers, lists are simple-rest with `x-total-
 - `POST /client/orders/:id/cancel` (`204`): only while the order was never sent (`pending`, `manual`, `held`) and the service has
   `allow_cancel`: rejected as "Cancelled by the merchant", the hold released. `ALREADY_SENT` once the order was sent to a supplier at
   least once (while being sent, sent, or sent and then failed or queued again: staff cancel such an order); `INVALID_TRANSITION` when
-  the service forbids it or staff already work on the order.
+  the service forbids it or staff already work on the order. The route and its codes are unchanged by decision 075.
+- **The cancel window** (decision 075, `domain/merchant-actions.ts`): an order placed on the website (`source = 'portal'`) for a service
+  whose `allow_cancel` is on **when the dispatch job runs** waits `CANCEL_WINDOW_MS` (2 minutes) after `placed_at` before it is claimed, so
+  the merchant can cancel it. `cancelWindowEnd(facts, now)` is the one pure rule: open, `dispatch_state = 'pending'`, `sent_at` empty, no
+  `dispatch` event, and `now < placed_at + CANCEL_WINDOW_MS`; it answers the end, else `null`. The dispatch job asks
+  `OrderSupplierMoves.cancelWindowEnd(db, order)` (it reads the service's switch and the `dispatch` events through this module's own
+  query, `cancelWindowReads`), and the portal's `cancelUntil` uses the same rule on the read model's row. Placement still writes
+  `order.dispatch_requested` in its transaction; the merchant's cancel is still the machine's `cancel`; Dhru (`dhru`) and shop (`store`)
+  orders, manual and held orders and a service without `allow_cancel` never wait. A cancel inside the window rejects the order as before,
+  and the waiting job then finds it closed and sends nothing.
 - `POST /client/orders/:id/verify` (`204`): a completed order, once, when the service has `allow_verify` and inside
   `verify_window_h` hours of completion (0 hours means no window); `INVALID_TRANSITION` otherwise.
 - `GET /client/orders/export`: CSV `id,created,service,input,quantity,status,price,currency`, same filters; 100,000 rows at most.
@@ -262,9 +279,9 @@ inputs and costs of up to 100,000 orders, and the reports permission already sho
 ## Public API (`index.ts`)
 
 Exports `OrdersModule` (with `OrdersOutboxModule`, which the worker loads, and `OrdersAdminModule`, the routes and use cases), the pure
-rules (`decideOrderAction`, `deriveQueue`, `isOpen`, `placementDispatchState`, `orderStateOf`, `wireDispatchState`, `WIRE_DISPATCH_STATES`, `mainInputOf`), the SQL fragments (`pastSlaPredicate`,
+rules (`decideOrderAction`, `deriveQueue`, `isOpen`, `placementDispatchState`, `orderStateOf`, `wireDispatchState`, `WIRE_DISPATCH_STATES`, `mainInputOf`; decision 075's `CANCEL_WINDOW_MS`, `cancelWindowEnd`, `CANCEL_BLOCKED_REASONS` and `VERIFY_BLOCKED_REASONS`), the SQL fragments (`pastSlaPredicate`,
 `queueSql`, `channelSql`), the door helpers `isPrepaidOrder` and `prepaidOrderSql`, the seam `ShopOrders` with the types `ShopOrderPage` and `ShopOrderRow`, the services other features call (`OrderPlacement` for Dhru (7a) and the storefront; `OrderTransitions`
-for the risk actions, with `refusalError`, `SEND_IN_PROGRESS_DETAIL` and `CHANGED_FIRST_DETAIL`; `OrderSupplierMoves`, the door of the supplier flows (its claim, its guarded moves, `recordLateAcceptance`, `paymentStop` with `PAYMENT_STOP_REASONS` and the type `PaymentStop`, and the readers of the dispatch sweep, with the types `UnansweredClaim`, `UnclaimedOrder` and `LateAcceptance`), and `OrdersEngineModule`, which provides both without routes for
+for the risk actions, with `refusalError`, `SEND_IN_PROGRESS_DETAIL` and `CHANGED_FIRST_DETAIL`; `OrderSupplierMoves`, the door of the supplier flows (its claim, its guarded moves, `recordLateAcceptance`, `cancelWindowEnd` (decision 075), `paymentStop` with `PAYMENT_STOP_REASONS` and the type `PaymentStop`, and the readers of the dispatch sweep, with the types `UnansweredClaim`, `UnclaimedOrder` and `LateAcceptance`), and `OrdersEngineModule`, which provides both without routes for
 the worker; `OrderReadService`), the outbox event names (`ORDER_OUTBOX_EVENTS`, `OrderOutbox`) and the
 vocabularies and row types of the two tables. Other modules import only `src/modules/orders/index.ts` (lint rule
 `gsm/module-boundaries`).
@@ -390,10 +407,11 @@ A bulk apply also writes `applied bulk reply to` (label `N of M orders`) and an 
 
 ## Tests
 
-Unit: the machine, main input, placement rules, bulk reply, CSV, timeline lines, views, outbox, the Dhru contracts, the idempotency
-hash. Integration (`test/integration/`): `client-orders-placement`, `client-orders`, `orders-read`, `orders-actions`, `orders-b2c-actions`,
+Unit: the machine, main input, placement rules, bulk reply, CSV, timeline lines, views (with the four facts of decision 075 and their
+invariants over a table of states), the cancel window (`merchant-actions.spec.ts`), outbox, the Dhru contracts, the idempotency hash. Integration (`test/integration/`): `client-orders-placement`, `client-orders`, `orders-read`, `orders-actions`, `orders-b2c-actions`,
 `orders-bulk-reply`, `orders-export`, `orders-client-stats`, `orders-seed`, `files`, and (7a) `dhru-surface`,
-`client-orders-idempotency`, `files-upload`, and (P4a) `idempotency-purge`, `file-order-cleanup`, `dhru-file-body`. The Dhru fixtures (one request/response record per action, checked on keys and types):
+`client-orders-idempotency`, `files-upload`, and (P4a) `idempotency-purge`, `file-order-cleanup`, `dhru-file-body`; the cancel window
+(decision 075) is tested from the supplier side in `test/integration/suppliers/dispatch-cancel-window.test.ts` and `supplier-pipeline.test.ts`. The Dhru fixtures (one request/response record per action, checked on keys and types):
 `test/dhru/`. Scenarios `success`, `reject`, `timeout` and `manual` (`test/e2e/`) include the merchant's Dhru calls
 (`placeimeiorder`, `getimeiorder`).
 

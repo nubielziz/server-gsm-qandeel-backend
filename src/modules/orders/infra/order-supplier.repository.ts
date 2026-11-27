@@ -5,6 +5,7 @@ import type { DbExecutor } from '../../../infra/db';
 import { MAX_TIMEOUT_MS } from '../../../infra/http';
 import { type Order, orders } from '../db/schema';
 import { foreignTables } from './foreign-reads.repository';
+import { everDispatchedSql } from './order-sql';
 
 /** What the dispatch claim writes on the order. */
 export interface DispatchClaim {
@@ -49,6 +50,35 @@ export async function claimDispatch(db: DbExecutor, claim: DispatchClaim): Promi
       ),
     )
     .returning();
+  return row;
+}
+
+/** What the cancel window of an order is decided on beside the order itself (decision 075). */
+export interface CancelWindowReads {
+  /** The service's `allow_cancel` now. */
+  readonly allowCancel: boolean;
+  /** True once the order has a `dispatch` event. */
+  readonly everDispatched: boolean;
+}
+
+/**
+ * Reads the service's cancel switch of an order and whether the order was ever claimed for a supplier call.
+ *
+ * Why: decision 075: the dispatch job defers the claim of a website order inside its cancel window, and decides it on the service's
+ * `allow_cancel` as it is when the job runs (not at placement). The service is read through the orders module's foreign reads, as the order
+ * read model does, so the suppliers module never reads `services` for it.
+ *
+ * @param db the database or a transaction
+ * @param orderId the order
+ * @returns the two facts, or `undefined` when the order does not exist
+ */
+export async function cancelWindowReads(db: DbExecutor, orderId: number): Promise<CancelWindowReads | undefined> {
+  const [row] = await db
+    .select({ allowCancel: foreignTables.services.allowCancel, everDispatched: everDispatchedSql })
+    .from(orders)
+    .innerJoin(foreignTables.services, eq(foreignTables.services.id, orders.serviceId))
+    .where(eq(orders.id, orderId))
+    .limit(1);
   return row;
 }
 

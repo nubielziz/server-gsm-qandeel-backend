@@ -4,7 +4,8 @@ import type { JsonObject } from '../../../common/contract';
 import { type CustomerContact, customerEmailIn, customerNameForStaff } from '../../../common/customer-contact';
 import type { RankKind } from '../../identity';
 import { isPrepaidOrder } from '../domain/door';
-import { deriveQueue, orderStateOf, wireDispatchState } from '../domain/order-machine';
+import { type CancelBlocked, type VerifyBlocked, cancelWindowEnd } from '../domain/merchant-actions';
+import { deriveQueue, isOpen, orderStateOf, wireDispatchState } from '../domain/order-machine';
 import type { OrderQueue, WireDispatchState } from '../domain/order-machine';
 import type {
   Order,
@@ -204,7 +205,15 @@ export interface MerchantOrderView {
   readonly verificationStatus: OrderVerificationStatus | null;
   readonly inputFileId: number | null;
   readonly canCancel: boolean;
+  /** The end of the order's cancel window (ISO), set only while `canCancel` and the order is inside it (decision 075). */
+  readonly cancelUntil: string | null;
+  /** Why the merchant cannot cancel; `null` exactly when `canCancel`. */
+  readonly cancelBlocked: CancelBlocked | null;
   readonly canVerify: boolean;
+  /** The end of the verification window (ISO), set only while `canVerify`. */
+  readonly verifyUntil: string | null;
+  /** Why the merchant cannot ask for a verification; `null` exactly when `canVerify`. */
+  readonly verifyBlocked: VerifyBlocked | null;
   readonly createdAt: string;
   readonly completedAt: string | null;
 }
@@ -254,10 +263,106 @@ export function canVerify(row: OrderRow, now: Date): boolean {
 }
 
 /**
+ * Until when the merchant may still cancel before the order is sent.
+ *
+ * Why: decision 075: a website order of a service that allows cancellation waits `CANCEL_WINDOW_MS` before the dispatch job sends it; the
+ * portal shows the end of that wait beside the Cancel button. The same rule (`cancelWindowEnd`) as the job's, so the deadline shown is the
+ * moment the job sends. A cancellable manual or held order, or a pending one past its window, has no deadline.
+ *
+ * @param row the order with its service's rules
+ * @param now the injected clock's time
+ * @returns `placed_at + CANCEL_WINDOW_MS` as ISO while {@link canCancel} and the order is inside its window, else `null`
+ */
+export function cancelDeadline(row: OrderRow, now: Date): string | null {
+  if (!canCancel(row)) return null;
+  return iso(cancelWindowEnd(row, now));
+}
+
+/**
+ * Why the merchant cannot cancel the order.
+ *
+ * Why: decision 075: the portal says why the Cancel button is missing. The first that applies: the order is not open (`closed`); the
+ * service does not allow cancellation (`not_allowed`); the order was sent or claimed for a send at least once, the facts that make the
+ * machine answer `ALREADY_SENT` (`already_sent`); anything else (`in_progress`: staff are working on it, or it waits for a person).
+ *
+ * @param row the order with its service's rules
+ * @returns the reason, or `null` exactly when {@link canCancel} is true
+ */
+export function cancelBlockedReason(row: OrderRow): CancelBlocked | null {
+  if (canCancel(row)) return null;
+  const { order } = row;
+  if (!isOpen(order.status)) return 'closed';
+  if (!row.allowCancel) return 'not_allowed';
+  const { dispatchState } = orderStateOf(order);
+  if (row.everDispatched || dispatchState === 'sent' || dispatchState === 'dispatching') return 'already_sent';
+  return 'in_progress';
+}
+
+/**
+ * Until when the merchant may ask for a verification.
+ *
+ * Why: decision 075: the portal shows the end of the verification window beside the Verify button.
+ *
+ * @param row the order with its service's rules
+ * @param now the injected clock's time
+ * @returns `completed_at + verify_window_h` hours as ISO while {@link canVerify}, else `null`
+ */
+export function verifyDeadline(row: OrderRow, now: Date): string | null {
+  const completedAt = row.order.completedAt;
+  if (!canVerify(row, now) || completedAt === null) return null;
+  return new Date(completedAt.getTime() + row.verifyWindowH * HOUR_MS).toISOString();
+}
+
+/**
+ * Why the merchant cannot ask for a verification of the order.
+ *
+ * Why: decision 075: the portal says why the Verify button is missing. The first that applies: a verification was asked for already
+ * (`already_requested`); the service does not allow it (`not_allowed`); the order is not completed (`not_completed`); otherwise the
+ * window has passed (`window_passed`, a window of 0 hours included).
+ *
+ * @param row the order with its service's rules
+ * @param now the injected clock's time
+ * @returns the reason, or `null` exactly when {@link canVerify} is true
+ */
+export function verifyBlockedReason(row: OrderRow, now: Date): VerifyBlocked | null {
+  if (canVerify(row, now)) return null;
+  if (row.order.verificationStatus !== null) return 'already_requested';
+  if (!row.allowVerify) return 'not_allowed';
+  if (row.order.status !== 'completed') return 'not_completed';
+  return 'window_passed';
+}
+
+/**
+ * Fills in the four facts of decision 075 on a merchant order that was stored before they existed.
+ *
+ * Why: the answer of `POST /client/orders` is kept 7 days with its `Idempotency-Key` and sent again as stored. An answer stored by the
+ * release before decision 075 has no `cancelUntil`, `cancelBlocked`, `verifyUntil` or `verifyBlocked`, and the response contract would
+ * refuse it (`500`) although the order exists; the merchant could then order again with a new key. A missing key is filled with what the
+ * stored flags allow: no deadline, and a reason only where the flag is false (`in_progress`, `not_completed`: the order was just placed).
+ * A stored answer that has the keys is returned as it is. Safe to delete once no answer of before the release can be left (7 days).
+ *
+ * @param order a merchant order as stored (with or without the four keys)
+ * @returns the order with the four keys present
+ */
+export function withActionFacts<T extends { readonly canCancel: boolean; readonly canVerify: boolean }>(
+  order: T,
+): T & Pick<MerchantOrderView, 'cancelUntil' | 'cancelBlocked' | 'verifyUntil' | 'verifyBlocked'> {
+  const stored = order as T &
+    Partial<Pick<MerchantOrderView, 'cancelUntil' | 'cancelBlocked' | 'verifyUntil' | 'verifyBlocked'>>;
+  return {
+    ...order,
+    cancelUntil: stored.cancelUntil ?? null,
+    cancelBlocked: stored.cancelBlocked !== undefined ? stored.cancelBlocked : order.canCancel ? null : 'in_progress',
+    verifyUntil: stored.verifyUntil ?? null,
+    verifyBlocked: stored.verifyBlocked !== undefined ? stored.verifyBlocked : order.canVerify ? null : 'not_completed',
+  };
+}
+
+/**
  * Builds the merchant view of one order.
  *
  * @param row the order with its joined names and its service's rules
- * @param now the injected clock's time (the verify window)
+ * @param now the injected clock's time (the cancel and verify windows)
  * @returns the view the portal reads
  */
 export function toMerchantOrder(row: OrderRow, now: Date): MerchantOrderView {
@@ -277,7 +382,11 @@ export function toMerchantOrder(row: OrderRow, now: Date): MerchantOrderView {
     verificationStatus: order.verificationStatus,
     inputFileId: order.inputFileId,
     canCancel: canCancel(row),
+    cancelUntil: cancelDeadline(row, now),
+    cancelBlocked: cancelBlockedReason(row),
     canVerify: canVerify(row, now),
+    verifyUntil: verifyDeadline(row, now),
+    verifyBlocked: verifyBlockedReason(row, now),
     createdAt: order.createdAt.toISOString(),
     completedAt: iso(order.completedAt),
   };

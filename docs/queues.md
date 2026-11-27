@@ -104,6 +104,15 @@ Sends accepted orders to their supplier.
   recorded, an error log line and an error report; the order keeps its claim, so the sweep moves it later and staff can then fetch the result)
   and the original error fails the job: the retry finds the claim and sends nothing. If keeping the acceptance fails too, that is logged and
   reported and never rethrown.
+- **Deferred run** (decision 075): an order placed on the website (`source = 'portal'`) for a service whose `allow_cancel` is on when the job
+  runs is not claimed before `placed_at` + 2 minutes (`CANCEL_WINDOW_MS`, the orders rule `cancelWindowEnd`), so the merchant can still cancel
+  it. Inside that window the run writes nothing (no claim, no event, no audit, no call, no lease) and the processor moves its own job to
+  `delayed` until the end (`job.moveToDelayed(until, token)` with the lock token the worker passes, then `DelayedError`): the same job id runs
+  again then, no attempt is used (`attemptsMade` unchanged), no `failed` event, error log or report is written, and the worker counts it as
+  `queue_jobs_processed_total{outcome="delayed"}`. That run re-reads the order: cancelled meanwhile, it is skipped; else it is claimed as
+  usual. A staff `dispatch` of an order inside its window waits too (its request is live: the press is a no-op), and a manual order sent by
+  staff inside its window is queued and waits for the end. Dhru and shop orders, manual and held orders and services without `allow_cancel`
+  are never deferred. A worker restart keeps the delayed job (it is in Redis); a lost one is asked for again by the `dispatch_sweep`.
 - **Eligibility** (automatic dispatch only): the first active link by priority whose supplier is `active` (not paused, not disabled), whose
   supplier service is still listed by the supplier and whose cost (`credit x credit_rate`) is not above the price charged for one unit
   (user rule 9, B117 (6)); never a failover to a costlier link. An order that already names a supplier service (a staff choice) goes there as it
@@ -541,6 +550,8 @@ Moves the supplier sends that lost their answer or their request (`DispatchSweep
   delayed, prioritized or waiting for children (the rule of `notification_reconcile`); an order whose jobs cannot be read (the queue Redis does not answer) waits for the next run.
   An order that never had a dispatch request is left alone however old it is: every placement, release and staff send writes its request in the same transaction as the change, so an
   order without any request row was not placed through the order engine (seeded demo orders, rows written by hand) and nothing was lost.
+  An order waiting for its cancel window (decision 075, 2 minutes) is never moved by (b): it is younger than 5 minutes, and its job is `delayed`, which is live; if that job is lost,
+  (b) asks again once the order and its newest request are 5 minutes old, and the new job sends it (the window has passed).
 - **Idempotency:** every move is a guarded update (`status`, `dispatch_state` and `sent_at` unchanged), so a repeat or a parallel run finds the order moved already; `JobRunsService.run`
   skips a run while another one is going on; a doubled request only adds a job that the dispatch claim makes harmless.
 - **Recorded in `job_runs`** (job `dispatch_sweep`, `processed` = orders moved, `result` = `{ unanswered, requeued, stopped, movedOn, unknown }`) only for a run that moved an order and for every manual run.

@@ -4,7 +4,7 @@
 // `pastSlaPredicate` through the module's public API.
 import { type SQL, and, eq, sql } from 'drizzle-orm';
 import type { OrderFigure } from '../../identity';
-import { orders } from '../db/schema';
+import { orderEvents, orders } from '../db/schema';
 import { prepaidOrderSql } from '../domain/door';
 import { foreignTables } from './foreign-reads.repository';
 
@@ -21,6 +21,15 @@ export const queueSql: SQL = sql`(case
   when ${orders.status} = 'pending' and ${orders.dispatchState} = 'manual' then 'manual'
   when ${orders.status} = 'pending' and ${orders.dispatchState} in ('pending', 'dispatching') then 'pending'
   else null end)`;
+
+/**
+ * True once the order has a `dispatch` event: it was claimed for a supplier call at least once (decision 044).
+ *
+ * Why: the merchant's cancel is refused for good once an order was claimed, even when a failed or lost send reads `pending` again; the order
+ * read model (`canCancel`) and the cancel window of the dispatch job (decision 075) read the same fact. One `EXISTS` in the select (never a
+ * query per row); `order_events_order_idx` serves it.
+ */
+export const everDispatchedSql = sql<boolean>`exists (select 1 from ${orderEvents} where ${orderEvents.orderId} = ${orders.id} and ${orderEvents.type} = 'dispatch')`;
 
 /** The condition "this order was paid first, through the shop": the `store` door (`isPrepaidOrder`), never a null in another column. */
 const prepaidSql: SQL = prepaidOrderSql(sql`${orders.source}`);

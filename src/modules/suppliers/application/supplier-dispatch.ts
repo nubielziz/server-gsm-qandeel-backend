@@ -18,9 +18,13 @@ import { SupplierClient, SupplierThrottle } from './supplier-client';
 import type { PlaceOrderInput } from './supplier-driver';
 import { writeCallLogSafely } from './supplier-sync';
 
-/** What one run of the dispatch job did. */
+/**
+ * What one run of the dispatch job did. `deferred`: the order is inside its cancel window (decision 075); nothing was written and the job
+ * runs again at `until`.
+ */
 export type DispatchOutcome =
   | { readonly status: 'sent'; readonly reference: string }
+  | { readonly status: 'deferred'; readonly until: Date }
   | { readonly status: 'needs_attention'; readonly reason: string }
   | { readonly status: 'skipped'; readonly reason: 'not_found' | 'not_pending' | 'claimed_elsewhere' | 'moved_on' };
 
@@ -77,7 +81,9 @@ export class SupplierBusyError extends Error {
  * run that finds a claim of an earlier release (`pending` with `sent_at` set) does not send again: it moves the order to
  * `needs_attention`. A storefront order whose payment is disputed, charged back or refunded in full is not sent either: it is stopped in
  * `needs_attention` with the reason before any claim. The supplier's main box travels as `IMEI`: the IMEI of an IMEI order, else the value
- * of the field flagged as the main input (decisions 042 and 065).
+ * of the field flagged as the main input (decisions 042 and 065). Decision 075: a website order of a service that allows cancellation (now) is
+ * not claimed before the end of its cancel window (`OrderSupplierMoves.cancelWindowEnd`, the orders module's rule): the run writes nothing
+ * (no claim, no event, no audit, no call, no lease) and answers `deferred` with the end, so the job waits and runs again then.
  *
  * Side effects: one `supplier_api_logs` row per call (an error log line and an error report when it cannot be written), the claim
  * (`orders.sent_at`, `dispatching`, supplier columns, a `dispatch` event), the result (`sent` or `needs_attention` with its event,
@@ -104,7 +110,7 @@ export class SupplierDispatch {
    * @param orderId the order
    * @param options `lastAttempt`: the queue will not retry, so a busy supplier (or limits that cannot be read) sends the order to
    *   `needs_attention` instead of failing
-   * @returns what happened
+   * @returns what happened (`deferred` with the end of the cancel window: run again then)
    * @throws {SupplierBusyError} when the supplier's limits are full or cannot be read and the queue may retry
    * @throws {Error} whatever ended the answer's transaction other than "the order moved on" (after an accepted answer was kept as a late
    *   acceptance)
@@ -117,6 +123,9 @@ export class SupplierDispatch {
       // A claim of an earlier release kept `pending` and set `sent_at`: it may have reached the supplier, so it is never sent again.
       return this.failClaim(order.id, order.sentAt);
     }
+    // Decision 075: inside its cancel window the order is left as it is (the merchant may still cancel it); the job waits for the end.
+    const until = await this.orders.cancelWindowEnd(this.db.db, order);
+    if (until !== null) return { status: 'deferred', until };
     // A storefront order whose payment is disputed, charged back or refunded in full is never sent: staff decide it.
     const paymentStop = await this.orders.paymentStop(this.db.db, order);
     if (paymentStop !== undefined) return this.stop(order.id, PAYMENT_STOP_REASONS[paymentStop]);
