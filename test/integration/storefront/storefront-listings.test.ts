@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bu
 import { eq, sql } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { RetailPrices } from '@src/modules/catalog';
+import { LISTING_CHANGED_EVENT } from '@src/modules/storefront';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -542,15 +543,20 @@ describe('PATCH /admin/service-listings/:id (the switch)', () => {
     expect(await listed()).toBe(false);
   });
 
-  it('audits the value the row had under the service lock, not the one read before it', async () => {
-    const { db, pool } = await testDb();
-    const world = await listingWorld(db);
-    const id = await insertListingRow(db, world.att);
+  /** Holds the service row as a concurrent writer would, runs `request` against the listing, lets the writer commit `isListed`, and answers. */
+  async function raceWithWriter(
+    db: Awaited<ReturnType<typeof testDb>>['db'],
+    pool: Awaited<ReturnType<typeof testDb>>['pool'],
+    serviceId: number,
+    listingId: number,
+    request: Record<string, unknown>,
+    writerSets: boolean,
+  ) {
     let pending: ReturnType<AdminApi['patch']> | undefined;
     await db.transaction(async (tx) => {
       // Hold the service row, as a concurrent writer of the same service would.
-      await tx.execute(sql`select id from services where id = ${world.att} for update`);
-      pending = admin.patch(`/admin/service-listings/${id}`, { isListed: true });
+      await tx.execute(sql`select id from services where id = ${serviceId} for update`);
+      pending = admin.patch(`/admin/service-listings/${listingId}`, request);
       // The request has read the listing (switched off) and now waits for the service lock.
       await eventually(async () => {
         const { rows } = await pool.query<{ n: number }>(
@@ -558,15 +564,112 @@ describe('PATCH /admin/service-listings/:id (the switch)', () => {
         );
         return rows[0]!.n > 0 ? true : undefined;
       });
-      // The other writer switches the listing on and commits before the request gets the lock.
-      await tx.update(s.serviceListings).set({ isListed: true }).where(eq(s.serviceListings.id, id));
+      // The other writer switches the listing and commits before the request gets the lock.
+      await tx.update(s.serviceListings).set({ isListed: writerSets }).where(eq(s.serviceListings.id, listingId));
     });
-    const res = await pending!;
+    return pending!;
+  }
+
+  it('audits the value the row had under the service lock, not the one read before it', async () => {
+    const { db, pool } = await testDb();
+    const world = await listingWorld(db);
+    // The listing is off when the request reads it; a concurrent writer switches it on before the request holds the service lock.
+    const id = await insertListingRow(db, world.att);
+    const res = await raceWithWriter(db, pool, world.att, id, { isListed: false }, true);
     expect(res.status).toBe(200);
-    const [audit] = await auditRows();
-    expect(audit).toMatchObject({ action: 'listed on storefront', entityId: id });
+    expect(res.body.isListed).toBe(false);
+    const [audit, ...rest] = await auditRows();
+    expect(rest).toEqual([]);
+    expect(audit).toMatchObject({ action: 'unlisted from storefront', entityId: id });
     expect(audit?.before).toEqual({ isListed: true });
-    expect(audit?.after).toEqual({ isListed: true });
+    expect(audit?.after).toEqual({ isListed: false });
+  });
+
+  it('judges "nothing to change" under the service lock too: the writer already did it, so the request writes no row', async () => {
+    const { db, pool } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att);
+    const res = await raceWithWriter(db, pool, world.att, id, { isListed: true }, true);
+    expect(res.status).toBe(200);
+    expect(res.body.isListed).toBe(true);
+    expect(await auditRows()).toEqual([]);
+  });
+
+  it('a switch to the value the listing already has changes nothing: the same request twice writes one audit row (decision 074)', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att);
+    const url = `/admin/service-listings/${id}`;
+    const signals = async () =>
+      (await db.select().from(s.outboxEvents).where(eq(s.outboxEvents.type, LISTING_CHANGED_EVENT))).length;
+
+    clock.set('2026-11-07T12:00:00.000Z');
+    expect((await admin.patch(url, { isListed: true })).status).toBe(200);
+    const afterFirst = { audits: (await auditRows()).length, signals: await signals() };
+    expect(afterFirst).toEqual({ audits: 1, signals: 1 });
+
+    clock.set('2026-11-07T12:30:00.000Z');
+    const again = await admin.patch(url, { isListed: true });
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ id, isListed: true, listedAt: '2026-11-07T12:00:00.000Z' });
+    expect({ audits: (await auditRows()).length, signals: await signals() }).toEqual(afterFirst);
+    const [stored] = await db.select().from(s.serviceListings).where(eq(s.serviceListings.id, id));
+    expect(stored!.listedAt?.toISOString()).toBe('2026-11-07T12:00:00.000Z');
+
+    // Off twice, the same.
+    expect((await admin.patch(url, { isListed: false })).status).toBe(200);
+    expect((await auditRows()).map((a) => a.action)).toEqual(['listed on storefront', 'unlisted from storefront']);
+    const afterOff = { audits: 2, signals: await signals() };
+    expect((await admin.patch(url, { isListed: false })).status).toBe(200);
+    expect((await admin.patch(url, { isListed: false })).status).toBe(200);
+    expect({ audits: (await auditRows()).length, signals: await signals() }).toEqual(afterOff);
+    clock.set('2026-11-07T12:00:00.000Z');
+  });
+
+  it("a switch to the stored value sent with another changed field writes only that field's row (and its search signal)", async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att, { isListed: true, summary: 'Old summary' });
+    const url = `/admin/service-listings/${id}`;
+    const signals = async () =>
+      (await db.select().from(s.outboxEvents).where(eq(s.outboxEvents.type, LISTING_CHANGED_EVENT))).length;
+
+    const res = await admin.patch(url, { isListed: true, summary: 'New summary' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ isListed: true, summary: 'New summary' });
+    const audits = await auditRows();
+    expect(audits.map((a) => a.action)).toEqual(['edited listing of']);
+    expect(audits[0]!.before).toEqual({ summary: 'Old summary' });
+    expect(audits[0]!.after).toEqual({ summary: 'New summary' });
+    expect(await signals()).toBe(1);
+  });
+
+  it('a switch to the stored value sent with a retail price writes only the price row', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att, { isListed: true });
+    const res = await admin.patch(`/admin/service-listings/${id}`, { isListed: true, retailPrice: '25.9900' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ isListed: true, retailPrice: '25.9900' });
+    expect((await auditRows()).map((a) => a.action)).toEqual(['changed retail price of']);
+  });
+
+  it('keeps every check for a switch to the stored value: permission of the other keys, and the refusals of a locked or disabled service', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att, { isListed: true });
+    const url = `/admin/service-listings/${id}`;
+    // Switching on an already listed listing needs no publish permission (nothing is switched), but a price key still needs pricing:update.
+    const editor = await adminWith(t, ['storefront:read', 'storefront:update'], { name: 'Editor' });
+    expect((await editor.patch(url, { isListed: true })).status).toBe(200);
+    expect(await auditRows()).toEqual([]);
+    expect((await editor.patch(url, { isListed: true, retailPrice: '25.9900' })).status).toBe(403);
+    // A disabled service is refused as before, even for the value the listing holds.
+    await db.update(s.services).set({ status: 'disabled' }).where(eq(s.services.id, world.att));
+    const refused = await admin.patch(url, { isListed: true });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('SERVICE_DISABLED');
+    expect(await auditRows()).toEqual([]);
   });
 
   it('refuses switching on a disabled service (409 SERVICE_DISABLED) and a B2B-only one (409 LISTING_LOCKED), but allows switching off', async () => {

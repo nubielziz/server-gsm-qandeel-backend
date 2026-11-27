@@ -34,6 +34,8 @@ export interface RequestContext {
   ip: string | undefined;
   /** How many `audit_logs` rows the request wrote; the audit enforcement reads it after the handler. */
   auditRecords: number;
+  /** True when the use case found nothing to change and wrote no row (`markNothingToAudit`); the audit enforcement accepts it. */
+  auditNothingToWrite: boolean;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();
@@ -48,7 +50,7 @@ const storage = new AsyncLocalStorage<RequestContext>();
  * @returns what `fn` returns
  */
 export function runInRequestContext<T>(requestId: string, fn: () => T): T {
-  return storage.run({ requestId, actor: undefined, ip: undefined, auditRecords: 0 }, fn);
+  return storage.run({ requestId, actor: undefined, ip: undefined, auditRecords: 0, auditNothingToWrite: false }, fn);
 }
 
 /**
@@ -91,4 +93,19 @@ export function setRequestActor(actor: RequestActor, ip: string): void {
 export function countAuditRecord(): void {
   const context = storage.getStore();
   if (context) context.auditRecords += 1;
+}
+
+/**
+ * Says that the current request found nothing to change, so it wrote no audit row on purpose.
+ *
+ * Why: decision 074: a staff write that changes nothing (a switch to the value the record already has) writes no audit row, because
+ * a row "listed" with before and after both "listed" is noise. The audit enforcement fails a staff write without a row, so a use case
+ * that decided there is nothing to record tells it here. It counts only when the request wrote no row; a use case must call it
+ * only after it decided that nothing at all changed.
+ *
+ * Side effects: mutates the current request context.
+ */
+export function markNothingToAudit(): void {
+  const context = storage.getStore();
+  if (context) context.auditNothingToWrite = true;
 }

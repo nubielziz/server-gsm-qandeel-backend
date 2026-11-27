@@ -6,7 +6,12 @@ import { lastValueFrom, of, throwError } from 'rxjs';
 import { z } from 'zod';
 import { CONTRACT_METADATA, type RouteKey, defineRoute } from '@src/common/contract';
 import { AppError } from '@src/common/errors';
-import { countAuditRecord, runInRequestContext, setRequestActor } from '@src/common/request-context';
+import {
+  countAuditRecord,
+  markNothingToAudit,
+  runInRequestContext,
+  setRequestActor,
+} from '@src/common/request-context';
 import { type AppConfig, parseEnv } from '@src/config';
 import { AuditEnforcementInterceptor } from '@src/modules/platform/audit/audit-enforcement.interceptor';
 
@@ -44,6 +49,8 @@ async function run(options: {
   env?: 'test' | 'production';
   actor?: 'staff' | 'account' | undefined;
   rows?: number;
+  /** The use case found nothing to change and said so (decision 074). */
+  nothing?: boolean;
   next?: CallHandler;
 }): Promise<unknown> {
   const interceptor = new AuditEnforcementInterceptor(config(options.env ?? 'test'));
@@ -51,6 +58,7 @@ async function run(options: {
   return runInRequestContext('req-enforce', async () => {
     if (options.actor) setRequestActor({ type: options.actor, id: 3, name: 'Test Actor' }, '10.0.0.1');
     for (let i = 0; i < (options.rows ?? 0); i++) countAuditRecord();
+    if (options.nothing) markNothingToAudit();
     return lastValueFrom(interceptor.intercept(contextOf(options.contract), options.next ?? handle({ ok: true })));
   });
 }
@@ -85,6 +93,14 @@ describe('AuditEnforcementInterceptor', () => {
   it('lets a mutation through that wrote an audit row, however many', async () => {
     expect(await run({ contract: contractFor('POST'), actor: 'staff', rows: 1 })).toEqual({ ok: true });
     expect(await run({ contract: contractFor('POST'), actor: 'staff', rows: 3 })).toEqual({ ok: true });
+    expect(logged).toHaveLength(0);
+  });
+
+  it('lets a mutation through that said it found nothing to change (decision 074), in production too, without a log line', async () => {
+    expect(await run({ contract: contractFor('POST'), actor: 'staff', nothing: true })).toEqual({ ok: true });
+    expect(await run({ contract: contractFor('POST'), actor: 'staff', nothing: true, env: 'production' })).toEqual({
+      ok: true,
+    });
     expect(logged).toHaveLength(0);
   });
 

@@ -1,18 +1,41 @@
 // Unit tests of the per-request context (decisions 012, 018): the actor and IP the guards record, the audit counter.
 import { describe, expect, it } from 'bun:test';
-import { countAuditRecord, getRequestContext, runInRequestContext, setRequestActor } from '@src/common/request-context';
+import {
+  countAuditRecord,
+  getRequestContext,
+  markNothingToAudit,
+  runInRequestContext,
+  setRequestActor,
+} from '@src/common/request-context';
 
 describe('request context', () => {
   it('is empty outside a request, and the helpers do nothing there', () => {
     expect(getRequestContext()).toBeUndefined();
     setRequestActor({ type: 'staff', id: 1, name: 'Rami K.' }, '10.0.0.1');
     countAuditRecord();
+    markNothingToAudit();
     expect(getRequestContext()).toBeUndefined();
   });
 
   it('starts without an actor, an IP or audit rows', () => {
     runInRequestContext('r1', () => {
-      expect(getRequestContext()).toEqual({ requestId: 'r1', actor: undefined, ip: undefined, auditRecords: 0 });
+      expect(getRequestContext()).toEqual({
+        requestId: 'r1',
+        actor: undefined,
+        ip: undefined,
+        auditRecords: 0,
+        auditNothingToWrite: false,
+      });
+    });
+  });
+
+  it('remembers that the use case found nothing to change (decision 074), for that request only', () => {
+    runInRequestContext('r1b', () => {
+      markNothingToAudit();
+      expect(getRequestContext()).toMatchObject({ auditRecords: 0, auditNothingToWrite: true });
+    });
+    runInRequestContext('r1c', () => {
+      expect(getRequestContext()?.auditNothingToWrite).toBe(false);
     });
   });
 

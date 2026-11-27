@@ -18,7 +18,8 @@ import { APP_CONFIG, type AppConfig } from '../../../config';
  * Fails (or logs) a successful staff mutation that wrote no audit row.
  *
  * Why: "every admin write writes audit_logs" (CLAUDE.md). The check applies to every route whose contract is not a GET and
- * does not say `audit: false`, when the caller is a signed-in staff member. In development and tests the request fails with
+ * does not say `audit: false`, when the caller is a signed-in staff member (a use case that found nothing to change says so with
+ * `AuditService.nothingChanged()`, decision 074, and passes). In development and tests the request fails with
  * `500` and a log line that names the route, so the missing `AuditService.record(tx, ...)` is found by the first test of the
  * use case. In production the change is already committed, so failing the request would only confuse the console: the
  * problem is logged as an error for the alerts instead.
@@ -46,7 +47,7 @@ export class AuditEnforcementInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap(() => {
         const request = getRequestContext();
-        if (request?.actor?.type !== 'staff' || request.auditRecords > 0) return;
+        if (request?.actor?.type !== 'staff' || request.auditRecords > 0 || request.auditNothingToWrite) return;
         const message = `${contract.key} changed data for a staff member but wrote no audit row. Call AuditService.record(tx, ...) in the use case, or declare audit: false on the contract and say why in its description.`;
         this.logger.error(message);
         if (!this.config.isProduction) throw new AppError('INTERNAL_ERROR', { detail: message });

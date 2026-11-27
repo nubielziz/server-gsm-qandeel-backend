@@ -21,6 +21,7 @@ import type {
 } from '../db/schema';
 import { CODES_IN_STOCK, codesInStockMessage } from '../domain/code-stock';
 import { type QuantityChange, type QuantityRule, resolveQuantityRule } from '../domain/quantity-rule';
+import { madeServiceCode } from '../domain/service-code';
 import { IMEI_DEFAULT_FIELD, auditedField, plannedFieldRows } from '../domain/service-parts';
 import type { AttentionReason, ShopBlock } from '../domain/service-attention';
 import { deliveryTimeText, dollars } from '../domain/service-figures';
@@ -44,13 +45,14 @@ import {
   deleteServiceRules,
   findServiceByCode,
   findServiceRow,
-  insertServiceRow,
+  insertServiceRowWithId,
   listFieldRows,
   listGroupPriceRows,
   listOptionRows,
   listServiceRows,
   lockLiveService,
   replaceFieldRows,
+  reserveServiceId,
   updateServiceRow,
 } from '../infra/service.repository';
 import { CatalogPriceVersion } from './catalog-price-version';
@@ -58,6 +60,7 @@ import { CatalogSignals } from './catalog-signals';
 import { recomputeEffectiveCost, writeOwnCost } from './effective-cost';
 import { PriceResolver } from './price-resolver';
 import { type RetailPriceSource, RetailPrices } from './retail-prices';
+import { firstFreeServiceCode } from './service-code';
 import { type ServiceReadAccess, assertListFiltersAllowed, serviceReadAccess } from './service-read-access';
 
 /** A service as the console reads it. */
@@ -154,7 +157,8 @@ export interface ServiceDetailView extends ServiceView {
 /** The fields of `POST /admin/services`. */
 export interface CreateServiceInput {
   readonly name: string;
-  readonly code: string;
+  /** The code staff typed; left out, the server makes `<PREFIX>-<id>` (decision 074, `madeServiceCode`). */
+  readonly code?: string | undefined;
   readonly categoryId: number;
   readonly type: ServiceType;
   readonly slaMinutes: number;
@@ -435,8 +439,14 @@ export class ServiceAdminService {
   /**
    * Creates a service.
    *
+   * Decision 074: the code is optional. A typed code is checked as before; a code left out is made by the server, `<PREFIX>-<id>` from
+   * the new service's own id (`IMEI-`, `SRV-`, `RMT-`, `FILE-`), with `-2`, `-3`, ... when a live service holds that code already.
+   * The stored row, the answer and the audit row `created service` carry the final code.
+   *
+   * Side effects: advances the id sequence of `services`; inserts the `services` row and its audit row(s) in one transaction.
+   *
    * @param caller the signed-in staff member: the facts of decision 060 in the answer follow `serviceReadAccess`
-   * @param input name, code, category, type, SLA, base price and, optionally, the quantity rule, "Delivered from code stock" and the
+   * @param input name, category, type, SLA, base price and, optionally, the code, the quantity rule, "Delivered from code stock" and the
    *   own cost (decision 069)
    * An IMEI service gets its default custom field in the same transaction (decision 073, {@link IMEI_DEFAULT_FIELD}): Name and label
    * `IMEI`, type `imei`, required, the main input, first; with its own audit row `replaced custom fields of service`.
@@ -444,7 +454,8 @@ export class ServiceAdminService {
    * @returns the new service
    * @throws {AppError} `VALIDATION_FAILED` (422 on `categoryId` for an unknown category or one of another type; on `minQty`,
    *   `maxQty` or `qtyOptions` for a quantity rule that breaks `resolveQuantityRule`; on `basePrice` with the code `below_floor` when
-   *   `ownCost` is sent and the base price is under the floor it sets, decision 069), `CODE_TAKEN` (409 on `code`)
+   *   `ownCost` is sent and the base price is under the floor it sets, decision 069), `CODE_TAKEN` (409 on `code`: a typed code a live
+   *   service holds; also the answer in the rare race where a code typed by hand takes the made one between the check and the insert)
    */
   async create(caller: PermissionHolder, input: CreateServiceInput): Promise<ServiceView> {
     const access = serviceReadAccess(caller);
@@ -455,13 +466,23 @@ export class ServiceAdminService {
       if (category.type !== input.type) {
         throw invalid('categoryId', `${category.name} holds ${category.type} services.`, 'type_mismatch');
       }
-      const owner = await findServiceByCode(tx, input.code);
-      if (owner) throw codeTaken(input.code, owner.name);
+      if (input.code !== undefined) {
+        const owner = await findServiceByCode(tx, input.code);
+        if (owner) throw codeTaken(input.code, owner.name);
+      }
       const quantity = quantityOf(NEW_SERVICE_QUANTITY, input);
+
+      // Decision 074: without a typed code the server makes it from the new service's own id. The id is taken from the sequence first
+      // and the row is written once under it, so the row, the answer and the audit row carry the final code and no placeholder
+      // exists. Two creates at the same moment take two ids, so they make two codes; only a code someone typed by hand can be in the
+      // way, and the next free suffix is taken then (`firstFreeServiceCode`).
+      const id = await reserveServiceId(tx);
+      const code = input.code ?? (await firstFreeServiceCode(tx, madeServiceCode(input.type, id)));
 
       let service: Service;
       try {
-        service = await insertServiceRow(tx, {
+        service = await insertServiceRowWithId(tx, {
+          id,
           categoryId: input.categoryId,
           type: input.type,
           name: input.name,
@@ -477,7 +498,7 @@ export class ServiceAdminService {
           cost: ownCostOf(input.ownCost),
           effectiveCost: ownCostOf(input.ownCost),
           stockDelivery: input.stockDelivery ?? false,
-          code: input.code,
+          code,
           slaMinutes: input.slaMinutes,
           // The merchant's cancel and verification stay off until staff switch them on (the columns default to false, false, 0).
           ...(input.allowCancel === undefined ? {} : { allowCancel: input.allowCancel }),
@@ -488,7 +509,7 @@ export class ServiceAdminService {
           qtyOptions: quantity.qtyOptions,
         });
       } catch (error) {
-        throw this.translateWriteError(error, input.code);
+        throw this.translateWriteError(error, code);
       }
       await recomputeEffectiveCost(tx, [service.id]);
       // Decision 069: an own cost sent sets the floor at once, so the base price is judged against it as a change judges it (the same

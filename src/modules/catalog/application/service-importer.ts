@@ -25,7 +25,6 @@ import {
 } from '../infra/category.repository';
 import { restampRetailFollow } from '../infra/retail-price-rule.repository';
 import {
-  findServiceByCode,
   insertFirstFieldRow,
   insertServiceRow,
   listFieldRows,
@@ -35,6 +34,7 @@ import {
   updateServiceRow,
 } from '../infra/service.repository';
 import { CatalogSignals } from './catalog-signals';
+import { firstFreeServiceCode } from './service-code';
 
 /** A supplier service to bring into the catalog as a new service. */
 export interface ImportedServiceInput {
@@ -159,7 +159,7 @@ export class ServiceImporter {
     const problems = quantityRuleProblems(input.quantity);
     if (problems.length > 0) throw new Error(`The imported quantity rule is invalid: ${problems.join('; ')}`);
     const category = await this.categoryForGroup(tx, input.type, input.group);
-    const code = await this.freeCode(tx, `IMP-${input.supplierServiceId}`);
+    const code = await firstFreeServiceCode(tx, `IMP-${input.supplierServiceId}`);
     const service = await insertServiceRow(tx, {
       categoryId: category.id,
       type: input.type,
@@ -435,13 +435,5 @@ export class ServiceImporter {
       isActive: visibility.isActive,
     });
     return { id: created.id, created: true };
-  }
-
-  /** The first free code from `base`, `base-2`, `base-3`, ... (case-insensitive, live services only). */
-  private async freeCode(tx: DbExecutor, base: string): Promise<string> {
-    for (let n = 1; ; n += 1) {
-      const code = n === 1 ? base : `${base}-${n}`;
-      if (!(await findServiceByCode(tx, code))) return code;
-    }
   }
 }

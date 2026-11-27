@@ -410,7 +410,10 @@ actor is `system`. The row is written on the caller's transaction, so a rolled-b
 **Enforcement.** A global interceptor (`AuditEnforcementInterceptor`) checks every successful staff mutation (a staff-authenticated
 route whose method is not GET and whose contract does not say `audit: false`): if the request wrote no audit row, development and
 tests answer `500` with a message that names the route, and production logs an error (the change is already committed). A sign-in
-step opts out with `audit: false` and says why in the contract description.
+step opts out with `audit: false` and says why in the contract description. A use case that looked and found nothing to change (decision
+074: `PATCH /admin/service-listings/:id` with the switch value the listing already holds) calls `AuditService.nothingChanged()` (`markNothingToAudit`
+in `src/common/request-context.ts`, the flag `auditNothingToWrite`), and the interceptor lets that request pass without a row. It is for a request
+that wrote nothing at all; a use case that writes anything still calls `AuditService.record`.
 
 ## Docs gate
 

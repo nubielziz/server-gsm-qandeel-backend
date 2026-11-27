@@ -276,7 +276,10 @@ export class ListingAdminService {
    * Why: the console sends `isListed` (the switch), `retailPrice` (the price dialog) or the content fields of the editor. The
    * service row is locked first, then the listing row; every refusal is decided before the first write, so a request with several
    * fields never half applies. The content and the facts of the service (`brand`, `carrier`, `country`, `isFeatured`, `sort`) live
-   * on the service's one listing. The first switch-on sets `listedAt`, which never resets.
+   * on the service's one listing. The first switch-on sets `listedAt`, which never resets. Decision 074: `isListed` sent with the value
+   * the listing already holds (read under the locks) writes nothing for the switch: no audit row `listed on storefront` or
+   * `unlisted from storefront`, no `listedAt`, and, when it is all the request holds, no search signal either; the answer is still
+   * `200` with the listing, and every other key of the request is handled as before.
    *
    * @param caller the signed-in staff member (`retailPrice` and `retailPricing` need `pricing:update`, switching a listing on needs
    *   `storefront:publish`, decision 046)
@@ -379,8 +382,12 @@ export class ListingAdminService {
               : { retailPrice: price.toWire(), pricing: 'rule', ruleId, cost: write.quote.cost.toWire() },
         });
       }
-      if (changes.isListed !== undefined) {
-        const updated = await switchListing(tx, id, changes.isListed, this.clock.now(), switchFacts);
+      // Decision 074: a switch to the value the row holds under the locks changes nothing and writes nothing (no audit row, no
+      // `listed_at`, no search signal of its own); the refusals above still judged it, as before.
+      const target = changes.isListed;
+      const switching = target !== undefined && target !== row.listing.isListed;
+      if (switching) {
+        const updated = await switchListing(tx, id, target, this.clock.now(), switchFacts);
         await this.audit.record(tx, {
           action: updated.isListed ? 'listed on storefront' : 'unlisted from storefront',
           entityType: 'listing',
@@ -418,8 +425,13 @@ export class ListingAdminService {
           after: Object.fromEntries(changedKeys.map((key) => [key, auditValue(key, sent[key])])),
         });
       }
-      // Any field (the switch, the retail price of the same request, the content, the facts) can change the search document (feature 29).
-      await this.signals.listingsChanged(tx, [listing.serviceId]);
+      if (!switching && price === undefined && !edited) {
+        // Only a switch to the value the listing already has was sent: nothing was written, so there is nothing to audit or signal.
+        this.audit.nothingChanged();
+      } else {
+        // Any field (the switch, the retail price of the same request, the content, the facts) can change the search document (feature 29).
+        await this.signals.listingsChanged(tx, [listing.serviceId]);
+      }
       const fresh = (await findListingRow(tx, id))!;
       return this.detail(tx, fresh);
     });

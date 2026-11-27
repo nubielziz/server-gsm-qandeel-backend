@@ -1,7 +1,7 @@
 // AuditService: the one way to write audit_logs (platform module). Services call it inside their transaction for every
 // admin write; the actor and the IP come from the request context the session guards filled in.
 import { Injectable } from '@nestjs/common';
-import { countAuditRecord, getRequestContext } from '../../../common/request-context';
+import { countAuditRecord, getRequestContext, markNothingToAudit } from '../../../common/request-context';
 import type { DbExecutor } from '../../../infra/db';
 import { type AuditLog, auditLogs } from '../db/schema';
 import { type AuditEntityType, isAuditEntityType } from './audit-entity-types';
@@ -92,5 +92,18 @@ export class AuditService {
       .returning();
     countAuditRecord();
     return row!;
+  }
+
+  /**
+   * Says that this request changed nothing, so no audit row is written for it.
+   *
+   * Why: decision 074: `PATCH /admin/service-listings/:id` with a switch to the value the listing already has writes no row (the
+   * console once sent the same switch five times, and the log filled with "unlisted from storefront" from unlisted to unlisted).
+   * The audit enforcement would call that a forgotten audit row; this tells it the use case looked and found nothing to record.
+   *
+   * Side effects: marks the current request (nothing is written to the database).
+   */
+  nothingChanged(): void {
+    markNothingToAudit();
   }
 }

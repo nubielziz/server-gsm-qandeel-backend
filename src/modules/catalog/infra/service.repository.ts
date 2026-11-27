@@ -303,6 +303,39 @@ export async function insertServiceRow(db: DbExecutor, row: NewService): Promise
 }
 
 /**
+ * Reserves the next service id.
+ *
+ * Why: decision 074: the code a new service gets from the server is `<PREFIX>-<id>`, so the id is needed before the row is written
+ * and the row is written once, with its final code (no placeholder, no second write). A reserved id that is never used (the
+ * transaction rolls back) is only a gap in the numbers, as with any identity value.
+ *
+ * Side effects: advances the id sequence of `services` (not rolled back with the transaction).
+ *
+ * @param db the caller's transaction
+ * @returns the id
+ */
+export async function reserveServiceId(db: DbExecutor): Promise<number> {
+  const result = await db.execute<{ id: string }>(
+    sql`select nextval(pg_get_serial_sequence('public.services', 'id')) as id`,
+  );
+  return Number(result.rows[0]!.id);
+}
+
+/**
+ * Inserts a service under an id reserved with {@link reserveServiceId}.
+ *
+ * Side effects: inserts a `services` row (the id column is `GENERATED ALWAYS`, so the insert overrides the system value).
+ *
+ * @param db the caller's transaction
+ * @param row the new service, with its id
+ * @returns the stored service
+ */
+export async function insertServiceRowWithId(db: DbExecutor, row: NewService & { id: number }): Promise<Service> {
+  const [created] = await db.insert(services).overridingSystemValue().values(row).returning();
+  return created!;
+}
+
+/**
  * Changes a service.
  *
  * @param db the transaction

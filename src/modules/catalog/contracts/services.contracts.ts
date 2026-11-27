@@ -398,8 +398,10 @@ export const createService = defineRoute({
   description:
     'Starts `active`, `auto`, with a fixed price mode, the `block_open` duplicate rule, no minimum profit of its own and a cost ' +
     'of 0 until a supplier is linked or imported. The type must be the type of the category: `422` on `categoryId` ' +
-    'otherwise. A code that another live service has (ignoring case) is `409 CODE_TAKEN` on `code`. `basePrice` must be above ' +
-    'zero. The optional `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) switch on the ' +
+    'otherwise. The optional `code` (decision 074) is what staff typed; left out, the server makes it: `IMEI-<id>`, `SRV-<id>`, ' +
+    "`RMT-<id>` or `FILE-<id>` by the type, with the new service's own id (`-2`, `-3`, ... after it when a live service already holds " +
+    'that code), and the answer, the stored row and the audit row `created service` carry it. A typed code that another live service ' +
+    'has (ignoring case) is `409 CODE_TAKEN` on `code`. `basePrice` must be above zero. The optional `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) switch on the ' +
     "merchant's cancel and verification of this service's orders; all three start off. The optional `minQty`, `maxQty` (whole, 1 " +
     'to 100000) and `qtyOptions` (at most 50 whole pack sizes, no repeats) say what one order may buy; they start at 1, 1 and ' +
     'none. A service sells a range or packs: with `qtyOptions` the server stores `minQty` as the smallest and `maxQty` as the ' +
@@ -417,7 +419,9 @@ export const createService = defineRoute({
   permission: 'catalog:create',
   body: z.object({
     name: ServiceName,
-    code: ServiceCode,
+    code: ServiceCode.optional().describe(
+      'The code staff typed (unique ignoring case among live services). Left out, the server makes it: `IMEI-<id>`, `SRV-<id>`, `RMT-<id>` or `FILE-<id>` (decision 074).',
+    ),
     categoryId: zId,
     type: ServiceTypeField,
     slaMinutes: SlaMinutes,

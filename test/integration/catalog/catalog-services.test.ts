@@ -492,6 +492,129 @@ describe('POST /admin/services', () => {
     ]);
   });
 
+  describe('without a code (decision 074: the server makes it)', () => {
+    /** The body of a create that leaves the code out. */
+    const bodyWithoutCode = (categoryId: number, type = 'imei') => ({
+      name: 'Made Code Check',
+      categoryId,
+      type,
+      slaMinutes: 90,
+      basePrice: '2.5000',
+    });
+
+    it('makes <PREFIX>-<id> for each of the four types, and the row, the answer and the audit row carry it', async () => {
+      const { db } = await testDb();
+      const prefixes = { imei: 'IMEI', server: 'SRV', remote: 'RMT', file: 'FILE' } as const;
+      for (const [type, prefix] of Object.entries(prefixes)) {
+        const category = await insertCategory(db, { name: `Made ${type}`, type: type as keyof typeof prefixes });
+        const res = await admin.post('/admin/services', bodyWithoutCode(category, type));
+        expect(res.status, type).toBe(201);
+        expect(res.body.code, type).toBe(`${prefix}-${res.body.id}`);
+        expect((await serviceRow(res.body.id))!.code, type).toBe(res.body.code);
+        expect((await admin.get(`/admin/services/${res.body.id}`)).body.code, type).toBe(res.body.code);
+        const audit = (await auditRows()).find((a) => a.action === 'created service' && a.entityId === res.body.id);
+        expect(audit?.after, type).toMatchObject({ code: res.body.code });
+      }
+      // No placeholder is left anywhere: every stored code is a made one.
+      const stored = await db.select({ id: s.services.id, code: s.services.code }).from(s.services);
+      expect(stored).toHaveLength(4);
+      for (const row of stored) expect(row.code).toMatch(/^(IMEI|SRV|RMT|FILE)-\d+$/);
+    });
+
+    it('takes -2, -3, ... when a live service holds the made code already, ignoring case', async () => {
+      const { db } = await testDb();
+      const category = await insertCategory(db);
+      const first = await insertService(db, category);
+      // The next create takes the id after the two rows made here, so the codes it would make are known.
+      const next = first + 3;
+      await insertService(db, category, { code: `imei-${next}` });
+      await insertService(db, category, { code: `IMEI-${next}-2` });
+      const res = await admin.post('/admin/services', bodyWithoutCode(category));
+      expect(res.status).toBe(201);
+      expect(res.body.id).toBe(next);
+      expect(res.body.code).toBe(`IMEI-${next}-3`);
+      expect((await serviceRow(next))!.code).toBe(`IMEI-${next}-3`);
+      const audit = (await auditRows()).find((a) => a.action === 'created service');
+      expect(audit?.after).toMatchObject({ code: `IMEI-${next}-3` });
+    });
+
+    it('does not count an archived service: its code is free', async () => {
+      const { db } = await testDb();
+      const category = await insertCategory(db);
+      const first = await insertService(db, category);
+      const next = first + 2;
+      await insertService(db, category, { code: `IMEI-${next}`, status: 'disabled', archivedAt: new Date() });
+      const res = await admin.post('/admin/services', bodyWithoutCode(category));
+      expect(res.body.code).toBe(`IMEI-${next}`);
+    });
+
+    it('lets many creates at the same moment all succeed, each with its own code', async () => {
+      const { db } = await testDb();
+      const category = await insertCategory(db);
+      const results = await Promise.all(
+        Array.from({ length: 6 }, () => admin.post('/admin/services', bodyWithoutCode(category))),
+      );
+      expect(results.map((r) => r.status)).toEqual([201, 201, 201, 201, 201, 201]);
+      const codes = results.map((r) => r.body.code as string);
+      expect(new Set(codes).size).toBe(6);
+      for (const r of results) expect(r.body.code).toBe(`IMEI-${r.body.id}`);
+      expect(await db.select().from(s.services)).toHaveLength(6);
+    });
+
+    it('keeps a typed code exactly as typed (trimmed) and judges it as before', async () => {
+      const { db } = await testDb();
+      const category = await insertCategory(db);
+      const typed = await admin.post('/admin/services', { ...bodyWithoutCode(category), code: '  Fix Phone  ' });
+      expect(typed.status).toBe(201);
+      expect(typed.body.code).toBe('Fix Phone');
+      const again = await admin.post('/admin/services', { ...bodyWithoutCode(category), code: 'fix phone' });
+      expect(again.status).toBe(409);
+      expect(again.body.code).toBe('CODE_TAKEN');
+      // A typed code that looks like a made one is kept; the made code of the next service steps around it.
+      const lookalike = await admin.post('/admin/services', {
+        ...bodyWithoutCode(category),
+        code: `IMEI-${typed.body.id + 2}`,
+      });
+      expect(lookalike.body.code).toBe(`IMEI-${typed.body.id + 2}`);
+      const made = await admin.post('/admin/services', bodyWithoutCode(category));
+      expect(made.body.id).toBe(typed.body.id + 2);
+      expect(made.body.code).toBe(`IMEI-${made.body.id}-2`);
+    });
+
+    it('still refuses an empty typed code on the field (the code is optional, not blank)', async () => {
+      const { db } = await testDb();
+      const category = await insertCategory(db);
+      const res = await admin.post('/admin/services', { ...bodyWithoutCode(category), code: '   ' });
+      expect(res.status).toBe(422);
+      expect(res.body.errors[0].field).toBe('code');
+      expect(await db.select().from(s.services)).toEqual([]);
+    });
+
+    it('leaves no row and no audit row behind when the create is refused after the row was written', async () => {
+      const { db } = await testDb();
+      const category = await insertCategory(db);
+      // The floor is judged after the insert (decision 069): the whole transaction, with its made code, goes back.
+      const res = await admin.post('/admin/services', {
+        ...bodyWithoutCode(category),
+        ownCost: '5.0000',
+        basePrice: '1.0000',
+      });
+      expect(res.status).toBe(422);
+      expect(res.body.errors[0]).toMatchObject({ field: 'basePrice', code: 'below_floor' });
+      expect(await db.select().from(s.services)).toEqual([]);
+      expect(await auditRows()).toEqual([]);
+    });
+
+    it('does not change PATCH: it still takes a code, and a made code can be changed by hand', async () => {
+      const { db } = await testDb();
+      const category = await insertCategory(db);
+      const made = await admin.post('/admin/services', bodyWithoutCode(category));
+      const patched = await admin.patch(`/admin/services/${made.body.id}`, { code: 'Fix Phone' });
+      expect(patched.status).toBe(200);
+      expect(patched.body.code).toBe('Fix Phone');
+    });
+  });
+
   it('answers 409 CODE_TAKEN, never 500, when two creates race on a code', async () => {
     const { db } = await testDb();
     const category = await insertCategory(db);

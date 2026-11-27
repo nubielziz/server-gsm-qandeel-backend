@@ -39,7 +39,11 @@ feature 6.
   (`services.cost`), `stockDelivery` and `stockAvailable` (available codes, counted in SQL: `availableCodeCountSql`). Create sets the
   server defaults (`active`, `auto`, `fixed`, `block_open`, own cost 0 or the `ownCost` sent, effective cost equal to it, no code stock
   unless `stockDelivery` is sent) and derives `delivery_time` from `slaMinutes`; with `ownCost` sent it refuses a `basePrice` under the
-  floor that cost sets, as a change does; change refuses a `basePrice` under the
+  floor that cost sets, as a change does. **Decision 074:** `code` is optional on create: a typed one is judged as before (`409 CODE_TAKEN`),
+  one left out is made by the server as `<PREFIX>-<id>` (`IMEI-`, `SRV-`, `RMT-`, `FILE-`, `domain/service-code.ts`) from the new service's own id,
+  taken from the sequence first (`reserveServiceId`) so the row is inserted once with its final code (`insertServiceRowWithId`); when a live
+  service holds it already (ignoring case) the next free `-2`, `-3`, ... is taken (`firstFreeServiceCode`, shared with the supplier import's
+  `IMP-<id>`). The row, the answer and the audit row `created service` carry it; `PATCH` still accepts `code`. Change refuses a `basePrice` under the
   floor (the minimum profit being saved counts), clears `cost_was` when a base price is saved, keeps category and type in
   agreement (composite FK), maps a code clash to `409 CODE_TAKEN`; a `basePrice` or `minProfit` change also needs `pricing:update` (decision 046); delete archives (`archived_at`, status `disabled`, service
   pricing rules off) when anything refers to the service and hard deletes otherwise. Archived services are hidden from every
