@@ -17,8 +17,10 @@ one order at one price (up to 30 IMEIs, each checked; the blocklist, the payment
 `0073_more_field_types` (the check only, no data step). The console (its decisions 033, 034) and the shop (009, 010) carry their sides.
 **Why it was asked:** the owner's test on production (service 199): the shop switch of Retail Purchase kept "Yes" (a console bug, their 033), the
 Cancel button never showed (an automatic order is sent in the second it is placed) and the Verify button was only on the order's page.
-**Checks:** typecheck, lint, format, English, routes, contract, OpenAPI, coverage, `db:check` (74 migrations) and the whole suite locally on the
-merged main (see the commit of this entry for its counts). **Release order:** console, backend, shop. **Open:** the local database `gsm` needs
+**Checks:** typecheck, lint, format, English, routes, contract, OpenAPI, coverage, `db:check` (74 migrations), and the tests locally on the
+merged main: contract, Dhru, e2e and every integration folder up to suppliers in one run, then orders, suppliers, customers, infra, storefront,
+tooling and unit in a second (552 files, 6,886 pass, 0 fail). One failure in all: a timing test of `english-only-migration.test.ts` under two
+parallel runs; it passes alone (18 of 18). **Release order:** console, backend, shop. **Open:** the local database `gsm` needs
 `bun run db:migrate` (0073) when the dev stack is started again; the `withActionFacts` fill-in can go 7 days after the release.
 
 **IMEI is a field type; the service type forces nothing (2026-11-26, decision 073): merged, not pushed (waiting for the owner's word).** The owner's
