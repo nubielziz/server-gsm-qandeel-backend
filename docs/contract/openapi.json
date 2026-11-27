@@ -1485,7 +1485,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Every field is required except `isActive` (default true). `key` is unique among the rules that are not deleted (a duplicate is `422` on `key`). `metric` is one of the ten registry keys and the server sets `unit` from it: `supplier.timeout_rate`, `supplier.error_rate`, `api.rate5xx`, `db.connection_usage` and `redis.memory_usage` are `percent`; `api.p95` is `ms`; `queue.oldest_age` is `s`; `orders.past_sla` and `ledger.mismatch_count` are `count`; `supplier.balance` has no unit (`null`). `threshold` is a number in that unit. `windowSeconds` (60 to 86400) is the period a rate or percentile is measured over (`supplier.timeout_rate`, `supplier.error_rate`, `api.p95`, `api.rate5xx`); for `supplier.balance`, `queue.oldest_age`, `orders.past_sla`, `db.connection_usage` and `redis.memory_usage`, which read the moment, it is how long the condition must hold: the alert opens after every evaluation of the whole window was over the threshold and closes after every evaluation of the whole window was back in range. `ledger.mismatch_count` is the result of the newest integrity run and ignores the window. `channels` is a non-empty list of `telegram` and `email`. Writes the audit entry `added alert rule`.",
+        "description": "Every field is required except `isActive` (default true) and `key`. `key` is unique among the rules that are not deleted (a duplicate is `422` on `key`). Decision 077: leave `key` out and the server makes it, in the same transaction, from the name (lower case, every run of characters other than a-z and 0-9 one `_`, none at either end, cut to 41; `rule_` in front when the result starts with a digit or has fewer than 3 characters; `rule` when nothing is left), and takes `_2`, `_3`, ... when another rule that is not deleted already holds it, so a made key is never refused as a duplicate; the stored row, the answer and the audit entry carry the final key. `metric` is one of the ten registry keys and the server sets `unit` from it: `supplier.timeout_rate`, `supplier.error_rate`, `api.rate5xx`, `db.connection_usage` and `redis.memory_usage` are `percent`; `api.p95` is `ms`; `queue.oldest_age` is `s`; `orders.past_sla` and `ledger.mismatch_count` are `count`; `supplier.balance` has no unit (`null`). `threshold` is a number in that unit. `windowSeconds` (60 to 86400) is the period a rate or percentile is measured over (`supplier.timeout_rate`, `supplier.error_rate`, `api.p95`, `api.rate5xx`); for `supplier.balance`, `queue.oldest_age`, `orders.past_sla`, `db.connection_usage` and `redis.memory_usage`, which read the moment, it is how long the condition must hold: the alert opens after every evaluation of the whole window was over the threshold and closes after every evaluation of the whole window was back in range. `ledger.mismatch_count` is the result of the newest integrity run and ignores the window. `channels` is a non-empty list of `telegram` and `email`. Writes the audit entry `added alert rule`.",
         "operationId": "postAdminAlertRules",
         "parameters": [],
         "requestBody": {
@@ -1559,7 +1559,6 @@
                   }
                 },
                 "required": [
-                  "key",
                   "name",
                   "metric",
                   "comparator",
@@ -100807,7 +100806,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Adds a gateway. `secret` (the API credential), `webhookSecret` and `secondaryWebhookSecret` are write-only and stored encrypted. `preset` makes it a ready-made method of the catalog (its logo, kind and driver are the catalog entry's). Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups; a `secondaryWebhookSecret` of 1 to 500 characters, only next to a first webhook secret. Audited. Only an owner may add an automatic method (`isManual` false) or send `secret`, `webhookSecret` or `secondaryWebhookSecret` (`403 FORBIDDEN`, after the validation above; decision 046).",
+        "description": "Adds a gateway. `secret` (the API credential), `webhookSecret` and `secondaryWebhookSecret` are write-only and stored encrypted. `preset` makes it a ready-made method of the catalog (its logo, kind and driver are the catalog entry's). `code` is optional (decision 077): leave it out and the server makes it, in the same transaction, from the `preset` key or from the name (`Bank of Jordan` is `bank_of_jordan`; `method` when the name has no letter or digit a-z), and takes `_2`, `_3`, ... when another method already holds it, so a made code is never refused as taken; the stored row, the answer and the audit row carry the final code. A code that is sent is judged as before. Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups; a `secondaryWebhookSecret` of 1 to 500 characters, only next to a first webhook secret. Audited. Only an owner may add an automatic method (`isManual` false) or send `secret`, `webhookSecret` or `secondaryWebhookSecret` (`403 FORBIDDEN`, after the validation above; decision 046).",
         "operationId": "postAdminPaymentGateways",
         "parameters": [],
         "requestBody": {
@@ -100818,6 +100817,7 @@
                 "type": "object",
                 "properties": {
                   "code": {
+                    "description": "The code of the method, the `:gateway` of its webhook address. Create: optional (decision 077); sent, it is judged as before (lower-case letters, digits, `-` and `_`, up to 40; 422 on `code` when another method holds it); left out, the server makes it: the key of the `preset`, or the name as an identifier (lower case, every run of other characters one `_`, none at either end, cut to 40; `method` when nothing is left), then `_2`, `_3`, ... when another method holds it. Change: it never changes; a different code is 422.",
                     "type": "string"
                   },
                   "driver": {
@@ -100907,7 +100907,6 @@
                   }
                 },
                 "required": [
-                  "code",
                   "driver",
                   "name",
                   "audience",
@@ -102165,6 +102164,7 @@
                 "type": "object",
                 "properties": {
                   "code": {
+                    "description": "The code of the method, the `:gateway` of its webhook address. Create: optional (decision 077); sent, it is judged as before (lower-case letters, digits, `-` and `_`, up to 40; 422 on `code` when another method holds it); left out, the server makes it: the key of the `preset`, or the name as an identifier (lower case, every run of other characters one `_`, none at either end, cut to 40; `method` when nothing is left), then `_2`, `_3`, ... when another method holds it. Change: it never changes; a different code is 422.",
                     "type": "string"
                   },
                   "driver": {

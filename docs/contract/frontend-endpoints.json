@@ -27790,7 +27790,8 @@
      "shape": {
       "object": {
        "key": {
-        "type": "string"
+        "type": "string",
+        "optional": true
        },
        "name": {
         "type": "string"
@@ -34431,7 +34432,8 @@
      "shape": {
       "object": {
        "code": {
-        "type": "string"
+        "type": "string",
+        "optional": true
        },
        "driver": {
         "type": "string"

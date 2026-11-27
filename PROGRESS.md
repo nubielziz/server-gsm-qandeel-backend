@@ -4,6 +4,18 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**The server makes a payment method's code and an alert rule's key (2026-11-27, decision 077): merged and pushed on the owner's order ("when you
+finish push and check the website goes live").** Part of the owner's "fewer inputs in the console" list (the console's decisions 035 and 036): `code`
+is optional on `POST /admin/payment-gateways` and `key` on `POST /admin/alert-rules`; left out, the server makes it from the preset's key or the
+name (`src/common/identifier.ts`: lower case, accents dropped, runs of other characters into one underscore; `_2`, `_3` when taken; `rule_` in
+front of an alert key that would start with a digit or be too short). A clash with a create at the same moment is settled by
+`INSERT ... ON CONFLICT DO NOTHING` and the next number. A typed value is judged as before; PATCH unchanged; no migration. Built by a Sonnet
+implementer, reviewed by an Opus reviewer with the console's side, final review by the lead (Fable 5.2). **Checks:** typecheck, lint, format,
+English, routes, contract, OpenAPI, coverage, `db:check`; the contract tests and the money and health files (1,546 pass). **Release order:**
+console, backend (the backend's check reads the console's main; the backend usually deploys first, which is the safe order here).
+**Next (the owner's second request of 2026-11-27, being built):** one call to reorder groups and API key edits (decision 078), sign-up with the
+full details and a password (decision 079), with the console's Orders columns, drag-and-drop groups and key dialogs and the shop's sign-up form.
+
 **The owner's notes of 2026-11-27 (decisions 074, 075, 076): merged and pushed on the owner's order ("go ahead ... when you finish push the work and
 confirm live").** Three features, one squash commit each, built in parallel worktrees (Sonnet and Opus implementers, two Opus reviewers, final review by
 the lead, Fable 5.2). **074:** `POST /admin/services` makes the code when none is sent (`IMEI-`, `SRV-`, `RMT-`, `FILE-` and the service's own

@@ -4,7 +4,7 @@
     "content-type": "application/json"
   },
   "body": {
-    "code": "HARVEST-1",
+    "code": "harvest_sample",
     "driver": "Harvest sample text.",
     "name": "Harvest sample",
     "audience": "b2b",
