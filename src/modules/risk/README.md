@@ -20,7 +20,8 @@ cache (a rule decides whether a customer's money is held).
 
 **At the storefront capture** (`CheckoutCaptureService` of the customers module) every confirmed payment is assessed on the webhook's
 transaction before `CustomerOrderPlacement.place`, with what the capture knows (the buyer account (`ScreeningInput.accountId`, null when no row is known; a guest checkout passes its guest row), email, checkout session, USD gross incl. VAT,
-payment method, the session's IMEI, the card's fingerprint, country and funding from the card driver's charge details, the tax country, the
+payment method, the session's IMEI (and `ScreeningInput.imeis`: decision 076, every IMEI of a main input that is a list, a field of type
+`imei_bulk`, each matched against the blocklist like the IMEI), the card's fingerprint, country and funding from the card driver's charge details, the tax country, the
 session's address and visitor country (`checkout_sessions.ip_country`), and whether the account itself opened the checkout: decision 050).
 `allow` places the order as before. `review` places it `held` (no stock claimed, no `order.dispatch_requested`, a `review` timeline line with `holdReason`).
 `block` places it `held` and `RiskDecisionsService.refundBlocked` rejects it at once as the system: a `processing` refund, the
@@ -38,7 +39,7 @@ late payment at once when the gateway can refund.
   IP country differs from card country 25, prepaid card 12, a 4th order in an hour from one address or customer 20,
   more orders from one email in 24 hours than the rule allows 50. The score is the sum
   capped at 100.
-- **Hard blocks** (score 100, decision `block`): a live blocklist entry matching the email, its domain, the IMEI, the card
+- **Hard blocks** (score 100, decision `block`): a live blocklist entry matching the email, its domain, the IMEI (or any IMEI of `imeis`), the card
   fingerprint or a country; a disposable email while `blockDisposableEmail` is on. A chargeback entry reads "Email on a previous chargeback".
 - **Thresholds**: at or above `blockThreshold` (80) the decision is `block`, at or above `reviewThreshold` (50) it is `review`
   (held); a threshold whose switch is off does not apply.

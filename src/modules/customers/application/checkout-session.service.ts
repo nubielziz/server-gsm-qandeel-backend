@@ -15,9 +15,7 @@ import {
   OrderReadService,
   bridgedImeiOf,
   inputProblems,
-  isValidImei,
   mainInputOf,
-  normalizeImei,
   normalizedInputs,
   quantityProblem,
 } from '../../orders';
@@ -36,6 +34,7 @@ import {
   maskImei,
   requiredConsents,
 } from '../domain/checkout';
+import { blockableImeisOf } from '../domain/checkout-imeis';
 import { findCheckoutSession, insertCheckoutSession } from '../infra/checkout.repository';
 import { listSessionConsents } from '../infra/consent.repository';
 import { regionNotSupported } from './customer-errors';
@@ -220,7 +219,8 @@ export class CheckoutSessionService {
       // RULES risk 5: a blocklisted email, email domain or IMEI cannot open a checkout. It gets the answer a blocked account gets, so the
       // buyer never learns which entry matched (and no guest row is made for it).
       // A signed-in buyer is not matched by an entry limited to guest checkouts (decision 050). Decision 073: every IMEI of the order is
-      // probed: the main input and each field of type `imei`, read as digits, whenever that is a valid IMEI.
+      // probed: the main input, each field of type `imei` and (decision 076) each line of a field of type `imei_bulk`, read as digits,
+      // whenever that is a valid IMEI.
       const guest = account === undefined;
       const imeis = blockableImeisOf(mainInput, fields, values);
       for (const imei of imeis.length === 0 ? [null] : imeis) {
@@ -395,31 +395,6 @@ function placementField(field: SellableField) {
     required: field.required,
     regex: field.regex,
   };
-}
-
-/**
- * The IMEIs the blocklist is asked about: the main input and the value of every field of type `imei`, each read as digits (spaces and
- * dashes removed) when that is a valid IMEI; distinct, in that order.
- *
- * Why: RULES risk 5 and decision 073: a blocklisted IMEI cannot open a checkout, whether the buyer typed it into a field of type `imei`
- * (main input or not) or into a text main input (a service whose staff chose text).
- */
-function blockableImeisOf(
-  mainInput: string | null,
-  fields: ReadonlyArray<{ readonly key: string; readonly fieldType: string }>,
-  values: Readonly<Record<string, string>>,
-): string[] {
-  const candidates = [
-    mainInput,
-    ...fields.filter((field) => field.fieldType === 'imei').map((field) => values[field.key]),
-  ];
-  const found: string[] = [];
-  for (const candidate of candidates) {
-    if (candidate === null || candidate === undefined) continue;
-    const digits = normalizeImei(candidate);
-    if (isValidImei(digits) && !found.includes(digits)) found.push(digits);
-  }
-  return found;
 }
 
 /**

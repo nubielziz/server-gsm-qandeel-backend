@@ -4,11 +4,9 @@
 import { z } from 'zod';
 import { defineRoute, zDecimal, zId, zIsoDateTime, zMoney } from '../../../common/contract';
 import { SERVICE_TYPES } from '../../catalog';
+import { MAX_INPUT_LENGTH, MAX_RAW_INPUT_LENGTH } from '../../orders';
 import { zCountryCode, zCurrencyCode } from '../../storefront';
 import { CHECKOUT_SESSION_STATUSES, CONSENT_PURPOSES } from '../db/schema';
-
-/** The most of any one input value or UTM tag a buyer may send. */
-const MAX_VALUE = 500;
 
 const AmountsSchema = z.object({ net: zMoney, tax: zMoney, gross: zMoney.describe('`net` plus `tax`.') });
 
@@ -60,11 +58,13 @@ const OpenBody = z.object({
         "that field's key; a service without such a field takes it as sent). The shop now types it into the field (`inputs`).",
     ),
   inputs: z
-    .record(z.string().min(1).max(60), z.string().max(MAX_VALUE))
+    .record(z.string().min(1).max(60), z.string().max(MAX_RAW_INPUT_LENGTH))
     .optional()
     .describe(
       "The values of the service's order fields by field key (`GET /store/v1/services/:slug`), each judged by its field's type, " +
-        'required tick and pattern; a field of type `imei` is stored as digits.',
+        "required tick and pattern and stored in its type's form (an `imei` as digits, an `imei_bulk` list one IMEI per line; " +
+        `decisions 073 and 076). At most ${MAX_RAW_INPUT_LENGTH} characters as sent; the stored form at most ${MAX_INPUT_LENGTH} ` +
+        '(`too_long` on `inputs.<key>`; an `imei_bulk` list of more than 30 IMEIs is `too_many_imeis` first).',
     ),
   utm: UtmSchema.optional(),
 });
@@ -83,8 +83,9 @@ export const CheckoutSessionSchema = z.object({
     .string()
     .nullable()
     .describe(
-      'The main input of an IMEI service (usually its IMEI) with all but its last four characters hidden; null for another service or ' +
-        'none.',
+      'The main input of an IMEI service (usually its IMEI) with all but its last four characters hidden; a list of IMEIs (a main ' +
+        'input of type `imei_bulk`, decision 076) shows its first IMEI so, then ` +N more` for the others (`•••••••••••0861 +2 more`; a ' +
+        'one-item list reads like one IMEI). null for another service or none.',
     ),
   email: z.string().describe("The buyer's address with most of it hidden."),
   country: z.string().nullable().describe('The country the tax was locked for.'),
@@ -173,9 +174,12 @@ export const openCheckoutSession = defineRoute({
     'merchant rank is refused (`403 RANK_NOT_ALLOWED`, "Your account orders from its price list.") and nothing is written. A request ' +
     'without a usable account session is a guest. The order fields come in `inputs`, each judged by its own type, required tick and ' +
     'pattern (decision 073: the service type `imei` forces nothing); a field of type `imei` holds one IMEI (spaces and dashes removed, ' +
-    '15 digits, Luhn; else `422 INVALID_IMEI` with `invalid_imei` on `inputs.<key>`). On an IMEI service the main input may also come ' +
+    '15 digits, Luhn; else `422 INVALID_IMEI` with `invalid_imei` on `inputs.<key>`). Decision 076: a field of type `imei_bulk` holds 1 ' +
+    'to 30 IMEIs, still one order at one price (a bad line is `422 INVALID_IMEI`), and the other check types answer `422 ' +
+    'VALIDATION_FAILED` with `invalid_<type>` on `inputs.<key>`. On an IMEI service the main input may also come ' +
     'as `imei` (older shop pages; it is the value of the main-input field, wins over a value under its key and is reported on `imei`; ' +
-    'a service without such a field takes it as sent). A blocklisted IMEI is refused whenever the main input reads as a valid IMEI. An account or ' +
+    'a service without such a field takes it as sent). A blocklisted IMEI is refused whenever the main input, a field of type `imei` or a ' +
+    'line of a field of type `imei_bulk` reads as a valid IMEI. An account or ' +
     'guest record that may not act is refused (`403 ' +
     'ACCOUNT_SUSPENDED`), and so is a guest whose email belongs to a login account that is suspended, blocked or erased, with the same ' +
     'answer as a blocklist hit and no guest record made; when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the ' +

@@ -6,7 +6,8 @@ import { AppError } from '../../../common/errors';
 import { EncryptionService } from '../../../infra/crypto';
 import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
 import { AccountAccessEffects } from '../../identity';
-import { StorefrontServices } from '../../catalog';
+import { type SellableField, StorefrontServices } from '../../catalog';
+import { fieldImeisOf } from '../../orders';
 import { AuditService } from '../../platform';
 import { Blocklist, type BlockRequest } from '../../risk';
 import { CHECKOUT_IMEI_AAD } from '../domain/checkout';
@@ -39,7 +40,8 @@ type Work = Pick<TransactionContext, 'tx' | 'afterCommit'>;
  * account becomes `blocked`, every session ends and every live API key stops (`AccountAccessEffects.statusChanged`), and the blocklist
  * gets, with source manual, the reason, the caller and `account_id` set: the account's email always, each distinct card fingerprint of its
  * payments and each distinct IMEI still stored on its **shop** orders and checkout sessions (a device is its IMEI, B77; the main input and,
- * decision 073, the values of fields of type `imei`, read through the catalog's `StorefrontServices.fields`). A merchant orders
+ * decision 073, the values of fields of type `imei` and, decision 076, each line of the fields of type `imei_bulk` and of a main input,
+ * read through the catalog's `StorefrontServices.fields`). A merchant orders
  * through the portal and Dhru for other people's devices, so the IMEIs of those orders are never added. Each insert is
  * `ON CONFLICT DO NOTHING`, so an entry that already exists (a risk refund, a chargeback, a manual add, another account's block) is kept
  * unchanged and not linked. The reason is appended to the internal notes (B48). A suspension the account had is kept under the block
@@ -147,8 +149,10 @@ export class CustomerBlockService {
   }
 
   /**
-   * Every distinct 15-digit IMEI on the account's shop orders and checkout sessions that is still stored: their main inputs and, decision
-   * 073, the values of their fields of type `imei` (the service's fields as the catalog lists them now).
+   * Every distinct 15-digit IMEI on the account's shop orders and checkout sessions that is still stored: their main inputs (each line of
+   * one, decision 076: the main input of an `imei_bulk` field is its list, one IMEI per line) and, decision 073, the values of their fields
+   * of type `imei` and, decision 076, each line of their fields of type `imei_bulk` (the service's fields as the catalog lists them now;
+   * `fieldImeisOf` says which values hold IMEIs).
    */
   private async imeisOf(tx: DbExecutor, accountId: number): Promise<string[]> {
     const stored = await storedImeisOf(tx, accountId);
@@ -158,23 +162,28 @@ export class CustomerBlockService {
       const digits = value.replace(/[\s-]/g, '');
       if (/^\d{15}$/.test(digits)) found.add(digits);
     };
-    for (const input of stored.orderInputs) add(input);
-    const imeiKeys = new Map<number, string[]>();
+    // A main input is one value, or the list of an `imei_bulk` field joined with line breaks: it is read whole, as before, and line by line.
+    const addLines = (value: string) => {
+      add(value);
+      if (/[\r\n]/.test(value)) value.split(/[\r\n]/).forEach(add);
+    };
+    for (const input of stored.orderInputs) addLines(input);
+    const fieldsOf = new Map<number, SellableField[]>();
     for (const { serviceId, inputs } of stored.fieldValues) {
-      let keys = imeiKeys.get(serviceId);
-      if (keys === undefined) {
+      let fields = fieldsOf.get(serviceId);
+      if (fields === undefined) {
         // One query at a time: the transaction is one connection.
-        keys = (await this.services.fields(tx, serviceId))
-          .filter((field) => field.fieldType === 'imei')
-          .map((field) => field.key);
-        imeiKeys.set(serviceId, keys);
+        fields = await this.services.fields(tx, serviceId);
+        fieldsOf.set(serviceId, fields);
       }
-      for (const key of keys) add(inputs[key]);
+      for (const field of fields) {
+        const value = inputs[field.key];
+        if (typeof value === 'string') fieldImeisOf(field, value).forEach(add);
+      }
     }
     for (const text of stored.sessionCiphertexts) {
       try {
-        const digits = this.encryption.decrypt(text, CHECKOUT_IMEI_AAD).replace(/[\s-]/g, '');
-        if (/^\d{15}$/.test(digits)) found.add(digits);
+        addLines(this.encryption.decrypt(text, CHECKOUT_IMEI_AAD));
       } catch {
         // An unreadable ciphertext cannot be blocked; the order's own IMEI (if any) still is.
       }

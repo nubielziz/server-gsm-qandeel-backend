@@ -38,6 +38,8 @@ export interface BlockRequest {
 export interface BlockProbeInput {
   readonly email?: string | null;
   readonly imei?: string | null;
+  /** More IMEIs to check beside `imei` (decision 076: each IMEI of a list); an entry they share matches once. */
+  readonly imeis?: ReadonlyArray<string | null | undefined>;
   readonly card?: string | null;
   /** Countries to check (the checkout's tax country, the IP country, the card's country). */
   readonly countries?: ReadonlyArray<string | null | undefined>;
@@ -167,8 +169,8 @@ export class Blocklist {
    * Finds what a payment, a checkout or a registration matches on the blocklist.
    *
    * @param db the database or a transaction
-   * @param probe the email, IMEI, card fingerprint and countries to look up, and whether this is a guest use (an entry limited to guest
-   *   checkouts matches a guest use only)
+   * @param probe the email, IMEI (and any more IMEIs), card fingerprint and countries to look up, and whether this is a guest use (an entry
+   *   limited to guest checkouts matches a guest use only)
    * @returns one hit per matching live entry; empty when nothing is blocked
    */
   async match(db: DbExecutor, probe: BlockProbeInput): Promise<BlockHit[]> {
@@ -180,8 +182,10 @@ export class Blocklist {
       const domain = email.value.slice(email.value.lastIndexOf('@') + 1);
       probes.push({ kind: 'domain', valueHash: this.hashOf('domain', domain) });
     }
-    const imei = probe.imei === undefined || probe.imei === null ? undefined : normalizeBlockValue('imei', probe.imei);
-    if (imei?.ok) probes.push({ kind: 'imei', valueHash: this.hashOf('imei', imei.value) });
+    for (const raw of [probe.imei, ...(probe.imeis ?? [])]) {
+      const imei = raw === undefined || raw === null ? undefined : normalizeBlockValue('imei', raw);
+      if (imei?.ok) probes.push({ kind: 'imei', valueHash: this.hashOf('imei', imei.value) });
+    }
     if (probe.card) probes.push({ kind: 'card', valueHash: this.hashOf('card', probe.card.trim()) });
     for (const country of probe.countries ?? []) {
       const code = country === undefined || country === null ? undefined : normalizeBlockValue('country', country);

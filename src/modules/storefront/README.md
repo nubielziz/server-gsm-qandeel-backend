@@ -60,8 +60,10 @@ tables).
   `descriptionMd, etaText, requirementsMd, seoTitle, seoDescription, quantity { min, max, options }, fields [{ key, label, fieldType,
   options, required, isMainInput }], faqs [{ question, answerMd }]` (the published help articles linked to the service). `fields` is
   every field of the service in form order (decision 070: the order form draws only these; on an IMEI service the main input is typed into
-  the one with `isMainInput`, which is no longer left out). `fieldType` is `text`, `number`, `select`, `textarea` or `imei` (decision 073:
-  one IMEI, 15 digits with Luhn, checked at the checkout).
+  the one with `isMainInput`, which is no longer left out). `fieldType` is a value of the catalog's `SERVICE_FIELD_TYPES`: `text`, `number`,
+  `select`, `textarea`, `imei` (decision 073: one IMEI, 15 digits with Luhn, checked at the checkout) or one of the check types of decision
+  076 (`imei_bulk`: 1 to 30 IMEIs, one order; `imeisv`, `serial`, `iccid`, `eid`, `meid`, `ecid`, `mac_address`, `mi_lock_code`,
+  `box_sn`), each judged at the checkout by the orders module's `FIELD_TYPE_RULES`.
   The list is the simple-rest dialect (`_start`, `_end` up to 100 rows, `_sort` featured|sort|title, default featured first, then
   `sort`, then title; filters `brand`, `network`, `country` (case-insensitive), `featured`; `locale` is an unknown parameter (422); `q` over
   title, summary, brand and network) with `x-total-count`; the buyer's `buyerCountry`, `region` and `currency` are extra query

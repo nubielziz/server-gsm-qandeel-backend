@@ -7,6 +7,7 @@ import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService, type DbExecutor } from '../../../infra/db';
 import { EncryptionService, TokenService } from '../../../infra/crypto';
+import { StorefrontServices } from '../../catalog';
 import { AccountDirectory, type AccountRecord, canAct } from '../../identity';
 import {
   BALANCE_BRAND,
@@ -22,6 +23,7 @@ import { RiskDecisionsService, RiskScreening, holdReason } from '../../risk';
 import { StorefrontPolicies, StorefrontQuotes, inCurrency } from '../../storefront';
 import type { payCheckoutFromBalance } from '../contracts/checkout-pay.contracts';
 import { CHECKOUT_IMEI_AAD, consentState, effectiveStatus, requiredConsents } from '../domain/checkout';
+import { mainInputImeisOf } from '../domain/checkout-imeis';
 import type { CheckoutSession } from '../db/schema';
 import { lockCheckoutSession, markSessionPaid } from '../infra/checkout.repository';
 import { listSessionConsents } from '../infra/consent.repository';
@@ -49,7 +51,8 @@ function inputsOf(raw: Record<string, unknown> | null): Record<string, string> {
  * rank and pays nothing), then the checkout row. The checkout row lock serializes every payer of one
  * checkout (a card capture racing it finds the session paid and is refunded as a duplicate); the wallet debit is guarded under the
  * wallet's row lock inside `postTransaction`, so parallel checkouts never overspend. Every payment is screened by the risk rules as a card
- * capture is: `review` places the order held, `block` places it held and refunds it to the balance at once.
+ * capture is (decision 076: every IMEI of a list main input too): `review` places the order held, `block` places it held and refunds it to
+ * the balance at once.
  *
  * Side effects (one transaction): everything `CustomerOrderPlacement.place` writes, one `payments` row, the `b2c_wallet_pay` journal, the
  * receipt invoice and its `receipt.render` outbox row, one `risk_assessments` row, the session's `status`/`order_id`, the buyer's
@@ -72,6 +75,7 @@ export class CheckoutBalancePayService {
     private readonly accounts: AccountDirectory,
     private readonly encryption: EncryptionService,
     private readonly tokens: TokenService,
+    private readonly services: StorefrontServices,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -152,6 +156,8 @@ export class CheckoutBalancePayService {
         decimals,
       ).gross;
       const imei = session.imeiEnc === null ? undefined : this.encryption.decrypt(session.imeiEnc, CHECKOUT_IMEI_AAD);
+      // Decision 076: a main input that is a list (its field of type `imei_bulk`) is asked of the blocklist IMEI by IMEI, as the open did.
+      const imeis = imei === undefined ? [] : mainInputImeisOf(imei, await this.services.fields(tx, session.serviceId));
       const screening = await this.risk.assess(tx, {
         accountId,
         email: session.email,
@@ -159,6 +165,7 @@ export class CheckoutBalancePayService {
         amountUsd: gross.toWire(),
         paymentMethod: 'balance',
         imei: imei ?? null,
+        imeis,
         cardFingerprint: null,
         country: session.taxCountry,
         ip: session.ip,

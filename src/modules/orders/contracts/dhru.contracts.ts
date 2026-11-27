@@ -39,7 +39,8 @@ const PlaceImeiParams = z.object({
   ...PLACE_FIELDS,
   IMEI: Text.optional().describe(
     "The main input of an IMEI service: the value of its main-input field, judged by that field's type (an IMEI, 15 digits and Luhn, " +
-      'for the type `imei`), required tick and pattern; a service without such a field takes it as sent. Leave it out for a server or ' +
+      'for the type `imei`; decision 076: 1 to 30 IMEIs, one per line, for `imei_bulk`, still one order; the other check types by ' +
+      'their own rule), required tick and pattern; a service without such a field takes it as sent. Leave it out for a server or ' +
       'remote service.',
   ),
 });

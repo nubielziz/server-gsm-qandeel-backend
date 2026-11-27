@@ -119,6 +119,15 @@ describe('masks', () => {
     expect(maskImei('353890110000004')).toBe('•••••••••••0004');
     expect(maskImei('123')).toBe('123');
   });
+
+  it('shows a list of IMEIs (an imei_bulk main input, decision 076) as its first IMEI masked and the count of the others', () => {
+    expect(maskImei('353890110000004\n352905112490861\n354607111076240')).toBe('•••••••••••0004 +2 more');
+    expect(maskImei('353890110000004\r\n352905112490861')).toBe('•••••••••••0004 +1 more');
+    // A one-item list reads like one IMEI.
+    expect(maskImei('353890110000004')).toBe(maskImei('353890110000004\n'));
+    // Thirty IMEIs stay short enough for a phone.
+    expect(maskImei(Array.from({ length: 30 }, () => '353890110000004').join('\n'))).toBe('•••••••••••0004 +29 more');
+  });
 });
 
 describe('isShopAddress (decision 048)', () => {

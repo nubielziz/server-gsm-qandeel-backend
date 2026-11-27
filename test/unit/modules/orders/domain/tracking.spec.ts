@@ -33,6 +33,9 @@ describe('maskInput', () => {
     expect(maskInput('353890110000004')).toBe('•••••••••••0004');
     expect(maskInput('sam_01')).toBe('••m_01');
     expect(maskInput(' 12345 ')).toBe('•2345');
+    // Decision 076: a list (one IMEI per line) shows its first item and how many more it holds.
+    expect(maskInput('353890110000004\n490154203237518\n356938035643809')).toBe('•••••••••••0004 +2 more');
+    expect(maskInput('353890110000004\n')).toBe('•••••••••••0004');
   });
 
   it('hides a short input completely and says nothing for an empty one', () => {

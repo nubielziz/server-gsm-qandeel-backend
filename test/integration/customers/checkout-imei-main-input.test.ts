@@ -3,16 +3,19 @@
 // one of type `imei` is checked as an IMEI (15 digits, Luhn) with every problem on `inputs.<key>`, an optional one may be left empty, a
 // text one takes letters (an ECID), and an IMEI service without fields takes `imei` as typed. The session and the paid order are exactly
 // those of an IMEI sent as `imei` (the encrypted main input, the blocklist match, `orders.imei`, the stored inputs). `imei` still works and
-// wins when both are sent. Real application, Postgres and Redis.
+// wins when both are sent. Decision 076: a main input of type `imei_bulk` is one checkout and one order for its list, and the blocklist
+// reads each line; the shop's service page answers every field type. Real application, Postgres and Redis.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s, type Database } from '@src/infra/db';
+import { SERVICE_FIELD_TYPES } from '@src/modules/catalog/db/schema';
 import { type TestApp, createTestApp } from '../../support/app';
 import { B2cGateway, type B2cWorld, b2cWorld, json, paidOrder } from '../../support/b2c';
 import { GatewayTestModule } from '../../support/billing';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { seedDefaultTemplates } from '../../support/notifications';
+import { MAX_FIELD_IMEIS, isValidImei } from '@src/modules/orders';
 import { IMEIS, orderRow } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { insertBlock } from '../../support/risk';
@@ -35,6 +38,15 @@ const ACCEPTED_TOO = IMEIS[1];
 const REFUSED = IMEIS[4];
 /** {@link ACCEPTED} with a wrong check digit. */
 const BAD_CHECK_DIGIT = '353890110000005';
+
+/** `count` distinct valid IMEIs (a 14-digit body and its Luhn check digit). */
+function distinctImeis(count: number): string[] {
+  return Array.from({ length: count }, (_, index) => {
+    const body = `35460711${String(index).padStart(6, '0')}`;
+    for (let digit = 0; digit <= 9; digit += 1) if (isValidImei(`${body}${digit}`)) return `${body}${digit}`;
+    throw new Error(`No check digit for ${body}.`);
+  });
+}
 
 beforeAll(async () => {
   ({ db } = await testDb());
@@ -242,5 +254,114 @@ describe('POST /store/v1/checkout-sessions: an IMEI service whose main input is 
     expect(json(typed).code).toBe('ACCOUNT_SUSPENDED');
     await expectNothingOpened();
     expect((await open({ inputs: { serial: 'F2LXK0ABCD12', device: ACCEPTED_TOO } })).statusCode).toBe(201);
+  });
+});
+
+describe('POST /store/v1/checkout-sessions: an IMEI service whose main input is of type imei_bulk (decision 076)', () => {
+  const list = `${ACCEPTED_TOO}\n${IMEIS[2]}`;
+
+  beforeEach(async () => {
+    await db
+      .update(s.serviceFields)
+      .set({ fieldType: 'imei_bulk', supplierKey: 'IMEIs', label: 'IMEIs' })
+      .where(eq(s.serviceFields.serviceId, world.icloud.serviceId));
+  });
+
+  it('opens one checkout for the list and pays one order whose main input is the list, one IMEI per line', async () => {
+    const opened = await open({ inputs: { serial: `${ACCEPTED_TOO}, 3592-5410 1036747` } });
+    expect(opened.statusCode).toBe(201);
+    // The masked line is short: the first IMEI with all but its last four digits hidden, then the count of the others.
+    expect(json(opened).imei).toBe(`${'•'.repeat(11)}${ACCEPTED_TOO.slice(-4)} +1 more`);
+    const [session] = await db.select().from(s.checkoutSessions);
+    expect(session!.inputs).toEqual({ serial: `${ACCEPTED_TOO}\n${IMEIS[3]}` });
+    const paid = await paidOrder(t, clock, world, { email: 'ann@mail.example', imei: null, inputs: { serial: list } });
+    expect(await orderRow(db, paid.orderId)).toMatchObject({ imei: list, quantity: 1, inputs: { serial: list } });
+    // A one-item list reads like one IMEI.
+    expect(json(await open({ inputs: { serial: ACCEPTED_TOO } })).imei).toBe(
+      `${'•'.repeat(11)}${ACCEPTED_TOO.slice(-4)}`,
+    );
+  });
+
+  it('refuses a blocklisted IMEI on any line of the main input or of a second imei_bulk field', async () => {
+    await insertBlock(t, db, 'imei', ACCEPTED);
+    const typed = await open({ inputs: { serial: `${ACCEPTED_TOO}\n3538 9011-0000004` } });
+    expect(typed.statusCode).toBe(403);
+    expect(json(typed).code).toBe('ACCOUNT_SUSPENDED');
+    await expectNothingOpened();
+    await db.insert(s.serviceFields).values({
+      serviceId: world.icloud.serviceId,
+      key: 'others',
+      label: 'Other IMEIs',
+      supplierKey: 'Others',
+      fieldType: 'imei_bulk',
+      sort: 2,
+    });
+    const second = await open({ inputs: { serial: ACCEPTED_TOO, others: `${IMEIS[2]}; ${ACCEPTED}` } });
+    expect(second.statusCode).toBe(403);
+    expect(json(second).code).toBe('ACCOUNT_SUSPENDED');
+    await expectNothingOpened();
+    expect((await open({ inputs: { serial: ACCEPTED_TOO, others: IMEIS[2] } })).statusCode).toBe(201);
+  });
+
+  it('refuses a bad line with INVALID_IMEI and a repeat with VALIDATION_FAILED, on inputs.<key>', async () => {
+    const bad = await open({ inputs: { serial: `${ACCEPTED_TOO}\n${BAD_CHECK_DIGIT}` } });
+    expect(bad.statusCode).toBe(422);
+    expect(json(bad).code).toBe('INVALID_IMEI');
+    expect(json(bad).errors).toEqual([
+      expect.objectContaining({
+        field: 'inputs.serial',
+        code: 'invalid_imei',
+        message: 'Line 2 is not a valid IMEI: each line must be 15 digits with a correct check digit.',
+      }),
+    ]);
+    const repeat = await open({ inputs: { serial: `${ACCEPTED_TOO},${ACCEPTED_TOO}` } });
+    expect(repeat.statusCode).toBe(422);
+    expect(json(repeat).code).toBe('VALIDATION_FAILED');
+    expect(json(repeat).errors).toEqual([expect.objectContaining({ field: 'inputs.serial', code: 'duplicate_imei' })]);
+    await expectNothingOpened();
+  });
+
+  it('takes 30 IMEIs typed with CRLF or ", " (longer than 500 characters as sent, 479 stored) and counts 40 before it measures them', async () => {
+    const thirty = distinctImeis(MAX_FIELD_IMEIS);
+    for (const typed of [thirty.join('\r\n'), thirty.join(', ')]) {
+      expect(typed.length).toBeGreaterThan(500);
+      const opened = await open({ inputs: { serial: typed } });
+      expect(opened.statusCode).toBe(201);
+      expect(json(opened).imei).toBe(`${'•'.repeat(11)}${thirty[0]!.slice(-4)} +29 more`);
+    }
+    const sessions = await db.select().from(s.checkoutSessions);
+    expect(sessions.map((session) => session.inputs)).toEqual([
+      { serial: thirty.join('\n') },
+      { serial: thirty.join('\n') },
+    ]);
+    const forty = await open({ inputs: { serial: distinctImeis(40).join('\n') } });
+    expect(forty.statusCode).toBe(422);
+    expect(json(forty).code).toBe('VALIDATION_FAILED');
+    expect(json(forty).errors).toEqual([
+      { field: 'inputs.serial', code: 'too_many_imeis', message: 'Enter at most 30 IMEIs.' },
+    ]);
+    // The request takes 2000 characters as sent; the stored form of every type still meets the 500-character cap.
+    expect((await open({ inputs: { serial: '3'.repeat(2001) } })).statusCode).toBe(422);
+    expect(await db.select().from(s.checkoutSessions)).toHaveLength(2);
+  });
+});
+
+describe('GET /store/v1/services/:slug with the ten new types (decision 076)', () => {
+  it('answers a field of every type of SERVICE_FIELD_TYPES', async () => {
+    await db.delete(s.serviceFields).where(eq(s.serviceFields.serviceId, world.icloud.serviceId));
+    await db.insert(s.serviceFields).values(
+      SERVICE_FIELD_TYPES.map((fieldType, sort) => ({
+        serviceId: world.icloud.serviceId,
+        key: fieldType,
+        label: fieldType,
+        supplierKey: fieldType,
+        fieldType,
+        options: fieldType === 'select' ? ['one'] : [],
+        sort,
+      })),
+    );
+    const page = await t.app.inject({ method: 'GET', url: `/store/v1/services/${world.icloud.slug}` });
+    expect(page.statusCode).toBe(200);
+    expect(json(page).fields.map((field: { fieldType: string }) => field.fieldType)).toEqual([...SERVICE_FIELD_TYPES]);
   });
 });

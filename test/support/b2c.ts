@@ -565,12 +565,15 @@ export async function paidOrder(
     imei?: string | null;
     /** Extra request headers of the checkout open call (the visitor-country header of a proxy). */
     openHeaders?: Record<string, string>;
+    /** Runs after the checkout is opened and before it is paid (a blocklist entry added in between). */
+    afterOpen?: () => Promise<unknown>;
   } = {},
 ): Promise<PaidOrder> {
   const { token } = await openCheckout(t, world, {
     ...options,
     ...(options.openHeaders === undefined ? {} : { headers: options.openHeaders }),
   });
+  await options.afterOpen?.();
   const started = await pay(t, token, undefined);
   if (started.statusCode !== 201) throw new Error(`pay answered ${started.statusCode}: ${started.body}`);
   const { payment } = json(started);

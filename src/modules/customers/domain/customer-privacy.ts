@@ -131,17 +131,23 @@ export function guestRowOpenText(open: { readonly checkouts: number; readonly pa
 /**
  * Cuts the IMEI-looking values of a form's inputs to the TAC and a mask.
  *
- * Why: B50: anonymization keeps the order and the checkout but not the device number; a value that is a 15-digit IMEI is masked, any
- * other value is left as it is (the service cannot tell which free text is personal).
+ * Why: B50: anonymization keeps the order and the checkout but not the device number; a value that is a 15-digit IMEI is masked, and so
+ * is a list of them, one per line (decision 076: the stored form of a field of type `imei_bulk`), line by line; any other value is left
+ * as it is (the service cannot tell which free text is personal).
  *
  * @param inputs the stored custom field values
  * @returns a copy with the IMEI-looking strings masked
  */
 export function scrubInputs(inputs: Readonly<Record<string, unknown>>): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(inputs).map(([key, value]) => [
-      key,
-      typeof value === 'string' && /^\d{15}$/.test(value.replace(/[\s-]/g, '')) ? erasedMainInput(value) : value,
-    ]),
+    Object.entries(inputs).map(([key, value]) => [key, typeof value === 'string' ? scrubbedValue(value) : value]),
   );
+}
+
+/** A value whose every line is a 15-digit IMEI, each line cut to its TAC and a mask; any other value as it is. */
+function scrubbedValue(value: string): string | null {
+  const lines = value.split('\n');
+  const imeiLike = (line: string) => /^\d{15}$/.test(line.replace(/[\s-]/g, ''));
+  if (!lines.every(imeiLike)) return value;
+  return lines.length === 1 ? erasedMainInput(value) : lines.map((line) => erasedMainInput(line)).join('\n');
 }

@@ -1,9 +1,16 @@
 // Unit tests of the placement rules: IMEI format and Luhn, quantity, custom field values and the order total.
 import { describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
+import { SERVICE_FIELD_TYPES } from '@src/modules/catalog/db/schema';
 import {
+  FIELD_TYPE_RULES,
   INVALID_IMEI_MESSAGE,
+  MAX_FIELD_IMEIS,
+  MAX_INPUT_LENGTH,
+  MAX_RAW_INPUT_LENGTH,
   type PlacementField,
+  type PlacementFieldType,
+  fieldImeisOf,
   fieldValueOf,
   inputProblems,
   isValidImei,
@@ -173,9 +180,347 @@ describe('a field of type imei (decision 073)', () => {
   });
 });
 
+/** A valid IMEI made of a 14-digit body and its Luhn check digit. */
+function withCheckDigit(body: string): string {
+  for (let digit = 0; digit <= 9; digit += 1) {
+    if (isValidImei(`${body}${digit}`)) return `${body}${digit}`;
+  }
+  throw new Error(`No check digit for ${body}.`);
+}
+
+/** `count` distinct valid IMEIs. */
+const distinctImeis = (count: number): string[] =>
+  Array.from({ length: count }, (_, index) => withCheckDigit(`35290511${String(index).padStart(6, '0')}`));
+
+/** One row of a type's table: the value as typed, its stored form, and the code of its problem (`undefined`: valid). */
+type Sample = readonly [typed: string, stored: string, code: string | undefined];
+
+/** The samples of each check type of decision 076 (and `imei`, unchanged): valid and invalid values and their stored forms. */
+const SAMPLES: Readonly<Partial<Record<PlacementFieldType, readonly Sample[]>>> = {
+  imei: [
+    [' 3529 0511-2490 861 ', '352905112490861', undefined],
+    ['352905112490860', '352905112490860', 'invalid_imei'],
+  ],
+  imei_bulk: [
+    ['352905112490861', '352905112490861', undefined],
+    [
+      ' 3529 0511-2490 861 , 354607111076240;490154203237518\r\n867412052327342\n',
+      '352905112490861\n354607111076240\n490154203237518\n867412052327342',
+      undefined,
+    ],
+    ['352905112490861\n\n\n;;354607111076240', '352905112490861\n354607111076240', undefined],
+    ['352905112490861\n352905112490860', '352905112490861\n352905112490860', 'invalid_imei'],
+    ['352905112490861,352905112490861', '352905112490861\n352905112490861', 'duplicate_imei'],
+    [',;,', '', 'invalid_imei'],
+  ],
+  imeisv: [
+    [' 3529-0511 2490 8612 ', '3529051124908612', undefined],
+    ['352905112490861', '352905112490861', 'invalid_imeisv'],
+    ['35290511249086123', '35290511249086123', 'invalid_imeisv'],
+    ['352905112490861A', '352905112490861A', 'invalid_imeisv'],
+  ],
+  serial: [
+    [' f2lx k0ab cd12 ', 'F2LXK0ABCD12', undefined],
+    ['abcde', 'ABCDE', undefined],
+    ['A'.repeat(30), 'A'.repeat(30), undefined],
+    ['ABCD', 'ABCD', 'invalid_serial'],
+    ['A'.repeat(31), 'A'.repeat(31), 'invalid_serial'],
+    ['F2L-XK0AB', 'F2L-XK0AB', 'invalid_serial'],
+  ],
+  iccid: [
+    ['8944 1234-5678 9012 34', '894412345678901234', undefined],
+    ['89441234567890123456', '89441234567890123456', undefined],
+    ['8944123456789012345678', '8944123456789012345678', undefined],
+    ['89441234567890123', '89441234567890123', 'invalid_iccid'],
+    ['89441234567890123456789', '89441234567890123456789', 'invalid_iccid'],
+    ['99441234567890123456', '99441234567890123456', 'invalid_iccid'],
+  ],
+  eid: [
+    ['8904 9032-0000 0000 0000 0000 0000 0001', '89049032000000000000000000000001', undefined],
+    ['8904903200000000000000000000000', '8904903200000000000000000000000', 'invalid_eid'],
+    ['8904903200000000000000000000000A', '8904903200000000000000000000000A', 'invalid_eid'],
+  ],
+  meid: [
+    ['a0 0000-1234 5678', 'A0000012345678', undefined],
+    ['a00000123456789', 'A00000123456789', undefined],
+    ['270113177609606400', '270113177609606400', undefined],
+    ['A000001234567', 'A000001234567', 'invalid_meid'],
+    ['A000001234567890', 'A000001234567890', 'invalid_meid'],
+    ['G0000012345678', 'G0000012345678', 'invalid_meid'],
+  ],
+  ecid: [
+    [' 0x 1a2b 3c4d 5e6f ', '0x1A2B3C4D5E6F', undefined],
+    ['0X1a2b3c4d', '0x1A2B3C4D', undefined],
+    ['1a2b3c4d5e6f7a8b', '1A2B3C4D5E6F7A8B', undefined],
+    ['12345678901234567890', '12345678901234567890', undefined],
+    ['0x1a2b3c4', '0x1A2B3C4', 'invalid_ecid'],
+    ['1A2B3C4D5E6F7A8B9', '1A2B3C4D5E6F7A8B9', 'invalid_ecid'],
+    ['123456789012345678901', '123456789012345678901', 'invalid_ecid'],
+    ['1a2b-3c4d', '1A2B-3C4D', 'invalid_ecid'],
+  ],
+  mac_address: [
+    ['aabbccddeeff', 'AA:BB:CC:DD:EE:FF', undefined],
+    [' aa:bb:cc:dd:ee:0f ', 'AA:BB:CC:DD:EE:0F', undefined],
+    ['AA-BB-CC-DD-EE-FF', 'AA:BB:CC:DD:EE:FF', undefined],
+    ['aabb.ccdd.eeff', 'AA:BB:CC:DD:EE:FF', undefined],
+    ['AA:BB:CC:DD:EE', 'AA:BB:CC:DD:EE', 'invalid_mac_address'],
+    ['AA:BB-CC:DD:EE:FF', 'AA:BB-CC:DD:EE:FF', 'invalid_mac_address'],
+    ['GG:BB:CC:DD:EE:FF', 'GG:BB:CC:DD:EE:FF', 'invalid_mac_address'],
+    ['AABB:CCDD:EEFF', 'AABB:CCDD:EEFF', 'invalid_mac_address'],
+  ],
+  mi_lock_code: [
+    [' Ab12-cd34 ', 'Ab12-cd34', undefined],
+    ['abc123', 'abc123', undefined],
+    ['a'.repeat(64), 'a'.repeat(64), undefined],
+    ['abc12', 'abc12', 'invalid_mi_lock_code'],
+    ['a'.repeat(65), 'a'.repeat(65), 'invalid_mi_lock_code'],
+    ['abc 123', 'abc 123', 'invalid_mi_lock_code'],
+    ['abc_123', 'abc_123', 'invalid_mi_lock_code'],
+  ],
+  box_sn: [
+    [' bx-12 34 ', 'BX-1234', undefined],
+    ['abcd', 'ABCD', undefined],
+    ['A'.repeat(32), 'A'.repeat(32), undefined],
+    ['ABC', 'ABC', 'invalid_box_sn'],
+    ['A'.repeat(33), 'A'.repeat(33), 'invalid_box_sn'],
+    ['AB_12', 'AB_12', 'invalid_box_sn'],
+  ],
+};
+
+/** The message of each fixed code of decision 076. */
+const MESSAGES: Readonly<Record<string, string>> = {
+  invalid_imeisv: 'This IMEISV is not valid: it must be 16 digits.',
+  invalid_serial: 'This serial number is not valid: 5 to 30 letters and digits.',
+  invalid_iccid: 'This ICCID is not valid: 18 to 22 digits, starting with 89.',
+  invalid_eid: 'This EID is not valid: it must be 32 digits.',
+  invalid_meid: 'This MEID is not valid: 14 hexadecimal characters (0-9, A-F), or 18 digits.',
+  invalid_ecid: 'This ECID is not valid: 8 to 16 hexadecimal characters, or up to 20 digits.',
+  invalid_mac_address: 'This MAC address is not valid: 12 hexadecimal characters, like AA:BB:CC:DD:EE:FF.',
+  invalid_mi_lock_code: 'This Mi lock code is not valid: 6 to 64 letters, digits and dashes.',
+  invalid_box_sn: 'This box serial number is not valid: 4 to 32 letters, digits and dashes.',
+};
+
+describe('the field type table (decision 076)', () => {
+  const typed = (fieldType: PlacementFieldType, over: Partial<PlacementField> = {}): PlacementField => ({
+    id: 1,
+    key: 'value',
+    name: 'Value',
+    label: 'Value',
+    fieldType,
+    options: [],
+    required: true,
+    regex: '',
+    isMainInput: false,
+    sort: 0,
+    ...over,
+  });
+
+  it('has one row for every value of SERVICE_FIELD_TYPES, in its order, and nothing else', () => {
+    expect(Object.keys(FIELD_TYPE_RULES)).toEqual([...SERVICE_FIELD_TYPES]);
+    expect(SERVICE_FIELD_TYPES).toEqual([
+      'text',
+      'number',
+      'select',
+      'textarea',
+      'imei',
+      'imei_bulk',
+      'imeisv',
+      'serial',
+      'iccid',
+      'eid',
+      'meid',
+      'ecid',
+      'mac_address',
+      'mi_lock_code',
+      'box_sn',
+    ]);
+  });
+
+  for (const [fieldType, samples] of Object.entries(SAMPLES) as Array<[PlacementFieldType, readonly Sample[]]>) {
+    describe(fieldType, () => {
+      it.each(samples.map((sample) => [JSON.stringify(sample[0]), ...sample] as const))(
+        'reads %s into its stored form and judges it',
+        (_name, value, stored, code) => {
+          expect(fieldValueOf({ fieldType }, value)).toBe(stored);
+          const problems = inputProblems([typed(fieldType)], { value });
+          expect(problems.map((problem) => problem.code)).toEqual(code === undefined ? [] : [code]);
+          expect(problems.every((problem) => problem.field === 'inputs.value')).toBe(true);
+          if (code !== undefined && MESSAGES[code] !== undefined) expect(problems[0]?.message).toBe(MESSAGES[code]);
+        },
+      );
+    });
+  }
+
+  it('keeps Required, the 500-character cap and the pattern, which judges the stored form', () => {
+    expect(inputProblems([typed('serial')], { value: '  ' }).map((p) => p.code)).toEqual(['required']);
+    expect(inputProblems([typed('serial', { required: false })], {})).toEqual([]);
+    expect(inputProblems([typed('mi_lock_code')], { value: 'a'.repeat(501) }).map((p) => p.code)).toEqual(['too_long']);
+    const apple = typed('serial', { regex: '^F2[A-Z0-9]+$' });
+    expect(inputProblems([apple], { value: ' f2lx k0ab cd12 ' })).toEqual([]);
+    expect(inputProblems([apple], { value: 'C02XK0ABCD12' }).map((p) => p.code)).toEqual(['invalid_format']);
+    const mac = typed('mac_address', { regex: '^AA:BB:' });
+    expect(inputProblems([mac], { value: 'aabb.ccdd.eeff' })).toEqual([]);
+    // A value its type refuses is reported once, for its type: the pattern is not run on it.
+    expect(inputProblems([apple], { value: 'abc' }).map((p) => p.code)).toEqual(['invalid_serial']);
+  });
+
+  it('stores the read form of every checked type and leaves text, number, select and textarea as sent', () => {
+    const fields = (['text', 'textarea', 'imei_bulk', 'serial', 'mac_address', 'mi_lock_code', 'ecid'] as const).map(
+      (fieldType) => typed(fieldType, { key: fieldType }),
+    );
+    expect(
+      normalizedInputs(fields, {
+        text: ' a-b ',
+        textarea: ' x\ny ',
+        imei_bulk: '352905112490861, 354607111076240',
+        serial: ' f2lx ',
+        mac_address: 'aabbccddeeff',
+        mi_lock_code: ' Ab-12cd ',
+        ecid: '0X1a2b3c4d',
+        gone: ' kept ',
+      }),
+    ).toEqual({
+      text: ' a-b ',
+      textarea: ' x\ny ',
+      imei_bulk: '352905112490861\n354607111076240',
+      serial: 'F2LX',
+      mac_address: 'AA:BB:CC:DD:EE:FF',
+      mi_lock_code: 'Ab-12cd',
+      ecid: '0x1A2B3C4D',
+      gone: ' kept ',
+    });
+  });
+});
+
+describe('a field of type imei_bulk (decision 076): one order, one list', () => {
+  const bulk: PlacementField = {
+    id: 1,
+    key: 'imeis',
+    name: 'IMEIs',
+    label: 'IMEIs',
+    fieldType: 'imei_bulk',
+    options: [],
+    required: true,
+    regex: '',
+    isMainInput: true,
+    sort: 0,
+  };
+  const problemsOf = (value: string) => inputProblems([bulk], { imeis: value });
+
+  it(`takes 1 to ${MAX_FIELD_IMEIS} IMEIs (30 joined are under the 500-character cap) and refuses one more`, () => {
+    const thirty = distinctImeis(MAX_FIELD_IMEIS);
+    expect(fieldValueOf(bulk, thirty.join('\n')).length).toBe(479);
+    expect(problemsOf(thirty.join('\n'))).toEqual([]);
+    expect(problemsOf([...thirty, withCheckDigit('35460711107624')].join(','))).toEqual([
+      { field: 'inputs.imeis', code: 'too_many_imeis', message: 'Enter at most 30 IMEIs.' },
+    ]);
+  });
+
+  it('reports only the first problem, counting the kept lines from 1', () => {
+    expect(problemsOf('352905112490861\n\n,352905112490860\n352905112490861')).toEqual([
+      {
+        field: 'inputs.imeis',
+        code: 'invalid_imei',
+        message: 'Line 2 is not a valid IMEI: each line must be 15 digits with a correct check digit.',
+      },
+    ]);
+    expect(problemsOf('354607111076240;352905112490861;354607111076240;35290')).toEqual([
+      { field: 'inputs.imeis', code: 'duplicate_imei', message: 'Line 3 repeats an IMEI of this list.' },
+    ]);
+    expect(problemsOf('abc\n352905112490861\n352905112490861').map((p) => p.message)).toEqual([
+      'Line 1 is not a valid IMEI: each line must be 15 digits with a correct check digit.',
+    ]);
+  });
+
+  it('reports on the path the caller names (a list sent as imei)', () => {
+    expect(inputProblems([bulk], { imeis: '1' }, { imeis: 'imei' })[0]?.field).toBe('imei');
+  });
+
+  it('counts a list before it measures it: 40 IMEIs are too_many_imeis, not too_long', () => {
+    const forty = distinctImeis(40).join('\n');
+    expect(forty.length).toBeGreaterThan(MAX_INPUT_LENGTH);
+    expect(problemsOf(forty)).toEqual([
+      { field: 'inputs.imeis', code: 'too_many_imeis', message: 'Enter at most 30 IMEIs.' },
+    ]);
+    // Counted in the stored form: the empty items of what was typed are not items.
+    expect(problemsOf(`${distinctImeis(32).join(',\r\n')},,`).map((p) => p.code)).toEqual(['too_many_imeis']);
+    expect(FIELD_TYPE_RULES.imei_bulk.countProblem?.(distinctImeis(30).join('\n'))).toBeUndefined();
+  });
+
+  it('still holds the stored form of a list of 30 items or fewer to the 500-character cap', () => {
+    const long = ['1'.repeat(200), '2'.repeat(200), '3'.repeat(200)].join('\n');
+    expect(problemsOf(long)).toEqual([{ field: 'inputs.imeis', code: 'too_long', message: 'IMEIs is too long.' }]);
+  });
+
+  it('takes 30 valid IMEIs however they are typed: CRLF, ", " or spaces and dashes inside each one are longer than 500 as typed, 479 stored', () => {
+    const thirty = distinctImeis(MAX_FIELD_IMEIS);
+    const dashed = thirty.map(
+      (imei) => `${imei.slice(0, 2)}-${imei.slice(2, 8)} ${imei.slice(8, 14)}-${imei.slice(14)}`,
+    );
+    for (const typedList of [thirty.join('\r\n'), thirty.join(', '), dashed.join('\n'), dashed.join(', ')]) {
+      expect(typedList.length).toBeGreaterThan(MAX_INPUT_LENGTH);
+      expect(typedList.length).toBeLessThanOrEqual(MAX_RAW_INPUT_LENGTH);
+      expect(problemsOf(typedList)).toEqual([]);
+      expect(fieldValueOf(bulk, typedList)).toBe(thirty.join('\n'));
+      expect(fieldValueOf(bulk, typedList).length).toBe(479);
+    }
+  });
+});
+
+describe('the cap of the stored form (decision 076)', () => {
+  const plain = (fieldType: PlacementFieldType): PlacementField => ({
+    id: 1,
+    key: 'value',
+    name: 'Value',
+    label: 'Value',
+    fieldType,
+    options: [],
+    required: true,
+    regex: '',
+    isMainInput: false,
+    sort: 0,
+  });
+
+  it('comes first for every type but imei_bulk, the only one with a count', () => {
+    expect(Object.entries(FIELD_TYPE_RULES).flatMap(([type, rule]) => (rule.countProblem ? [type] : []))).toEqual([
+      'imei_bulk',
+    ]);
+    expect(inputProblems([plain('text')], { value: 'x'.repeat(600) }).map((p) => p.code)).toEqual(['too_long']);
+    expect(inputProblems([plain('textarea')], { value: 'x'.repeat(MAX_INPUT_LENGTH + 1) }).map((p) => p.code)).toEqual([
+      'too_long',
+    ]);
+    // Measured trimmed, as stored: white space typed around a value is not part of it.
+    expect(inputProblems([plain('text')], { value: ` ${'x'.repeat(MAX_INPUT_LENGTH)}\n` })).toEqual([]);
+    expect(inputProblems([plain('serial')], { value: 'A'.repeat(600) }).map((p) => p.code)).toEqual(['too_long']);
+  });
+});
+
+describe('fieldImeisOf', () => {
+  it('reads one IMEI of an imei field, each line of an imei_bulk field and none of another type', () => {
+    expect(fieldImeisOf({ fieldType: 'imei' }, '3529 0511 2490 861')).toEqual(['352905112490861']);
+    expect(fieldImeisOf({ fieldType: 'imei_bulk' }, '352905112490861; 3546-0711-1076-240')).toEqual([
+      '352905112490861',
+      '354607111076240',
+    ]);
+    expect(fieldImeisOf({ fieldType: 'imei_bulk' }, '')).toEqual([]);
+    for (const fieldType of ['text', 'imeisv', 'serial', 'meid'] as const) {
+      expect(fieldImeisOf({ fieldType }, '352905112490861')).toEqual([]);
+    }
+  });
+});
+
 describe('totalOf', () => {
   it('multiplies the unit price by the quantity exactly', () => {
     expect(totalOf(Money.of('17.28'), 3).toWire()).toBe('51.8400');
     expect(totalOf(Money.of('0.0900'), 100).toWire()).toBe('9.0000');
+  });
+});
+
+describe('normalizedInputs: the stored cap', () => {
+  it('stores a padded text value trimmed once it is longer than the stored cap, and a shorter one as sent', () => {
+    const fields = [{ key: 'note', fieldType: 'text' as const }];
+    const long = `${' '.repeat(700)}${'a'.repeat(500)}${' '.repeat(700)}`;
+    expect(normalizedInputs(fields, { note: long }).note).toBe('a'.repeat(500));
+    expect(normalizedInputs(fields, { note: ' kept as sent ' }).note).toBe(' kept as sent ');
   });
 });

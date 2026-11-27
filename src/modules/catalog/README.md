@@ -71,8 +71,14 @@ feature 6.
   label or flag that the row leaves out keeps the saved value, an empty label stores the Name (`plannedFieldRows`); on an IMEI service a list
   that leaves no field flagged flags the first field named IMEI in any letter case (`imeiNamedFieldIndex`), the import's rule; any other
   list is accepted for an IMEI service (decision 073: renamed, another type, optional, no main input, no fields at all). The field types
-  are `text`, `number`, `select`, `textarea` and `imei` (`SERVICE_FIELD_TYPES`, check `service_fields_field_type_check`; decision 073: one
-  IMEI, read as digits, 15 with a valid Luhn digit, on any service; placement judges it, `INVALID_IMEI`). The audit
+  are `text`, `number`, `select`, `textarea`, `imei`, `imei_bulk`, `imeisv`, `serial`, `iccid`, `eid`, `meid`, `ecid`, `mac_address`,
+  `mi_lock_code` and `box_sn`, in that order (`SERVICE_FIELD_TYPES`, a wire fact the console and the shop copy; check
+  `service_fields_field_type_check`, migration `0073_more_field_types`; decision 073: `imei` is one IMEI, read as digits, 15 with a valid
+  Luhn digit, on any service; placement judges it, `INVALID_IMEI`; decision 076: ten check types, each read and judged by the orders
+  module's `FIELD_TYPE_RULES`; `imei_bulk` is a list of 1 to 30 IMEIs in one field of one order, at one price). The read contracts of the
+  admin and portal routes derive from the list (`FIELD_TYPE_DESCRIPTION`, `contracts/shared.ts`, says what each type checks), and so does
+  the shop's (`SERVICE_FIELD_TYPES` is exported). Our Dhru list names an `imei_bulk` field `textarea` and every other new type `text`
+  (`DHRU_FIELD_TYPES`, `merchant-api-catalog.ts`). The supplier import never makes the new types. The audit
   row names each field before and after by key, Name, label, type, pattern, `required` and the flag (`auditedField`; decision 073: turning
   an `imei` field into `text` removes the IMEI check, so it shows).
 - **The default field of a new IMEI service** (decision 073): `POST /admin/services` of type `imei` writes, in the same transaction,

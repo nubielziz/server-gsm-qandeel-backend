@@ -39,7 +39,7 @@ export interface StoredImeis {
   readonly sessionCiphertexts: string[];
   /**
    * The custom field values of the account's shop orders and checkout sessions, with their service: the caller keeps those of the fields
-   * of type `imei` (decision 073).
+   * of type `imei` (decision 073) and each line of those of type `imei_bulk` (decision 076).
    */
   readonly fieldValues: ReadonlyArray<{
     readonly serviceId: number;

@@ -6,6 +6,7 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import { EncryptionService, TokenService } from '../../../infra/crypto';
+import { StorefrontServices } from '../../catalog';
 import { AccountDirectory } from '../../identity';
 import {
   type CaptureOutcome,
@@ -26,6 +27,7 @@ import {
 import { CustomerOrderPlacement } from '../../orders';
 import { RiskDecisionsService, RiskScreening, holdReason } from '../../risk';
 import { CHECKOUT_IMEI_AAD } from '../domain/checkout';
+import { mainInputImeisOf } from '../domain/checkout-imeis';
 import { findCheckoutSession, lockCheckoutSession, markSessionPaid } from '../infra/checkout.repository';
 
 /** Reads the string values of a session's stored order inputs. */
@@ -54,7 +56,8 @@ function inputsOf(raw: Record<string, unknown> | null): Record<string, string> {
  * refunded at once when the gateway can refund, else it waits in the risk queue. Every captured
  * payment is screened by the risk rules before the order is placed (RESOLUTIONS orders-suppliers-11; decision 050: the screening gets the
  * card's country and funding from the gateway's record, the visitor's country kept on the checkout, and whether the account itself opened
- * the checkout): `allow` places the order as always;
+ * the checkout; decision 076: every IMEI of a main input that is a list, its field of type `imei_bulk`, so an IMEI blocklisted after the
+ * checkout opened is caught here as a single one is): `allow` places the order as always;
  * `review` places it `held` (no dispatch, the hold sentence on the timeline) for the Risk page; `block` places it `held` and refunds it at once
  * as the system, so the customer gets the money back and nothing is sent to a supplier. The buyer's `order.received` email (and
  * `order.completed` when stock delivered the order at once) is written in this transaction through the notification delivery (12a), except for
@@ -79,6 +82,7 @@ export class CheckoutCaptureService implements StorefrontCapture, OnModuleInit {
     private readonly accounts: AccountDirectory,
     private readonly encryption: EncryptionService,
     private readonly tokens: TokenService,
+    private readonly services: StorefrontServices,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -162,6 +166,8 @@ export class CheckoutCaptureService implements StorefrontCapture, OnModuleInit {
     const late = minutesLate(session.expiresAt, check?.paidAt ?? event.occurredAt ?? payment.createdAt);
     const facts = paymentFacts(payment.methodType, event.details);
     const imei = session.imeiEnc === null ? undefined : this.encryption.decrypt(session.imeiEnc, CHECKOUT_IMEI_AAD);
+    // Decision 076: a main input that is a list (its field of type `imei_bulk`) is asked of the blocklist IMEI by IMEI, as the open did.
+    const imeis = imei === undefined ? [] : mainInputImeisOf(imei, await this.services.fields(tx, session.serviceId));
     // The rules judge the payment before the order exists; the verdict decides how the order starts. The card fingerprint comes from the
     // event: the payment row only gets it in `recordCapture`.
     const screening = await this.risk.assess(tx, {
@@ -171,6 +177,7 @@ export class CheckoutCaptureService implements StorefrontCapture, OnModuleInit {
       amountUsd: Money.of(session.netAmount).add(Money.of(session.taxAmount)).toWire(),
       paymentMethod: facts.method,
       imei: imei ?? null,
+      imeis,
       cardFingerprint: event.details?.fingerprint ?? payment.cardFingerprint,
       cardDetailsMissing: event.details?.unavailable === true,
       country: session.taxCountry,

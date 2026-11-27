@@ -38,7 +38,10 @@ export {
 export type { CancelBlocked, CancelWindowFacts, VerifyBlocked } from './domain/merchant-actions';
 export {
   INVALID_IMEI_MESSAGE,
+  MAX_FIELD_IMEIS,
   MAX_INPUT_LENGTH,
+  MAX_RAW_INPUT_LENGTH,
+  fieldImeisOf,
   inputProblems,
   isValidImei,
   normalizeImei,

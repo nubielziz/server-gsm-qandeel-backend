@@ -44,6 +44,13 @@ describe('scrubInputs', () => {
       other: '12345',
     });
   });
+
+  it('masks a list of IMEIs line by line (the stored form of an imei_bulk field, decision 076) and keeps a mixed text', () => {
+    expect(scrubInputs({ list: '353890113898412\n490154203237518', mixed: '353890113898412\nhello' })).toEqual({
+      list: '35389011•••••••\n49015420•••••••',
+      mixed: '353890113898412\nhello',
+    });
+  });
 });
 
 describe('coversGuestRow', () => {

@@ -173,11 +173,18 @@ export function maskEmail(email: string): string {
 }
 
 /**
- * Hides an IMEI except its last four digits.
+ * Hides the main input of a checkout (usually an IMEI) except its last four characters; a list shows only its first item so.
  *
- * @param imei the 15 digits
- * @returns eleven bullets and the last four digits
+ * Why: the session link can be forwarded or shown on a shared screen; the buyer recognises the phone by the end of its IMEI. Decision 076:
+ * a main input of type `imei_bulk` is stored one IMEI per line (up to 30), so its line is the mask of its FIRST IMEI followed by
+ * ` +N more` for the other items, short enough for a phone, instead of hundreds of bullets; a one-item list reads like one IMEI.
+ *
+ * @param imei the main input as stored (an IMEI as 15 digits, a list with line breaks)
+ * @returns bullets and the last four characters of the first item (eleven and four for an IMEI), then ` +N more` when there are N other
+ *   items
  */
 export function maskImei(imei: string): string {
-  return `${'•'.repeat(Math.max(0, imei.length - 4))}${imei.slice(-4)}`;
+  const [first = '', ...others] = imei.split(/\r?\n/).filter((item) => item.trim() !== '');
+  const masked = `${'•'.repeat(Math.max(0, first.length - 4))}${first.slice(-4)}`;
+  return others.length === 0 ? masked : `${masked} +${others.length} more`;
 }

@@ -125,6 +125,7 @@ export {
   RETAIL_ROUNDINGS,
   RETAIL_RULE_SCOPES,
   SERVICE_DUPLICATE_RULES,
+  SERVICE_FIELD_TYPES,
   SERVICE_PRICE_MODES,
   SERVICE_TYPES,
 } from './db/schema';
@@ -135,6 +136,7 @@ export type {
   RetailRounding,
   RetailRuleScope,
   ServiceDuplicateRule,
+  ServiceFieldType,
   ServicePriceMode,
   ServiceType,
 } from './db/schema';

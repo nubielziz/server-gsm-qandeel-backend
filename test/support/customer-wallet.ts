@@ -125,14 +125,22 @@ export async function customerWalletRow(db: Database, accountId: number) {
  * @param world the storefront
  * @param email the account's email
  * @param options `consent: false` leaves the consents out; `currency`, `serviceId` change the checkout; `headers` are added to the open call (the
- *   visitor-country header of a proxy)
+ *   visitor-country header of a proxy); `inputs` are the order field values, and `imei` the IMEI sent as `imei` (default `APPLE_IMEI`;
+ *   `null` leaves it out, as the fields-only form does)
  * @returns the checkout token and the session as opened
  */
 export async function openSignedInCheckout(
   client: StoreClient,
   world: StorefrontWorld,
   email: string,
-  options: { consent?: boolean; currency?: string; serviceId?: number; headers?: Record<string, string> } = {},
+  options: {
+    consent?: boolean;
+    currency?: string;
+    serviceId?: number;
+    headers?: Record<string, string>;
+    inputs?: Record<string, string>;
+    imei?: string | null;
+  } = {},
 ): Promise<{ token: string; session: Record<string, unknown> }> {
   const res = await client.call(
     'POST',
@@ -142,7 +150,8 @@ export async function openSignedInCheckout(
       email,
       country: 'GB',
       currency: options.currency ?? 'GBP',
-      imei: APPLE_IMEI,
+      ...(options.imei === null ? {} : { imei: options.imei ?? APPLE_IMEI }),
+      ...(options.inputs === undefined ? {} : { inputs: options.inputs }),
     },
     { headers: { 'user-agent': 'Mozilla/5.0 (test)', ...options.headers } },
   );

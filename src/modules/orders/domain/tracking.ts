@@ -26,13 +26,19 @@ export const TRACKING_EVENT_TYPES = Object.keys(TRACKING_EVENT_WORDS) as Array<k
  * Hides the main input of an order except its last four characters.
  *
  * Why: the tracking link can be forwarded or shown on a shared screen; the buyer recognises their own phone by the end of the IMEI.
+ * Decision 076: a main input of type `imei_bulk` is stored one IMEI per line (up to 30), so its line is the mask of its first item
+ * followed by ` +N more` for the other items (the same reading as the checkout's `maskImei`), not hundreds of bullets.
  *
- * @param input the order's main input (an IMEI, a username, a serial), `null` or empty when it has none
- * @returns the bullets and the last four characters (all bullets when four or fewer), `null` when there is no input
+ * @param input the order's main input (an IMEI, a username, a serial, a list with line breaks), `null` or empty when it has none
+ * @returns the bullets and the last four characters of the first item (all bullets when four or fewer), then ` +N more` when there are N
+ *   other items; `null` when there is no input
  */
 export function maskInput(input: string | null): string | null {
-  const text = input?.trim() ?? '';
-  if (text === '') return null;
-  if (text.length <= 4) return '•'.repeat(text.length);
-  return `${'•'.repeat(text.length - 4)}${text.slice(-4)}`;
+  const [first = '', ...others] = (input ?? '')
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter((item) => item !== '');
+  if (first === '') return null;
+  const masked = first.length <= 4 ? '•'.repeat(first.length) : `${'•'.repeat(first.length - 4)}${first.slice(-4)}`;
+  return others.length === 0 ? masked : `${masked} +${others.length} more`;
 }

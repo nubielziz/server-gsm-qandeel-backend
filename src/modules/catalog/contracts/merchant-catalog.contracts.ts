@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zMoney } from '../../../common/contract';
 import { SERVICE_FIELD_TYPES, SERVICE_OPTION_LISTS, SERVICE_TYPES } from '../db/schema';
-import { NamedRef } from './shared';
+import { FIELD_TYPE_DESCRIPTION, NamedRef } from './shared';
 
 /** A service at the merchant's price. Cost, floor, margin and supplier details are never sent to a merchant. */
 export const CatalogRow = z.object({
@@ -64,12 +64,7 @@ const ServiceIdList = z
 export const CatalogField = z.object({
   key: z.string(),
   label: z.string(),
-  fieldType: z
-    .enum(SERVICE_FIELD_TYPES)
-    .describe(
-      '`imei` holds one IMEI: read as digits (spaces and dashes removed), 15 digits with a valid Luhn check digit (else ' +
-        '`422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`).',
-    ),
+  fieldType: z.enum(SERVICE_FIELD_TYPES).describe(FIELD_TYPE_DESCRIPTION),
   required: z.boolean(),
   options: z.array(z.string()).describe('The choices of a `select` field.'),
   regex: z.string().describe('`""` when there is no pattern.'),

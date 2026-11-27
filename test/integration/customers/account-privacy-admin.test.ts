@@ -187,6 +187,45 @@ describe('POST /admin/clients/:id/block', () => {
     expect(imeis).toEqual(['35 389011 389841 2', '35 460711 107624 0', '49 015420 323751 8']);
   });
 
+  it('adds each line of a field of type imei_bulk and of a main input that is such a list (decision 076)', async () => {
+    const { customer, order, db } = await buyer();
+    const [row] = await db
+      .select({ serviceId: s.orders.serviceId })
+      .from(s.orders)
+      .where(eq(s.orders.id, order.orderId));
+    await db.insert(s.serviceFields).values({
+      serviceId: row!.serviceId,
+      key: 'devices',
+      label: 'Devices',
+      supplierKey: 'Devices',
+      fieldType: 'imei_bulk',
+      sort: 1,
+    });
+    await db
+      .update(s.orders)
+      .set({
+        imei: '352905112490861\n359254101036747',
+        inputs: { devices: '490154203237518\n867412052327342', note: '356938035643809' },
+      })
+      .where(eq(s.orders.id, order.orderId));
+    const res = await staff.post(`/admin/clients/${customer.id}/block`, {
+      blocked: true,
+      reason: 'Chargeback or dispute',
+    });
+    expect(res.status).toBe(204);
+    const imeis = (await blocklistRows(db))
+      .filter((entry) => entry.kind === 'imei')
+      .map((entry) => entry.display)
+      .sort();
+    expect(imeis).toEqual([
+      '35 290511 249086 1',
+      '35 460711 107624 0',
+      '35 925410 103674 7',
+      '49 015420 323751 8',
+      '86 741205 232734 2',
+    ]);
+  });
+
   it('blocks a merchant rank: its email, and none of the IMEIs of its portal orders (a merchant orders for other people)', async () => {
     const { db } = world;
     const merchant = await makeAccount(t, { rank: 'merchant', internalNotes: '' });

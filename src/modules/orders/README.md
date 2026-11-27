@@ -59,7 +59,8 @@ the one `POST /api/index.php` transport route.
 - **Placement** (`application/order-placement.ts`, `OrderPlacement.place`): the one shared path (portal now; Dhru and the
   storefront call it later). Steps in the caller's transaction: the merchant and the service it may see (`MerchantCatalog.find`:
   archived, disabled or hidden is not orderable: `NOT_FOUND`, or `SERVICE_DISABLED` for a disabled one), validation (custom field values
-  against the service's fields, each by its type: a field of type `imei` is 15 digits with Luhn, else `INVALID_IMEI`, decision 073; where a
+  against the service's fields, each by its type: a field of type `imei` is 15 digits with Luhn, else `INVALID_IMEI`, decision 073; the
+  check types of decision 076 by their rows of `FIELD_TYPE_RULES`, else `VALIDATION_FAILED` but a bad line of an `imei_bulk` list; where a
   pattern outside the supported form of decision 051 is not run (the field then has no pattern, `compileFieldPattern`); quantity against `min_qty`, `max_qty` and
   `qty_options`: `422` with the field path), the price from `PriceResolver` for this merchant, the price guard (`checkPriceChange`
   against `ListedPrices`, tolerance setting `pricing.price_change_tolerance_percent`: `409 PRICE_CHANGED` with `listedPrice` and
@@ -87,6 +88,24 @@ the one `POST /api/index.php` transport route.
   IMEI field never lets another field travel as `IMEI` and in CUSTOMFIELD at once, so the dispatch sends no `IMEI`); else the first
   required custom field by sort (an IMEI service without a main-input field, server, remote) or the first field's value or the file name
   (file). The wire sends `''` for none.
+- **The field type table** (decision 076, `domain/placement-rules.ts`): `FIELD_TYPE_RULES` has one row per value of the catalog's
+  `SERVICE_FIELD_TYPES` (a unit test holds them equal) and drives reading (`fieldValueOf`, `normalizedInputs`), judging (`inputProblems`)
+  and the IMEIs a value holds for the blocklist (`fieldImeisOf`); no service has code of its own for a type. A value is trimmed, read into
+  its stored form, then judged: required, the count of an `imei_bulk` list (`countProblem`: a list is counted before it is measured, so 31
+  or more IMEIs are `too_many_imeis`, never `too_long`), the 500-character cap on the stored form (`MAX_INPUT_LENGTH`; the request
+  schemas take `MAX_RAW_INPUT_LENGTH`, 2000 characters as typed, so 30 IMEIs typed with CRLF or `, ` get through), the type, the pattern
+  (on the stored form); only the first problem of a field is reported. The rows: `imei` (spaces and dashes removed; 15 digits, Luhn; `invalid_imei`), `imei_bulk` (split on line breaks,
+  commas and semicolons, empty items dropped, each item without spaces and dashes, joined with `\n`; 1 to 30 items, each 15 digits with
+  Luhn, none twice; `too_many_imeis` "Enter at most 30 IMEIs.", then by line `invalid_imei` "Line N is not a valid IMEI: ..." or
+  `duplicate_imei` "Line N repeats an IMEI of this list.", N counting the kept items from 1), `imeisv` (16 digits), `serial` (spaces
+  removed, upper case; 5 to 30 letters and digits), `iccid` (18 to 22 digits from 89), `eid` (32 digits), `meid` (upper case; 14 or 15
+  hexadecimal characters, or 18 digits), `ecid` (spaces removed, upper case but a leading `0x`; `0x` and 8 to 16 hexadecimal characters,
+  or 8 to 20 digits), `mac_address` (12 hexadecimal characters alone, in pairs by `:` or `-` or in fours by `.`, stored
+  `AA:BB:CC:DD:EE:FF`), `mi_lock_code` (as typed; 6 to 64 letters, digits and dashes) and `box_sn` (spaces removed, upper case; 4 to 32
+  letters, digits and dashes), each with its code `invalid_<type>`. `invalid_imei` (also from a line of a list) answers `INVALID_IMEI`;
+  every other code `VALIDATION_FAILED` (422). **An `imei_bulk` list is one order at one price**: the value of one field of one order, never
+  one order per IMEI (the portal's `imeis` and Dhru's `placeimeiorderbulk` are unrelated). As the main input its joined list is
+  `orders.imei` (a `text` column), the duplicate rule `block_open` reads the whole list, and the dispatch sends it as the `IMEI` parameter.
 - **Field types and the IMEI** (decisions 065, 070 and 073). A field of type `imei` holds one IMEI on any service, main input or not: its
   value is read as digits (spaces and dashes removed, `fieldValueOf`), must be 15 digits with a valid Luhn check digit (`invalid_imei` on
   its path; the answer's code is `INVALID_IMEI`, 422) and is stored as those digits (`normalizedInputs`); `required` and the pattern work as

@@ -45,6 +45,11 @@ export interface ScreeningInput {
   readonly ip?: string | null;
   /** The device's IMEI (or null for a service without one). */
   readonly imei?: string | null;
+  /**
+   * More IMEIs of the order, each asked of the blocklist like `imei` (decision 076: every IMEI of a main input that is a list, the value
+   * of a field of type `imei_bulk`, as the caller read it); none by default.
+   */
+  readonly imeis?: readonly string[];
   /** The gateway's card fingerprint (`payments.card_fingerprint`). */
   readonly cardFingerprint?: string | null;
   /** The checkout's tax country. */
@@ -149,6 +154,7 @@ export class RiskScreening {
     const hits = await this.blocklist.match(tx, {
       email: input.email,
       imei,
+      imeis: input.imeis ?? [],
       card: input.cardFingerprint ?? null,
       countries: [taxCountry, ipCountry, cardCountry],
       guest: !proven,

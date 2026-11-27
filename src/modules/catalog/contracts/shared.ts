@@ -21,6 +21,24 @@ export const PercentField = zDecimal
   .regex(/^\d{1,3}(\.\d{1,2})?$/, 'Enter a percent from 0 to 100 with at most two decimals.')
   .refine((value) => Number(value) <= 100, 'Enter a percent from 0 to 100.');
 
+/**
+ * What each custom field type checks: the description of `fieldType` on the catalog's field reads and writes (admin and portal).
+ *
+ * Why: decisions 073 and 076: staff choose the type of a field and the server judges the value by it on every surface (the portal, Dhru
+ * and the shop); the order forms show the same rules.
+ */
+export const FIELD_TYPE_DESCRIPTION =
+  'Each value is trimmed, read into its stored form and judged by its type, on any service type (decisions 073 and 076). ' +
+  '`imei`: one IMEI, spaces and dashes removed, 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code ' +
+  '`invalid_imei` on `inputs.<key>`). `imei_bulk`: 1 to 30 IMEIs split on line breaks, commas and semicolons and stored one per ' +
+  'line; still one order at one price (a bad line is `422 INVALID_IMEI`, `invalid_imei` "Line N ..."; more than 30 ' +
+  '`too_many_imeis`, a repeat `duplicate_imei`). The other check types answer `422 VALIDATION_FAILED` with `invalid_<type>`: ' +
+  '`imeisv` 16 digits; `serial` 5 to 30 letters and digits (stored upper-case); `iccid` 18 to 22 digits starting with 89; `eid` 32 ' +
+  'digits; `meid` 14 or 15 hexadecimal characters or 18 digits; `ecid` an optional `0x` and 8 to 16 hexadecimal characters, or 8 ' +
+  'to 20 digits; `mac_address` 12 hexadecimal characters, alone or in pairs by `:` or `-` or in fours by `.`, stored as ' +
+  '`AA:BB:CC:DD:EE:FF`; `mi_lock_code` 6 to 64 letters, digits and dashes; `box_sn` 4 to 32 letters, digits and dashes (stored ' +
+  'upper-case). `text`, `number`, `select` and `textarea` are stored as sent.';
+
 /** An id and a name, the join shape of a service row. */
 export const NamedRef = z.object({ id: z.number().int().positive(), name: z.string() });
 

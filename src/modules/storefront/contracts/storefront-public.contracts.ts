@@ -4,7 +4,7 @@
 // English only (decision 039, B224): the list, the service page and the menu take and answer no language; no `alternates`.
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIsoDateTime, zMoney } from '../../../common/contract';
-import { SERVICE_TYPES } from '../../catalog';
+import { SERVICE_FIELD_TYPES, SERVICE_TYPES } from '../../catalog';
 import { LEGAL_DOCUMENT_TYPES } from '../db/schema';
 
 /** An ISO 3166-1 alpha-2 country code, any case in, upper case out. */
@@ -91,10 +91,14 @@ const FieldSchema = z.object({
   key: z.string(),
   label: z.string(),
   fieldType: z
-    .enum(['text', 'number', 'select', 'textarea', 'imei'])
+    .enum(SERVICE_FIELD_TYPES)
     .describe(
-      '`imei` holds one IMEI: read as digits (spaces and dashes removed), 15 digits with a valid Luhn check digit (else ' +
-        '`422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`).',
+      'Each value is trimmed, read into its stored form and judged by its type (decisions 073 and 076). `imei`: one IMEI, spaces and ' +
+        'dashes removed, 15 digits with a valid Luhn check digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`). ' +
+        '`imei_bulk`: 1 to 30 IMEIs split on line breaks, commas and semicolons and stored one per line, still one order at one price ' +
+        '(a bad line is `422 INVALID_IMEI`; more than 30 `too_many_imeis`, a repeat `duplicate_imei`). `imeisv`, `serial`, `iccid`, ' +
+        '`eid`, `meid`, `ecid`, `mac_address`, `mi_lock_code` and `box_sn` answer `422 VALIDATION_FAILED` with `invalid_<type>` (the ' +
+        'rules of `GET /admin/services/:id`).',
     ),
   options: z.array(z.string()).describe('The choices of a `select` field.'),
   required: z.boolean(),

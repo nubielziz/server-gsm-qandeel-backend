@@ -14,7 +14,7 @@ import { MAX_OWN_COST } from '../domain/code-stock';
 import { MAX_QTY_OPTIONS, MAX_QUANTITY } from '../domain/quantity-rule';
 import { ATTENTION_REASONS, SHOP_BLOCKS } from '../domain/service-attention';
 import { SERVICE_FIELD_TYPES, SERVICE_OPTION_LISTS, SERVICE_TYPES } from '../db/schema';
-import { NamedRef, NonNegativeMoney, PositiveMoney } from './shared';
+import { FIELD_TYPE_DESCRIPTION, NamedRef, NonNegativeMoney, PositiveMoney } from './shared';
 
 /** The largest position a service may be given (the CHECK `services_sort_check`): the same bound as a shop page's. */
 export const MAX_SERVICE_SORT = 1_000_000;
@@ -184,12 +184,7 @@ const FieldRow = z.object({
         '`CUSTOMFIELD`.',
     ),
   label: z.string().describe('The text buyers read.'),
-  fieldType: z
-    .enum(SERVICE_FIELD_TYPES)
-    .describe(
-      '`imei` holds one IMEI: the value is read as digits (spaces and dashes removed) and must be 15 digits with a valid Luhn check ' +
-        'digit (else `422 INVALID_IMEI`, code `invalid_imei` on `inputs.<key>`), on any service type.',
-    ),
+  fieldType: z.enum(SERVICE_FIELD_TYPES).describe(FIELD_TYPE_DESCRIPTION),
   required: z.boolean(),
   options: z.array(z.string()).describe('The choices of a `select` field.'),
   regex: z.string().describe('`""` when there is no pattern. A pattern is in the supported form of decision 051.'),
@@ -571,7 +566,7 @@ export const replaceServiceFields = defineRoute({
             .describe('The key of a saved field; left out for a new field.'),
           name: z.string().trim().min(1, 'Enter a name.').max(120, 'Use at most 120 characters.'),
           label: z.string().trim().max(120, 'Use at most 120 characters.').optional(),
-          fieldType: z.enum(SERVICE_FIELD_TYPES, 'Choose a type.'),
+          fieldType: z.enum(SERVICE_FIELD_TYPES, 'Choose a type.').describe(FIELD_TYPE_DESCRIPTION),
           required: z.boolean(),
           options: z.array(z.string().trim().min(1).max(200)).max(500),
           regex: z.string().max(500, 'Use at most 500 characters.'),

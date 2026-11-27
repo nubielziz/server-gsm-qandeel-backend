@@ -7,6 +7,7 @@ import { SERVICE_TYPES } from '../../catalog';
 import { ORDER_STATUSES } from '../db/schema';
 import { IDEMPOTENCY_WINDOW_DAYS } from '../domain/idempotency-window';
 import { CANCEL_WINDOW_MS } from '../domain/merchant-actions';
+import { MAX_INPUT_LENGTH, MAX_RAW_INPUT_LENGTH } from '../domain/placement-rules';
 import { IdempotencyHeaders } from './idempotency-headers';
 import { MerchantEventSchema, MerchantOrderSchema, ORDER_SORTS, OrderAnswerSchema } from './shared';
 
@@ -125,15 +126,19 @@ const PlaceOrderBody = z
       .optional()
       .describe(
         'A bulk order: one order of the same service per item, each the value of the main-input field like `imei`, placed all together ' +
-          'or not at all. Still accepted; the shop no longer sends it.',
+          'or not at all. Still accepted; the shop no longer sends it. Unrelated to a field of type `imei_bulk`, whose list is the value ' +
+          'of one field of one order (decision 076).',
       ),
     quantity: z.number().int().min(1).max(100_000).optional().describe("Defaults to the service's minimum."),
     inputs: z
-      .record(z.string().min(1).max(60), z.string().max(500))
+      .record(z.string().min(1).max(60), z.string().max(MAX_RAW_INPUT_LENGTH))
       .optional()
       .describe(
         "The values of the service's custom fields by field key (`GET /client/services/:id`), each judged by its field's type, " +
-          'required tick and pattern; a field of type `imei` is stored as digits.',
+          "required tick and pattern and stored in its type's form (an `imei` as digits, an `imei_bulk` list one IMEI per line, a " +
+          `\`mac_address\` as \`AA:BB:CC:DD:EE:FF\`; decisions 073 and 076). At most ${MAX_RAW_INPUT_LENGTH} characters as sent; the ` +
+          `stored form at most ${MAX_INPUT_LENGTH} (\`too_long\` on \`inputs.<key>\`; an \`imei_bulk\` list of more than 30 IMEIs is ` +
+          '`too_many_imeis` first).',
       ),
     fileId: zId.optional().describe('The uploaded input file of a File service.'),
   })
@@ -152,7 +157,10 @@ export const placeClientOrder = defineRoute({
     'prices), a smaller raise is charged and recorded; a second open order for the same service and input is refused under the ' +
     "service's `block_open` rule (`DUPLICATE_ORDER`). Every service takes its custom fields in `inputs`, each judged by its own type, " +
     'required tick and pattern (decision 073: the service type `imei` forces nothing); a field of type `imei` holds one IMEI (spaces and ' +
-    'dashes removed, 15 digits, Luhn; else `422 INVALID_IMEI` with `invalid_imei` on `inputs.<key>`) and is stored as digits. On an IMEI ' +
+    'dashes removed, 15 digits, Luhn; else `422 INVALID_IMEI` with `invalid_imei` on `inputs.<key>`) and is stored as digits. Decision ' +
+    '076: a field of type `imei_bulk` holds 1 to 30 IMEIs, still one order at one price (a bad line is `422 INVALID_IMEI`), and the other ' +
+    'check types (`imeisv`, `serial`, `iccid`, `eid`, `meid`, `ecid`, `mac_address`, `mi_lock_code`, `box_sn`) answer `422 ' +
+    'VALIDATION_FAILED` with `invalid_<type>` on `inputs.<key>`. On an IMEI ' +
     'service the main input may also come as `imei` (older pages; it is the value of the main-input field, wins over a value under its ' +
     'key and is reported on `imei`; a service without such a field takes it as sent) or `imeis` (a bulk of up to 100: one order each, ' +
     'all placed or none, each item reported on `imeis.N`; still accepted, the shop no longer sends it); `imei` on another service is ' +
