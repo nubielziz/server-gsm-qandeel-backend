@@ -1,7 +1,7 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
  "frontend": "../frontend-admin",
- "count": 293,
+ "count": 294,
  "endpoints": [
   {
    "key": "DELETE /admin/alert-rules/:id",
@@ -581,7 +581,7 @@
    "key": "DELETE /admin/service-categories/:id",
    "fn": "deleteCategory",
    "file": "src/features/services/api/categories.ts",
-   "line": 58,
+   "line": 74,
    "params": [
     {
      "name": "id",
@@ -14862,7 +14862,7 @@
    "key": "GET /admin/service-categories",
    "fn": "listCategories",
    "file": "src/features/services/api/categories.ts",
-   "line": 22,
+   "line": 28,
    "params": [
     {
      "name": "query",
@@ -15004,7 +15004,7 @@
    "key": "GET /admin/service-categories/:id",
    "fn": "getCategory",
    "file": "src/features/services/api/categories.ts",
-   "line": 31,
+   "line": 37,
    "params": [
     {
      "name": "id",
@@ -22959,7 +22959,7 @@
    "key": "PATCH /admin/api-keys/:id",
    "fn": "updateApiKey",
    "file": "src/features/accounts/api/apiKeys.ts",
-   "line": 58,
+   "line": 61,
    "params": [
     {
      "name": "id",
@@ -22976,6 +22976,10 @@
      "typeText": "UpdateApiKeyBody",
      "shape": {
       "object": {
+       "name": {
+        "type": "string",
+        "optional": true
+       },
        "rateLimitPerMin": {
         "type": "number",
         "optional": true
@@ -22984,6 +22988,12 @@
         "array": {
          "type": "string"
         },
+        "optional": true
+       },
+       "expiresAt": {
+        "type": "string",
+        "nullable": true,
+        "alias": "IsoDateTime",
         "optional": true
        }
       }
@@ -26124,7 +26134,7 @@
    "key": "PATCH /admin/service-categories/:id",
    "fn": "updateCategory",
    "file": "src/features/services/api/categories.ts",
-   "line": 49,
+   "line": 55,
    "params": [
     {
      "name": "id",
@@ -29083,7 +29093,7 @@
    "key": "POST /admin/clients/:id/api-keys",
    "fn": "createAccountApiKey",
    "file": "src/features/accounts/api/apiKeys.ts",
-   "line": 41,
+   "line": 42,
    "params": [
     {
      "name": "accountId",
@@ -29101,7 +29111,8 @@
      "shape": {
       "object": {
        "name": {
-        "type": "string"
+        "type": "string",
+        "optional": true
        },
        "allowedIps": {
         "array": {
@@ -38028,7 +38039,7 @@
    "key": "POST /admin/service-categories",
    "fn": "createCategory",
    "file": "src/features/services/api/categories.ts",
-   "line": 40,
+   "line": 46,
    "params": [
     {
      "name": "body",
@@ -38117,6 +38128,64 @@
      "serviceCount": {
       "type": "number",
       "optional": true
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/service-categories/order",
+   "fn": "orderCategories",
+   "file": "src/features/services/api/categories.ts",
+   "line": 65,
+   "params": [
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "CategoryOrderBody",
+     "shape": {
+      "object": {
+       "items": {
+        "array": {
+         "object": {
+          "id": {
+           "type": "number",
+           "alias": "Id"
+          },
+          "sort": {
+           "type": "number"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "CategoryOrderResult",
+   "returns": {
+    "object": {
+     "updated": {
+      "type": "number"
      }
     }
    }

@@ -12,7 +12,7 @@
       "client": 3,
       "admin": 47
     },
-    "frontendCalled": 41
+    "frontendCalled": 42
   },
   "stages": [
     4,
@@ -674,7 +674,7 @@
       "description": "Service categories and the merchant groups that can see them.",
       "frontend": {
         "file": "src/features/services/api/categories.ts",
-        "line": 20,
+        "line": 26,
         "fn": "listCategories"
       }
     },
@@ -707,7 +707,7 @@
       "description": "Service categories and the merchant groups that can see them.",
       "frontend": {
         "file": "src/features/services/api/categories.ts",
-        "line": 29,
+        "line": 35,
         "fn": "getCategory"
       }
     },
@@ -740,7 +740,7 @@
       "description": "Service categories and the merchant groups that can see them.",
       "frontend": {
         "file": "src/features/services/api/categories.ts",
-        "line": 38,
+        "line": 44,
         "fn": "createCategory"
       }
     },
@@ -773,7 +773,7 @@
       "description": "Service categories and the merchant groups that can see them.",
       "frontend": {
         "file": "src/features/services/api/categories.ts",
-        "line": 47,
+        "line": 53,
         "fn": "updateCategory"
       }
     },
@@ -806,7 +806,7 @@
       "description": "Service categories and the merchant groups that can see them.",
       "frontend": {
         "file": "src/features/services/api/categories.ts",
-        "line": 56,
+        "line": 72,
         "fn": "deleteCategory"
       }
     },
@@ -2073,7 +2073,11 @@
       },
       "module": "catalog",
       "description": "Set the order of service categories (the console groups): the new positions of some categories, all or none.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/services/api/categories.ts",
+        "line": 63,
+        "fn": "orderCategories"
+      },
       "addition": {
         "file": "scripts/map-additions/78-group-order.mjs",
         "spec": "B-TBD group-order"

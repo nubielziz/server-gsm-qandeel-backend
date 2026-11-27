@@ -59,6 +59,7 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 | `POST /admin/retail-price-changes/resolve` | admin | staff-permission `pricing:update` | 31 | `resolveRetailPriceChanges` |
 | `GET /admin/services/price-grid` | admin | staff-permission `catalog:read` | 47 | `listPriceGrid` |
 | `POST /admin/services/order` | admin | staff-permission `catalog:update` | 47 | `orderServices` |
+| `POST /admin/service-categories/order` | admin | staff-permission `catalog:update` | 78 | `orderCategories` |
 
 ## DHRU imeiservicelist
 
@@ -139,7 +140,7 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 ## GET /admin/service-categories
 
 - **Map**: Service categories and the merchant groups that can see them. (التصنيفات والفئات اللي بتشوفها) · staff-permission `catalog:*` · stage 4 · tables service_categories
-- **Frontend**: `listCategories` (src/features/services/api/categories.ts:22) · params `query?: ListQuery` · returns `ListResult<ServiceCategory>` · success 200 · assumed contract
+- **Frontend**: `listCategories` (src/features/services/api/categories.ts:28) · params `query?: ListQuery` · returns `ListResult<ServiceCategory>` · success 200 · assumed contract
 - **Query**: Whole list: `_start=0&_end=200&_sort=sort&_order=asc` (useChoices.ts:27-28). No filters or q.
 - **Response**: Array + x-total-count. Row: id, name, type, allowedGroupIds (client_groups ids; empty = every group), sort, isActive, serviceCount (services in the category; optional, shown when sent).
 - **Errors**: 403 FORBIDDEN (no catalog:read)
@@ -148,7 +149,7 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 ## GET /admin/service-categories/:id
 
 - **Map**: Service categories and the merchant groups that can see them. (التصنيفات والفئات اللي بتشوفها) · staff-permission `catalog:*` · stage 4 · tables service_categories
-- **Frontend**: `getCategory` (src/features/services/api/categories.ts:31) · params `id: number` · returns `ServiceCategory` · success 200 · assumed contract
+- **Frontend**: `getCategory` (src/features/services/api/categories.ts:37) · params `id: number` · returns `ServiceCategory` · success 200 · assumed contract
 - **Response**: Same shape as a list row (Refine show).
 - **Errors**: 404 NOT_FOUND (category id unknown)
 - **Mock**: src/features/services/mocks/categoryRoutes.ts (Categories seeded from the services' category names.)
@@ -156,7 +157,7 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 ## POST /admin/service-categories
 
 - **Map**: Service categories and the merchant groups that can see them. (التصنيفات والفئات اللي بتشوفها) · staff-permission `catalog:*` · stage 4 · tables service_categories
-- **Frontend**: `createCategory` (src/features/services/api/categories.ts:40) · params `body: CreateCategoryBody` · returns `ServiceCategory` · success 201 · assumed contract
+- **Frontend**: `createCategory` (src/features/services/api/categories.ts:46) · params `body: CreateCategoryBody` · returns `ServiceCategory` · success 201 · assumed contract
 - **Request**: Full body `{ name, type, allowedGroupIds, sort, isActive }`.
 - **Response**: The new category (serviceCount 0).
 - **Errors**: 422 VALIDATION_FAILED (name missing or duplicate within the type (case-insensitive, trimmed: errors[{field:'name', message:'A <type> category with this name already exists.'}], checked before the write and mapped from a unique violation on service_categories_name_uq, never 500), bad type/sort/group ids); 403 FORBIDDEN (no catalog:create)
@@ -165,7 +166,7 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 ## PATCH /admin/service-categories/:id
 
 - **Map**: Service categories and the merchant groups that can see them. (التصنيفات والفئات اللي بتشوفها) · staff-permission `catalog:*` · stage 4 · tables service_categories
-- **Frontend**: `updateCategory` (src/features/services/api/categories.ts:49) · params `id: number`, `body: Partial<CreateCategoryBody>` · returns `ServiceCategory` · success 200 · assumed contract
+- **Frontend**: `updateCategory` (src/features/services/api/categories.ts:55) · params `id: number`, `body: Partial<CreateCategoryBody>` · returns `ServiceCategory` · success 200 · assumed contract
 - **Request**: Partial: any of name, type, allowedGroupIds, sort, isActive.
 - **Response**: The updated category (with serviceCount).
 - **Errors**: 422 VALIDATION_FAILED (empty name, a name duplicate within the type (the new type too when only the type changes), unknown type, a type change while live services are in the category (errors[{field:'type', message:'N services in this category are <type>. Move them first.'}]; archived services follow through ON UPDATE CASCADE), sort not a whole number >= 0, unknown group ids (categoryRoutes.ts:12-40)); 404 NOT_FOUND (category id unknown)
@@ -174,7 +175,7 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 ## DELETE /admin/service-categories/:id
 
 - **Map**: Service categories and the merchant groups that can see them. (التصنيفات والفئات اللي بتشوفها) · staff-permission `catalog:*` · stage 4 · tables service_categories
-- **Frontend**: `deleteCategory` (src/features/services/api/categories.ts:58) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: `deleteCategory` (src/features/services/api/categories.ts:74) · params `id: number` · returns `void` · success 204 · assumed contract
 - **Response**: 204. Deleted only when no service row, live or archived, references the category: in the same transaction delete the pricing_rules with scope 'category' and target_id = id, then the category; audit entry.
 - **Errors**: 409 CATEGORY_IN_USE (services still belong to it; detail '<name> still has N services. Move them to another category first.' (serviceCount counts live services only); when only archived services remain (FK RESTRICT) the detail is '<name> still has N archived services kept for order history, so it cannot be deleted. Turn it off instead.' (categoryRoutes.ts:93-105)); 404 NOT_FOUND (category id unknown); 403 FORBIDDEN (no catalog:delete)
 - **Mock**: src/features/services/mocks/categoryRoutes.ts (Categories seeded from the services' category names.)
@@ -451,4 +452,9 @@ Frontend features covering this module: `merchants`, `services` (rules in `RULES
 
 - **Map addition** (B241, `scripts/map-additions/47.mjs`): Set the order of services: the position merchants and API clients see them in, inside a category. · staff-permission `catalog:update` · stage 47 · tables services, audit_logs · success 200
 - **Frontend**: `orderServices` (src/features/services/api/priceGrid.ts:24) · params `body: ServiceOrderBody` · returns `ServiceOrderResult`
+
+## POST /admin/service-categories/order
+
+- **Map addition** (B-TBD group-order, `scripts/map-additions/78-group-order.mjs`): Set the order of service categories (the console groups): the new positions of some categories, all or none. · staff-permission `catalog:update` · stage 78 · tables service_categories, audit_logs · success 200
+- **Frontend**: `orderCategories` (src/features/services/api/categories.ts:65) · params `body: CategoryOrderBody` · returns `CategoryOrderResult`
 

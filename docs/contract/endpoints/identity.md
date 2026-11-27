@@ -567,12 +567,12 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## POST /admin/clients/:id/api-keys
 
 - **Map addition** (B-TBD staff-api-keys, `scripts/map-additions/20.mjs`): Create an API key for a merchant; the key is shown once. (إنشاء مفتاح API لتاجر من اللوحة، يُعرض مرة واحدة) · staff-permission `api_keys:create` · stage 20 · tables api_keys, audit_logs · success 201
-- **Frontend**: `createAccountApiKey` (src/features/accounts/api/apiKeys.ts:41) · params `accountId: number`, `body: CreateApiKeyBody` · returns `CreatedApiKey`
+- **Frontend**: `createAccountApiKey` (src/features/accounts/api/apiKeys.ts:42) · params `accountId: number`, `body: CreateApiKeyBody` · returns `CreatedApiKey`
 
 ## PATCH /admin/api-keys/:id
 
 - **Map addition** (B-TBD staff-api-keys, `scripts/map-additions/20.mjs`): Change a merchant key's per-minute limit and allowed addresses. (تعديل حدود مفتاح تاجر: المعدّل بالدقيقة والعناوين المسموحة) · staff-permission `api_keys:update` · stage 20 · tables api_keys, audit_logs · success 200
-- **Frontend**: `updateApiKey` (src/features/accounts/api/apiKeys.ts:58) · params `id: number`, `body: UpdateApiKeyBody` · returns `ApiKey`
+- **Frontend**: `updateApiKey` (src/features/accounts/api/apiKeys.ts:61) · params `id: number`, `body: UpdateApiKeyBody` · returns `ApiKey`
 
 ## POST /client/auth/password/change
 

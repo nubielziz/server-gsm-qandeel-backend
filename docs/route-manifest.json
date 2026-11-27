@@ -25,7 +25,7 @@
       "rows": 119,
       "endpoints": 119
     },
-    "frontendRoutes": 293,
+    "frontendRoutes": 294,
     "bySurface": {
       "dhru": {
         "rows": 8,
@@ -4513,7 +4513,7 @@
       "description": "Service categories and the merchant groups that can see them.",
       "frontend": {
         "file": "src/features/services/api/categories.ts",
-        "line": 20,
+        "line": 26,
         "fn": "listCategories"
       }
     },
@@ -4546,7 +4546,7 @@
       "description": "Service categories and the merchant groups that can see them.",
       "frontend": {
         "file": "src/features/services/api/categories.ts",
-        "line": 29,
+        "line": 35,
         "fn": "getCategory"
       }
     },
@@ -4579,7 +4579,7 @@
       "description": "Service categories and the merchant groups that can see them.",
       "frontend": {
         "file": "src/features/services/api/categories.ts",
-        "line": 38,
+        "line": 44,
         "fn": "createCategory"
       }
     },
@@ -4612,7 +4612,7 @@
       "description": "Service categories and the merchant groups that can see them.",
       "frontend": {
         "file": "src/features/services/api/categories.ts",
-        "line": 47,
+        "line": 53,
         "fn": "updateCategory"
       }
     },
@@ -4645,7 +4645,7 @@
       "description": "Service categories and the merchant groups that can see them.",
       "frontend": {
         "file": "src/features/services/api/categories.ts",
-        "line": 56,
+        "line": 72,
         "fn": "deleteCategory"
       }
     },
@@ -12943,7 +12943,7 @@
       "description": "Create an API key for a merchant; the key is shown once.",
       "frontend": {
         "file": "src/features/accounts/api/apiKeys.ts",
-        "line": 39,
+        "line": 40,
         "fn": "createAccountApiKey"
       },
       "addition": {
@@ -12982,7 +12982,7 @@
       "description": "Change a merchant key's per-minute limit and allowed addresses.",
       "frontend": {
         "file": "src/features/accounts/api/apiKeys.ts",
-        "line": 56,
+        "line": 59,
         "fn": "updateApiKey"
       },
       "addition": {
@@ -17196,7 +17196,11 @@
       },
       "module": "catalog",
       "description": "Set the order of service categories (the console groups): the new positions of some categories, all or none.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/services/api/categories.ts",
+        "line": 63,
+        "fn": "orderCategories"
+      },
       "addition": {
         "file": "scripts/map-additions/78-group-order.mjs",
         "spec": "B-TBD group-order"

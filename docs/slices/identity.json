@@ -2365,7 +2365,7 @@
       "description": "Create an API key for a merchant; the key is shown once.",
       "frontend": {
         "file": "src/features/accounts/api/apiKeys.ts",
-        "line": 39,
+        "line": 40,
         "fn": "createAccountApiKey"
       },
       "addition": {
@@ -2404,7 +2404,7 @@
       "description": "Change a merchant key's per-minute limit and allowed addresses.",
       "frontend": {
         "file": "src/features/accounts/api/apiKeys.ts",
-        "line": 56,
+        "line": 59,
         "fn": "updateApiKey"
       },
       "addition": {

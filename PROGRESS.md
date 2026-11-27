@@ -4,6 +4,14 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**One call reorders groups; API keys are named by the server and fully editable (2026-11-27, decision 078): merged and pushed on the owner's order.**
+`POST /admin/service-categories/order` (all or none, one audit row, the price version moved once; the console drags groups, its decision 038) and
+`PATCH /admin/api-keys/:id` with `name` and `expiresAt`, `POST /admin/clients/:id/api-keys` without a name (`API key <n>`). The owner's ruling: a
+key's "permissions" are its allowed IP addresses and the period it is valid; only an Owner may widen them. The group delete now locks the
+categories it changes in id order. Built by a Sonnet implementer, reviewed by an Opus reviewer (no blockers), final review by the lead.
+**Checks:** typecheck, lint, format, English, routes, contract, OpenAPI, coverage, `db:check`; the contract tests and the changed files (1,454
+pass). The map-additions spec of the new route is still `B-TBD group-order`. **Still being built:** sign-up with the full details (decision 079).
+
 **The server makes a payment method's code and an alert rule's key (2026-11-27, decision 077): merged and pushed on the owner's order ("when you
 finish push and check the website goes live").** Part of the owner's "fewer inputs in the console" list (the console's decisions 035 and 036): `code`
 is optional on `POST /admin/payment-gateways` and `key` on `POST /admin/alert-rules`; left out, the server makes it from the preset's key or the

@@ -6,7 +6,7 @@
   "body": {
     "key": {
       "clientId": 1,
-      "name": "Harvest sample",
+      "name": "API key 1",
       "prefix": "gsm_bkEB",
       "allowedIps": [],
       "rateLimitPerMin": 60,

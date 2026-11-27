@@ -6129,7 +6129,7 @@
     },
     "/admin/api-keys/{id}": {
       "patch": {
-        "description": "A partial body with at least one key: `rateLimitPerMin` (an integer from 1 to 6000) and `allowedIps` (up to 20 addresses or ranges; `[]` removes the restriction). Takes effect on the next call with the key: its cached view is dropped after the commit. A change that gives the key more reach (an empty list, an address that is not stored, a higher limit) needs an owner: `403 FORBIDDEN` for everyone else, judged on the stored key; a narrower list or a lower limit stays under `api_keys:update`. A revoked key is `409 ALREADY_REVOKED`. Writes the audit entry `changed limits of API key of <merchant>` with the old and new values; a change of a value sends the merchant a security notice by email.",
+        "description": "A partial body with at least one key: `name` (trimmed, 1 to 60 characters), `rateLimitPerMin` (an integer from 1 to 6000), `allowedIps` (up to 20 addresses or ranges; `[]` removes the restriction) and `expiresAt` (an ISO time in the future, or `null` to remove the expiry; a time that is not in the future is `422` on `expiresAt`): the addresses that may use the key and the period it is valid are all the permissions a key has (decision 078). Takes effect on the next call with the key: its cached view is dropped after the commit. A change that gives the key more reach (an empty list, an address that is not stored, a higher limit, no expiry or a later one) needs an owner: `403 FORBIDDEN` for everyone else, judged on the stored key; a narrower list, a lower limit, a first or an earlier expiry and a new name stay under `api_keys:update`. An expired key may get a later expiry (or none) and works again, which needs an owner and counts against the 10 live keys of the account (`422` on `expiresAt` when it already holds them); a revoked key is `409 ALREADY_REVOKED` for every field and stays revoked. Writes the audit entry `changed limits of API key of <merchant>` with the old and new name, limit, addresses and expiry (never the key); a change of the addresses, the limit or the expiry sends the merchant a security notice by email, a new name alone does not.",
         "operationId": "patchAdminApiKeysById",
         "parameters": [
           {
@@ -6152,6 +6152,11 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
                   "rateLimitPerMin": {
                     "type": "integer",
                     "minimum": 1,
@@ -6165,6 +6170,22 @@
                       "minLength": 1,
                       "maxLength": 60
                     }
+                  },
+                  "expiresAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "x-gsm-alias": "IsoDateTime",
+                        "description": "ISO 8601 UTC time with milliseconds.",
+                        "examples": [
+                          "2026-03-01T09:30:00.000Z"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 }
               },
@@ -6798,7 +6819,7 @@
             "staffSession": []
           }
         ],
-        "summary": "Change a merchant key's limits",
+        "summary": "Change a merchant API key",
         "tags": [
           "clients"
         ],
@@ -23730,7 +23751,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Only for an `active` account of a merchant rank (`409 CONFLICT` for a retail rank, `409 NOT_ACTIVE` for a suspended, blocked or erased account: such a key could not be used). The body is `name`, `allowedIps` and `expiresAt` plus `rateLimitPerMin` (an integer from 1 to 6000, default 60). The answer carries the full key once as `secret` (`Cache-Control: no-store`); only a keyed hash is stored, so a lost key cannot be shown again. The key is marked `createdByStaff` and `api_keys.created_by` records the staff member, the merchant is sent a security notice by email, and the audit entry `created API key for <merchant>` never holds the key. A merchant may hold 10 live keys: the next one is `422` on `name`. Only an owner may create one (`403 FORBIDDEN` for everyone else, decision 046); a merchant cannot create, change or revoke its own keys (decision 067).",
+        "description": "Only for an `active` account of a merchant rank (`409 CONFLICT` for a retail rank, `409 NOT_ACTIVE` for a suspended, blocked or erased account: such a key could not be used). The body is `name` (optional), `allowedIps` and `expiresAt` plus `rateLimitPerMin` (an integer from 1 to 6000, default 60). A name that is left out is made by the server: `API key <n>`, n the smallest whole number from 1 that no key of the account, revoked ones included, already carries in that exact form (decision 078); a name that is sent is trimmed, 1 to 60 characters, and a blank one is `422` on `name`. The answer carries the full key once as `secret` (`Cache-Control: no-store`); only a keyed hash is stored, so a lost key cannot be shown again. The key is marked `createdByStaff` and `api_keys.created_by` records the staff member, the merchant is sent a security notice by email, and the audit entry `created API key for <merchant>` never holds the key. A merchant may hold 10 live keys: the next one is `422` on `name`. Only an owner may create one (`403 FORBIDDEN` for everyone else, decision 046); a merchant cannot create, change or revoke its own keys (decision 067).",
         "operationId": "postAdminClientsByIdApiKeys",
         "parameters": [
           {
@@ -23781,10 +23802,7 @@
                     "minimum": 1,
                     "maximum": 6000
                   }
-                },
-                "required": [
-                  "name"
-                ]
+                }
               },
               "examples": {
                 "example": {
@@ -143070,6 +143088,407 @@
         "x-gsm-audit": true,
         "x-gsm-key": "POST /admin/service-categories",
         "x-gsm-permission": "catalog:create",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
+    "/admin/service-categories/order": {
+      "post": {
+        "description": "Sets the position (`sort`) of 1 to 500 categories (the groups of the console) in one transaction: either every position is saved or none is. It does what `PATCH /admin/service-categories/:id` does when only `sort` is sent, once for the whole call: the same permission, the cached merchant price lists start over once, and one audit entry (`changed the order of`, entity `category`) names the categories that moved with their old and new positions (the first 200). A position is a whole number from 0 to 1000000; merchants and API clients read categories by this number, then the id. A category already at its position is left alone. A category that is listed twice or is unknown is `422` on `items.N.id` (N the later of two equal ids; every problem comes back together) and nothing is saved. The answer says how many categories changed. The categories are locked in id order, so two saves never interleave. The search index is not told: it holds a category's name and id, never its position (decision 078).",
+        "operationId": "postAdminServiceCategoriesOrder",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "x-gsm-alias": "Id",
+                          "description": "Numeric record id.",
+                          "examples": [
+                            42
+                          ]
+                        },
+                        "sort": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sort"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "items": [
+                      {
+                        "id": 4,
+                        "sort": 1
+                      },
+                      {
+                        "id": 5,
+                        "sort": 2
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updated": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "How many categories changed position."
+                    }
+                  },
+                  "required": [
+                    "updated"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "updated": 2
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Set the order of service categories",
+        "tags": [
+          "service-categories"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-audit": true,
+        "x-gsm-key": "POST /admin/service-categories/order",
+        "x-gsm-permission": "catalog:update",
         "x-gsm-session-stages": [
           "active"
         ],
