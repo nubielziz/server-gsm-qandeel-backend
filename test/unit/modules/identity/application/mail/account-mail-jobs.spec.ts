@@ -163,6 +163,9 @@ describe('AccountMailJobs', () => {
       ['customer.password_reset', 'retail', 'reset', '/set-password'],
       ['customer.email_verification', 'retail', 'verify_email', '/verify-email'],
       ['customer.magic_link', 'retail', 'magic_link', '/sign-in'],
+      // The two mails of the shop's sign-up carry sign-in links (decision 079).
+      ['customer.sign_up_link', 'retail', 'magic_link', '/sign-in'],
+      ['customer.sign_up_existing', 'retail', 'magic_link', '/sign-in'],
     ];
     for (const [type, rankKind, purpose, path] of cases) {
       f.state.account = account({ rankKind });

@@ -1,12 +1,13 @@
 // The worker processors of the account mails (identity module, queue notifications): one per outbox event type, all delegating to
 // AccountMailJobs. Classes are separate because @QueueProcessor names one job per class and the queue is shared with other mails, so no
-// catch-all processor may exist on it. The three merchant events and the four retail events are all handled here (decision 064).
+// catch-all processor may exist on it. The three merchant events and the six retail events (the four of decision 064 and the two mails of
+// the shop's sign-up, decision 079) are all handled here.
 import { Injectable } from '@nestjs/common';
 import type { Job } from 'bullmq';
 import { type JobProcessor, QueueProcessor } from '../../../infra/queues';
 import type { OutboxJobData } from '../../platform';
 import { type AccountMailJobResult, AccountMailJobs } from '../application/mail/account-mail-jobs';
-import { ACCOUNT_MAIL_EVENTS } from '../domain/account-mail';
+import { ACCOUNT_MAIL_EVENTS, SIGN_UP_MAIL_EVENTS } from '../domain/account-mail';
 
 /**
  * Sends the email-verification mail of a merchant-rank account.
@@ -152,5 +153,50 @@ export class CustomerEmailVerificationMailProcessor implements JobProcessor<Outb
    */
   process(job: Job<OutboxJobData, AccountMailJobResult, string>): Promise<AccountMailJobResult> {
     return this.jobs.handle(ACCOUNT_MAIL_EVENTS.retail.email_verification, job);
+  }
+}
+
+/**
+ * Sends the link of a shop sign-up: "finish creating your account".
+ *
+ * Why: decision 079 (the review's S3): `POST /store/v1/auth/sign-up` for an address without an account writes `customer.sign_up_link`; the
+ * mail says that no account is made until the link is opened. This job rotates the link and sends the mail.
+ */
+@Injectable()
+@QueueProcessor('notifications', SIGN_UP_MAIL_EVENTS.sign_up_link)
+export class SignUpLinkMailProcessor implements JobProcessor<OutboxJobData, AccountMailJobResult> {
+  constructor(private readonly jobs: AccountMailJobs) {}
+
+  /**
+   * Handles one job.
+   *
+   * @param job the outbox job
+   * @returns whether the mail was sent, and why not
+   */
+  process(job: Job<OutboxJobData, AccountMailJobResult, string>): Promise<AccountMailJobResult> {
+    return this.jobs.handle(SIGN_UP_MAIL_EVENTS.sign_up_link, job);
+  }
+}
+
+/**
+ * Sends the answer to a sign-up for an address that already has an account: "you already have an account, nothing was changed", with
+ * its ordinary sign-in link.
+ *
+ * Why: decision 079 (the review's S3): `POST /store/v1/auth/sign-up` for a retail account that may get a link writes
+ * `customer.sign_up_existing`, so the reader knows the form changed nothing. This job rotates the link and sends the mail.
+ */
+@Injectable()
+@QueueProcessor('notifications', SIGN_UP_MAIL_EVENTS.sign_up_existing)
+export class SignUpExistingMailProcessor implements JobProcessor<OutboxJobData, AccountMailJobResult> {
+  constructor(private readonly jobs: AccountMailJobs) {}
+
+  /**
+   * Handles one job.
+   *
+   * @param job the outbox job
+   * @returns whether the mail was sent, and why not
+   */
+  process(job: Job<OutboxJobData, AccountMailJobResult, string>): Promise<AccountMailJobResult> {
+    return this.jobs.handle(SIGN_UP_MAIL_EVENTS.sign_up_existing, job);
   }
 }

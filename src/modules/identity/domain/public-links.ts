@@ -24,6 +24,9 @@ export const ACCOUNT_LINK_PATHS: Readonly<Record<AccountMailKind, string>> = {
   password_reset: '/set-password',
   invited: '/set-password',
   magic_link: '/sign-in',
+  // The two mails of a sign-up carry sign-in links (decision 079): the shop's link page exchanges them like any other.
+  sign_up_link: '/sign-in',
+  sign_up_existing: '/sign-in',
 };
 
 /**
@@ -36,6 +39,21 @@ export const ACCOUNT_LINK_PATHS: Readonly<Record<AccountMailKind, string>> = {
  */
 export function accountMailLink(storeBaseUrl: string, kind: AccountMailKind, token: string): string {
   return `${storeBaseUrl}${ACCOUNT_LINK_PATHS[kind]}?token=${encodeURIComponent(token)}`;
+}
+
+/** The path of the shop's sign-up page (decision 079), which the note to an address without an account names. */
+export const SIGN_UP_PATH = '/en/sign-up';
+
+/**
+ * Builds the address of the shop's sign-up page.
+ *
+ * Why: decision 079: a sign-in link no longer makes an account; an address without one is mailed the page where an account is made.
+ *
+ * @param storeBaseUrl the shop's base URL, without a trailing slash
+ * @returns `<storeBaseUrl>/en/sign-up`
+ */
+export function signUpPageUrl(storeBaseUrl: string): string {
+  return `${storeBaseUrl}${SIGN_UP_PATH}`;
 }
 
 /** The path of the signed-in area of the shop, where a notification sends an account (the old `/merchant` area redirects here). */

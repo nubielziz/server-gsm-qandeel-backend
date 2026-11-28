@@ -199,6 +199,22 @@ describe('POST /admin/clients: a retail account', () => {
     expect((await accountRow(accepted.body.id)).currency).toBe('USD');
   });
 
+  it('accepts any listed country while no tax window is in force, and still refuses a code of no country (decision 079, B1)', async () => {
+    await ranks();
+    const lina = await creator();
+    const { db } = await testDb();
+    await db.delete(s.taxRates);
+    for (const country of ['ZZ', 'UK', 'EU']) {
+      const refused = await create(lina, { country });
+      expect(refused.status, country).toBe(422);
+      expect(refused.body.errors[0], country).toMatchObject({ field: 'country', code: 'unsupported' });
+    }
+    expect(await accountRows()).toHaveLength(0);
+    const accepted = await create(lina, { country: 'jo' });
+    expect(accepted.status).toBe(201);
+    expect((await accountRow(accepted.body.id)).country).toBe('JO');
+  });
+
   it('refuses an email a blocklist check names (422 on email) before anything is written', async () => {
     await ranks();
     const lina = await creator();

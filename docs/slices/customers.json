@@ -4,10 +4,10 @@
   "domain": "I",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 35,
-    "endpoints": 38,
+    "rows": 37,
+    "endpoints": 40,
     "bySurface": {
-      "store": 18,
+      "store": 20,
       "admin": 19,
       "client": 1
     },
@@ -21,7 +21,8 @@
     21,
     23,
     24,
-    48
+    48,
+    79
   ],
   "ownedTables": [
     {
@@ -199,6 +200,10 @@
   ],
   "foreignTables": [
     {
+      "table": "account_signups",
+      "owner": "identity"
+    },
+    {
       "table": "api_keys",
       "owner": "identity"
     },
@@ -253,6 +258,10 @@
     {
       "table": "orders",
       "owner": "orders"
+    },
+    {
+      "table": "outbox_events",
+      "owner": "platform"
     },
     {
       "table": "payment_gateways",
@@ -1533,6 +1542,77 @@
       "addition": {
         "file": "scripts/map-additions/48-accounts.mjs",
         "spec": "B245"
+      }
+    },
+    {
+      "key": "POST /store/v1/auth/sign-up",
+      "method": "POST",
+      "path": "/store/v1/auth/sign-up",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "Sign up with an email, a password, both names, a country and a phone: the account is made when the mailed link is opened.",
+      "access": "public",
+      "permission": null,
+      "turnstile": true,
+      "idempotencyKey": false,
+      "authRaw": "public + Turnstile",
+      "stage": 79,
+      "tables": [
+        "clients",
+        "auth_tokens",
+        "account_signups",
+        "outbox_events"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/auth/sign-up",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/auth/sign-up"
+      },
+      "module": "customers",
+      "description": "Sign up with an email, a password, both names, a country and a phone: the account is made when the mailed link is opened.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/79-sign-up.mjs",
+        "spec": "B-TBD sign-up-with-details"
+      }
+    },
+    {
+      "key": "POST /store/v1/auth/sign-up/finish",
+      "method": "POST",
+      "path": "/store/v1/auth/sign-up/finish",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "Finish the sign-up of the signed-in account that has no password yet: its name, country, phone and first password.",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customer-session",
+      "stage": 79,
+      "tables": [
+        "clients",
+        "auth_tokens",
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/auth/sign-up/finish",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/auth/sign-up/finish"
+      },
+      "module": "customers",
+      "description": "Finish the sign-up of the signed-in account that has no password yet: its name, country, phone and first password.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/79-sign-up.mjs",
+        "spec": "B-TBD sign-up-with-details"
       }
     }
   ],

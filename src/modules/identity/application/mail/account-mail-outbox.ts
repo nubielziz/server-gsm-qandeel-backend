@@ -18,7 +18,7 @@ const NO_RANK_ID = 0;
  * into a `notifications` job. The row carries the account id and the `auth_tokens` id, never the token: the job that sends the mail makes
  * the clear token itself (`AccountMailJobs`), so no clear token is ever stored or logged.
  *
- * Side effects: registers the seven event types with the `notifications` queue at boot (the API and the worker both load this class);
+ * Side effects: registers the nine event types with the `notifications` queue at boot (the API and the worker both load this class);
  * `enqueue` takes a `FOR KEY SHARE` lock on the account row (so a rank change cannot slip between the choice of the family and the commit),
  * reads the rank kind (of the account, or of no rank for the id of a run that is rolled back) and inserts one `outbox_events` row.
  */
@@ -33,7 +33,7 @@ export class AccountMailOutboxService extends AccountMailOutbox implements OnMod
     super();
   }
 
-  /** Registers the seven event types with their queue. */
+  /** Registers the nine event types with their queue. */
   onModuleInit(): void {
     for (const type of ACCOUNT_MAIL_EVENT_TYPES) this.routes.register({ type, queue: 'notifications' });
   }

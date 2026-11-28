@@ -6,7 +6,10 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { appliedMigration, insertedTemplates } from '../../../../../support/applied-templates';
 import { NotificationEventRegistry } from '@src/modules/platform';
-import { IDENTITY_MAIL_EVENTS } from '@src/modules/identity/application/mail/identity-mail-events';
+import {
+  IDENTITY_MAIL_EVENTS,
+  PASSWORD_SET_SENTENCE,
+} from '@src/modules/identity/application/mail/identity-mail-events';
 import {
   IDENTITY_DEFAULT_TEMPLATES,
   IDENTITY_SHIPPED_TEXT_ONLY,
@@ -50,6 +53,10 @@ describe('IDENTITY_MAIL_EVENTS', () => {
       'merchant.portal_api_key_created',
       'staff.invited',
       'staff.password_reset',
+      'customer.no_account',
+      'customer.sign_up_link',
+      'customer.sign_up_existing',
+      'customer.password_set',
     ]);
     for (const definition of IDENTITY_MAIL_EVENTS) {
       expect(events.get(definition.key, definition.audience)).toBeDefined();
@@ -71,7 +78,7 @@ describe('IDENTITY_MAIL_EVENTS', () => {
 describe('IDENTITY_DEFAULT_TEMPLATES', () => {
   it('belong to a registered event and channel, use only that event’s placeholders, and have a subject and a body', () => {
     const events = registry();
-    expect(IDENTITY_DEFAULT_TEMPLATES).toHaveLength(6);
+    expect(IDENTITY_DEFAULT_TEMPLATES).toHaveLength(10);
     for (const template of IDENTITY_DEFAULT_TEMPLATES) {
       const label = `${template.event} ${template.channel} ${template.audience}`;
       const definition = events.get(template.event, template.audience);
@@ -91,7 +98,7 @@ describe('IDENTITY_DEFAULT_TEMPLATES', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('give every identity event, merchant or staff, one email in English', () => {
+  it('give every identity event, merchant, staff or customer, one email in English', () => {
     for (const definition of IDENTITY_MAIL_EVENTS) {
       const own = IDENTITY_DEFAULT_TEMPLATES.filter(
         (t) => t.event === definition.key && t.audience === definition.audience && t.channel === 'email',
@@ -107,6 +114,51 @@ describe('IDENTITY_DEFAULT_TEMPLATES', () => {
       expect(template.body).toContain('{{link}}');
       expect(template.body).toContain('{{expiresAt}}');
     }
+  });
+
+  it('give the note to an address without an account what was asked and the sign-up page, and no link (decision 079)', () => {
+    const note = IDENTITY_DEFAULT_TEMPLATES.find((t) => t.event === 'customer.no_account')!;
+    expect(note.audience).toBe('customer');
+    expect(placeholdersOf(note.body).sort()).toEqual(['change', 'signUpUrl']);
+    expect(note.body).not.toContain('{{link}}');
+    expect(IDENTITY_SHIPPED_TEXT_ONLY).toContain('customer.no_account');
+  });
+
+  it('tell the two mails of a sign-up apart: "finish creating your account" and "you already have an account" (decision 079, S3)', () => {
+    const finish = IDENTITY_DEFAULT_TEMPLATES.find((t) => t.event === 'customer.sign_up_link')!;
+    expect(finish.subject).toBe('Finish creating your account');
+    expect(finish.body).toContain('{{link}}');
+    expect(finish.body).toContain(
+      'If you did not ask for this, ignore this email: no account is made until the link is opened.',
+    );
+    const existing = IDENTITY_DEFAULT_TEMPLATES.find((t) => t.event === 'customer.sign_up_existing')!;
+    expect(existing.subject).toBe('You already have an account');
+    expect(existing.body).toContain('You already have an account. Nothing was changed.');
+    expect(existing.body).toContain('{{link}}');
+    for (const event of ['customer.sign_up_link', 'customer.sign_up_existing']) {
+      expect(IDENTITY_SHIPPED_TEXT_ONLY, event).toContain(event);
+      expect(registry().get(event, 'customer'), event).toMatchObject({ security: true, secretLink: true });
+    }
+  });
+
+  it('tell the owner of an account that its sign-up finish set a password, without naming support (decision 079, re-review)', () => {
+    const mail = IDENTITY_DEFAULT_TEMPLATES.find((t) => t.event === 'customer.password_set')!;
+    expect(mail.audience).toBe('customer');
+    expect(mail.subject).toBe('A password was set for your account');
+    expect(placeholdersOf(mail.body).sort()).toEqual(['change', 'customerName']);
+    expect(placeholdersOf(mail.subject)).toEqual([]);
+    // Filled with the sentence the code sends, the body is the text of the brief and says nothing about the support team's change.
+    expect(mail.body.replace('{{customerName}}', 'Daniel Whitmore').replace('{{change}}', PASSWORD_SET_SENTENCE)).toBe(
+      'Hi Daniel Whitmore,\n\nA password was set for your account just now, when its sign-up was finished.\n\n' +
+        'If this was you, there is nothing to do. If it was not you, ask for a sign-in link on the sign-in page, then change the ' +
+        'password in your account settings, or contact our support team.',
+    );
+    expect(mail.body).not.toContain('Our support team made this change');
+    expect(IDENTITY_SHIPPED_TEXT_ONLY).toContain('customer.password_set');
+    // A security mail with no link: a stored template may not drop `{{change}}`, and it is never stopped for lack of a template.
+    expect(registry().get('customer.password_set', 'customer')).toMatchObject({ security: true, transactional: true });
+    expect(registry().get('customer.password_set', 'customer')?.secretLink).toBeUndefined();
+    expect(registry().get('customer.password_set', 'customer')?.namedAddress).toBeUndefined();
   });
 
   it('never put the staff reason of a suspension in the suspension mail', () => {
@@ -179,5 +231,9 @@ describe('identityTemplatesSql()', () => {
       IDENTITY_DEFAULT_TEMPLATES.length - IDENTITY_SHIPPED_TEXT_ONLY.length,
     );
     expect(insert).not.toContain('merchant.portal_api_key_created');
+    expect(insert).not.toContain('customer.no_account');
+    expect(insert).not.toContain('customer.sign_up_link');
+    expect(insert).not.toContain('customer.sign_up_existing');
+    expect(insert).not.toContain('customer.password_set');
   });
 });

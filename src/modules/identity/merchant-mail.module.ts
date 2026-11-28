@@ -10,6 +10,7 @@ import { AccountMailJobs } from './application/mail/account-mail-jobs';
 import { AccountMailOutboxService } from './application/mail/account-mail-outbox';
 import { MerchantLifecycleMails } from './application/mail/merchant-lifecycle-mails';
 import { MerchantMailOutbox } from './application/mail/merchant-mail-outbox';
+import { NoAccountNote } from './application/mail/no-account-note';
 import { IdentityMailEventsModule } from './identity-mail-events.module';
 import {
   CustomerEmailVerificationMailProcessor,
@@ -19,12 +20,14 @@ import {
   MerchantEmailVerificationMailProcessor,
   MerchantInvitedMailProcessor,
   MerchantPasswordResetMailProcessor,
+  SignUpExistingMailProcessor,
+  SignUpLinkMailProcessor,
 } from './jobs/account-mail.processors';
 import { AccountAuthTokens } from './ports/account-auth-tokens';
 import { AccountMailOutbox } from './ports/account-mail-outbox';
 
 /**
- * Provides the account mail events, their seven processors, the job that rotates a link and sends it, and the account link tokens.
+ * Provides the account mail events, their nine processors (two of them the sign-up mails of decision 079), the job that rotates a link and sends it, and the account link tokens.
  *
  * Why: brief 2b, features 12a and 14b, decision 064: one set of link mails serves every rank. The API and the worker must both register
  * the event types (the worker's relay only knows the routes registered in its own process: `AccountMailOutboxService` registers them at
@@ -35,6 +38,7 @@ import { AccountMailOutbox } from './ports/account-mail-outbox';
  * Port bindings: `AccountAuthTokens` is `AccountAuthTokenService` and `AccountMailOutbox` is `AccountMailOutboxService`, so a test spy on
  * the port sees every call of the services that inject it. The class `AccountAuthTokenService` is exported too: the link sign-in and the
  * link-token resolver need its lookups. `MerchantMailOutbox` stays for the callers of its old event names until the contract release.
+ * `NoAccountNote` (decision 079) queues the note to an address without an account through the platform's `NotificationService`.
  */
 @Module({
   imports: [NotificationDeliveryModule, IdentityMailEventsModule, AccountsModule],
@@ -46,6 +50,7 @@ import { AccountMailOutbox } from './ports/account-mail-outbox';
     AccountMailOutboxService,
     { provide: AccountMailOutbox, useExisting: AccountMailOutboxService },
     AccountMailJobs,
+    NoAccountNote,
     MerchantEmailVerificationMailProcessor,
     MerchantPasswordResetMailProcessor,
     MerchantInvitedMailProcessor,
@@ -53,7 +58,16 @@ import { AccountMailOutbox } from './ports/account-mail-outbox';
     CustomerPasswordResetMailProcessor,
     CustomerInvitedMailProcessor,
     CustomerEmailVerificationMailProcessor,
+    SignUpLinkMailProcessor,
+    SignUpExistingMailProcessor,
   ],
-  exports: [MerchantMailOutbox, MerchantLifecycleMails, AccountAuthTokenService, AccountAuthTokens, AccountMailOutbox],
+  exports: [
+    MerchantMailOutbox,
+    MerchantLifecycleMails,
+    AccountAuthTokenService,
+    AccountAuthTokens,
+    AccountMailOutbox,
+    NoAccountNote,
+  ],
 })
 export class MerchantMailModule {}

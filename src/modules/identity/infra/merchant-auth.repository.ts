@@ -110,9 +110,10 @@ export interface SaveClientPassword {
   readonly fromMailedLink?: boolean;
   /**
    * The hash the current password was checked against (an own change): the write lands only while the row still holds it, so a
-   * password changed or ended since that check is not replaced.
+   * password changed or ended since that check is not replaced. `null` (the finish of a sign-up, decision 079): the write lands only on
+   * an account that still has no password.
    */
-  readonly expectedHash?: string;
+  readonly expectedHash?: string | null;
 }
 
 /**
@@ -151,7 +152,11 @@ export async function saveClientPassword(db: DbExecutor, input: SaveClientPasswo
       and(
         eq(clients.id, input.id),
         mayAct(),
-        input.expectedHash === undefined ? undefined : eq(clients.passwordHash, input.expectedHash),
+        input.expectedHash === undefined
+          ? undefined
+          : input.expectedHash === null
+            ? isNull(clients.passwordHash)
+            : eq(clients.passwordHash, input.expectedHash),
       ),
     )
     .returning({ id: clients.id });

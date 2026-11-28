@@ -18,6 +18,7 @@ import { SessionCookies } from './session-cookies';
 import { SessionPolicy } from './session-policy';
 import {
   findLiveSessionByHash,
+  findSessionOpenedAt,
   insertSession,
   liveTokenHashesOf,
   revokeLiveSession,
@@ -232,6 +233,20 @@ export class SessionService implements AccountSessions {
       return undefined;
     }
     return view;
+  }
+
+  /**
+   * Tells when a session was opened (its `created_at`), read from Postgres, never from the cached view.
+   *
+   * Why: decision 079 (its final round): the finish of a sign-up sets a first password only on a session opened at most an hour ago
+   * (an account without a password can only have been signed in by a link, so a young session means the mailbox was proven minutes ago).
+   * A rotation opens a new row, so the time is the one of the last sign-in step.
+   *
+   * @param sessionId the session id
+   * @returns when the session was opened, or `undefined` when no row has the id
+   */
+  openedAt(sessionId: number): Promise<Date | undefined> {
+    return findSessionOpenedAt(this.db.db, sessionId);
   }
 
   /**

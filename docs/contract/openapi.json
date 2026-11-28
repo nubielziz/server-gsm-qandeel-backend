@@ -225400,7 +225400,7 @@
     },
     "/store/v1/auth/magic-link": {
       "post": {
-        "description": "Answers `204` whatever the email is, so it cannot be used to find out who has an account. The link is for the retail rank: an email the store does not know yet becomes a retail account when the link is used (self-signup, the link proves the mailbox); a merchant rank, a suspended, blocked or anonymized account, and a blocklisted email get nothing, with the same answer. The link is valid one hour and works once; up to three such links work at once (a fourth replaces the oldest), and at most five are mailed an hour per account; a request beyond that answers `204` and sends nothing. Counted per network and email, whether or not the email exists. Needs the anti-bot token (`X-Turnstile-Token`). Every answer sets an HttpOnly cookie that lives as long as the link and marks the browser that asked for it (`POST /store/v1/auth/verify` reads it).",
+        "description": "Answers `204` whatever the email is, so it cannot be used to find out who has an account. The link is for a retail account that may act: a merchant rank, a suspended, blocked or anonymized account, and a blocklisted email get nothing, with the same answer. Since decision 079 a link no longer makes an account: an address that has no account (unknown, or known only from a guest checkout) gets a short mail instead, which says that no account uses it yet and names the sign-up page of the shop (`/en/sign-up`, where `POST /store/v1/auth/sign-up` makes one); a link mailed before that release still works until it expires. The link is valid one hour and works once; up to three such links work at once (a fourth replaces the oldest), and at most five mails (links or notes) go out an hour per address; a request beyond that answers `204` and sends nothing. Counted per network and email, whether or not the email exists, in the budget `POST /store/v1/auth/sign-up` shares. Needs the anti-bot token (`X-Turnstile-Token`). Every answer sets an HttpOnly cookie that lives as long as a link and marks the browser that asked for it (`POST /store/v1/auth/verify` reads it).",
         "operationId": "postStoreV1AuthMagicLink",
         "parameters": [
           {
@@ -226551,9 +226551,1193 @@
         "x-gsm-surface": "store"
       }
     },
+    "/store/v1/auth/sign-up": {
+      "post": {
+        "description": "Makes a shop account (decision 079): every field is required. Answers `204` for every valid body whoever holds the email, so it cannot be used to find out who has an account (the password is hashed before the address is looked up, in every case). For an address that already has an account it mails, where `POST /store/v1/auth/magic-link` would mail its sign-in link, that link in a mail that says \"You already have an account. Nothing was changed.\" (nothing for an account that gets no link), and keeps nothing of the form. For any other address it mails \"Finish creating your account\" with a sign-in link valid one hour (\"no account is made until the link is opened\"), and the form waits beside that link (the password only as an argon2id hash). Each link keeps its own form: a second sign-up mails a second link, and whichever link is opened first applies its own form and ends the others. Opening the link (`POST /store/v1/auth/verify`) in the browser that sent the form makes the account with the name (first name, a space, last name), the country (and the shop currency it derives), the phone and the password, and signs it in (`passwordSet: true`). Opened in any other browser it makes the account and signs it in with nothing of the form (`passwordSet: false`, and `pendingDetails` to confirm with `POST /store/v1/auth/sign-up/finish`), because anywhere else the form could be a stranger’s: someone who signed up with your address could otherwise sign in to your account with a password of their own. `422` names the field: `password` with `WEAK_PASSWORD` and the policy’s sentence (at least 10 characters, not trivial, without the email or the names), `country` with code `unsupported` for a country outside the shop’s tax windows (any listed country when there are none), `lastName` when both names together pass 119 characters, and `email`, `firstName`, `lastName` and `phone` for their shapes (names and phone refuse line breaks, tabs and invisible direction marks). The budget of `POST /store/v1/auth/magic-link` (per network and email, and five mails an hour per address) covers both routes. Needs the anti-bot token (`X-Turnstile-Token`). Every answer sets the HttpOnly cookie of the asking browser, as `POST /store/v1/auth/magic-link` does.",
+        "operationId": "postStoreV1AuthSignUp",
+        "parameters": [
+          {
+            "name": "x-turnstile-token",
+            "in": "header",
+            "description": "The Cloudflare Turnstile widget's token (its `cf-turnstile-response` value). A missing or failed check answers `403 TURNSTILE_FAILED`; a token is single use and valid for five minutes, so a retried write needs a new one.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024,
+                    "description": "The password, as typed: at least 10 characters, not trivial, without the email or the names."
+                  },
+                  "firstName": {
+                    "description": "The first name: trimmed, then 1 to 60 characters, no line break or other control character; any script.",
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "lastName": {
+                    "description": "The last name: trimmed, then 1 to 60 characters, no line break or other control character; any script.",
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "country": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z]{2}$",
+                    "description": "ISO 3166 alpha-2 (any case): a country of the shop’s tax windows (`taxRates` of `GET /store/v1/config`), or any country when there is none."
+                  },
+                  "phone": {
+                    "description": "The phone number with its country code. Spaces, dashes, dots and brackets are removed; what is left must be an optional leading `+` and 7 to 15 digits, and is stored in that form (`+962791234567`).",
+                    "type": "string",
+                    "maxLength": 64
+                  }
+                },
+                "required": [
+                  "email",
+                  "password",
+                  "firstName",
+                  "lastName",
+                  "country",
+                  "phone"
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "email": "daniel.whitmore@example.com",
+                    "password": "a-long-password",
+                    "firstName": "Daniel",
+                    "lastName": "Whitmore",
+                    "country": "GB",
+                    "phone": "+44 7700 900123"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Done. No body.",
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP_NOT_ALLOWED: Access from this network address is not allowed.\nTURNSTILE_FAILED: The anti-bot check failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "IP_NOT_ALLOWED",
+                        "TURNSTILE_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "IP_NOT_ALLOWED": {
+                    "summary": "Access from this network address is not allowed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/ip-not-allowed",
+                      "title": "Access from this network address is not allowed.",
+                      "status": 403,
+                      "code": "IP_NOT_ALLOWED",
+                      "detail": "Access from this network address is not allowed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "TURNSTILE_FAILED": {
+                    "summary": "The anti-bot check failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/turnstile-failed",
+                      "title": "The anti-bot check failed.",
+                      "status": 403,
+                      "code": "TURNSTILE_FAILED",
+                      "detail": "The anti-bot check failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.\nWEAK_PASSWORD: This password is too weak.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED",
+                        "WEAK_PASSWORD"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "WEAK_PASSWORD": {
+                    "summary": "This password is too weak.",
+                    "value": {
+                      "type": "https://errors.gsm.example/weak-password",
+                      "title": "This password is too weak.",
+                      "status": 422,
+                      "code": "WEAK_PASSWORD",
+                      "detail": "This password is too weak.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: You are sending requests too quickly.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 429
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "RATE_LIMITED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "RATE_LIMITED": {
+                    "summary": "You are sending requests too quickly.",
+                    "value": {
+                      "type": "https://errors.gsm.example/rate-limited",
+                      "title": "You are sending requests too quickly.",
+                      "status": 429,
+                      "code": "RATE_LIMITED",
+                      "detail": "You are sending requests too quickly.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before the next request.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        "summary": "Sign up with the full details",
+        "tags": [
+          "storefront-auth"
+        ],
+        "x-gsm-access": "public",
+        "x-gsm-key": "POST /store/v1/auth/sign-up",
+        "x-gsm-surface": "store",
+        "x-gsm-turnstile": true
+      }
+    },
+    "/store/v1/auth/sign-up/finish": {
+      "post": {
+        "description": "For a signed-in retail account that has no password yet (decision 079): a sign-up link opened in another browser than the one that sent the form (`passwordSet: false` with `pendingDetails`), or an older account made by a sign-in link without details. The body has exactly the rules of `POST /store/v1/auth/sign-up` without the email. It sets the name (first name, a space, last name), the country (and the shop currency it derives when the country differs from the stored one: an account that keeps its country keeps its currency), the phone and the password; the password ends a forced change and voids open invitation and reset links, every other session of the account ends while this one stays, and the address of the account gets the security notice that a password was set. Answers the account (`AccountMe`, as `GET /store/v1/me`). Only a session opened at most 60 minutes ago may finish: an older one is `409 CONFLICT` (\"For your security, finish creating your account within an hour of opening the sign-in link. Ask for a new sign-in link, open it and try again.\"), and nothing is written. An account that already has a password is `409 CONFLICT` too (change it with `POST /store/v1/me/password`). `422` names the field as the sign-up does (`WEAK_PASSWORD` on `password`, code `unsupported` on `country`). Five tries per account in 15 minutes.",
+        "operationId": "postStoreV1AuthSignUpFinish",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024,
+                    "description": "The password, as typed: at least 10 characters, not trivial, without the email or the names."
+                  },
+                  "firstName": {
+                    "description": "The first name: trimmed, then 1 to 60 characters, no line break or other control character; any script.",
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "lastName": {
+                    "description": "The last name: trimmed, then 1 to 60 characters, no line break or other control character; any script.",
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "country": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z]{2}$",
+                    "description": "ISO 3166 alpha-2 (any case): a country of the shop’s tax windows (`taxRates` of `GET /store/v1/config`), or any country when there is none."
+                  },
+                  "phone": {
+                    "description": "The phone number with its country code. Spaces, dashes, dots and brackets are removed; what is left must be an optional leading `+` and 7 to 15 digits, and is stored in that form (`+962791234567`).",
+                    "type": "string",
+                    "maxLength": 64
+                  }
+                },
+                "required": [
+                  "password",
+                  "firstName",
+                  "lastName",
+                  "country",
+                  "phone"
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "password": "a-long-password",
+                    "firstName": "Daniel",
+                    "lastName": "Whitmore",
+                    "country": "GB",
+                    "phone": "+44 7700 900123"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "x-gsm-alias": "Id",
+                      "description": "Numeric record id.",
+                      "examples": [
+                        42
+                      ]
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "suspended",
+                        "blocked",
+                        "anonymized"
+                      ]
+                    },
+                    "rank": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "x-gsm-alias": "Id",
+                          "description": "Numeric record id.",
+                          "examples": [
+                            42
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "retail",
+                            "merchant"
+                          ]
+                        },
+                        "discountPercent": {
+                          "type": "string",
+                          "maxLength": 40,
+                          "pattern": "^-?\\d+(\\.\\d+)?$",
+                          "x-gsm-alias": "Decimal",
+                          "description": "Exact decimal number as a string.",
+                          "examples": [
+                            "19.0000"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "kind",
+                        "discountPercent"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "hasPassword": {
+                      "type": "boolean",
+                      "description": "True once the account has a password; false for an account that signs in by link."
+                    },
+                    "mustChangePassword": {
+                      "type": "boolean"
+                    },
+                    "twofaEnabled": {
+                      "type": "boolean"
+                    },
+                    "currency": {
+                      "description": "The ISO code of the currency prices are shown in; null when none is chosen.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "marketingOptIn": {
+                      "type": "boolean"
+                    },
+                    "company": {
+                      "type": "string"
+                    },
+                    "username": {
+                      "type": "string",
+                      "description": "The Dhru username of a merchant rank; empty for a retail account."
+                    },
+                    "phone": {
+                      "type": "string"
+                    },
+                    "country": {
+                      "type": "string"
+                    },
+                    "address": {
+                      "type": "string"
+                    },
+                    "taxId": {
+                      "type": "string"
+                    },
+                    "emailVerifiedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "x-gsm-alias": "IsoDateTime",
+                          "description": "ISO 8601 UTC time with milliseconds.",
+                          "examples": [
+                            "2026-03-01T09:30:00.000Z"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "x-gsm-alias": "IsoDateTime",
+                      "description": "ISO 8601 UTC time with milliseconds.",
+                      "examples": [
+                        "2026-03-01T09:30:00.000Z"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "email",
+                    "status",
+                    "rank",
+                    "hasPassword",
+                    "mustChangePassword",
+                    "twofaEnabled",
+                    "currency",
+                    "marketingOptIn",
+                    "company",
+                    "username",
+                    "phone",
+                    "country",
+                    "address",
+                    "taxId",
+                    "emailVerifiedAt",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "id": 114,
+                  "name": "Daniel Whitmore",
+                  "email": "daniel.whitmore@example.com",
+                  "status": "active",
+                  "rank": {
+                    "id": 4,
+                    "name": "Storefront retail",
+                    "kind": "retail",
+                    "discountPercent": "0.0000"
+                  },
+                  "hasPassword": true,
+                  "mustChangePassword": false,
+                  "twofaEnabled": false,
+                  "currency": "GBP",
+                  "marketingOptIn": true,
+                  "company": "",
+                  "username": "",
+                  "phone": "+447700900123",
+                  "country": "GB",
+                  "address": "",
+                  "taxId": "",
+                  "emailVerifiedAt": "2026-10-12T09:30:00.000Z",
+                  "createdAt": "2026-10-12T09:30:00.000Z"
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCOUNT_SUSPENDED: This account is suspended.\nCSRF_FAILED: The security check for this request failed.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nRANK_NOT_ALLOWED: This is not available for this account.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "ACCOUNT_SUSPENDED",
+                        "CSRF_FAILED",
+                        "IP_NOT_ALLOWED",
+                        "RANK_NOT_ALLOWED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "ACCOUNT_SUSPENDED": {
+                    "summary": "This account is suspended.",
+                    "value": {
+                      "type": "https://errors.gsm.example/account-suspended",
+                      "title": "This account is suspended.",
+                      "status": 403,
+                      "code": "ACCOUNT_SUSPENDED",
+                      "detail": "This account is suspended.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "IP_NOT_ALLOWED": {
+                    "summary": "Access from this network address is not allowed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/ip-not-allowed",
+                      "title": "Access from this network address is not allowed.",
+                      "status": 403,
+                      "code": "IP_NOT_ALLOWED",
+                      "detail": "Access from this network address is not allowed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "RANK_NOT_ALLOWED": {
+                    "summary": "This is not available for this account.",
+                    "value": {
+                      "type": "https://errors.gsm.example/rank-not-allowed",
+                      "title": "This is not available for this account.",
+                      "status": 403,
+                      "code": "RANK_NOT_ALLOWED",
+                      "detail": "This is not available for this account.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CONFLICT: The request conflicts with the current state.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 409
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "CONFLICT"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "CONFLICT": {
+                    "summary": "The request conflicts with the current state.",
+                    "value": {
+                      "type": "https://errors.gsm.example/conflict",
+                      "title": "The request conflicts with the current state.",
+                      "status": 409,
+                      "code": "CONFLICT",
+                      "detail": "The request conflicts with the current state.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.\nWEAK_PASSWORD: This password is too weak.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED",
+                        "WEAK_PASSWORD"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "WEAK_PASSWORD": {
+                    "summary": "This password is too weak.",
+                    "value": {
+                      "type": "https://errors.gsm.example/weak-password",
+                      "title": "This password is too weak.",
+                      "status": 422,
+                      "code": "WEAK_PASSWORD",
+                      "detail": "This password is too weak.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: You are sending requests too quickly.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 429
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "RATE_LIMITED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "RATE_LIMITED": {
+                    "summary": "You are sending requests too quickly.",
+                    "value": {
+                      "type": "https://errors.gsm.example/rate-limited",
+                      "title": "You are sending requests too quickly.",
+                      "status": 429,
+                      "code": "RATE_LIMITED",
+                      "detail": "You are sending requests too quickly.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before the next request.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "summary": "Finish the sign-up of my account",
+        "tags": [
+          "storefront-auth"
+        ],
+        "x-gsm-access": "customer-session",
+        "x-gsm-key": "POST /store/v1/auth/sign-up/finish",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "store"
+      }
+    },
     "/store/v1/auth/verify": {
       "post": {
-        "description": "Spends the link (single use), marks the email verified on first use, turns a guest of that email into an account holder and opens a session: the cookies and the `X-CSRF-Token` header come with the answer, which is the account (`AccountMe`) plus `requestedHere`, `maskedEmail`, `next`, `claimedOrders` and `claimSkipped`. `next` is `totp` when the account has two-step sign-in on (the session is then a `pending_totp` one, finished by `POST /client/auth/2fa`) and `done` otherwise. `claimGuestOrders: true` asks to move the orders and records of the guest row of the same email onto the account (the mailbox is proven by this link, only the retail rank is offered it): `claimedOrders` says how many moved, and `claimSkipped: busy` says the claim gave up because another request holds one of the rows (the sign-in itself still succeeded; ask for a new link later). In the browser that asked for the link (the cookie of `POST /store/v1/auth/magic-link`) it signs in as before (`requestedHere` true). Anywhere else, while the browser holds a live session of another account, it is `409 CONFLICT` (sign out first): that session stays and the link is not spent; in a browser without such a session it signs in with `requestedHere` false, and the shop shows whose account was opened. A link that is unknown, used, expired or replaced, or belongs to an account that may not act, or whose email gained a login account since the mail was sent, is `410 TOKEN_INVALID`; so is a link of a merchant rank, and so is a verification link: that one is answered by `POST /client/auth/verify-email`, which never opens a session (decision 052). Accepted only with an `Origin` header that is one of the shop’s origins, like the public `/client` sign-in routes (`403 CSRF_FAILED` otherwise).",
+        "description": "Spends the link (single use), marks the email verified on first use, turns a guest of that email into an account holder and opens a session: the cookies and the `X-CSRF-Token` header come with the answer, which is the account (`AccountMe`) plus `requestedHere`, `maskedEmail`, `next`, `claimedOrders`, `claimSkipped` and, for a link of a sign-up, `passwordSet` and `pendingDetails`. A link mailed by `POST /store/v1/auth/sign-up` (decision 079) that makes the account applies its form (name, country, phone and password) only when it is opened in the browser that sent the form (`passwordSet: true`); opened elsewhere it applies nothing and answers `passwordSet: false` with the details as typed (`pendingDetails`, never the password) for `POST /store/v1/auth/sign-up/finish`. Every waiting form of the address is deleted whatever happens, and an address that already had an account keeps what it has (a plain sign-in: neither key). `next` is `totp` when the account has two-step sign-in on (the session is then a `pending_totp` one, finished by `POST /client/auth/2fa`) and `done` otherwise. `claimGuestOrders: true` asks to move the orders and records of the guest row of the same email onto the account (the mailbox is proven by this link, only the retail rank is offered it): `claimedOrders` says how many moved, and `claimSkipped: busy` says the claim gave up because another request holds one of the rows (the sign-in itself still succeeded; ask for a new link later). In the browser that asked for the link (the cookie of `POST /store/v1/auth/magic-link`) it signs in as before (`requestedHere` true). Anywhere else, while the browser holds a live session of another account, it is `409 CONFLICT` (sign out first): that session stays and the link is not spent; in a browser without such a session it signs in with `requestedHere` false, and the shop shows whose account was opened. A link that is unknown, used, expired or replaced, or belongs to an account that may not act, or whose email gained a login account since the mail was sent, is `410 TOKEN_INVALID`; so is a link of a merchant rank, and so is a verification link: that one is answered by `POST /client/auth/verify-email`, which never opens a session (decision 052). Accepted only with an `Origin` header that is one of the shop’s origins, like the public `/client` sign-in routes (`403 CSRF_FAILED` otherwise).",
         "operationId": "postStoreV1AuthVerify",
         "parameters": [],
         "requestBody": {
@@ -226753,6 +227937,37 @@
                       "description": "`busy` when the claim gave up because another request holds a row it needs: the sign-in still succeeded, ask for a new link later.",
                       "type": "string",
                       "const": "busy"
+                    },
+                    "passwordSet": {
+                      "description": "Only for a link mailed by `POST /store/v1/auth/sign-up` that made the account (decision 079): true when the form was applied (the name, country, phone and password), which happens when the link is opened in the browser that sent the form; false when it was opened in another browser: the account exists and is signed in, but nothing of the form was applied (no name, country, phone or password), and `pendingDetails` shows what was typed so the person can confirm or correct it with `POST /store/v1/auth/sign-up/finish`. Absent for every other link, and for a sign-up link of an address that already had an account (then it was a plain sign-in and nothing was applied).",
+                      "type": "boolean"
+                    },
+                    "pendingDetails": {
+                      "description": "Only with `passwordSet: false`: the details of the sign-up form as typed (never the password), shown only to the person who proved the mailbox. Nothing of them was applied; send them back, corrected if need be, with a password to `POST /store/v1/auth/sign-up/finish`.",
+                      "type": "object",
+                      "properties": {
+                        "firstName": {
+                          "type": "string"
+                        },
+                        "lastName": {
+                          "type": "string"
+                        },
+                        "country": {
+                          "type": "string",
+                          "description": "ISO 3166 alpha-2, upper case."
+                        },
+                        "phone": {
+                          "type": "string",
+                          "description": "The cleaned form: an optional leading `+` and 7 to 15 digits."
+                        }
+                      },
+                      "required": [
+                        "firstName",
+                        "lastName",
+                        "country",
+                        "phone"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -227406,7 +228621,7 @@
     },
     "/store/v1/checkout-sessions": {
       "post": {
-        "description": "Starts a purchase, as a guest or as a signed-in retail account: the session locks the retail price, the tax rate of the buyer's `country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) the guest record of that email: it never attaches to the login account of the email, whatever its rank. A request that carries the cookie of a signed-in account (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the checkout as that account instead: `email` must be the email of the account in any case (else `422` on `email`: \"Use the email of your account, or sign out to check out as a guest.\"), the `guestCheckout` switch does not apply and the session belongs to the signed-in account. A signed-in merchant rank is refused (`403 RANK_NOT_ALLOWED`, \"Your account orders from its price list.\") and nothing is written. A request without a usable account session is a guest. The order fields come in `inputs`, each judged by its own type, required tick and pattern (decision 073: the service type `imei` forces nothing); a field of type `imei` holds one IMEI (spaces and dashes removed, 15 digits, Luhn; else `422 INVALID_IMEI` with `invalid_imei` on `inputs.<key>`). Decision 076: a field of type `imei_bulk` holds 1 to 30 IMEIs, still one order at one price (a bad line is `422 INVALID_IMEI`), and the other check types answer `422 VALIDATION_FAILED` with `invalid_<type>` on `inputs.<key>`. On an IMEI service the main input may also come as `imei` (older shop pages; it is the value of the main-input field, wins over a value under its key and is reported on `imei`; a service without such a field takes it as sent). A blocklisted IMEI is refused whenever the main input, a field of type `imei` or a line of a field of type `imei_bulk` reads as a valid IMEI. An account or guest record that may not act is refused (`403 ACCOUNT_SUSPENDED`), and so is a guest whose email belongs to a login account that is suspended, blocked or erased, with the same answer as a blocklist hit and no guest record made; when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is `422` on `country` (code `unsupported`, \"Choose a country.\"), the refusal of the customer profile; a shop with no tax window in force accepts any country without tax. While the `country` has a regional tax window in force, `region` must name a region that has one (any case), else `422` on `region` (code `unsupported`, \"Choose a region.\"); the national window alone does not apply then. An email that staff blocked for guest checkouts is refused to a guest like any blocked email (`403 ACCOUNT_SUSPENDED`) and accepted for its signed-in account (decision 050). The answer carries the session token: the whole credential of the next two routes. Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached. `currency` must be on offer in `GET /store/v1/config` (`422` on `currency` otherwise).",
+        "description": "Starts a purchase, as a guest or as a signed-in retail account: the session locks the retail price, the tax rate of the buyer's `country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) the guest record of that email: it never attaches to the login account of the email, whatever its rank. A request that carries the cookie of a signed-in account (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the checkout as that account instead: `email` must be the email of the account in any case (else `422` on `email`: \"Use the email of your account, or sign out to check out as a guest.\"), the `guestCheckout` switch does not apply and the session belongs to the signed-in account. A signed-in merchant rank is refused (`403 RANK_NOT_ALLOWED`, \"Your account orders from its price list.\") and nothing is written. A request without a usable account session is a guest. The order fields come in `inputs`, each judged by its own type, required tick and pattern (decision 073: the service type `imei` forces nothing); a field of type `imei` holds one IMEI (spaces and dashes removed, 15 digits, Luhn; else `422 INVALID_IMEI` with `invalid_imei` on `inputs.<key>`). Decision 076: a field of type `imei_bulk` holds 1 to 30 IMEIs, still one order at one price (a bad line is `422 INVALID_IMEI`), and the other check types answer `422 VALIDATION_FAILED` with `invalid_<type>` on `inputs.<key>`. On an IMEI service the main input may also come as `imei` (older shop pages; it is the value of the main-input field, wins over a value under its key and is reported on `imei`; a service without such a field takes it as sent). A blocklisted IMEI is refused whenever the main input, a field of type `imei` or a line of a field of type `imei_bulk` reads as a valid IMEI. An account or guest record that may not act is refused (`403 ACCOUNT_SUSPENDED`), and so is a guest whose email belongs to a login account that is suspended, blocked or erased, with the same answer as a blocklist hit and no guest record made; when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is `422` on `country` (code `unsupported`, \"Choose a country.\"), the refusal of the customer profile; a shop with no tax window in force accepts, without tax, any listed country code (the ISO 3166-1 alpha-2 codes and `XK`, in any case) and refuses any other two letters (`UK`, `ZZ`) with the same `422` (decision 079). While the `country` has a regional tax window in force, `region` must name a region that has one (any case), else `422` on `region` (code `unsupported`, \"Choose a region.\"); the national window alone does not apply then. An email that staff blocked for guest checkouts is refused to a guest like any blocked email (`403 ACCOUNT_SUSPENDED`) and accepted for its signed-in account (decision 050). The answer carries the session token: the whole credential of the next two routes. Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached. `currency` must be on offer in `GET /store/v1/config` (`422` on `currency` otherwise).",
         "operationId": "postStoreV1CheckoutSessions",
         "parameters": [
           {

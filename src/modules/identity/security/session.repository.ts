@@ -40,6 +40,21 @@ export async function findLiveSessionByHash(
 }
 
 /**
+ * Reads when a session was opened.
+ *
+ * Why: decision 079 (its final round): the finish of a sign-up sets a first password only on a session opened at most an hour ago; the
+ * cached view of a session does not carry its creation time, so the row is read.
+ *
+ * @param db the database or a transaction
+ * @param id the session id
+ * @returns the session's `created_at`, or `undefined` when no row has the id
+ */
+export async function findSessionOpenedAt(db: DbExecutor, id: number): Promise<Date | undefined> {
+  const [row] = await db.select({ createdAt: sessions.createdAt }).from(sessions).where(eq(sessions.id, id)).limit(1);
+  return row?.createdAt;
+}
+
+/**
  * Revokes one session if it is still live.
  *
  * Why: the guarded `UPDATE ... WHERE revoked_at IS NULL` makes revoking and rotating race-safe: only one caller gets the row

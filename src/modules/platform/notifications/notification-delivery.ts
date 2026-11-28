@@ -20,7 +20,15 @@ import { describeChanges } from './digest-rules';
 import { MailTransport } from './mail-transport';
 import { choiceFor } from './merchant-preferences';
 import { type NotificationEventDefinition, NotificationEventRegistry } from './notification-events';
-import { OPERATIONS_RECIPIENT_ID, asString, itemsOf, operationsRecipientOf, variablesOf } from './notification-payload';
+import {
+  ADDRESS_RECIPIENT_ID,
+  OPERATIONS_RECIPIENT_ID,
+  addressRecipientOf,
+  asString,
+  itemsOf,
+  operationsRecipientOf,
+  variablesOf,
+} from './notification-payload';
 import {
   type NotificationPayload,
   closeDigest,
@@ -181,6 +189,8 @@ export class NotificationDelivery {
     if (row.campaignId !== null) return this.sendCampaign(row, row.campaignId);
     const payload = row.payload as NotificationPayload;
     const operations = row.recipientType === 'staff' && row.recipientId === OPERATIONS_RECIPIENT_ID;
+    // Decision 079: a message to an address no account row holds (the note to an unknown address) names that address in its payload.
+    const addressed = row.recipientType === 'account' && row.recipientId === ADDRESS_RECIPIENT_ID;
     // Telegram reaches the operations chat only (alerts). A row of any other recipient was queued before merchants lost the channel: it is
     // recorded as not sent, never retried.
     if (row.channel === 'telegram' && !operations)
@@ -189,7 +199,9 @@ export class NotificationDelivery {
     // The text is the audience the message was made for (the door of an order, the kind of a wallet), else the one of the rank.
     const found = operations
       ? operationsRecipientOf(payload)
-      : await recipientOf(this.db.db, row.recipientType, row.recipientId);
+      : addressed
+        ? addressRecipientOf(payload)
+        : await recipientOf(this.db.db, row.recipientType, row.recipientId);
     if (!found) throw new DeliveryError('The recipient no longer exists.', { permanent: true });
     const recipient = withAudience(found, audienceOfRow(payload));
     const definition = this.registry.get(row.event, recipient.audience);

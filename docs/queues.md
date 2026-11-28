@@ -149,11 +149,14 @@ Sends emails, and the Telegram messages of the operations alerts.
 - **Concurrency:** 10 per worker process.
 - **Jobs:** named jobs only (a catch-all next to named processors stops the worker).
   - `notification.send` (`NotificationSendProcessor`, `src/modules/platform/notifications/notification.processors.ts`): sends one `notifications` row. Added by the
-    relay for the outbox event `notification.send` (written with the row by `NotificationService.enqueue`), and, delayed, for a digest row.
+    relay for the outbox event `notification.send` (written with the row by `NotificationService.enqueue`), and, delayed, for a digest row. A row of
+    `NotificationService.enqueueToEmail` (decision 079: the note to an address without an account, `customer.no_account`) names the pseudo-recipient
+    (`account`, 0) and carries the address in its payload's `to`: no row of `clients` is made for it, and the job carries the row id only.
   - `notification.plan` (`NotificationPlanProcessor`): turns an outbox event a merchant may want to hear about into notifications (`EventNotifier`): `wallet.low_balance`,
     `order.status_changed` (`order.completed`, `order.failed` for merchants who opted in), `service.price_changed` (the daily digest) and `invoice.paid`. The platform's `NotificationRoutes` registers their routes: one outbox event, one job on this queue.
-  - `merchant.email_verification`, `merchant.password_reset`, `merchant.invited`, `customer.magic_link`, `customer.password_reset`, `customer.invited`, `customer.email_verification`
-    (identity, `src/modules/identity/jobs/account-mail.processors.ts`, features 2b, 12a and 14b, decision 064, handled by `AccountMailJobs`): the one-time links of
+  - `merchant.email_verification`, `merchant.password_reset`, `merchant.invited`, `customer.magic_link`, `customer.password_reset`, `customer.invited`, `customer.email_verification`,
+    and the two sign-in links of the shop's sign-up, `customer.sign_up_link` ("finish creating your account") and `customer.sign_up_existing` ("you already
+    have an account, nothing was changed") (decision 079; their texts ship with the code and no migration installs them) (identity, `src/modules/identity/jobs/account-mail.processors.ts`, features 2b, 12a and 14b, decision 064, handled by `AccountMailJobs`): the one-time links of
     every account. One processor per event type; the event type is chosen when the mail is queued (`AccountMailOutbox`) by the rank kind of the account, read under
     the account row lock: a merchant rank gets the `merchant.*` family, a retail rank the `customer.*` family (the sign-in link is for the retail rank only). The stored
     templates keep their names; there are no `account.*` events. Built like the staff mails (decision 033): the job re-reads the account and the link, sends nothing when the
@@ -391,12 +394,12 @@ Draws the PDF tax receipt of a paid storefront order and stores it (`GET /store/
 Scheduled housekeeping: data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), `retail_price_follow`, after a price change and every hour, and `category_names_clean`, once, asked for by a migration (catalog module, feature 31, below), `field_patterns_review`, once, asked for by a migration (catalog module, feature 41, below), `checkout_tokens_seal`, `tracking_tokens_seal` and `ticket_tokens_seal`, once, asked for by a migration (customers, orders and support modules, feature 44, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below), `dispatch_sweep`, every minute (suppliers module, decision 044, below), `lost_work_reconcile`, every 5 minutes, and `outbox_purge`, daily at 04:50 UTC (platform module, decision 055, below), and the storefront search jobs `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`, default 15, and once at worker boot), `search_rebuild` (nightly at 03:40 UTC, and on demand), `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (daily 04:10 UTC) (storefront module, feature 29, below), and the two clean-ups of decision 053: `upload_janitor` (daily 04:30 UTC) (platform module) and `supplier_log_retention` (daily 04:50 UTC) (suppliers module), below. The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, and `sign_up_purge`, every 15 minutes (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), `retail_price_follow`, after a price change and every hour, and `category_names_clean`, once, asked for by a migration (catalog module, feature 31, below), `field_patterns_review`, once, asked for by a migration (catalog module, feature 41, below), `checkout_tokens_seal`, `tracking_tokens_seal` and `ticket_tokens_seal`, once, asked for by a migration (customers, orders and support modules, feature 44, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below), `dispatch_sweep`, every minute (suppliers module, decision 044, below), `lost_work_reconcile`, every 5 minutes, and `outbox_purge`, daily at 04:50 UTC (platform module, decision 055, below), and the storefront search jobs `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`, default 15, and once at worker boot), `search_rebuild` (nightly at 03:40 UTC, and on demand), `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (daily 04:10 UTC) (storefront module, feature 29, below), and the two clean-ups of decision 053: `upload_janitor` (daily 04:30 UTC) (platform module) and `supplier_log_retention` (daily 04:50 UTC) (suppliers module), below. The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC, below), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). `idempotency_purge` (daily 04:10 UTC,
 orders module, below) is built. `storefront_popularity` (every 30 minutes, storefront module, below) is built. The names are the
   console's job names (`GET /admin/system/jobs`, which lists only the jobs that write `job_runs`: `ip_rule_hits_flush` does not, so it is not listed and a manual run of it is 404).
-- **Payload:** none for `ip_rule_hits_flush` and `session_purge` (a manual run of the last carries `{ runId }` like the others). A manual run of the others carries `{ runId }` of the `job_runs` row that
+- **Payload:** none for `ip_rule_hits_flush`, `session_purge` and `sign_up_purge` (a manual run of the last two carries `{ runId }` like the others). A manual run of the others carries `{ runId }` of the `job_runs` row that
   `POST /admin/system/jobs/:name/run` inserted; the job id is `manual-<run id>`.
 - **Idempotency:** `ip_rule_hits_flush` takes the whole Redis hash of counters and deletes it in one Lua step, so a second or
   parallel run finds nothing and no hit is written twice. `session_purge` deletes by a cutoff computed from the clock, so a
@@ -407,7 +410,7 @@ orders module, below) is built. `storefront_popularity` (every 30 minutes, store
   after it succeeded returns it unchanged.
 - **Schedule:** `idempotency-purge` at 04:10 UTC (`src/modules/orders/jobs/idempotency-purge.module.ts`);
   `ip-rule-hits-flush` every minute (`src/modules/identity/security/ip-rules/ip-rule-hits-flush.module.ts`);
-  `session-purge` at 03:15 UTC (`src/modules/identity/jobs/session-purge.module.ts`);
+  `session-purge` at 03:15 UTC and `sign-up-purge` every 15 minutes (`src/modules/identity/jobs/session-purge.module.ts`);
   `payment-auto-credit` every minute (`src/modules/money/jobs/payment-auto-credit.module.ts`); `supplier-dispatch-sweep` every minute
   (`src/modules/suppliers/jobs/supplier-jobs.module.ts`); `fx-refresh` every hour at minute 0
   (`src/modules/money/jobs/fx-refresh.module.ts`); `notification-campaign-sweep` every minute
@@ -788,7 +791,10 @@ The API counts the requests an IP rule decided in the cache Redis hash `gsm:{env
 Deletes `sessions` rows that ended more than 30 days ago: revoked (`revoked_at`) or past their absolute end (`expires_at`). An
 ended session stays readable for 30 days (an incident review, the sessions list's 404), then only costs space; a session that is merely
 idle-dead but not yet past `expires_at` is not "ended" for the purge and goes when its absolute end passes. No other table references
-`sessions`.
+`sessions`. Then (decision 079) it deletes the `account_signups` rows whose link can no longer be exchanged: the link expired, or it was
+used or voided (`used_at` set). The exchange of a sign-up link deletes every waiting form of its address in its own transaction, the job
+`sign_up_purge` (below) runs the same pass every 15 minutes, and this daily pass is the second net; a deleted link takes its row with it
+(`ON DELETE CASCADE`). Same batches of 1000 (`deleteLapsedSignUps`); `processed` and `result.deleted` still count the sessions.
 
 - **Recorded in `job_runs`** (`JobRunsService.run`, trigger `schedule`, or `manual` with `{ runId }`): `processed` and `result.deleted`
   are the number of rows deleted. 03:15 UTC sits between the nightly 02:30 integrity check and 03:00 retention job runs.
@@ -796,6 +802,21 @@ idle-dead but not yet past `expires_at` is not "ended" for the purge and goes wh
   so no statement holds a long lock and the job can be interrupted at any point.
 - **Attempts and retry:** the queue's policy (3 attempts, exponential backoff from 1 min, jitter 50 %); a retry deletes what is left.
 - **Cutoff:** `clock.now() - 30 days` (decision 031): exactly 30 days is kept, one millisecond older is deleted.
+
+### `sign_up_purge` (identity module)
+
+Deletes, every 15 minutes, the `account_signups` rows (the waiting form of a shop sign-up, with the argon2id hash of its password) whose
+link can no longer be exchanged: the link expired, or it was used or voided (`used_at` set). Decision 079 (the review's S5): the exchange
+of a link deletes every form of its address, and a deleted link takes its row with it; a link that is never opened, or one another flow
+voided, would otherwise keep its hash until the daily `session_purge`. So a hash outlives its link by at most 15 minutes (an hour and a
+quarter after the mail). `SignUpPurgeProcessor` calls `SessionPurge.purgeLapsedSignUps`.
+
+- **Recorded in `job_runs`** (`JobRunsService.run`, trigger `schedule`, or `manual` with `{ runId }`): `processed` and `result.deleted`
+  are the number of rows deleted. A run that overlaps the previous one is skipped by `JobRunsService`.
+- **Batches:** 1000 rows per statement, repeated until a batch is short (as `session_purge`).
+- **Idempotency:** the delete only takes rows whose link can no longer be exchanged, judged by the clock; a repeat or a parallel run finds fewer
+  rows, and a form whose link is still usable is never touched.
+- **Attempts and retry:** the queue's policy (3 attempts, exponential backoff from 1 min, jitter 50 %); a retry deletes what is left.
 
 ## alerts
 
@@ -830,6 +851,8 @@ none); the job id is `outbox-<event id>`.
 | `merchant.password_reset` | `notifications` | `merchant.password_reset` | `accountId`, `tokenId` (aggregate: `clients`) | identity (`AccountMailOutbox`), written by `POST /client/auth/password/forgot` and the staff reset link of a merchant-rank account |
 | `merchant.invited` | `notifications` | `merchant.invited` | `accountId`, `tokenId` (aggregate: `clients`) | identity (`AccountMailOutbox`), written by `POST /admin/clients` for a merchant rank (feature 2a) and by a rank change to a merchant rank of an account without a password |
 | `customer.magic_link` | `notifications` | `customer.magic_link` | `accountId`, `tokenId` (aggregate: `clients`, the account or guest row) | identity (`AccountMailOutbox`), written by `POST /store/v1/auth/magic-link` (retail rank only) |
+| `customer.sign_up_link` | `notifications` | `customer.sign_up_link` | `accountId`, `tokenId` (aggregate: `clients`, the guest row) | identity (`AccountMailOutbox`), written by `POST /store/v1/auth/sign-up` for an address without an account (decision 079) |
+| `customer.sign_up_existing` | `notifications` | `customer.sign_up_existing` | `accountId`, `tokenId` (aggregate: `clients`, the account) | identity (`AccountMailOutbox`), written by `POST /store/v1/auth/sign-up` for an address whose retail account may get a link (decision 079) |
 | `customer.password_reset` | `notifications` | `customer.password_reset` | `accountId`, `tokenId` (aggregate: `clients`) | identity (`AccountMailOutbox`), written by `POST /client/auth/password/forgot` and by the staff reset link of a retail-rank account |
 | `customer.invited` | `notifications` | `customer.invited` | `accountId`, `tokenId` (aggregate: `clients`) | identity (`AccountMailOutbox`), written by `POST /admin/clients` for a retail rank and by a rank change to a retail rank of an account without a password |
 | `customer.email_verification` | `notifications` | `customer.email_verification` | `accountId`, `tokenId` (aggregate: `clients`) | identity (`AccountMailOutbox`), written by `POST /client/auth/verify-email/resend` and by a staff change of a retail-rank account's address |
@@ -871,6 +894,7 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `outbox-relay-tick` | `outbox-relay` | `tick` | every second | platform (`src/modules/platform/outbox/`) |
 | `ip-rule-hits-flush` | `maintenance` | `ip_rule_hits_flush` | every minute | identity (`src/modules/identity/security/ip-rules/`) |
 | `session-purge` | `maintenance` | `session_purge` | daily 03:15 UTC | identity (`src/modules/identity/jobs/`) |
+| `sign-up-purge` | `maintenance` | `sign_up_purge` | every 15 minutes | identity (`src/modules/identity/jobs/`) |
 | `payment-auto-credit` | `maintenance` | `payment_auto_credit` | every minute | money (`src/modules/money/jobs/`) |
 | `supplier-dispatch-sweep` | `maintenance` | `dispatch_sweep` | every minute | suppliers (`src/modules/suppliers/jobs/`) |
 | `notification-campaign-sweep` | `maintenance` | `notification_campaign_sweep` | every minute | platform (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`) |

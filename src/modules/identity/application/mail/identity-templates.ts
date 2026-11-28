@@ -26,15 +26,32 @@ const staff = (event: string, subject: string, body: string): DefaultTemplate =>
   body,
 });
 
+const customer = (event: string, subject: string, body: string): DefaultTemplate => ({
+  event,
+  channel: 'email',
+  audience: 'customer',
+  subject,
+  body,
+});
+
 /**
  * The events of {@link IDENTITY_DEFAULT_TEMPLATES} that no migration installed.
  *
  * Why: the notice of an API key the merchant made in the portal came after migration 0025. It is a security email, so it is always sent
  * from this shipped text (decision 047) while no stored template exists; staff who want other words add a template for the event. Nothing
  * writes this notice since decision 067 (merchants no longer create keys); the event stays registered so a notification written before still reads and sends.
+ * The four mails of the shop's sign-up (decision 079: the note to an address without an account, the link that finishes a sign-up, the
+ * answer to an address that already has an account, and the mail that tells the account its finish set a password) are security mails of
+ * the same kind: no migration installs their text.
  * `identityTemplatesSql()` leaves these out, so a test database holds the rows production holds.
  */
-export const IDENTITY_SHIPPED_TEXT_ONLY: readonly string[] = ['merchant.portal_api_key_created'];
+export const IDENTITY_SHIPPED_TEXT_ONLY: readonly string[] = [
+  'merchant.portal_api_key_created',
+  'customer.no_account',
+  'customer.sign_up_link',
+  'customer.sign_up_existing',
+  'customer.password_set',
+];
 
 /**
  * The templates the identity events start with.
@@ -68,6 +85,31 @@ export const IDENTITY_DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
     'staff.invited',
     'You were invited to the GSM admin console',
     'Hi {{staffName}},\n\nYou were added to the GSM admin console. Choose your password here:\n\n{{link}}\n\nThe link works once, until {{expiresAt}}. After that, ask an owner to send a new one.',
+  ),
+  customer(
+    'customer.no_account',
+    'No account uses this email address yet',
+    'Hello,\n\n{{change}}\n\nTo create your account, open this page and fill in your details: {{signUpUrl}}\n\nIf you did not ask for a sign-in link, you can ignore this email.',
+  ),
+  // Decision 079 (the review's S3): the reader is told that nothing exists until the link is opened, so a sign-up a stranger sent with this
+  // address can simply be ignored. The guest row a sign-up names may have no name yet: the greeting names nobody.
+  customer(
+    'customer.sign_up_link',
+    'Finish creating your account',
+    'Hello,\n\nFinish creating your account: open this link to confirm your email address.\n\n{{link}}\n\nThe link works once and stops working at {{expiresAt}}. If you did not ask for this, ignore this email: no account is made until the link is opened.',
+  ),
+  customer(
+    'customer.sign_up_existing',
+    'You already have an account',
+    'Hi {{customerName}},\n\nSomeone asked to create an account with this email address. You already have an account. Nothing was changed.\n\nTo sign in, open this link:\n\n{{link}}\n\nThe link works once and stops working at {{expiresAt}}. If you did not ask for this, you can ignore this email.',
+  ),
+  // Decision 079 (the re-review): the account's own address hears that its sign-up finish set a password. `{{change}}` is the sentence
+  // "A password was set for your account just now, when its sign-up was finished." (a security notice keeps it, decision 047). The name
+  // of the finish is never empty (both names are required); the sender writes "there" for an account without one.
+  customer(
+    'customer.password_set',
+    'A password was set for your account',
+    'Hi {{customerName}},\n\n{{change}}\n\nIf this was you, there is nothing to do. If it was not you, ask for a sign-in link on the sign-in page, then change the password in your account settings, or contact our support team.',
   ),
   staff(
     'staff.password_reset',

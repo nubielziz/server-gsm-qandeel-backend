@@ -504,6 +504,42 @@ export type AuthToken = typeof authTokens.$inferSelect;
 export type NewAuthToken = typeof authTokens.$inferInsert;
 
 /**
+ * The details of a shop sign-up that wait beside its one-time link until the link is opened: the argon2id hash of the chosen password,
+ * the names, the country and the phone. One row per link: each link applies its own form (a newer sign-up of the same address leaves the
+ * older row beside the older link).
+ *
+ * Why: decision 079 (sign-up with details): the account is made when the link proves the mailbox, not when the form is sent, so the
+ * details must wait somewhere that holds no plain password and dies with its link. The exchange of the link (`POST /store/v1/auth/verify`)
+ * deletes every row of its address in its own transaction, whatever it applied; the purge every 15 minutes (`sign_up_purge`) and the
+ * daily one remove the rows whose link expired or was used, and a deleted link takes its row with it (`ON DELETE CASCADE`). The rows are
+ * written once and deleted, never updated (no `updated_at`).
+ */
+export const accountSignups = pgTable(
+  'account_signups',
+  {
+    id: pk(),
+    /** the sign-in link (`auth_tokens`, purpose `magic_link`) the details wait for */
+    authTokenId: fk((): AnyPgColumn => authTokens.id, 'cascade').notNull(),
+    /** argon2id (decision 007); applied only when the browser that asked for the link opens it */
+    passwordHash: text().notNull(),
+    firstName: text().notNull(),
+    lastName: text().notNull(),
+    /** ISO 3166 alpha-2, upper case: a country the shop sells to when the form was sent */
+    country: text().notNull(),
+    /** the cleaned form: an optional leading `+` and 7 to 15 digits */
+    phone: text().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('account_signups_auth_token_uq').on(t.authTokenId)],
+);
+
+/** A row read from `account_signups`. */
+export type AccountSignup = typeof accountSignups.$inferSelect;
+
+/** A row to insert into `account_signups`. */
+export type NewAccountSignup = typeof accountSignups.$inferInsert;
+
+/**
  * Merchant API keys, stored as a hash.
  *
  * Why: Merchant credentials for Dhru: looked up by hash, shown by prefix (decisions 018, 019).

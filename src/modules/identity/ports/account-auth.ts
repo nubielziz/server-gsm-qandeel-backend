@@ -233,18 +233,60 @@ export interface AccountLinkExchange {
   readonly claimedOrders: number;
   /** `busy` when the claim gave up because another request holds a row it needs; the sign-in itself still succeeded. */
   readonly claimSkipped?: 'busy';
+  /**
+   * Only for a link that carried the details of a sign-up and made the account (decision 079): true when the form was applied (the
+   * browser that sent it opened the link), false when it was opened elsewhere and nothing was applied (then `pendingDetails` is set).
+   * Absent for every other link, and for a sign-up link of an address that already had an account (a plain sign-in).
+   */
+  readonly passwordSet?: boolean;
+  /**
+   * Only with `passwordSet: false`: the details of the form as typed (never the password), for the person who proved the mailbox to confirm
+   * or correct with `finishSignUp`. Nothing of them was applied.
+   */
+  readonly pendingDetails?: AccountSignUpDetails;
+}
+
+/** The details of a sign-up form besides the email and the password (decision 079). */
+export interface AccountSignUpDetails {
+  /** Trimmed, 1 to 60 characters, no control character or invisible direction mark. */
+  readonly firstName: string;
+  /** Trimmed, 1 to 60 characters, no control character or invisible direction mark; with the first name at most 119. */
+  readonly lastName: string;
+  /** ISO 3166 alpha-2, upper case (the use case checks that a retail account may have it). */
+  readonly country: string;
+  /** The cleaned form: an optional leading `+` and 7 to 15 digits. */
+  readonly phone: string;
+}
+
+/** What `AccountLinkSignIn.finishSignUp` takes: the details and the password, with the rules of the sign-up. */
+export interface AccountSignUpFinishInput extends AccountSignUpDetails {
+  /** The password as typed (1 to 1024 characters); never stored, logged or sent anywhere: only its argon2id hash is written. */
+  readonly password: string;
+}
+
+/** What `AccountLinkSignIn.signUp` takes: the form of the shop's sign-up, as the route contract cleaned it. */
+export interface AccountSignUpInput extends AccountSignUpDetails {
+  /** The normalised email. */
+  readonly email: string;
+  /** The password as typed (1 to 1024 characters); never stored, logged or sent anywhere: only its argon2id hash waits. */
+  readonly password: string;
 }
 
 /**
- * The sign-in link of the retail rank.
+ * The sign-in link of the retail rank, and the shop's sign-up that rides on it.
  *
- * Why: a retail account (or a visitor who becomes one) signs in with a link mailed to the address, which proves the mailbox
- * (decision 064). The claim of guest orders rides on the exchange and never waits for a lock.
+ * Why: a retail account signs in with a link mailed to the address, which proves the mailbox (decision 064). Since decision 079 an account
+ * is made only by a sign-up: the form waits beside the link, and the exchange of that link makes the account; the form is applied only in the
+ * browser that sent it, and elsewhere the account is made with nothing of it and finished later by its owner (`finishSignUp`). A sign-in
+ * link asked for an address without an account mails a note instead. The claim of guest orders rides on the exchange and never waits for a
+ * lock.
  *
- * Side effects (of the implementation): `requestLink` writes `auth_tokens` and `outbox_events` (rolled back when no mail is sent) and may
- * create a guest row; `exchange` consumes the link, may turn a guest row into an account, opens the session and may move guest records.
+ * Side effects (of the implementation): `requestLink` and `signUp` write `auth_tokens`, `outbox_events` and (sign-up) `account_signups`, or
+ * (the note) `notifications`, all rolled back when no mail is sent, and may create a guest row; `exchange` consumes the link, deletes its
+ * waiting details, may turn a guest row into an account and give it the details, opens the session and may move guest records;
+ * `finishSignUp` writes the details and the first password on `clients`, voids the password links and ends the account's other sessions.
  *
- * @see POST /store/v1/auth/magic-link, POST /store/v1/auth/verify
+ * @see POST /store/v1/auth/magic-link, POST /store/v1/auth/sign-up, POST /store/v1/auth/verify, POST /store/v1/auth/sign-up/finish
  */
 export abstract class AccountLinkSignIn {
   /**
@@ -257,6 +299,18 @@ export abstract class AccountLinkSignIn {
    * @throws {AppError} `RATE_LIMITED` (429); nothing else: a merchant rank, a blocked or non-active account is silent
    */
   abstract requestLink(email: string, meta: RequestMeta, browserKey?: string): Promise<AccountLinkBrowser>;
+
+  /**
+   * Signs up with the full details; the answer and the work are the same whoever holds the email.
+   *
+   * @param input the cleaned form
+   * @param meta the caller's address and network
+   * @param browserKey the asking-browser cookie the request already carried
+   * @returns the asking-browser cookie to set and when it ends
+   * @throws {AppError} `WEAK_PASSWORD` (422 on `password`), `VALIDATION_FAILED` (422 on `country`, code `unsupported`), `RATE_LIMITED`
+   *   (429); nothing else: an address with a login account gets what `requestLink` gives it
+   */
+  abstract signUp(input: AccountSignUpInput, meta: RequestMeta, browserKey?: string): Promise<AccountLinkBrowser>;
 
   /**
    * Exchanges a link for a session.
@@ -273,6 +327,16 @@ export abstract class AccountLinkSignIn {
     request: FastifyRequest,
     reply: FastifyReply,
   ): Promise<AccountLinkExchange>;
+
+  /**
+   * Finishes the sign-up of a signed-in account that has no password yet: its name, country, phone and first password.
+   *
+   * @param principal the signed-in retail account (its session stays; the account's other sessions end)
+   * @param input the details and the password, cleaned by the route contract
+   * @throws {AppError} `CONFLICT` (409: the account already has a password), `WEAK_PASSWORD` (422 on `password`), `VALIDATION_FAILED` (422 on
+   *   `country`, code `unsupported`), `RATE_LIMITED` (429), `UNAUTHORIZED` (401: the account is gone or may not act)
+   */
+  abstract finishSignUp(principal: AccountPrincipal, input: AccountSignUpFinishInput): Promise<void>;
 }
 
 /**

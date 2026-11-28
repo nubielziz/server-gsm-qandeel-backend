@@ -15,6 +15,7 @@ import {
   insertCustomerHistory,
   insertCustomerOrder,
   insertStoreCurrencies,
+  insertTaxRates,
 } from '../../support/customers';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertInvoiceRow } from '../../support/billing';
@@ -293,13 +294,18 @@ describe('the claim of the guest orders in POST /store/v1/auth/verify', () => {
   it('offers no claim to a guest row that becomes an account: it holds its own records already', async () => {
     const { db } = await testDb();
     await insertStoreCurrencies(db);
+    await insertTaxRates(db, ['GB']);
     const guest = await makeCustomer(t, { guest: true, name: 'Dana' });
     const serviceId = await insertAnyService(db);
     await insertCustomerOrder(db, serviceId, guest.id);
 
-    const { res, answer } = await signIn(guest.email, guest.id, true);
+    // Since decision 079 a guest row becomes an account through the sign-up, whose link the same browser opens.
+    const browser = store();
+    expect((await browser.signUp({ email: guest.email })).statusCode).toBe(204);
+    const link = accountLinks().find((candidate) => candidate.accountId === guest.id)!;
+    const res = await browser.call('POST', '/store/v1/auth/verify', { token: link.token, claimGuestOrders: true });
     expect(res.statusCode).toBe(200);
-    expect(answer).toMatchObject({ id: guest.id, claimedOrders: 0 });
+    expect(res.json<ClaimAnswer>()).toMatchObject({ id: guest.id, claimedOrders: 0 });
     expect(await accountRow(guest.id)).toMatchObject({ hasAccount: true });
     expect((await recordsOf(guest.id)).orders).toBe(1);
   });

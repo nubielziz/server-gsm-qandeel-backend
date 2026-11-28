@@ -8,12 +8,14 @@ import type { RankKind } from '../../ports/rank-kind';
 import type { Client } from '../../db/schema';
 import { accountAreaUrl } from '../../domain/public-links';
 import {
+  CUSTOMER_PASSWORD_SET_EVENT,
   MERCHANT_REACTIVATED_EVENT,
   MERCHANT_SECURITY_NOTICE_EVENT,
   MERCHANT_SUSPENDED_EVENT,
+  PASSWORD_SET_SENTENCE,
 } from './identity-mail-events';
 
-/** The changes a security notice names: staff actions, a new API key made by staff and a staff change of a key. */
+/** The changes a security notice names: staff actions, a new API key made by staff, and a staff change of a key. */
 export type SecurityNoticeKind =
   'temporary_password' | 'twofa_reset' | 'api_key_created' | 'api_key_changed' | 'email_changed';
 
@@ -98,7 +100,7 @@ export class MerchantLifecycleMails {
   }
 
   /**
-   * `merchant.security_notice` (or `customer.security_notice` for a retail rank): staff changed something security-relevant, or staff
+   * `merchant.security_notice` (or `customer.security_notice` for a retail rank): staff changed something security-relevant or
    * created an API key.
    *
    * @param work the caller's transaction
@@ -138,10 +140,28 @@ export class MerchantLifecycleMails {
     );
   }
 
+  /**
+   * `customer.password_set`: the finish of a sign-up set the account's first password (decision 079, its re-review).
+   *
+   * Why: the account made that change itself, so this is not the staff notice (`customer.security_notice` says that support made it). The
+   * mail goes to the account's own address, whose owner is the one who can say the change was not theirs. A security mail (decision 047):
+   * a missing or switched-off template does not stop it, its shipped text is sent.
+   *
+   * @param work the caller's transaction
+   * @param client the retail account; an empty name is greeted as "there"
+   * @returns once the notification and its outbox event are written
+   */
+  passwordSet(work: Pick<TransactionContext, 'tx'>, client: Pick<Client, 'id' | 'name'>): Promise<void> {
+    return this.send(work, CUSTOMER_PASSWORD_SET_EVENT, client, {
+      customerName: client.name.trim() === '' ? 'there' : client.name.trim(),
+      change: PASSWORD_SET_SENTENCE,
+    });
+  }
+
   private async send(
     work: Pick<TransactionContext, 'tx'>,
     event: string,
-    client: Recipient,
+    client: Pick<Client, 'id'>,
     variables: Record<string, string>,
     to?: string,
   ): Promise<void> {

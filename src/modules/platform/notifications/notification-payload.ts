@@ -67,6 +67,35 @@ export function itemsOf(payload: NotificationPayload): DigestItem[] {
 export const OPERATIONS_RECIPIENT_ID = 0;
 
 /**
+ * The `recipient_id` of a customer or merchant message that goes to an email address no account row holds.
+ *
+ * Why: decision 079 (its review): the note that answers a sign-in link asked for an unknown address used to need a guest row as its
+ * recipient, so anybody could plant rows for any address. No `clients` row has id 0, so the pair (`account`, 0) names "the address in
+ * the payload" (`to`), as (`staff`, 0) names the operations recipients.
+ */
+export const ADDRESS_RECIPIENT_ID = 0;
+
+/**
+ * The recipient of a message to an address no account row holds, built from its payload.
+ *
+ * @param payload the stored payload (`to` holds the address)
+ * @returns an account-type recipient with no name, the payload's address as its `email`, the customer audience (the row's own audience is
+ *   applied over it), no suspension and no inbox
+ */
+export function addressRecipientOf(payload: NotificationPayload): Recipient {
+  return {
+    type: 'account',
+    id: ADDRESS_RECIPIENT_ID,
+    audience: 'customer',
+    name: '',
+    email: asString(payload.to) ? payload.to : '',
+    prefs: {},
+    suspended: false,
+    inboxEligible: false,
+  };
+}
+
+/**
  * The recipient of an operations message, built from its payload.
  *
  * @param payload the stored payload (`to` holds the addresses of an email)

@@ -209,6 +209,9 @@ describe('the flags of decision 047', () => {
         'customer:customer.password_reset',
         'customer:customer.invited',
         'customer:customer.email_verification',
+        // Decision 079: the two mails of the shop's sign-up carry sign-in links.
+        'customer:customer.sign_up_link',
+        'customer:customer.sign_up_existing',
         'staff:staff.invited',
         'staff:staff.password_reset',
         'customer:support.reply',
@@ -238,9 +241,17 @@ describe('the flags of decision 047', () => {
         'merchant:merchant.security_notice',
         'merchant:merchant.portal_api_key_created',
         'customer:customer.security_notice',
+        // Decision 079: the note that answers a sign-in link asked for an address without an account, and the two mails of a sign-up.
+        'customer:customer.no_account',
+        'customer:customer.sign_up_link',
+        'customer:customer.sign_up_existing',
+        // Decision 079 (its re-review): the mail that tells the account its sign-up finish set a password.
+        'customer:customer.password_set',
       ].sort(),
     );
+    // Decision 079 (its review): the note goes to the typed address, which no account row holds.
     expect(keysOf(registry, 'namedAddress')).toEqual([
+      'customer:customer.no_account',
       'customer:customer.security_notice',
       'merchant:merchant.security_notice',
     ]);

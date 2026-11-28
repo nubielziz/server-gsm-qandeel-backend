@@ -52,7 +52,7 @@ function skipReason(
 }
 
 /**
- * Runs one account mail job (the seven link mails of both rank kinds).
+ * Runs one account mail job (the nine link mails of both rank kinds, the two of the shop's sign-up included).
  *
  * Why: feature 12a and 14b and decision 033, one job for every rank (decision 064): the outbox row keeps only the `auth_tokens` id, and a
  * token is stored only as a hash, so the clear token for the link must be made inside this job. The job re-reads everything and checks that
@@ -84,7 +84,7 @@ export class AccountMailJobs {
   /**
    * Handles one mail event.
    *
-   * @param type the outbox event type the processor is registered for (one of the seven account mails)
+   * @param type the outbox event type the processor is registered for (one of the nine account mails)
    * @param job the outbox job (`payload.accountId` the account, `payload.tokenId` the link row)
    * @returns whether the mail was sent, and why not
    * @throws {UnrecoverableError} when the type is not an account mail, the job has no account id (a job of the retired customer table

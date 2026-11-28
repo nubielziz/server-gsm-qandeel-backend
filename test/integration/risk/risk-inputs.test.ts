@@ -42,7 +42,7 @@ import { seedDefaultTemplates } from '../../support/notifications';
 import { eventsOf, orderRow, outboxOf } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { assessmentOf, auditRows, blocklistRows } from '../../support/risk';
-import { STORE_ORIGIN, StoreClient, clearStoreRateLimits } from '../../support/store';
+import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, noAccountNotes } from '../../support/store';
 import { APPLE_IMEI, TURNSTILE_HEADERS } from '../../support/storefront';
 
 const clock = new TestClock('2026-11-08T12:00:00.000Z');
@@ -259,11 +259,12 @@ describe('the blocks that follow a guest order', () => {
       email: 'newbuyer@mail.example',
       card: { ...DEFAULT_CARD, fingerprint: 'fp_new' },
     });
-    // Before the block a link is made for the address (a guest row signs up by link).
+    // Before the block the address is mailed (the note with the sign-up page: no account uses it, decision 079).
     const before = new StoreClient(t, freshClientIp());
     const asked = await before.magicLink('newbuyer@mail.example');
     expect([asked.statusCode, asked.body]).toEqual([204, '']);
-    expect(accountLinks()).toHaveLength(1);
+    expect(accountLinks()).toHaveLength(0);
+    expect(await noAccountNotes()).toHaveLength(1);
     expect((await risk.post(`/admin/risk/orders/${paid.orderId}/refund`, { blockEmail: true })).status).toBe(204);
     expect((await blocklistRows(db)).map((entry) => [entry.kind, entry.guestOnly])).toEqual([
       ['email', false],
@@ -274,9 +275,11 @@ describe('the blocks that follow a guest order', () => {
     );
     expect((audit!.after as Record<string, unknown>)['emailScope']).toBeUndefined();
     expect(await t.app.get(Blocklist).isEmailBlocked(db, 'newbuyer@mail.example')).toBe(true);
+    // After it, nothing is mailed to it.
     const after = new StoreClient(t, freshClientIp());
     expect((await after.magicLink('newbuyer@mail.example')).statusCode).toBe(204);
-    expect(accountLinks()).toHaveLength(1);
+    expect(accountLinks()).toHaveLength(0);
+    expect(await noAccountNotes()).toHaveLength(1);
   });
 
   it('a refund of a signed-in order that blocks its email blocks it everywhere, as before', async () => {

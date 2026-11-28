@@ -251,10 +251,10 @@
       "module": "customers",
       "name": "Storefront customers & checkout (B2C)",
       "domain": "I",
-      "rows": 35,
-      "endpoints": 38,
+      "rows": 37,
+      "endpoints": 40,
       "bySurface": {
-        "store": 18,
+        "store": 20,
         "admin": 19,
         "client": 1
       },
@@ -267,7 +267,8 @@
         21,
         23,
         24,
-        48
+        48,
+        79
       ],
       "tables": 4,
       "scenarios": [

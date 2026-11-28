@@ -1,5 +1,6 @@
 // CustomerProfileRules: the country rules a profile edit shares between the staff edit and the customer's own edit (map domain I, stage 14).
 import { Injectable } from '@nestjs/common';
+import { isCountryCode } from '../../../common/countries';
 import { type DbExecutor } from '../../../infra/db';
 import { FALLBACK_CURRENCY, currencyCodeFor } from '../domain/country-currency';
 import { currencyByCode, hasAnyCurrentTaxRate, hasCurrentTaxRate } from '../infra/foreign-reads.repository';
@@ -10,7 +11,8 @@ import { countryNotSupported } from './customer-errors';
  *
  * Why: ANSWERS customers Q8: a customer can only be given a country the storefront sells to (one with a current `tax_rates` row), and a
  * changed country re-derives the currency. Staff (`PATCH /admin/customers/:id`) and the customer (`PATCH /store/v1/me`) follow the same
- * two rules; they live here once. Decision 050: the checkout follows the same country rule.
+ * two rules; they live here once. Decision 050: the checkout follows the same country rule. Decision 079 (the review's B1): while no tax
+ * window is in force (production has none today) every country of the static list (`common/countries.ts`) is accepted and nothing else.
  *
  * Side effects: reads only (`currencies`, `tax_rates`).
  */
@@ -35,7 +37,9 @@ export class CustomerProfileRules {
   /**
    * Refuses a country the storefront does not sell to.
    *
-   * Why: ANSWERS customers Q8: only a country with a current `tax_rates` row is allowed, the list the store config serves.
+   * Why: ANSWERS customers Q8: only a country with a current `tax_rates` row is allowed, the list the store config serves. Decision 079:
+   * a shop with no tax window in force sells untaxed everywhere, so it accepts every listed country (`isCountryCode`) and refuses any other
+   * two letters.
    *
    * @param db the pool or the transaction to read with
    * @param country the ISO-2 country code
@@ -43,6 +47,10 @@ export class CustomerProfileRules {
    * @throws {AppError} `VALIDATION_FAILED` (422 on `country`: "Choose a country.")
    */
   async assertCountryAccepted(db: DbExecutor, country: string, now: Date): Promise<void> {
+    if (!(await hasAnyCurrentTaxRate(db, now))) {
+      if (!isCountryCode(country)) throw countryNotSupported();
+      return;
+    }
     if (!(await hasCurrentTaxRate(db, country, now))) throw countryNotSupported();
   }
 
@@ -50,7 +58,8 @@ export class CustomerProfileRules {
    * Refuses a checkout for a country the shop has no tax window for.
    *
    * Why: decision 050: the tax of a checkout is the window of the declared country, so a country without one would be sold untaxed; the
-   * refusal is the profile's own (ANSWERS customers Q8). A shop with no window in force accepts every country (no tax), as before.
+   * refusal is the profile's own (ANSWERS customers Q8). A shop with no window in force accepts every listed country (no tax) and refuses
+   * any other two letters (decision 079): one rule with {@link assertCountryAccepted}.
    *
    * @param db the pool or the transaction to read with
    * @param country the ISO-2 country code, upper case
@@ -58,7 +67,6 @@ export class CustomerProfileRules {
    * @throws {AppError} `VALIDATION_FAILED` (422 on `country`, code `unsupported`, "Choose a country.")
    */
   async assertCheckoutCountry(db: DbExecutor, country: string, now: Date): Promise<void> {
-    if (!(await hasAnyCurrentTaxRate(db, now))) return;
     await this.assertCountryAccepted(db, country, now);
   }
 }

@@ -29,7 +29,8 @@ Built (feature 14a, storefront-checkout): the checkout, 3 of the 13 storefront r
   `checkout` or `store` already answers `503 MAINTENANCE` before this runs (the pipeline hook). Decision 050: right after the
   guest-checkout switch, `CustomerProfileRules.assertCheckoutCountry` refuses a `country` without a tax window in force while the shop
   has a window for any country (the profile's own refusal: `422` on `country`, code `unsupported`, "Choose a country."); a shop with no
-  window in force accepts every country without tax. While the country has a regional tax window in force
+  window in force accepts every country of the static list (`common/countries.ts`: the 249 ISO 3166-1 codes and `XK`) without tax and refuses
+  any other two letters (decision 079; `PATCH /store/v1/me` follows the same rule). While the country has a regional tax window in force
   (`StorefrontMoney.taxRegionAccepted`), `region` must name a region that has one, compared trimmed and in upper case; a missing or other
   region is `422` on `region` (code `unsupported`, "Choose a region."), and the national window alone does not settle the tax then (staff
   give a region without tax a 0 % window). The region is the buyer's own statement: no input of the shop confirms it, so it is not checked
@@ -103,9 +104,15 @@ the old customer routes. The sign-in itself belongs to the identity module (one 
   links of an account are identity's (`AccountMailOutbox`), and `CustomerSecurityNotices` (`application/mail/`) is kept without an injector.
 - **Sign-in routes** (all answer `Cache-Control: no-store`; `store-auth.controller.ts`): `POST /store/v1/auth/magic-link` and `POST /store/v1/auth/verify` (the emailed sign-in
   link, retail rank only; asking never tells whether an address has an account, and `verify` takes `claimGuestOrders` and answers `next`, `claimedOrders` and
-  `claimSkipped`), `POST /store/v1/auth/login`, `POST /store/v1/auth/password/forgot`, `POST /store/v1/auth/password/set` and `POST /store/v1/auth/logout` (aliases of the use
-  cases of `/client/auth/*`, retired by the contract release), and `POST /store/v1/me/password` (the retail own change). `magic-link`, `login` and `password/forgot`
-  are `turnstile: true` (decision 034); `POST /store/v1/auth/verify` and `/login` need an `Origin` of the shop (`originCheck`, decision 045). `POST /auth/magic-link`
+  `claimSkipped`), `POST /store/v1/auth/sign-up` (decision 079, a route beyond the map: email, password, first and last name, country and phone, all required;
+  `204` whoever holds the email; the account is made when the mailed link is opened; the form is applied only in the browser that sent it (`verify` answers
+  `passwordSet: true`); opened elsewhere the account is made with nothing of it and `verify` answers `passwordSet: false` with `pendingDetails`, which the
+  owner confirms with `POST /store/v1/auth/sign-up/finish` (a `customer-session` route with CSRF: the details and the first password of an account that has
+  none, `409 CONFLICT` otherwise, answers `AccountMe`); since that decision `magic-link` makes no account: an address without one is mailed a note with the
+  sign-up page, and no row is made for it), `POST /store/v1/auth/login`, `POST /store/v1/auth/password/forgot`, `POST /store/v1/auth/password/set` and `POST /store/v1/auth/logout` (aliases of the use
+  cases of `/client/auth/*`, retired by the contract release), and `POST /store/v1/me/password` (the retail own change). `magic-link`, `sign-up`, `login` and
+  `password/forgot` are `turnstile: true` (decision 034); `sign-up` sets the same asking-browser cookie as `magic-link` and shares its budget. The field rules of the
+  sign-up are identity's (`ports/sign-up-fields.ts`), applied by `contracts/store-auth.contracts.ts`; `POST /store/v1/auth/verify` and `/login` need an `Origin` of the shop (`originCheck`, decision 045). `POST /auth/magic-link`
   sets the HttpOnly cookie `gsm_store_link` (`__Host-` when secure; one hour like the link; a value it made before is kept) for every email alike, and the link row keeps
   its keyed hash (`auth_tokens.browser_hash`); `verify` signs that browser in as before (`requestedHere: true`), a link asked for elsewhere is `409 CONFLICT` while the
   browser holds a live session of another account, and both answers carry `maskedEmail`. Rate limits, the email lock, the one argon2 verify per attempt, the two-step
@@ -275,10 +282,12 @@ routes (above), the three two-step routes and `POST /store/v1/marketing/unsubscr
 | `GET /store/v1/me/orders` | customer-session (retail rank) | My shop orders. | 14 |
 | `POST /store/v1/auth/login` | public | Sign in with email and password (alias of the one sign-in; retired by the contract release). | 14 |
 | `POST /store/v1/auth/logout` | customer-session, any rank | End the session (alias of the one sign-out). | 14 |
-| `POST /store/v1/auth/magic-link` | public | Email a sign-in link instead of a password (retail rank only; the answer never says whether the address has an account). | 14 |
+| `POST /store/v1/auth/magic-link` | public | Email a sign-in link instead of a password (retail rank only; the answer never says whether the address has an account; since decision 079 an address without an account gets a note with the sign-up page, and no link makes an account). | 14 |
 | `POST /store/v1/auth/password/forgot` | public | Request a password reset link; the answer is always the same, so no registered email is revealed. | 14 |
 | `POST /store/v1/auth/password/set` | link-token | Set the password with an invitation or reset token (valid one hour, single use); ends older sessions. | 14 |
-| `POST /store/v1/auth/verify` | link-token | Exchange a sign-in link token for a session; verifies the email on first use; may claim the records of the guest row of the address. | 14 |
+| `POST /store/v1/auth/sign-up` | public | Sign up with an email, a password, both names, a country and a phone: the account is made when the mailed link is opened (decision 079, a route beyond the map). | 79 |
+| `POST /store/v1/auth/sign-up/finish` | customer-session | Finish the sign-up of the signed-in account that has no password yet: its name, country, phone and first password (decision 079, a route beyond the map). | 79 |
+| `POST /store/v1/auth/verify` | link-token | Exchange a sign-in link token for a session; verifies the email on first use; may claim the records of the guest row of the address; a link of a sign-up makes its account and applies the form only in the browser that sent it (`passwordSet`, `pendingDetails`). | 14 |
 | `POST /store/v1/checkout-sessions` | public + optional session | Open a checkout as a guest or from the account (service, IMEI, email, country); locks the price, tax rate and exchange rate. | 14 |
 | `POST /store/v1/checkout-sessions/:token/consents` | checkout-token | Record consent to the terms, the privacy policy and the waiver of the withdrawal right. | 14 |
 | `POST /store/v1/checkout-sessions/:token/pay` | checkout-token | Start payment (3DS card, wallet or crypto); the order is not created before the webhook confirms the payment. | 16 |

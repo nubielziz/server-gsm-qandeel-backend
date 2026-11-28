@@ -185,7 +185,8 @@ export const openCheckoutSession = defineRoute({
     'answer as a blocklist hit and no guest record made; when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the ' +
     'shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is ' +
     '`422` on `country` (code `unsupported`, "Choose a country."), the refusal of the customer profile; a shop with no tax window in ' +
-    'force accepts any country without tax. While the `country` has a regional tax window in force, `region` must name a region that ' +
+    'force accepts, without tax, any listed country code (the ISO 3166-1 alpha-2 codes and `XK`, in any case) and refuses any other ' +
+    'two letters (`UK`, `ZZ`) with the same `422` (decision 079). While the `country` has a regional tax window in force, `region` must name a region that ' +
     'has one (any case), else `422` on `region` (code `unsupported`, "Choose a region."); the national window alone does not apply then. ' +
     'An email that staff blocked for guest checkouts is refused to a guest like any blocked email ' +
     '(`403 ACCOUNT_SUSPENDED`) and accepted for its signed-in account (decision 050). ' +

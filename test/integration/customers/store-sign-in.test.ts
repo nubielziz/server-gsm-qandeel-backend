@@ -1,6 +1,8 @@
 // Integration tests of the storefront customer's sign-in (feature 14b, routes POST /store/v1/auth/login, /magic-link, /verify,
 // /password/forgot, /password/set, /logout and POST /store/v1/me/password) through HTTP on the real application: the flows the
 // storefront runs, every refusal the contracts list, no account enumeration, single-use links and the lock after repeated failures.
+// Since decision 079 a link no longer makes an account: an unknown address gets the note, and the sign-up makes the account
+// (test/integration/customers/store-sign-up.test.ts).
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { asc, eq } from 'drizzle-orm';
@@ -16,6 +18,7 @@ import { clearIdentityCaches } from '../../support/auth';
 import { HOUR, MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { freshClientIp, freshClientPrefix } from '../../support/pipeline-routes';
+import { insertTaxRates } from '../../support/customers';
 import { insertBlock } from '../../support/risk';
 import {
   CUSTOMER_PASSWORD,
@@ -26,6 +29,7 @@ import {
   customerLinks,
   customerRow,
   makeCustomer,
+  noAccountNotes,
 } from '../../support/store';
 
 /** The app's clock: link lifetimes, lock times and session lifetimes follow it (decision 031). */
@@ -287,7 +291,7 @@ describe('POST /store/v1/auth/magic-link and /auth/verify', () => {
     expect(problem(again).code).toBe('TOKEN_INVALID');
   });
 
-  it('answers 204 for every email alike, and makes a customer of an email the store does not know (self-signup)', async () => {
+  it('answers 204 for every email alike: a link for the known account, the note for an email the store does not know (decision 079)', async () => {
     const known = await makeCustomer(t);
     const suspended = await makeCustomer(t, { status: 'suspended' });
     const answers = [
@@ -299,33 +303,37 @@ describe('POST /store/v1/auth/magic-link and /auth/verify', () => {
       expect(res.statusCode).toBe(204);
       expect(res.body).toBe('');
     }
-    // A link only for the known account and the new one; the suspended customer gets nothing.
-    expect(customerLinks().map((link) => link.kind)).toEqual(['magic_link', 'magic_link']);
+    // A link only for the known account; the new address gets the note with the sign-up page; the suspended customer gets nothing.
+    expect(customerLinks().map((link) => link.accountId)).toEqual([known.id]);
     const { db } = await testDb();
-    const [created] = await db.select().from(s.clients).where(eq(s.clients.email, 'brand.new@example.com'));
-    expect(created).toMatchObject({
-      name: '',
-      hasAccount: false,
-      status: 'active',
-      createdBy: null,
-      emailVerifiedAt: null,
-      createdAt: new Date('2026-11-07T10:00:00.000Z'),
-    });
-    expect(customerLinks()[1]!.customerId).toBe(created!.id);
+    // The note goes to the typed address: the request leaves no row behind (the review of decision 079).
+    expect(await db.select().from(s.clients).where(eq(s.clients.email, 'brand.new@example.com'))).toEqual([]);
+    expect(await noAccountNotes()).toEqual(['brand.new@example.com']);
   });
 
-  it('makes the self-signup an account when its link is used, and is safe against two requests for one new email', async () => {
-    await Promise.all([store().magicLink('twin@example.com'), store().magicLink('twin@example.com')]);
+  it('makes the account of a sign-up when its link is used, and is safe against two sign-ups for one new email', async () => {
+    await insertTaxRates((await testDb()).db, ['GB']);
+    await Promise.all([store().signUp({ email: 'twin@example.com' }), store().signUp({ email: 'twin@example.com' })]);
     const { db } = await testDb();
     const rows = await db.select().from(s.clients).where(eq(s.clients.email, 'twin@example.com'));
     expect(rows).toHaveLength(1);
-    // A link the visitor asked for does not void the one sent before (decision 052): the first still works, and using it spends the other.
+    // Each sign-up keeps its own form beside its own link (the review of decision 079, B2): neither waited for the other.
+    expect(await db.select().from(s.accountSignups)).toHaveLength(2);
+    // A link the visitor asked for does not void the one sent before (decision 052): both work until one is used, which spends the other.
     const [first, second] = customerLinks();
-    const client = store();
-    expect((await client.verify(first!.token)).statusCode).toBe(200);
-    expect((await store().verify(second!.token)).statusCode).toBe(410);
-    // The account has no password yet: the link only proved the mailbox.
+    const elsewhere = store();
+    const verified = await elsewhere.verify(second!.token);
+    expect(verified.statusCode).toBe(200);
+    // Opened in another browser than the one that sent the form: the account is made and signed in with nothing of the form, and the
+    // answer shows the details to confirm.
+    expect(verified.json()).toMatchObject({
+      name: '',
+      passwordSet: false,
+      pendingDetails: { firstName: 'Daniel', lastName: 'Whitmore', country: 'GB', phone: '+447700900123' },
+    });
+    expect((await store().verify(first!.token)).statusCode).toBe(410);
     expect(await customerRow(rows[0]!.id)).toMatchObject({ hasAccount: true, passwordHash: null });
+    expect(await db.select().from(s.accountSignups)).toEqual([]);
   });
 
   it('sends nothing for a blocklisted email and creates no customer', async () => {
@@ -343,9 +351,10 @@ describe('POST /store/v1/auth/magic-link and /auth/verify', () => {
     expect((await store().magicLink('Anyone@TempBox.example')).statusCode).toBe(204);
     expect(customerLinks()).toEqual([]);
     expect(await db.select().from(s.clients)).toHaveLength(0);
-    // A different domain still gets its link.
+    // A different domain still gets its mail: the note with the sign-up page, since no account uses the address (decision 079).
     expect((await store().magicLink('anyone@other.example')).statusCode).toBe(204);
-    expect(customerLinks()).toHaveLength(1);
+    expect(customerLinks()).toEqual([]);
+    expect(await noAccountNotes()).toHaveLength(1);
   });
 
   it('refuses a link that expired, was replaced, is of another kind, or belongs to a customer who is suspended since', async () => {

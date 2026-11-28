@@ -6,6 +6,8 @@ import {
   ACCOUNT_MAIL_EVENTS,
   ACCOUNT_MAIL_EVENT_TYPES,
   ACCOUNT_MAIL_PURPOSES,
+  SIGN_UP_MAIL_EVENTS,
+  accountAddressMailKey,
   accountIdOfMailJob,
   accountMailAccountSkip,
   accountMailEventInfo,
@@ -45,6 +47,19 @@ describe('accountMailKey', () => {
   });
 });
 
+describe('accountAddressMailKey', () => {
+  it('keys the note to an address without an account by the address, apart from every account key (decision 079)', () => {
+    expect(accountAddressMailKey('new@example.com', 'sign_in_link')).toMatch(/^[0-9a-f]{32}$/);
+    expect(accountAddressMailKey('new@example.com', 'sign_in_link')).toBe(
+      accountAddressMailKey('new@example.com', 'sign_in_link'),
+    );
+    expect(accountAddressMailKey('other@example.com', 'sign_in_link')).not.toBe(
+      accountAddressMailKey('new@example.com', 'sign_in_link'),
+    );
+    expect(accountAddressMailKey('7', 'sign_in_link')).not.toBe(accountMailKey('account', 7, 'sign_in_link'));
+  });
+});
+
 describe('the outbox event of a mail', () => {
   it('has the merchant family for a merchant rank and the customer family for a retail rank, with no new event names', () => {
     expect(accountMailEventOf('merchant', 'invited')).toBe('merchant.invited');
@@ -54,11 +69,16 @@ describe('the outbox event of a mail', () => {
     expect(accountMailEventOf('retail', 'password_reset')).toBe('customer.password_reset');
     expect(accountMailEventOf('retail', 'email_verification')).toBe('customer.email_verification');
     expect(accountMailEventOf('retail', 'magic_link')).toBe('customer.magic_link');
+    // The two mails of the shop's sign-up (decision 079) are the retail rank's too.
+    expect(accountMailEventOf('retail', 'sign_up_link')).toBe('customer.sign_up_link');
+    expect(accountMailEventOf('retail', 'sign_up_existing')).toBe('customer.sign_up_existing');
     expect([...ACCOUNT_MAIL_EVENT_TYPES].sort()).toEqual([
       'customer.email_verification',
       'customer.invited',
       'customer.magic_link',
       'customer.password_reset',
+      'customer.sign_up_existing',
+      'customer.sign_up_link',
       'merchant.email_verification',
       'merchant.invited',
       'merchant.password_reset',
@@ -68,6 +88,8 @@ describe('the outbox event of a mail', () => {
 
   it('refuses a sign-in link for a merchant rank: the link is for the retail rank only', () => {
     expect(() => accountMailEventOf('merchant', 'magic_link')).toThrow('not sent to a merchant account');
+    expect(() => accountMailEventOf('merchant', 'sign_up_link')).toThrow('not sent to a merchant account');
+    expect(() => accountMailEventOf('merchant', 'sign_up_existing')).toThrow('not sent to a merchant account');
   });
 
   it('reads the family and the kind back from the event type, and knows nothing else', () => {
@@ -76,19 +98,25 @@ describe('the outbox event of a mail', () => {
         expect(accountMailEventInfo(type)).toEqual({ rankKind, kind: kind as AccountMailKind });
       }
     }
+    for (const [kind, type] of Object.entries(SIGN_UP_MAIL_EVENTS)) {
+      expect(accountMailEventInfo(type)).toEqual({ rankKind: 'retail', kind: kind as AccountMailKind });
+    }
     expect(accountMailEventInfo('merchant.suspended')).toBeUndefined();
     expect(accountMailEventInfo('staff.invited')).toBeUndefined();
     expect(accountMailEventInfo('account.invited')).toBeUndefined();
   });
 
-  it('has the purpose of each link: one per mail, all of them the closed list of the seam', () => {
+  it('has the purpose of each link: one per mail, together the closed list of the seam', () => {
     expect(ACCOUNT_MAIL_PURPOSES).toEqual({
       email_verification: 'verify_email',
       password_reset: 'reset',
       invited: 'invite',
       magic_link: 'magic_link',
+      // The mails of a sign-up carry sign-in links (decision 079).
+      sign_up_link: 'magic_link',
+      sign_up_existing: 'magic_link',
     });
-    expect([...Object.values(ACCOUNT_MAIL_PURPOSES)].sort()).toEqual([...ACCOUNT_TOKEN_PURPOSES].sort());
+    expect([...new Set(Object.values(ACCOUNT_MAIL_PURPOSES))].sort()).toEqual([...ACCOUNT_TOKEN_PURPOSES].sort());
   });
 });
 

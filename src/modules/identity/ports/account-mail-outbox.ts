@@ -1,8 +1,13 @@
 // The seam to the mails of the account links (decision 064): invitation, verification, password reset and the sign-in link.
 import type { TransactionContext } from '../../../infra/db';
 
-/** The mails an account link can carry. `magic_link` is for the retail rank only. */
-export type AccountMailKind = 'email_verification' | 'password_reset' | 'invited' | 'magic_link';
+/**
+ * The mails an account link can carry. `magic_link` is for the retail rank only, and so are the two sign-in links of the shop's sign-up
+ * (decision 079): `sign_up_link` ("finish creating your account", the link the details wait beside) and `sign_up_existing` ("you already
+ * have an account, nothing was changed", the ordinary sign-in link of an address that already has one).
+ */
+export type AccountMailKind =
+  'email_verification' | 'password_reset' | 'invited' | 'magic_link' | 'sign_up_link' | 'sign_up_existing';
 
 /**
  * Writes the outbox row of an account's link mail.

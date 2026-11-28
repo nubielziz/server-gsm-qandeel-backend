@@ -70,6 +70,8 @@ const IMMUTABLE = new Set([
   'account_legacy_ids',
   'account_rank_changes',
   'wallet_action_keys',
+  // Decision 079: the details of a shop sign-up wait beside their link: written once, then deleted by the exchange or the purge, never updated.
+  'account_signups',
 ]);
 
 /**

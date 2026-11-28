@@ -240,6 +240,29 @@ describe('POST /store/v1/checkout-sessions', () => {
     expect((await ask('DE')).statusCode).toBe(201);
   });
 
+  it('with no tax window in force refuses a code of no country and accepts a listed code in any case (decision 079, B1)', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    await db.delete(s.taxRates);
+    const ask = (country: string) =>
+      open({ serviceId: world.icloud.serviceId, email: 'sam@mail.example', country, imei: APPLE_IMEI });
+    const before = await counts();
+    // Two letters that name no country: `UK` (the code of the United Kingdom is `GB`) and `ZZ`.
+    for (const country of ['ZZ', 'UK']) {
+      const refused = await ask(country);
+      expect(refused.statusCode, country).toBe(422);
+      expect(body(refused)).toMatchObject({ code: 'VALIDATION_FAILED', detail: 'Choose a country.' });
+      expect(body(refused).errors, country).toEqual([
+        { field: 'country', code: 'unsupported', message: 'Choose a country.' },
+      ]);
+    }
+    expect(await counts()).toEqual(before);
+    // A listed code in lower case opens, without tax.
+    const accepted = await ask('fr');
+    expect(accepted.statusCode).toBe(201);
+    expect(body(accepted)).toMatchObject({ country: 'FR', taxRate: '0.0000' });
+  });
+
   it('prices without tax a country with no window when the shop has no tax window at all, and defaults the currency', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);

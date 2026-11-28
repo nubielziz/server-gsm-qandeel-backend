@@ -4,6 +4,21 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**Sign-up collects the full details, with a password (2026-11-28, decision 079): merged and pushed on the owner's order ("push it fast, let CI/CD
+check, do not check locally").** The owner's ruling: email, password, first name, last name, country and phone, all required.
+`POST /store/v1/auth/sign-up` keeps the details beside the mailed link (table `account_signups`, migration `0074_account_signups`, the password
+as an argon2id hash); the account is created when the link is opened (`POST /store/v1/auth/verify`): in the browser that asked, with the details
+and the password; in any other browser with nothing applied, and the answer carries `pendingDetails` so the person confirms them and types a
+password in `POST /store/v1/auth/sign-up/finish` (a session at most 60 minutes old, an account without a password; the mail
+`customer.password_set` tells the owner). Why: a stranger must not be able to put a password or their details on someone else's mailbox. An
+emailed sign-in link no longer creates an account (`customer.no_account` note, addressed by email, no row made). The country rule: with no tax
+window in force (production has none) any ISO country is accepted (`src/common/countries.ts`), at sign-up, the staff create and edit, the
+checkout and `PATCH /store/v1/me`. A `sign_up_purge` job every 15 minutes removes waiting details whose link ended. Built by an Opus
+implementer, reviewed twice by an Opus reviewer (3 blockers and 10 fixes applied, then 0 blockers), final review by the lead (Fable 5.2).
+**Checks:** typecheck, lint, format, English, routes, contract, OpenAPI, coverage, `db:check` (75 migrations) on the merged main; the agents ran
+the sign-up, sign-in, checkout and account files in their worktree; the whole suite was NOT run locally on the merged main (the owner's order):
+GitHub runs it. **Release:** the deployer was held so the backend and the shop go live together.
+
 **One call reorders groups; API keys are named by the server and fully editable (2026-11-27, decision 078): merged and pushed on the owner's order.**
 `POST /admin/service-categories/order` (all or none, one audit row, the price version moved once; the console drags groups, its decision 038) and
 `PATCH /admin/api-keys/:id` with `name` and `expiresAt`, `POST /admin/clients/:id/api-keys` without a name (`API key <n>`). The owner's ruling: a

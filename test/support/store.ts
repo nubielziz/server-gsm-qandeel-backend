@@ -1,14 +1,17 @@
 // A stand-in for the storefront in tests: it keeps the cookies and the CSRF token the way a browser and the storefront's API client
 // do, sends the anti-bot token on every request (decision 034: the lead turns Turnstile on for the three public auth routes
 // without touching the tests), and offers the retail accounts and emailed links the sign-in tests need.
+import { asc, eq } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { CacheKeys } from '@src/infra/cache';
-import { schema as s } from '@src/infra/db';
+import { DbService, schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
+import { AccountAuthTokens } from '@src/modules/identity';
 import { ACCOUNT_SESSION_COOKIE } from './account-sessions';
 import { accountLinks, captureAccountLinks } from './account-links';
 import { accountRow, makeAccount } from './accounts';
 import type { TestApp } from './app';
+import { testDb } from './db';
 
 export { ensureRetailGroup, makeAccount } from './accounts';
 
@@ -100,6 +103,28 @@ export class StoreClient {
     return this.call('POST', '/store/v1/auth/magic-link', { email }, options);
   }
 
+  /** `POST /store/v1/auth/sign-up` (decision 079): the default form of {@link signUpForm} with the given changes. */
+  signUp(
+    form: Partial<SignUpForm> & { readonly email: string },
+    options?: StoreCallOptions,
+  ): Promise<LightMyRequestResponse> {
+    return this.call('POST', '/store/v1/auth/sign-up', signUpForm(form), options);
+  }
+
+  /** `POST /store/v1/auth/sign-up/finish` (decision 079): the default details of {@link signUpForm} with the given changes. */
+  finishSignUp(
+    form: Partial<Omit<SignUpForm, 'email'>> = {},
+    options?: StoreCallOptions,
+  ): Promise<LightMyRequestResponse> {
+    const { email: _email, ...details } = signUpForm({ email: 'unused@example.com', ...form });
+    return this.call('POST', '/store/v1/auth/sign-up/finish', details, options);
+  }
+
+  /** Puts a cookie in the jar, as a browser that holds one would (a forged asking-browser cookie, say). */
+  setCookie(name: string, value: string): void {
+    this.jar.set(name, value);
+  }
+
   /** `POST /store/v1/auth/verify`. */
   verify(token: string, options?: StoreCallOptions): Promise<LightMyRequestResponse> {
     return this.call('POST', '/store/v1/auth/verify', { token }, options);
@@ -152,6 +177,82 @@ export class StoreClient {
   orders(query = '', options?: StoreCallOptions): Promise<LightMyRequestResponse> {
     return this.call('GET', `/store/v1/me/orders${query}`, undefined, options);
   }
+}
+
+/** The body of `POST /store/v1/auth/sign-up`. */
+export interface SignUpForm {
+  readonly email: string;
+  readonly password: string;
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly country: string;
+  readonly phone: string;
+}
+
+/** The password the default sign-up form chooses: long, varied, and without the names or the email. */
+export const SIGN_UP_PASSWORD = 'Qv8-tide-Lumen-42';
+
+/**
+ * A sign-up form: a valid one for the email, with the given changes.
+ *
+ * @param form the email and any field to change
+ * @returns the whole body
+ */
+export function signUpForm(form: Partial<SignUpForm> & { readonly email: string }): SignUpForm {
+  return {
+    password: SIGN_UP_PASSWORD,
+    firstName: 'Daniel',
+    lastName: 'Whitmore',
+    country: 'GB',
+    phone: '+44 7700 900123',
+    ...form,
+  };
+}
+
+/**
+ * Issues a sign-in link for an account or a guest row the way the shop did before decision 079 (no waiting details), as a link mailed
+ * before the release that is still in its hour.
+ *
+ * @param t the running test app
+ * @param accountId the account or guest row
+ * @returns the token of the link (the placeholder the mail job would rotate; it works until then)
+ */
+export async function issueOldSignInLink(t: TestApp, accountId: number): Promise<string> {
+  const issued = await t.app
+    .get(DbService)
+    // A link the visitor asked for keeps the ones sent before (decision 052), as the old self sign-up's did.
+    .runInTransaction((work) =>
+      t.app.get(AccountAuthTokens).issue(work, { accountId, purpose: 'magic_link', keepEarlier: true }),
+    );
+  return issued.token;
+}
+
+/**
+ * The notes to an address without an account (decision 079) the app wrote, oldest first.
+ *
+ * Why: since the review of decision 079 the note goes to the typed address and no row is made for it: every note names the
+ * pseudo-recipient (`account`, 0) and carries the address in its payload's `to`. A note that names a row would be a regression.
+ *
+ * @returns the address each note goes to
+ * @throws {Error} when a note names a recipient row
+ */
+export async function noAccountNotes(): Promise<string[]> {
+  const { db } = await testDb();
+  const rows = await db
+    .select({
+      recipientType: s.notifications.recipientType,
+      recipientId: s.notifications.recipientId,
+      payload: s.notifications.payload,
+    })
+    .from(s.notifications)
+    .where(eq(s.notifications.event, 'customer.no_account'))
+    .orderBy(asc(s.notifications.id));
+  return rows.map((row) => {
+    if (row.recipientType !== 'account' || row.recipientId !== 0) {
+      throw new Error(`A no-account note names the row ${row.recipientType} ${row.recipientId}.`);
+    }
+    return String((row.payload as { to?: unknown }).to);
+  });
 }
 
 /** What a test can change about the retail account `makeCustomer` creates. */

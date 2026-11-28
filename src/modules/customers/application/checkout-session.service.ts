@@ -149,7 +149,8 @@ export class CheckoutSessionService {
    *   value came as `imei`);
    *   `ACCOUNT_SUSPENDED` for an account or guest row that may not act, a suspended, blocked or erased login row of the typed
    *   address (signed out), or a blocklisted email, email domain or IMEI (one message for all);
-   *   `VALIDATION_FAILED` on `country` (`unsupported`) for a country without a tax window while the shop has one; `VALIDATION_FAILED` on
+   *   `VALIDATION_FAILED` on `country` (`unsupported`) for a country without a tax window while the shop has one, or a code of no
+   *   country (`UK`, `ZZ`) while it has none; `VALIDATION_FAILED` on
    *   `region` (`unsupported`) for a missing region, or one without a window in force, while the country has a regional window in force
    */
   async open(request: OpenCheckoutRequest): Promise<CheckoutSessionView> {

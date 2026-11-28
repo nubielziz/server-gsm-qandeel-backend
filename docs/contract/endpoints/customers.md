@@ -45,6 +45,8 @@ Frontend features covering this module: `customers`, `checkouts` (rules in `RULE
 | `POST /store/v1/me/2fa/setup` | store | customer-session | 48 |  |
 | `POST /store/v1/me/2fa/enable` | store | customer-session | 48 |  |
 | `POST /store/v1/me/2fa/disable` | store | customer-session | 48 |  |
+| `POST /store/v1/auth/sign-up` | store | public | 79 |  |
+| `POST /store/v1/auth/sign-up/finish` | store | customer-session | 79 |  |
 
 ## POST /store/v1/checkout-sessions
 
@@ -351,5 +353,15 @@ Writes audit_logs both ways. Card fingerprint = the gateway's card fingerprint (
 ## POST /store/v1/me/2fa/disable
 
 - **Map addition** (B245, `scripts/map-additions/48-accounts.mjs`): Turn off two-factor sign-in for the signed-in account with a code. · customer-session · stage 48 · tables clients
+- **Frontend**: none.
+
+## POST /store/v1/auth/sign-up
+
+- **Map addition** (B-TBD sign-up-with-details, `scripts/map-additions/79-sign-up.mjs`): Sign up with an email, a password, both names, a country and a phone: the account is made when the mailed link is opened. · public · stage 79 · tables clients, auth_tokens, account_signups, outbox_events
+- **Frontend**: none.
+
+## POST /store/v1/auth/sign-up/finish
+
+- **Map addition** (B-TBD sign-up-with-details, `scripts/map-additions/79-sign-up.mjs`): Finish the sign-up of the signed-in account that has no password yet: its name, country, phone and first password. · customer-session · stage 79 · tables clients, auth_tokens, sessions
 - **Frontend**: none.
 

@@ -15,7 +15,7 @@ import { type AttemptContext, NotificationDelivery } from './notification-delive
 import { NotificationInbox } from './inbox/notification-inbox';
 import { type NotificationEventDefinition, NotificationEventRegistry } from './notification-events';
 import { type Recipient, recipientOf, withAudience } from './notification-foreign-reads';
-import { OPERATIONS_RECIPIENT_ID } from './notification-payload';
+import { ADDRESS_RECIPIENT_ID, OPERATIONS_RECIPIENT_ID } from './notification-payload';
 import { type TemplateKey, findTemplateFor } from './notification-template.repository';
 import { linkTemplateProblems } from './template-rules';
 import {
@@ -67,6 +67,18 @@ export interface AddressedNotificationInput {
   readonly variables?: Readonly<Record<string, string>>;
   /** Names the occurrence, so a repeat makes no second row (required: the caller runs again and again). */
   readonly dedupeKey: string;
+}
+
+/** What a caller asks for when the message goes to an email address that no account row holds (decision 079: the note to an unknown address). */
+export interface EmailNotificationInput {
+  /** A registered event key of the audience, registered with `namedAddress` (it may name the address it goes to). */
+  readonly event: string;
+  /** The text the message uses: `customer` or `merchant`. */
+  readonly audience: Exclude<NotificationAudience, 'staff'>;
+  /** The address, normalised; kept in the row's payload as `to` and masked in the log. */
+  readonly to: string;
+  /** The values of the event's placeholders. They are stored on the row and shown in the log: no secret goes here. */
+  readonly variables?: Readonly<Record<string, string>>;
 }
 
 /** What `enqueueToAddress` did: like {@link EnqueueResult}, plus the failed row of a message that had nowhere to go. */
@@ -286,6 +298,61 @@ export class NotificationService {
     }
     const payload: NotificationPayload = { variables, ...(input.channel === 'email' ? { to } : { chatId: to }) };
     const { row, created } = await insertNotificationOnce(work.tx, { ...base, payload, status: 'queued' });
+    if (created) {
+      await this.outbox.add(work.tx, {
+        type: NOTIFICATION_SEND_EVENT,
+        aggregateType: 'notifications',
+        aggregateId: row.id,
+      });
+    }
+    return { status: 'queued', id: row.id, created };
+  }
+
+  /**
+   * Writes an email to an address that no account row holds, and the event that sends it, in the caller's transaction.
+   *
+   * Why: decision 079 (its review): the note that answers a sign-in link asked for an address without an account goes to the address that
+   * was typed, so the request leaves no row behind (a guest row made only to address it let anybody plant rows). The pseudo-recipient is
+   * (`account`, {@link ADDRESS_RECIPIENT_ID}); the address travels in the payload (`to`, masked in the log). Only an event registered with
+   * `namedAddress` takes it. The template rules are the ones of {@link enqueue}: a security email is never stopped by a missing or
+   * switched-off template (decision 047). The message carries no secret: a link with a token never goes this way.
+   *
+   * Side effects: inserts a `notifications` row and its `outbox_events` row (`notification.send`, the row id only).
+   *
+   * @param work the caller's transaction
+   * @param input the event, the audience, the address and the variables
+   * @returns the row, or why nothing was made (`no_template`, `template_off`)
+   * @throws {RangeError} when the event is not registered for the audience, has no email channel or lacks the `namedAddress` flag (programming
+   *   errors)
+   */
+  async enqueueToEmail(work: Pick<TransactionContext, 'tx'>, input: EmailNotificationInput): Promise<EnqueueResult> {
+    const definition = this.registry.get(input.event, input.audience);
+    if (!definition) {
+      throw new RangeError(`The event "${input.event}" is not registered for the audience "${input.audience}".`);
+    }
+    if (!definition.channels.includes('email'))
+      throw new RangeError(`The event "${input.event}" cannot be sent by email.`);
+    if (definition.namedAddress !== true) {
+      throw new RangeError(`The event "${input.event}" cannot name the address it goes to.`);
+    }
+    const key: TemplateKey = { event: input.event, channel: 'email', audience: input.audience };
+    const verdict = this.verdictOf(await findTemplateFor(work.tx, key), key, definition);
+    if (verdict !== 'ok') {
+      this.logger.warn(`No usable email template for "${input.event}" (${input.audience}): nothing is sent.`);
+      return { status: 'skipped', reason: verdict };
+    }
+    const now = this.clock.now();
+    const { row, created } = await insertNotificationOnce(work.tx, {
+      recipientType: 'account',
+      recipientId: ADDRESS_RECIPIENT_ID,
+      channel: 'email',
+      event: input.event,
+      payload: { variables: { ...(input.variables ?? {}) }, to: input.to, audience: input.audience },
+      status: 'queued',
+      dedupeKey: null,
+      createdAt: now,
+      updatedAt: now,
+    });
     if (created) {
       await this.outbox.add(work.tx, {
         type: NOTIFICATION_SEND_EVENT,

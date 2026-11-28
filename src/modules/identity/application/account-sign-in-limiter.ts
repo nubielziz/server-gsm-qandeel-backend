@@ -111,6 +111,19 @@ export class AccountSignInLimiter {
   }
 
   /**
+   * Counts a finish of a sign-up by a signed-in account (decision 079: `POST /store/v1/auth/sign-up/finish`).
+   *
+   * Why: each try hashes a password (argon2id, tens of milliseconds) for an account that has none yet; five tries per account in 15
+   * minutes are plenty for a person correcting a form, and stop a script from spending the API's CPU through one session.
+   *
+   * @param accountId the account id
+   * @throws {AppError} `RATE_LIMITED` (429, with `Retry-After`) from the sixth attempt in 15 minutes
+   */
+  async enforceSignUpFinish(accountId: number): Promise<void> {
+    await this.limits.enforce('sign-in', this.key('sign-up-finish', String(accountId)));
+  }
+
+  /**
    * Clears the password-change counter after a correct current password.
    *
    * @param accountId the account id

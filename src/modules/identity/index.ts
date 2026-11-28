@@ -66,6 +66,9 @@ export type {
   AccountSignInAnswer,
   AccountSignInInput,
   AccountSignInStep,
+  AccountSignUpDetails,
+  AccountSignUpFinishInput,
+  AccountSignUpInput,
   AccountTwoFactorSetupAnswer,
 } from './ports/account-auth';
 export { OptionalAccountSession } from './ports/optional-account-session';
@@ -103,8 +106,9 @@ export { ClientStatsDirectory, NO_ORDERS } from './application/client-stats';
 export type { ClientStats, ClientStatsSource } from './application/client-stats';
 export { MERCHANT_INVITED_EVENT } from './application/client-admin.service';
 export { cidrToWire } from './domain/ip-rule-input';
-export { SessionPurgeModule, SESSION_PURGE_SCHEDULER } from './jobs/session-purge.module';
+export { SessionPurgeModule, SESSION_PURGE_SCHEDULER, SIGN_UP_PURGE_SCHEDULER } from './jobs/session-purge.module';
 export { SESSION_PURGE_JOB } from './jobs/session-purge.processor';
+export { SIGN_UP_PURGE_JOB, SignUpPurgeProcessor } from './jobs/sign-up-purge.processor';
 export { PURGE_BATCH_SIZE, SESSION_RETENTION_DAYS, SessionPurge } from './jobs/session-purge';
 export { MerchantAuthModule } from './merchant-auth.module';
 export { ApiKeysModule } from './api-keys.module';

@@ -10,20 +10,20 @@
     "rowFlags": "the same files may add Turnstile to a public client or store map row (rowFlags, feature 24A); the endpoint then has turnstile true and rowFlag { file, spec }"
   },
   "counts": {
-    "rows": 393,
+    "rows": 395,
     "tables": 66,
     "scenarios": 13,
     "surfaces": 9,
     "moneyEvents": 13,
     "accounts": 14,
-    "endpoints": 501,
+    "endpoints": 503,
     "map": {
       "rows": 274,
       "endpoints": 382
     },
     "additions": {
-      "rows": 119,
-      "endpoints": 119
+      "rows": 121,
+      "endpoints": 121
     },
     "frontendRoutes": 294,
     "bySurface": {
@@ -56,8 +56,8 @@
         "endpoints": 4
       },
       "store": {
-        "rows": 61,
-        "endpoints": 61
+        "rows": 63,
+        "endpoints": 63
       },
       "system": {
         "rows": 4,
@@ -106,8 +106,8 @@
         "endpoints": 17
       },
       "customers": {
-        "rows": 35,
-        "endpoints": 38
+        "rows": 37,
+        "endpoints": 40
       },
       "support": {
         "rows": 23,
@@ -17206,6 +17206,77 @@
         "spec": "B-TBD group-order"
       },
       "successStatus": 200
+    },
+    {
+      "key": "POST /store/v1/auth/sign-up",
+      "method": "POST",
+      "path": "/store/v1/auth/sign-up",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "Sign up with an email, a password, both names, a country and a phone: the account is made when the mailed link is opened.",
+      "access": "public",
+      "permission": null,
+      "turnstile": true,
+      "idempotencyKey": false,
+      "authRaw": "public + Turnstile",
+      "stage": 79,
+      "tables": [
+        "clients",
+        "auth_tokens",
+        "account_signups",
+        "outbox_events"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/auth/sign-up",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/auth/sign-up"
+      },
+      "module": "customers",
+      "description": "Sign up with an email, a password, both names, a country and a phone: the account is made when the mailed link is opened.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/79-sign-up.mjs",
+        "spec": "B-TBD sign-up-with-details"
+      }
+    },
+    {
+      "key": "POST /store/v1/auth/sign-up/finish",
+      "method": "POST",
+      "path": "/store/v1/auth/sign-up/finish",
+      "op": "action",
+      "surface": "store",
+      "kind": "http",
+      "group": "account",
+      "descriptionAr": "Finish the sign-up of the signed-in account that has no password yet: its name, country, phone and first password.",
+      "access": "customer-session",
+      "permission": null,
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "customer-session",
+      "stage": 79,
+      "tables": [
+        "clients",
+        "auth_tokens",
+        "sessions"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "store POST /store/v1/auth/sign-up/finish",
+        "method": "POST",
+        "ops": null,
+        "path": "/store/v1/auth/sign-up/finish"
+      },
+      "module": "customers",
+      "description": "Finish the sign-up of the signed-in account that has no password yet: its name, country, phone and first password.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/79-sign-up.mjs",
+        "spec": "B-TBD sign-up-with-details"
+      }
     }
   ]
 }

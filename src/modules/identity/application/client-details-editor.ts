@@ -12,7 +12,7 @@ import { canAct } from '../accounts/account-status';
 import { rankKindOf } from '../ports/rank-kind';
 import type { Client } from '../db/schema';
 import { accountMailKey } from '../domain/account-mail';
-import { FALLBACK_CURRENCY, currencyCodeFor, emailChangePermission } from '../domain/account-rules';
+import { emailChangePermission } from '../domain/account-rules';
 import { type ClientChangeInput, detailChanges, emailMarkAfterEdit } from '../domain/client-details';
 import { updateClientRow } from '../infra/client-admin.repository';
 import { AccountAuthTokens } from '../ports/account-auth-tokens';
@@ -22,6 +22,7 @@ import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory'
 import { type StaffPrincipal, isOwner, requirePermission } from '../security/principal';
 import { type Admitted, AccountCreateChecks, emailConflictError } from './account-create-guards';
 import { MerchantLifecycleMails } from './mail/merchant-lifecycle-mails';
+import { assertRetailCountry, retailCurrencyFor } from './retail-country';
 
 /**
  * Applies a staff edit of an account's details.
@@ -80,13 +81,7 @@ export class ClientDetailsEditor {
    * @throws {AppError} `VALIDATION_FAILED` (422 on `country`, code `unsupported`: "Choose a country.")
    */
   async assertCountryAccepted(db: DbExecutor, country: string): Promise<void> {
-    const windows = await this.money.taxRatesInForce(db, this.clock.now());
-    if (windows.some((window) => window.country === country.toUpperCase())) return;
-    const message = 'Choose a country.';
-    throw new AppError('VALIDATION_FAILED', {
-      detail: message,
-      errors: [{ field: 'country', code: 'unsupported', message }],
-    });
+    await assertRetailCountry(this.money, db, country, this.clock.now());
   }
 
   /**
@@ -97,9 +92,7 @@ export class ClientDetailsEditor {
    * @returns the country's shop currency when the shop offers it, else USD; `null` only when USD itself is missing (the column is a foreign key)
    */
   async currencyFor(db: DbExecutor, country: string): Promise<string | null> {
-    const wanted = currencyCodeFor(country.toUpperCase());
-    if (await this.money.offered(db, wanted)) return wanted;
-    return (await this.money.byCode(db, FALLBACK_CURRENCY)) ? FALLBACK_CURRENCY : null;
+    return retailCurrencyFor(this.money, db, country);
   }
 
   /**

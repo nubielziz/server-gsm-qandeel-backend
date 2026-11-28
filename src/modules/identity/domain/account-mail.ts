@@ -41,6 +41,22 @@ export function accountMailKey(subject: AccountMailSubject, id: number, kind: Ac
 }
 
 /**
+ * The limiter key of the mails a visitor asks for an address that no login account holds (decision 079): the note, and the sign-up link
+ * sent to the address's guest row.
+ *
+ * Why: the note goes to the typed address, with no row behind it (the review of decision 079), so its budget is the address's: five mails
+ * an hour per address, whoever asks, as an account's budget is five links an hour. The re-review: the sign-up links of the address spend
+ * from it too (counted by the guest row's id they made a second budget). The subject `address` keeps the key apart from every account key.
+ *
+ * @param email the normalised address
+ * @param kind the kind of mail the visitor asked for
+ * @returns a 32-character hex key for `RateLimitService.consume('account-mail', key)`
+ */
+export function accountAddressMailKey(email: string, kind: Extract<AccountMailBudgetKind, 'sign_in_link'>): string {
+  return RateLimitService.compositeKey('address', email, kind);
+}
+
+/**
  * The outbox event type of each mail, by the rank kind of the account that gets it.
  *
  * Why: decision 064, no new events and no template migration: the stored templates keep their names, so a merchant rank gets the
@@ -61,10 +77,30 @@ export const ACCOUNT_MAIL_EVENTS = {
   },
 } as const satisfies Record<RankKind, Partial<Record<AccountMailKind, string>>>;
 
-/** Every event type the account mails write: the seven the processors handle. */
+/**
+ * The two link mails of the shop's sign-up (decision 079), for the retail rank only: "finish creating your account" (the link the details
+ * of the form wait beside) and "you already have an account, nothing was changed" (the ordinary sign-in link of an address that already
+ * has one).
+ *
+ * Why: the review of decision 079 (S3): the reader must be told which of the two happened, and that no account exists until the link is
+ * opened. Kept apart from {@link ACCOUNT_MAIL_EVENTS}, whose retail family the platform's built-in events copy: these two events are the
+ * identity module's own (`IDENTITY_MAIL_EVENTS`), with shipped texts and no template migration.
+ */
+export const SIGN_UP_MAIL_EVENTS = {
+  sign_up_link: 'customer.sign_up_link',
+  sign_up_existing: 'customer.sign_up_existing',
+} as const satisfies Partial<Record<AccountMailKind, string>>;
+
+/** The event type of each mail, by rank kind: the built-in families plus the sign-up mails of the retail rank. */
+const FAMILIES: Readonly<Record<RankKind, Readonly<Partial<Record<AccountMailKind, string>>>>> = {
+  merchant: ACCOUNT_MAIL_EVENTS.merchant,
+  retail: { ...ACCOUNT_MAIL_EVENTS.retail, ...SIGN_UP_MAIL_EVENTS },
+};
+
+/** Every event type the account mails write: the nine the processors handle. */
 export const ACCOUNT_MAIL_EVENT_TYPES: readonly string[] = [
-  ...Object.values(ACCOUNT_MAIL_EVENTS.merchant),
-  ...Object.values(ACCOUNT_MAIL_EVENTS.retail),
+  ...Object.values(FAMILIES.merchant),
+  ...Object.values(FAMILIES.retail),
 ];
 
 /** What an event type of the account mails means. */
@@ -84,7 +120,7 @@ export interface AccountMailEventInfo {
  */
 export function accountMailEventInfo(type: string): AccountMailEventInfo | undefined {
   for (const rankKind of ['merchant', 'retail'] as const) {
-    const events: Readonly<Partial<Record<AccountMailKind, string>>> = ACCOUNT_MAIL_EVENTS[rankKind];
+    const events = FAMILIES[rankKind];
     for (const [kind, event] of Object.entries(events)) {
       if (event === type) return { rankKind, kind: kind as AccountMailKind };
     }
@@ -98,11 +134,10 @@ export function accountMailEventInfo(type: string): AccountMailEventInfo | undef
  * @param rankKind the rank kind of the account that gets the mail
  * @param kind which mail
  * @returns the event type
- * @throws {Error} for a sign-in link to a merchant rank (the link is for the retail rank only: the caller refuses it first)
+ * @throws {Error} for a sign-in link (or a sign-up mail) to a merchant rank (the retail rank only: the caller refuses it first)
  */
 export function accountMailEventOf(rankKind: RankKind, kind: AccountMailKind): string {
-  const events: Readonly<Partial<Record<AccountMailKind, string>>> = ACCOUNT_MAIL_EVENTS[rankKind];
-  const type = events[kind];
+  const type = FAMILIES[rankKind][kind];
   if (type === undefined) throw new Error(`The mail "${kind}" is not sent to a ${rankKind} account.`);
   return type;
 }
@@ -113,6 +148,8 @@ export const ACCOUNT_MAIL_PURPOSES: Readonly<Record<AccountMailKind, AccountToke
   password_reset: 'reset',
   invited: 'invite',
   magic_link: 'magic_link',
+  sign_up_link: 'magic_link',
+  sign_up_existing: 'magic_link',
 };
 
 /**

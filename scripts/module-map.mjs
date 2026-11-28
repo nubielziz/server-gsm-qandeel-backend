@@ -21,7 +21,8 @@ export const modules = [
     domain: 'A',
     tables: ['staff_users', 'roles', 'clients', 'sessions', 'auth_tokens', 'api_keys', 'kyc_submissions', 'ip_rules'],
     // Decision 064 (one account type): the map from every old merchant and customer id to its account.
-    additionalTables: ['account_legacy_ids'],
+    // Decision 079 (sign-up with details): the details of a shop sign-up that wait beside its one-time link.
+    additionalTables: ['account_legacy_ids', 'account_signups'],
     retiredTables: [],
     rows: [
       /^admin \S+ \/admin\/(auth|staff|ip-rules|access|roles|permissions|sessions)(\/|$)/,

@@ -1,4 +1,5 @@
-// HTTP controller of the shop's sign-in routes (map domain I, /store/v1/auth/* and /store/v1/me/password, stage 14; decision 064). Thin: it
+// HTTP controller of the shop's sign-in routes (map domain I, /store/v1/auth/* and /store/v1/me/password, stage 14; decisions 064 and 079;
+// POST /store/v1/auth/sign-up and POST /store/v1/auth/sign-up/finish are routes beyond the map, scripts/map-additions/79-sign-up.mjs). Thin: it
 // reads the request, calls the use case through its port and sets the cookies and headers; the password routes are aliases of the
 // `/client/auth/*` use cases and the rules live in the application services behind the ports.
 import { type ExecutionContext, Body, Controller, Header, Req, Res, createParamDecorator } from '@nestjs/common';
@@ -18,11 +19,13 @@ import {
 import { CustomerAccountService } from '../application/customer-account.service';
 import {
   changeMyPassword,
+  finishCustomerSignUp,
   forgotCustomerPassword,
   loginCustomer,
   logoutCustomer,
   requestMagicLink,
   setCustomerPasswordByLink,
+  signUpCustomer,
   verifyMagicLink,
 } from '../contracts/store-auth.contracts';
 
@@ -43,11 +46,14 @@ const CurrentLink = createParamDecorator((_data: unknown, context: ExecutionCont
  * The shop's sign-in routes.
  *
  * Why: a retail account signs in with an emailed link or a password, recovers a forgotten password, chooses one from an invitation and
- * changes it from the account (map stage 14, decision 018). The password routes run the use cases of the `/client/auth/*` family (one
+ * changes it from the account (map stage 14, decision 018); a visitor makes an account with the sign-up form, whose details wait beside the
+ * emailed link until it is opened (decision 079). The password routes run the use cases of the `/client/auth/*` family (one
  * sign-in, one forgot, one set-by-link, one sign-out for every account) and go when the contract release retires the aliases. Every answer
  * carries `Cache-Control: no-store`: these responses hold cookies, tokens or personal data.
  *
  * @route POST /store/v1/auth/magic-link
+ * @route POST /store/v1/auth/sign-up
+ * @route POST /store/v1/auth/sign-up/finish
  * @route POST /store/v1/auth/verify
  * @route POST /store/v1/auth/login
  * @route POST /store/v1/auth/password/forgot
@@ -89,13 +95,60 @@ export class StoreAuthController {
   }
 
   /**
+   * Signs up with the full details: the account is made when the mailed link is opened.
+   *
+   * Why: decision 079 (the owner's order: email, password, first and last name, country and phone, all required). The answer is `204` for
+   * every valid body, whoever holds the email, and sets the asking-browser cookie as the sign-in link does: the exchange in that browser
+   * also sets the password.
+   *
+   * @param body the cleaned form
+   * @param request the request (address for the rate limit and the link record, and the asking-browser cookie it already carried)
+   * @param reply the reply, to set the asking-browser cookie
+   * @route POST /store/v1/auth/sign-up
+   */
+  @Route(signUpCustomer)
+  @Header('Cache-Control', 'no-store')
+  async signUp(
+    @Body() body: BodyOf<typeof signUpCustomer>,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<void> {
+    const browser = await this.links.signUp(body, requestMetaOf(request), this.cookies.readLinkBrowser(request));
+    this.cookies.setLinkBrowser(reply, browser.browserKey, browser.expiresAt);
+  }
+
+  /**
+   * Finishes the sign-up of the signed-in account: its name, country, phone and first password.
+   *
+   * Why: decision 079: a sign-up link opened in another browser makes the account with nothing of the form; its owner confirms or corrects
+   * the details here and chooses the password (an older account without details completes itself the same way). The session stays. The
+   * re-review: only a session opened at most an hour ago may do it (else `409 CONFLICT`: ask for a new sign-in link), and the account's
+   * address gets the security notice that a password was set.
+   *
+   * @param account the session's account
+   * @param body the details and the password, cleaned
+   * @returns the account as `GET /store/v1/me` answers it
+   * @route POST /store/v1/auth/sign-up/finish
+   */
+  @Route(finishCustomerSignUp)
+  @Header('Cache-Control', 'no-store')
+  async finishSignUp(
+    @CurrentAccount() account: AccountPrincipal,
+    @Body() body: BodyOf<typeof finishCustomerSignUp>,
+  ): Promise<ResultOf<typeof finishCustomerSignUp>> {
+    await this.links.finishSignUp(account, body);
+    return this.accounts.meOf(account.accountId);
+  }
+
+  /**
    * Exchanges a sign-in link for a session.
    *
    * @param linkId the one-time link the guard resolved
    * @param body the token (read by the guard) and the choice to claim the orders of the guest row of the email
    * @param request the request (a stale session cookie on it is ended; its asking-browser cookie tells whether it asked for the link)
    * @param reply the reply, to set the session's cookies and the CSRF header
-   * @returns the account the link opened, whether this browser asked for the link, the masked address, the next step and the claim result
+   * @returns the account the link opened, whether this browser asked for the link, the masked address, the next step, the claim result
+   *   and, for a link of a sign-up that made the account, whether its form was applied (and the details to confirm when it was not)
    * @route POST /store/v1/auth/verify
    */
   @Route(verifyMagicLink)
@@ -124,6 +177,8 @@ export class StoreAuthController {
       next: exchanged.next,
       claimedOrders: exchanged.claimedOrders,
       ...(exchanged.claimSkipped === undefined ? {} : { claimSkipped: exchanged.claimSkipped }),
+      ...(exchanged.passwordSet === undefined ? {} : { passwordSet: exchanged.passwordSet }),
+      ...(exchanged.pendingDetails === undefined ? {} : { pendingDetails: exchanged.pendingDetails }),
     };
   }
 

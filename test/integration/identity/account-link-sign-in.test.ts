@@ -1,8 +1,9 @@
 // Integration tests of the emailed sign-in link of the retail rank (decision 064; routes POST /store/v1/auth/magic-link and /verify) through
-// HTTP on the real application: who gets a link, that every email is answered alike, self sign-up by a guest row, the browser that asked
-// for the link, two-step sign-in, a rank or status that changed after the mail, the email that gained a login row after the mail, and
-// the verification link that the deployed shop page still posts here during the expand release. Replaces store-link-browser.test.ts and the
-// link half of store-sign-in.test.ts.
+// HTTP on the real application: who gets a link (and, since decision 079, who the note with the sign-up page instead), that every email is
+// answered alike, a guest row that a link mailed before decision 079 turns into an account, the browser that asked for the link, two-step
+// sign-in, a rank or status that changed after the mail, the email that gained a login row after the mail, and the verification link that
+// the deployed shop page still posts here during the expand release. Replaces store-link-browser.test.ts and the link half of
+// store-sign-in.test.ts; the sign-up itself is test/integration/customers/store-sign-up.test.ts.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { TokenService } from '@src/infra/crypto';
@@ -23,7 +24,15 @@ import { makeMerchant } from '../../support/merchant-portal';
 import { insertBlock } from '../../support/risk';
 import { codeFor } from '../../support/staff-console';
 import { seedIdentityTemplates, clearAccountMailLimits } from '../../support/identity-mail';
-import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeAccount, makeCustomer } from '../../support/store';
+import {
+  STORE_ORIGIN,
+  StoreClient,
+  clearStoreRateLimits,
+  issueOldSignInLink,
+  makeAccount,
+  makeCustomer,
+  noAccountNotes,
+} from '../../support/store';
 
 /** The cookie that marks the browser which asked for a sign-in link (not secure in tests, so without the `__Host-` prefix). */
 const LINK_COOKIE = 'gsm_store_link';
@@ -69,6 +78,11 @@ const linkRowsOf = async (accountId: number) => {
 };
 const linkOf = (accountId: number, kind = 'magic_link') =>
   accountLinks().find((link) => link.kind === kind && link.accountId === accountId)!;
+/** A guest row of the email with a sign-in link mailed to it before decision 079 (since then a link no longer makes an account). */
+const guestWithOldLink = async (email: string) => {
+  const guest = await makeCustomer(t, { guest: true, email, emailVerifiedAt: null });
+  await issueOldSignInLink(t, guest.id);
+};
 const guestRowsOf = async (email: string) => {
   const { db } = await testDb();
   return db
@@ -104,40 +118,37 @@ describe('POST /store/v1/auth/magic-link: who gets a link', () => {
     expect(row!.expiresAt.toISOString()).toBe('2026-11-07T11:00:00.000Z');
   });
 
-  it('answers every email alike, and makes a retail guest row of an email nobody holds (self sign-up)', async () => {
+  it('answers every email alike, and mails the note to an email nobody holds, making no row (decision 079: no link)', async () => {
     const known = await makeCustomer(t);
+    const rowsBefore = await allRows();
     const answers = [await store().magicLink(known.email), await store().magicLink('brand.new@example.com')];
     for (const res of answers) {
       expect(res.statusCode).toBe(204);
       expect(res.body).toBe('');
     }
-    expect(accountLinks().map((link) => link.kind)).toEqual(['magic_link', 'magic_link']);
-    const [created] = await guestRowsOf('brand.new@example.com');
-    expect(created).toMatchObject({
-      name: '',
-      hasAccount: false,
-      status: 'active',
-      emailVerifiedAt: null,
-      passwordHash: null,
-      username: null,
-      createdAt: new Date('2026-11-07T10:00:00.000Z'),
-    });
-    expect(accountLinks()[1]!.accountId).toBe(created!.id);
-    // The guest row holds the retail rank.
-    const { db } = await testDb();
-    const [rank] = await db.select().from(s.clientGroups).where(eq(s.clientGroups.id, created!.groupId));
-    expect(rank!.kind).toBe('b2c_retail');
+    expect(accountLinks().map((link) => link.accountId)).toEqual([known.id]);
+    // The note goes to the typed address: a stranger cannot plant guest rows for any address (the review of decision 079).
+    expect(await guestRowsOf('brand.new@example.com')).toEqual([]);
+    expect(await allRows()).toHaveLength(rowsBefore.length);
+    expect(await noAccountNotes()).toEqual(['brand.new@example.com']);
   });
 
-  it('is safe against two requests for one new email: one guest row, and its links work one after the other', async () => {
+  it('answers two requests for one new email alike: a note for each, no row and no link', async () => {
     await Promise.all([store().magicLink('twin@example.com'), store().magicLink('twin@example.com')]);
-    const guests = await guestRowsOf('twin@example.com');
-    expect(guests).toHaveLength(1);
+    expect(await guestRowsOf('twin@example.com')).toEqual([]);
+    expect(await noAccountNotes()).toEqual(['twin@example.com', 'twin@example.com']);
+    expect(accountLinks()).toEqual([]);
+  });
+
+  it('keeps the links of a guest row mailed before decision 079 working: one after the other, each spending the rest', async () => {
+    await guestWithOldLink('twin@example.com');
+    const [guest] = await guestRowsOf('twin@example.com');
+    await issueOldSignInLink(t, guest!.id);
     // A link the visitor asked for does not void the one sent before (decision 052): the first still works, and using it spends the other.
     const [first, second] = accountLinks();
     expect((await store().verify(first!.token)).statusCode).toBe(200);
     expect((await store().verify(second!.token)).statusCode).toBe(410);
-    expect(await accountRow(guests[0]!.id)).toMatchObject({ hasAccount: true });
+    expect(await accountRow(guest!.id)).toMatchObject({ hasAccount: true });
   });
 
   it.each([
@@ -173,9 +184,10 @@ describe('POST /store/v1/auth/magic-link: who gets a link', () => {
     expect((await store().magicLink('Anyone@TempBox.example')).statusCode).toBe(204);
     expect(accountLinks()).toEqual([]);
     expect(await allRows()).toHaveLength(0);
-    // A different domain still gets its link.
+    // A different domain still gets its mail: the note, since no account uses the address (decision 079).
     expect((await store().magicLink('anyone@other.example')).statusCode).toBe(204);
-    expect(accountLinks()).toHaveLength(1);
+    expect(accountLinks()).toEqual([]);
+    expect(await noAccountNotes()).toHaveLength(1);
   });
 
   it('sends nothing to a blocked guest row, and a login row hides the guest row that shares its email', async () => {
@@ -279,7 +291,7 @@ describe('POST /store/v1/auth/verify: the exchange', () => {
   });
 
   it('makes an account of a guest row: has_account true, the mailbox proven, a session, and nothing else about the row changes', async () => {
-    await store().magicLink('newcomer@example.com');
+    await guestWithOldLink('newcomer@example.com');
     const [guest] = await guestRowsOf('newcomer@example.com');
     const browser = store();
     const verified = await browser.verify(linkOf(guest!.id).token);
@@ -495,7 +507,7 @@ describe('POST /store/v1/auth/verify: the browser that asked for the link', () =
 describe('the email that gained a login row after the mail', () => {
   it('staff creating a merchant with the email of a guest row voids the open links of the guest row', async () => {
     const email = 'guest.then.merchant@example.com';
-    await store().magicLink(email);
+    await guestWithOldLink(email);
     const [guest] = await guestRowsOf(email);
     const link = linkOf(guest!.id);
     const { db } = await testDb();
@@ -523,7 +535,7 @@ describe('the email that gained a login row after the mail', () => {
 
   it('an exchange that meets clients_login_email_uq answers 410 and changes nothing', async () => {
     const email = 'late.login@example.com';
-    await store().magicLink(email);
+    await guestWithOldLink(email);
     const [guest] = await guestRowsOf(email);
     const link = linkOf(guest!.id);
     // A login row of the same email appears without voiding the link (a write that predates the rule, or a restore).
