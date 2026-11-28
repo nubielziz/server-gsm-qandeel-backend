@@ -507,9 +507,9 @@ describe('protectedTemplateProblems: the template of a security email (decision 
       else notices += 1;
       expect(protectedTemplateProblems(definition, shipped), `${definition.audience}:${definition.key}`).toEqual([]);
     }
-    // The merchant's two notices (staff action, key made in the portal), the customer's, and the note to an address without an account
-    // (decision 079). The two sign-up mails of decision 079 are links.
-    expect(notices).toBe(4);
+    // The merchant's two notices (staff action, key made in the portal), the customer's, the note to an address without an account and the
+    // notice that the finish of a sign-up set a password (decision 079). The two sign-up mails of decision 079 are links.
+    expect(notices).toBe(5);
     expect(links).toBeGreaterThan(8);
   });
 
